@@ -72,6 +72,26 @@ impl Session {
         Ok(self.record(command))
     }
 
+    /// Applies a command that continues the latest one, such as the next step
+    /// of a volume drag, so a single undo reverts the whole run. If the
+    /// latest command sets something else, or there's nothing to undo, it's
+    /// the same as [`Self::apply`]. The change still gets its own sequence
+    /// number, so replaying the journal is unaffected.
+    pub fn amend(&mut self, command: Command) -> Result<Applied, CommandError> {
+        let continues = self
+            .undo
+            .last()
+            .is_some_and(|entry| entry.command.sets_same_as(&command));
+        if !continues {
+            return self.apply(command);
+        }
+        self.project.apply(&command)?;
+        self.redo.clear();
+        let entry = self.undo.last_mut().expect("checked above");
+        entry.command = command.clone();
+        Ok(self.record(command))
+    }
+
     /// Undoes the latest command. Returns `None` if there's nothing to undo.
     pub fn undo(&mut self) -> Option<Applied> {
         let entry = self.undo.pop()?;
@@ -145,6 +165,38 @@ mod tests {
     }
 
     #[test]
+    fn amending_makes_one_undo_step_of_a_run() {
+        let mut session = Session::new(Project::new());
+        session.apply(volume(-6.0)).unwrap();
+        for volume_db in [-7.0, -8.0, -9.0] {
+            session.amend(volume(volume_db)).unwrap();
+        }
+        assert_eq!(session.project().master_volume_db(), -9.0);
+
+        assert_eq!(session.undo().unwrap().command, volume(-12.0));
+        assert!(!session.can_undo());
+        assert_eq!(session.redo().unwrap().command, volume(-9.0));
+    }
+
+    #[test]
+    fn amending_with_nothing_to_undo_applies() {
+        let mut session = Session::new(Project::new());
+        session.amend(volume(-6.0)).unwrap();
+        assert_eq!(session.undo().unwrap().command, volume(-12.0));
+    }
+
+    #[test]
+    fn an_invalid_amend_changes_nothing() {
+        let mut session = Session::new(Project::new());
+        session.apply(volume(-6.0)).unwrap();
+        assert!(session.amend(volume(f32::NAN)).is_err());
+        assert_eq!(session.project().master_volume_db(), -6.0);
+        assert_eq!(session.last_sequence(), 1);
+        assert_eq!(session.undo().unwrap().command, volume(-12.0));
+        assert_eq!(session.redo().unwrap().command, volume(-6.0));
+    }
+
+    #[test]
     fn a_new_command_clears_redo() {
         let mut session = Session::new(Project::new());
         session.apply(volume(-6.0)).unwrap();
@@ -190,6 +242,7 @@ mod tests {
     #[derive(Debug, Clone)]
     enum Step {
         Apply(Command),
+        Amend(Command),
         Undo,
         Redo,
     }
@@ -207,7 +260,8 @@ mod tests {
             ],
         ];
         prop_oneof![
-            4 => volume_db.prop_map(|volume_db| Step::Apply(volume(volume_db))),
+            4 => volume_db.clone().prop_map(|volume_db| Step::Apply(volume(volume_db))),
+            2 => volume_db.prop_map(|volume_db| Step::Amend(volume(volume_db))),
             2 => Just(Step::Undo),
             1 => Just(Step::Redo),
         ]
@@ -221,6 +275,7 @@ mod tests {
         for step in steps {
             let applied = match step {
                 Step::Apply(command) => session.apply(command.clone()).ok(),
+                Step::Amend(command) => session.amend(command.clone()).ok(),
                 Step::Undo => session.undo(),
                 Step::Redo => session.redo(),
             };
