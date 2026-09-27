@@ -3,7 +3,7 @@
 
 use rtrb::{Consumer, Producer};
 
-use crate::{Command, Snapshot, Status};
+use crate::{Command, NoteKey, Snapshot, Status, SynthSettings};
 
 /// The command queue was full, so the command wasn't sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +37,34 @@ impl std::fmt::Display for VolumeError {
 impl std::error::Error for VolumeError {}
 
 impl From<QueueFull> for VolumeError {
+    fn from(_: QueueFull) -> Self {
+        Self::QueueFull
+    }
+}
+
+/// Why [`Controller::note_on`] didn't start a note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteError {
+    /// The pitch was above 127.
+    Pitch(u8),
+    /// The velocity was 0 or above 127.
+    Velocity(u8),
+    QueueFull,
+}
+
+impl std::fmt::Display for NoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pitch(pitch) => write!(f, "pitch {pitch} isn't a MIDI note (0 to 127)"),
+            Self::Velocity(velocity) => write!(f, "velocity {velocity} isn't 1 to 127"),
+            Self::QueueFull => QueueFull.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for NoteError {}
+
+impl From<QueueFull> for NoteError {
     fn from(_: QueueFull) -> Self {
         Self::QueueFull
     }
@@ -94,6 +122,41 @@ impl Controller {
         }
         self.set_snapshot(self.snapshot.clone().with_volume_db(volume_db))?;
         Ok(())
+    }
+
+    /// Sets the synth's settings, by sending a new snapshot. They glide to
+    /// their new values. Out-of-range values are clamped by the synth.
+    pub fn set_synth_settings(&mut self, settings: SynthSettings) -> Result<(), QueueFull> {
+        self.set_snapshot(Snapshot {
+            synth: settings,
+            ..self.snapshot.clone()
+        })
+    }
+
+    /// Starts a note on the synth straight away, without going through the
+    /// project: the route for auditioning notes and, later, playing live. It
+    /// sounds whether or not the transport is playing, until
+    /// [`Controller::note_off`] with the same key. A note already sounding
+    /// with that key is released first.
+    pub fn note_on(&mut self, key: NoteKey, pitch: u8, velocity: u8) -> Result<(), NoteError> {
+        if pitch > 127 {
+            return Err(NoteError::Pitch(pitch));
+        }
+        if !(1..=127).contains(&velocity) {
+            return Err(NoteError::Velocity(velocity));
+        }
+        self.send(Command::NoteOn {
+            key,
+            pitch,
+            velocity,
+        })?;
+        Ok(())
+    }
+
+    /// Releases the note started with `key`. Does nothing if it isn't
+    /// sounding.
+    pub fn note_off(&mut self, key: NoteKey) -> Result<(), QueueFull> {
+        self.send(Command::NoteOff { key })
     }
 
     /// The last snapshot sent.
@@ -158,6 +221,24 @@ mod tests {
 
         renderer.render_seconds(0.1);
         assert!(renderer.samples().iter().all(|s| s.is_finite()));
+    }
+
+    #[test]
+    fn notes_outside_midi_ranges_are_rejected() {
+        let mut renderer = playing_renderer();
+        let key = NoteKey(1);
+        let controller = &mut renderer.controller;
+        assert_eq!(
+            controller.note_on(key, 128, 100),
+            Err(NoteError::Pitch(128))
+        );
+        assert_eq!(controller.note_on(key, 60, 0), Err(NoteError::Velocity(0)));
+        assert_eq!(
+            controller.note_on(key, 60, 128),
+            Err(NoteError::Velocity(128))
+        );
+        assert_eq!(controller.note_on(key, 0, 1), Ok(()));
+        assert_eq!(controller.note_on(key, 127, 127), Ok(()));
     }
 
     /// From the UTA-2 review: +40 dB made samples at 100x full scale.

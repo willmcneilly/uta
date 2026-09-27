@@ -13,7 +13,10 @@
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
-use uta_engine::{EngineConfig, Processor, STATUS_CAPACITY, Snapshot, USED_SNAPSHOT_CAPACITY};
+use uta_engine::{
+    EngineConfig, NoteKey, Processor, STATUS_CAPACITY, Snapshot, SynthSettings,
+    USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
+};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
@@ -65,6 +68,7 @@ fn snapshot_swap_does_not_allocate_and_returns_the_old_snapshot() {
     let new = Snapshot {
         frequency_hz: 660.0,
         gain: 0.25,
+        ..Snapshot::default()
     };
     renderer.controller.set_snapshot(new.clone()).unwrap();
     process_block(renderer.processor(), &mut buffer);
@@ -83,6 +87,63 @@ fn many_swaps_in_one_block_do_not_allocate() {
     }
     process_block(renderer.processor(), &mut buffer);
     assert_eq!(renderer.controller.free_used_snapshots(), 10);
+}
+
+/// Notes starting and stopping, more notes than voices so voices are taken
+/// over (including while already being taken over), and snapshot swaps that
+/// change every synth setting while they sound: none of it allocates or
+/// frees on the audio thread.
+#[test]
+fn notes_take_overs_and_synth_changes_do_not_allocate() {
+    let mut renderer = renderer();
+    let mut buffer = vec![0.0; BLOCK * 2];
+    let waveforms = [
+        Waveform::Sine,
+        Waveform::Triangle,
+        Waveform::Saw,
+        Waveform::Square,
+    ];
+    let mut swaps = 0;
+    for round in 0..8u8 {
+        // Twice as many notes as voices, all in one block, then more.
+        for i in 0..2 * VOICES as u8 {
+            let key = NoteKey(u128::from(round) * 100 + u128::from(i));
+            renderer
+                .controller
+                .note_on(key, 36 + i, 20 + i * 3)
+                .unwrap();
+        }
+        process_block(renderer.processor(), &mut buffer);
+        renderer
+            .controller
+            .set_synth_settings(SynthSettings {
+                waveform: waveforms[usize::from(round) % 4],
+                cutoff_hz: 20_000.0 / f32::from(round + 1).powi(3),
+                resonance: f32::from(round % 3) / 2.0,
+                attack_seconds: 0.001 * f32::from(round + 1),
+                decay_seconds: 0.05,
+                sustain: f32::from(round) / 8.0,
+                release_seconds: 0.01,
+            })
+            .unwrap();
+        swaps += 1;
+        for _ in 0..4 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        for i in (0..2 * VOICES as u8).step_by(3) {
+            let key = NoteKey(u128::from(round) * 100 + u128::from(i));
+            renderer.controller.note_off(key).unwrap();
+        }
+        for _ in 0..4 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        assert_eq!(renderer.controller.free_used_snapshots(), 1);
+    }
+    assert_eq!(swaps, 8);
+    assert!(
+        renderer.controller.poll().peak > 0.0,
+        "the synth made no sound"
+    );
 }
 
 /// When nobody collects the used snapshots, the processor must neither free

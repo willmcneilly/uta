@@ -2,6 +2,8 @@
 
 use uta_core::Project;
 
+use crate::SynthSettings;
+
 /// Everything the audio thread needs to know about what to play.
 ///
 /// The control side builds a whole new snapshot for every change, and the
@@ -14,6 +16,8 @@ pub struct Snapshot {
     pub frequency_hz: f64,
     /// The output volume as a linear gain (1.0 is full scale).
     pub gain: f32,
+    /// How the synth sounds. UTA-10 fills this from the project.
+    pub synth: SynthSettings,
 }
 
 impl Snapshot {
@@ -42,6 +46,7 @@ impl Default for Snapshot {
         Self {
             frequency_hz: Self::DEFAULT_FREQUENCY_HZ,
             gain: db_to_gain(Self::DEFAULT_VOLUME_DB),
+            synth: SynthSettings::default(),
         }
     }
 }

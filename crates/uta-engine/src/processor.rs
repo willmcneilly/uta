@@ -9,6 +9,7 @@ use std::f64::consts::TAU;
 use rtrb::{Consumer, Producer};
 
 use crate::ramp::Ramp;
+use crate::synth::{NoteOn, Synth};
 use crate::{COMMAND_CAPACITY, Command, Snapshot, Status};
 
 /// How long Play and Stop take to fade in and out.
@@ -25,13 +26,19 @@ pub struct Processor {
     snapshot: Box<Snapshot>,
     sample_rate: f64,
     channels: usize,
-    /// The oscillator's phase, in cycles (0..1).
+    /// The tone's phase, in cycles (0..1).
     phase: f64,
+    /// Boxed, so the processor stays small to move between streams. It's
+    /// created with the processor, on the control side.
+    synth: Box<Synth>,
 
     playing: bool,
-    /// The Play/Stop fade: 0 when stopped, 1 when playing.
+    /// The Play/Stop fade for the tone: 0 when stopped, 1 when playing.
     transport_gain: Ramp,
     volume: Ramp,
+    /// Fades everything out before a stream is replaced, and back in on the
+    /// next one.
+    output_gain: Ramp,
 
     position: u64,
     dropouts: u64,
@@ -59,9 +66,11 @@ impl Processor {
             sample_rate,
             channels,
             phase: 0.0,
+            synth: Box::new(Synth::new(snapshot.synth, sample_rate)),
             playing: false,
             transport_gain: Ramp::new(0.0, samples(FADE_SECONDS)),
             volume: Ramp::new(snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS)),
+            output_gain: Ramp::new(1.0, samples(FADE_SECONDS)),
             snapshot,
             position: 0,
             dropouts: 0,
@@ -74,8 +83,8 @@ impl Processor {
     /// control side between streams, never while a stream owns it.
     ///
     /// The playback position is kept, converted to the new rate so it stays
-    /// at the same time. If the transport is playing, the sound fades in, so
-    /// the switch doesn't click.
+    /// at the same time. The sound fades in, so the switch doesn't click.
+    /// Notes started with [`crate::Controller::note_on`] fall silent.
     pub(crate) fn prepare(&mut self, sample_rate: u32, channels: usize) {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
@@ -85,11 +94,12 @@ impl Processor {
         self.channels = channels;
 
         let samples = |seconds: f64| (seconds * sample_rate).round() as u32;
-        self.transport_gain = Ramp::new(0.0, samples(FADE_SECONDS));
-        if self.playing {
-            self.transport_gain.set_target(1.0);
-        }
+        let transport = if self.playing { 1.0 } else { 0.0 };
+        self.transport_gain = Ramp::new(transport, samples(FADE_SECONDS));
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
+        self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
+        self.output_gain.set_target(1.0);
+        self.synth.prepare(sample_rate);
     }
 
     #[cfg(test)]
@@ -101,7 +111,7 @@ impl Processor {
     /// stream can be closed without a click before it's replaced. The next
     /// [`Processor::prepare`] fades it back in. Real-time safe.
     pub(crate) fn fade_out_for_handover(&mut self) {
-        self.transport_gain.set_target(0.0);
+        self.output_gain.set_target(0.0);
     }
 
     /// Fills `output` with the next block of interleaved audio.
@@ -116,8 +126,10 @@ impl Processor {
         let phase_increment = self.snapshot.frequency_hz / self.sample_rate;
         let mut peak = self.peak;
         for frame in output.chunks_exact_mut(self.channels) {
-            let gain = self.transport_gain.next_value() * self.volume.next_value();
-            let sample = ((self.phase * TAU).sin() as f32) * gain;
+            let master = self.volume.next_value() * self.output_gain.next_value();
+            let tone =
+                ((self.phase * TAU).sin() as f32) * (self.transport_gain.next_value() * master);
+            let sample = tone + self.synth.next_sample() * master;
             self.phase = (self.phase + phase_increment).fract();
             frame.fill(sample);
             peak = peak.max(sample.abs());
@@ -163,10 +175,21 @@ impl Processor {
                 }
                 Command::SetSnapshot(new) => {
                     self.volume.set_target(new.gain);
+                    self.synth.set_settings(new.synth);
                     let old = std::mem::replace(&mut self.snapshot, new);
                     // Checked above: there is room, so this never drops `old`.
                     let _ = self.used_snapshots.push(old);
                 }
+                Command::NoteOn {
+                    key,
+                    pitch,
+                    velocity,
+                } => self.synth.note_on(NoteOn {
+                    key,
+                    pitch,
+                    velocity,
+                }),
+                Command::NoteOff { key } => self.synth.note_off(key),
             }
         }
     }
