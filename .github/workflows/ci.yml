@@ -2,10 +2,15 @@ name: CI
 
 on:
   pull_request:
+  # Runs on main save the Rust and npm caches where every PR can restore them.
+  # A PR's own caches are only visible to that PR.
+  push:
+    branches: [main]
 
-# A new push to the same PR cancels the run it supersedes.
+# A new push to the same PR cancels the run it supersedes. Runs on main are
+# never cancelled, so each merge saves its caches.
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 env:
