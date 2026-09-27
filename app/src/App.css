@@ -1,0 +1,112 @@
+:root {
+  --bg: #f6f6f4;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --panel: #ffffff;
+  --border: #d9d9d6;
+  --meter-track: #e3e3e0;
+  --error: #b42318;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --fg: #f2f2f2;
+    --muted: #98989d;
+    --panel: #2c2c2e;
+    --border: #3a3a3c;
+    --meter-track: #3a3a3c;
+    --error: #ff6b5e;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app {
+  display: grid;
+  gap: 16px;
+  max-width: 560px;
+  padding: 24px;
+}
+
+.app > section,
+.output {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 0;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transport .state {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.transport .position {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.level {
+  display: grid;
+  gap: 12px;
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume input {
+  flex: 1;
+}
+
+.volume output {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter {
+  display: block;
+  border-radius: 2px;
+}
+
+.output {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+}
+
+.output dt {
+  color: var(--muted);
+}
+
+.output dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.output .note {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+  margin: 0;
+}
