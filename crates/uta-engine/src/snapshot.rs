@@ -54,9 +54,10 @@ impl From<&Project> for Snapshot {
     }
 }
 
-/// Converts decibels to a linear gain. Anything at or below -120 dB is silence.
+/// Converts decibels to a linear gain. Anything at or below the project's
+/// minimum volume, [`Project::MIN_VOLUME_DB`], is silence.
 pub fn db_to_gain(db: f32) -> f32 {
-    if db <= -120.0 {
+    if db <= Project::MIN_VOLUME_DB {
         0.0
     } else {
         10f32.powf(db / 20.0)
