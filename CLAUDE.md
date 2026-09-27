@@ -32,7 +32,10 @@ cargo fmt --all                                     # format
 cargo fmt --all --check                             # CI check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo run -p uta-cli --                             # the `uta` command
+cargo run -p uta-cli -- render out.wav --seconds 3  # the `uta` command: offline render
+RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
+cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report
+UTA_GOLDEN=1 cargo test -p uta-engine --test sound  # regenerate golden WAVs
 
 # Frontend (in app/)
 npm ci

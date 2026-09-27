@@ -31,6 +31,25 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # Reported in the job summary, never gating (RFC-001).
+      - name: Block timing report
+        run: cargo test -p uta-engine --release --test timing -- --ignored --nocapture
+
+  # The engine's tests again, built with RealtimeSanitizer: any allocation,
+  # lock or system call inside a #[nonblocking] function aborts the run.
+  # RTSAN_ENABLE makes rtsan-standalone download LLVM's prebuilt runtime.
+  realtime:
+    name: Real-time safety (RTSan)
+    runs-on: macos-15
+    env:
+      RTSAN_ENABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rtsan
+      - run: cargo test -p uta-engine -p uta-cli
 
   frontend:
     name: Frontend (typecheck, lint, test)
