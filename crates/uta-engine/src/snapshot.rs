@@ -106,6 +106,9 @@ pub struct Sequence {
     loop_start_sample: u64,
     loop_end_sample: u64,
     events: Arc<[NoteEvent]>,
+    /// The same notes, one entry each, sorted by key, so a sounding note can
+    /// be looked up when a new snapshot arrives.
+    notes: Arc<[NoteSpan]>,
 }
 
 /// One clip's notes, in ticks.
@@ -124,6 +127,24 @@ pub struct NoteEvent {
     /// The sample it happens on, counted from the start of the song.
     pub sample: u64,
     pub kind: NoteEventKind,
+}
+
+/// When one note plays, in samples, after trimming to the loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoteSpan {
+    pub key: NoteKey,
+    pub pitch: u8,
+    /// The sample it starts on, from the start of the song.
+    pub start: u64,
+    /// The sample it ends on: it sounds up to, not including, this one.
+    pub end: u64,
+}
+
+impl NoteSpan {
+    /// Whether it's sounding at `sample`.
+    pub fn contains(&self, sample: u64) -> bool {
+        (self.start..self.end).contains(&sample)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +207,7 @@ impl Sequence {
         let samples = |ticks| tempo_map.ticks_to_samples(ticks, sample_rate);
 
         let mut events = Vec::new();
+        let mut notes = Vec::new();
         for clip in &clips {
             for note in &clip.notes {
                 if note.start >= clip.length {
@@ -201,6 +223,12 @@ impl Sequence {
                     continue;
                 }
                 let key = NoteKey(note.id.as_uuid().as_u128());
+                notes.push(NoteSpan {
+                    key,
+                    pitch: note.pitch,
+                    start,
+                    end,
+                });
                 events.push(NoteEvent {
                     sample: start,
                     kind: NoteEventKind::On {
@@ -216,6 +244,7 @@ impl Sequence {
             }
         }
         events.sort_by_key(|event| (event.sample, event.kind.order()));
+        notes.sort_by_key(|note| note.key.0);
 
         Self {
             loop_start_sample: samples(loop_start),
@@ -226,6 +255,7 @@ impl Sequence {
             clips,
             sample_rate,
             events: events.into(),
+            notes: notes.into(),
         }
     }
 
@@ -256,6 +286,43 @@ impl Sequence {
     /// Every note start and end in the loop, sorted by sample.
     pub fn events(&self) -> &[NoteEvent] {
         &self.events
+    }
+
+    /// The note with this key, if it plays in the loop. A binary search, so
+    /// it's real-time safe.
+    pub fn note(&self, key: NoteKey) -> Option<&NoteSpan> {
+        self.notes
+            .binary_search_by_key(&key.0, |note| note.key.0)
+            .ok()
+            .map(|index| &self.notes[index])
+    }
+
+    /// Where a playhead at `playhead` in `old` carries on in this sequence.
+    /// Real-time safe.
+    ///
+    /// If the tempo or sample rate changed, it keeps its bar and beat: it
+    /// moves to the first tick `old` hadn't reached yet, so every note event
+    /// `old` had already played stays played and none is skipped. Otherwise
+    /// it stays on the same sample. If that's outside the loop (the loop got
+    /// shorter, or the playhead was waiting at the loop's end) it carries on
+    /// from the loop's start.
+    pub fn playhead_from(&self, old: &Sequence, playhead: u64) -> u64 {
+        let playhead = if self.sample_rate == old.sample_rate && self.tempo_map == old.tempo_map {
+            playhead
+        } else {
+            let ticks = old.ticks_at(playhead);
+            let ticks = if old.sample_at(ticks) < playhead {
+                ticks + 1
+            } else {
+                ticks
+            };
+            self.sample_at(ticks)
+        };
+        if self.loop_samples().contains(&playhead) {
+            playhead
+        } else {
+            self.loop_start_sample
+        }
     }
 
     /// Each clip's notes, shared between snapshots.

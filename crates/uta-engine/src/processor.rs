@@ -35,10 +35,15 @@ pub struct Processor {
     synth: Box<Synth>,
 
     playing: bool,
-    /// Where the loop is playing, in samples from the start of the song.
+    /// Where the loop is playing, in samples from the start of the song,
+    /// timed at the snapshot's rate.
     playhead: u64,
     /// The next event in the snapshot's sequence: every event before it is
     /// earlier than the playhead.
+    ///
+    /// Like the voices, it's a plain value, never a reference into the
+    /// snapshot, so nothing on the audio thread shares ownership of snapshot
+    /// data. See RFC-002, "The shared model", point 7.
     bookmark: usize,
     volume: Ramp,
     /// Fades everything out before a stream is replaced, and back in on the
@@ -92,16 +97,17 @@ impl Processor {
     /// control side between streams, never while a stream owns it.
     ///
     /// The snapshot is retimed to the new rate, and the playhead keeps its
-    /// place in the music. The sound fades in, so the switch doesn't click.
-    /// Every note falls silent.
+    /// place in the music, as it does when a new snapshot changes the tempo.
+    /// The sound fades in, so the switch doesn't click. Every note falls
+    /// silent.
     pub(crate) fn prepare(&mut self, sample_rate: u32, channels: usize) {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
-        let ticks = self.snapshot.sequence.ticks_at(self.playhead);
-        if self.snapshot.sequence.sample_rate() != sample_rate {
-            *self.snapshot = self.snapshot.at_sample_rate(sample_rate);
-        }
-        self.playhead = self.snapshot.sequence.sample_at(ticks);
+        let retimed = self.snapshot.at_sample_rate(sample_rate);
+        self.playhead = retimed
+            .sequence
+            .playhead_from(&self.snapshot.sequence, self.playhead);
+        *self.snapshot = retimed;
         self.find_bookmark();
 
         let sample_rate = f64::from(sample_rate);
@@ -210,6 +216,7 @@ impl Processor {
                         key,
                         pitch,
                         velocity,
+                        sequenced: true,
                     }),
                     NoteEventKind::Off { key } => self.synth.note_off(key),
                 }
@@ -245,6 +252,22 @@ impl Processor {
             .sequence
             .events()
             .partition_point(|event| event.sample < playhead);
+    }
+
+    /// After a new snapshot, releases every note the sequencer started that
+    /// the snapshot no longer plays at the playhead: deleted, re-pitched,
+    /// moved or shortened away from it, or left behind when the playhead
+    /// went back to the loop's start. Otherwise its end event would never
+    /// come, and it would stick. Bounded by the number of voices, each a
+    /// binary search.
+    fn release_changed_notes(&mut self) {
+        let sequence = &self.snapshot.sequence;
+        let playhead = self.playhead;
+        self.synth.release_sequenced_unless(|key, pitch| {
+            sequence
+                .note(key)
+                .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
+        });
     }
 
     /// Renders the synth into `output`, which holds whole frames.
@@ -285,7 +308,12 @@ impl Processor {
                     self.volume.set_target(new.gain);
                     self.synth.set_settings(new.synth);
                     let old = std::mem::replace(&mut self.snapshot, new);
+                    self.playhead = self
+                        .snapshot
+                        .sequence
+                        .playhead_from(&old.sequence, self.playhead);
                     self.find_bookmark();
+                    self.release_changed_notes();
                     // Checked above: there is room, so this never drops `old`.
                     let _ = self.used_snapshots.push(old);
                 }
@@ -297,6 +325,7 @@ impl Processor {
                     key,
                     pitch,
                     velocity,
+                    sequenced: false,
                 }),
                 Command::NoteOff { key } => self.synth.note_off(key),
             }

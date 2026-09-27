@@ -19,7 +19,7 @@ mod synth;
 
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
 pub use processor::{FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, VOLUME_SMOOTHING_SECONDS};
-pub use snapshot::{ClipNotes, NoteEvent, NoteEventKind, Sequence, Snapshot, db_to_gain};
+pub use snapshot::{ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, db_to_gain};
 pub use synth::{
     NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
     Waveform, pitch_to_hz, velocity_to_gain,
