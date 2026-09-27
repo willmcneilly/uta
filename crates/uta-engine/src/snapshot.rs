@@ -33,6 +33,22 @@ impl Snapshot {
     /// What the engine plays for `project`, with its notes timed at
     /// `sample_rate`.
     pub fn new(project: &Project, sample_rate: u32) -> Self {
+        Self::build(project, sample_rate, &[])
+    }
+
+    /// What the engine plays for `project`, timed at `previous`'s rate, and
+    /// sharing `previous`'s notes for every clip that hasn't changed, so an
+    /// edit copies only the clips it touches. See RFC-002, "The shared
+    /// model", point 7.
+    pub fn sharing(project: &Project, previous: &Snapshot) -> Self {
+        Self::build(
+            project,
+            previous.sequence.sample_rate,
+            &previous.sequence.clips,
+        )
+    }
+
+    fn build(project: &Project, sample_rate: u32, previous: &[Arc<ClipNotes>]) -> Self {
         let synth = project
             .tracks()
             .first()
@@ -43,7 +59,7 @@ impl Snapshot {
         Self {
             gain: 1.0,
             synth,
-            sequence: Sequence::new(project, sample_rate),
+            sequence: Sequence::new(project, sample_rate, previous),
         }
         .with_volume_db(project.master_volume_db())
     }
@@ -171,18 +187,28 @@ impl NoteEventKind {
 }
 
 impl Sequence {
-    fn new(project: &Project, sample_rate: u32) -> Self {
+    /// The project's sequence. A clip whose start, length and notes match
+    /// the clip in the same place in `previous` shares its notes.
+    fn new(project: &Project, sample_rate: u32, previous: &[Arc<ClipNotes>]) -> Self {
         let transport = project.transport();
         let clips = project
             .tracks()
             .iter()
             .flat_map(|track| track.clips())
-            .map(|clip| {
-                Arc::new(ClipNotes {
+            .enumerate()
+            .map(|(index, clip)| match previous.get(index) {
+                Some(shared)
+                    if shared.start == clip.start()
+                        && shared.length == clip.length()
+                        && shared.notes.iter().eq(clip.notes()) =>
+                {
+                    Arc::clone(shared)
+                }
+                _ => Arc::new(ClipNotes {
                     start: clip.start(),
                     length: clip.length(),
                     notes: clip.notes().copied().collect(),
-                })
+                }),
             })
             .collect();
         Self::build(
@@ -624,6 +650,92 @@ mod tests {
         // Retiming to the same rate shares the events too.
         let same = at_48k.at_sample_rate(48_000);
         assert!(Arc::ptr_eq(&at_48k.sequence.events, &same.sequence.events));
+    }
+
+    #[test]
+    fn notes_are_looked_up_by_key_as_they_play() {
+        let project = with_notes(vec![
+            note(3, 67, 1920, 960),
+            note(1, 60, 0, 480),
+            // Past the loop's end: it doesn't play, so it isn't there.
+            note(2, 64, 20_000, 480),
+        ]);
+        let sequence = Snapshot::new(&project, 48_000).sequence;
+        assert_eq!(
+            sequence.note(key(3)),
+            Some(&NoteSpan {
+                key: key(3),
+                pitch: 67,
+                start: 48_000,
+                end: 72_000,
+            })
+        );
+        assert_eq!(sequence.note(key(1)).map(|n| n.pitch), Some(60));
+        assert_eq!(sequence.note(key(2)), None);
+        assert_eq!(sequence.note(key(99)), None);
+        let span = sequence.note(key(1)).unwrap();
+        assert!(span.contains(0) && span.contains(11_999) && !span.contains(12_000));
+    }
+
+    #[test]
+    fn edits_share_the_notes_of_clips_they_do_not_touch() {
+        let mut project = with_notes(vec![note(1, 60, 0, 480)]);
+        let first = Snapshot::new(&project, 44_100);
+
+        project.apply(&Command::SetTempo { bpm: 90.0 }).unwrap();
+        let tempo = Snapshot::sharing(&project, &first);
+        assert!(Arc::ptr_eq(
+            &first.sequence.clips()[0],
+            &tempo.sequence.clips()[0]
+        ));
+        assert_eq!(tempo, Snapshot::new(&project, 44_100), "timed at 44.1 kHz");
+
+        let clip = clip(&project);
+        project
+            .apply(&Command::AddNotes {
+                clip,
+                notes: vec![note(2, 62, 960, 480)],
+            })
+            .unwrap();
+        let added = Snapshot::sharing(&project, &tempo);
+        assert!(!Arc::ptr_eq(
+            &tempo.sequence.clips()[0],
+            &added.sequence.clips()[0]
+        ));
+        assert_eq!(added, Snapshot::new(&project, 44_100));
+    }
+
+    /// The playhead's place in the loop, as a new snapshot takes over.
+    #[test]
+    fn the_playhead_keeps_its_place_in_the_music() {
+        let project = project();
+        let at_120 = Snapshot::new(&project, 48_000).sequence;
+        let mut slower = project.clone();
+        slower.apply(&Command::SetTempo { bpm: 60.0 }).unwrap();
+        let at_60 = Snapshot::new(&slower, 48_000).sequence;
+
+        // Same tempo and rate: the same sample, even between ticks.
+        assert_eq!(at_120.playhead_from(&at_120, 12_345), 12_345);
+        // Half the tempo: beat 2 (tick 960) moves from 24,000 to 48,000.
+        assert_eq!(at_60.playhead_from(&at_120, 24_000), 48_000);
+        // Between ticks (a tick is 25 samples at 120 BPM), it moves on to
+        // the next tick, which hadn't been reached yet.
+        assert_eq!(at_60.playhead_from(&at_120, 24_001), 48_050);
+        assert_eq!(at_60.playhead_from(&at_120, 24_024), 48_050);
+        // A new sample rate: the same tick, at the new rate.
+        let at_96k = at_120.at_sample_rate(96_000);
+        assert_eq!(at_96k.playhead_from(&at_120, 24_000), 48_000);
+        assert_eq!(at_120.playhead_from(&at_96k, 48_000), 24_000);
+
+        // Past the end of a shorter loop, or waiting at the loop's end, it
+        // carries on from the loop's start.
+        let mut shorter = project.clone();
+        shorter.apply(&Command::SetLoopLength { bars: 1 }).unwrap();
+        let one_bar = Snapshot::new(&shorter, 48_000).sequence;
+        assert_eq!(one_bar.playhead_from(&at_120, 95_999), 95_999);
+        assert_eq!(one_bar.playhead_from(&at_120, 96_000), 0);
+        assert_eq!(one_bar.playhead_from(&at_120, 300_000), 0);
+        assert_eq!(at_120.playhead_from(&at_120, 8 * 48_000), 0);
     }
 
     #[test]

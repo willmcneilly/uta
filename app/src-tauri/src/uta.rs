@@ -287,8 +287,7 @@ impl Uta {
     /// Sends the engine a snapshot of the current project. If its queue is
     /// full (no device is taking audio), the next frame tries again.
     fn sync_engine(&mut self) {
-        let snapshot = Snapshot::from(self.session.project());
-        self.engine_behind = self.controller.set_snapshot(snapshot).is_err();
+        self.engine_behind = self.controller.set_project(self.session.project()).is_err();
     }
 }
 

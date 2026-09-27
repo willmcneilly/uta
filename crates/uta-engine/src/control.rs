@@ -123,6 +123,13 @@ impl Controller {
         Ok(())
     }
 
+    /// Sends a snapshot of `project`, sharing the notes of every clip that
+    /// hasn't changed since the last one sent. What the app does after each
+    /// change to the project.
+    pub fn set_project(&mut self, project: &uta_core::Project) -> Result<(), QueueFull> {
+        self.set_snapshot(Snapshot::sharing(project, &self.snapshot))
+    }
+
     /// Sets the volume in dB, by sending a new snapshot. NaN and infinite
     /// values are rejected, and anything above [`Snapshot::MAX_VOLUME_DB`] is
     /// clamped to it, so no volume can push samples past full scale.
