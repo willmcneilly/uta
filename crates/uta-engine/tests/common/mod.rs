@@ -1,6 +1,64 @@
-//! Measurements for the sound tests, taken from the rendered waveform.
+//! Measurements for the sound tests, taken from the rendered waveform, and
+//! the projects they play.
 
 #![allow(dead_code)] // Each test binary uses a different subset.
+
+use uta_core::time::Ticks;
+use uta_core::{Command, CommandList, Note, NoteId, Project, ProjectId, SynthParam};
+use uuid::Uuid;
+
+/// The demo loop, built from its committed command list.
+pub fn demo_loop() -> Project {
+    let json = include_str!("../../../../examples/demo-loop.json");
+    let list: CommandList = serde_json::from_str(json).expect("the demo loop parses");
+    list.build().expect("the demo loop builds")
+}
+
+/// A note for [`project`]: its ID is worked out from `index`.
+pub fn note(index: u128, pitch: u8, start: Ticks, length: Ticks) -> Note {
+    Note {
+        id: NoteId::from_uuid(Uuid::from_u128(1000 + index)),
+        pitch,
+        velocity: 100,
+        start,
+        length,
+    }
+}
+
+/// A project at `bpm` with a loop of `bars`, the synth settings in `params`,
+/// and `notes`, built through commands as the app would.
+pub fn project(bpm: f32, bars: u32, params: &[SynthParam], notes: Vec<Note>) -> Project {
+    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let track = project.tracks()[0].id();
+    let clip = project.tracks()[0].clips()[0].id();
+    let mut commands = vec![Command::SetTempo { bpm }, Command::SetLoopLength { bars }];
+    commands.extend(
+        params
+            .iter()
+            .map(|&param| Command::SetSynthParam { track, param }),
+    );
+    if !notes.is_empty() {
+        commands.push(Command::AddNotes { clip, notes });
+    }
+    for command in &commands {
+        project.apply(command).expect("a valid test project");
+    }
+    project
+}
+
+/// Synth settings for measuring exact sample positions: a sine at full
+/// sustain, with the shortest release, so a note is silent 1 ms after it
+/// ends.
+pub const PLAIN_SINE: [SynthParam; 3] = [
+    SynthParam::Waveform(uta_core::Waveform::Sine),
+    SynthParam::Sustain(1.0),
+    SynthParam::ReleaseSeconds(0.001),
+];
+
+/// The index of the first sample that isn't silent.
+pub fn first_sound(samples: &[f32]) -> Option<usize> {
+    samples.iter().position(|&s| s != 0.0)
+}
 
 /// The frequency of a steady tone, from the time between its first and last
 /// upward zero crossings (interpolated between samples).

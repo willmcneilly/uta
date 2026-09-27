@@ -32,7 +32,7 @@ pub const SYNTH_SMOOTHING_SECONDS: f64 = 0.02;
 pub const VOICE_LEVEL: f32 = 0.25;
 
 /// Identifies a sounding note, so it can be stopped later. It's a plain
-/// number: project notes (UTA-11) use their permanent ID's UUID
+/// number: project notes use their permanent ID's UUID
 /// (`Uuid::as_u128`), and live notes use any number the caller chooses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NoteKey(pub u128);
@@ -201,6 +201,19 @@ impl Synth {
                     self.clock += 1;
                     voice.released = self.clock;
                 }
+                voice.envelope.release(&self.times);
+            }
+        }
+    }
+
+    /// Releases every note, and cancels any waiting for a voice.
+    pub(crate) fn release_all(&mut self) {
+        for voice in self.voices.iter_mut() {
+            if voice.is_taken_over() {
+                voice.pending = None;
+            } else if !matches!(voice.envelope.stage(), Stage::Idle | Stage::Release) {
+                self.clock += 1;
+                voice.released = self.clock;
                 voice.envelope.release(&self.times);
             }
         }
@@ -471,6 +484,24 @@ mod tests {
         let fade = synth.take_over_samples as usize;
         run(&mut synth, fade);
         assert!(synth.voices[index].is_free());
+    }
+
+    #[test]
+    fn release_all_releases_every_note_and_cancels_waiting_ones() {
+        let mut synth = full_synth();
+        synth.note_on(note(100));
+        synth.release_all();
+        let taken_over = synth.voices.iter().filter(|v| v.is_taken_over()).count();
+        assert_eq!(taken_over, 1);
+        assert!(
+            synth
+                .voices
+                .iter()
+                .filter(|v| !v.is_taken_over())
+                .all(|v| v.envelope.stage() == Stage::Release)
+        );
+        run(&mut synth, RATE as usize);
+        assert!(synth.voices.iter().all(Voice::is_free));
     }
 
     #[test]

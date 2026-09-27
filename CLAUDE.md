@@ -13,6 +13,7 @@ app/                  Tauri app: React + TypeScript, Vite, npm
 app/src-tauri         the app's Rust side (crate `uta-app`)
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
+examples              command lists for `uta render/play --commands`
 .github/workflows     CI
 ```
 
@@ -32,8 +33,8 @@ cargo fmt --all                                     # format
 cargo fmt --all --check                             # CI check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo run -p uta-cli -- render out.wav --seconds 3  # the `uta` command: offline render
-cargo run -p uta-cli -- play --buffer 64             # play the tone on the default output until Ctrl-C
+cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # the `uta` command: offline render
+cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report
 UTA_GOLDEN=1 cargo test -p uta-engine --test sound  # regenerate golden WAVs

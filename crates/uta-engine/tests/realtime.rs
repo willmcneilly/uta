@@ -10,12 +10,16 @@
 //! callback with simulated device errors, and the data callback including
 //! handing the processor back when its stream is dropped.
 
+mod common;
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
+use common::{demo_loop, note, project};
+use uta_core::{Command, SynthParam};
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, NoteKey, Processor, STATUS_CAPACITY, Snapshot, SynthSettings,
-    USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
+    EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, NoteKey, Processor, STATUS_CAPACITY, Snapshot,
+    SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
 };
 
 #[global_allocator]
@@ -23,16 +27,17 @@ static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 const BLOCK: usize = 128;
 
+fn stereo() -> EngineConfig {
+    EngineConfig {
+        sample_rate: 48_000,
+        channels: 2,
+    }
+}
+
+/// A renderer for the demo loop, so Play makes sound from the first block.
 fn renderer() -> Renderer {
     rtsan_standalone::ensure_initialized();
-    Renderer::new(
-        EngineConfig {
-            sample_rate: 48_000,
-            channels: 2,
-        },
-        Snapshot::default(),
-        BLOCK,
-    )
+    Renderer::new(stereo(), Snapshot::from(&demo_loop()), BLOCK)
 }
 
 /// Runs one block with allocation forbidden, as the audio thread would.
@@ -66,9 +71,8 @@ fn snapshot_swap_does_not_allocate_and_returns_the_old_snapshot() {
     renderer.controller.play().unwrap();
 
     let new = Snapshot {
-        frequency_hz: 660.0,
         gain: 0.25,
-        ..Snapshot::default()
+        ..Snapshot::from(&demo_loop())
     };
     renderer.controller.set_snapshot(new.clone()).unwrap();
     process_block(renderer.processor(), &mut buffer);
@@ -143,6 +147,86 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
     assert!(
         renderer.controller.poll().peak > 0.0,
         "the synth made no sound"
+    );
+}
+
+/// The loop playing: notes starting and ending mid-block, the loop going
+/// back to its start mid-block, more notes at once than voices so voices are
+/// taken over, and edits arriving as new snapshots that share the clips'
+/// notes with the old ones. None of it allocates or frees on the audio
+/// thread.
+#[test]
+fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    // A 1-bar loop at 293 BPM, 39,317 samples, so it goes back to its start
+    // mid-block. 24 notes of 3,000 ticks, 150 apart: up to 20 at once, so
+    // voices are taken over, and ends cross the loop's end.
+    let notes = (0..24u8)
+        .map(|i| note(u128::from(i), 40 + i, u64::from(i) * 150, 3000))
+        .collect();
+    let mut project = project(293.0, 1, &[SynthParam::ReleaseSeconds(0.05)], notes);
+    let loop_samples = 39_317;
+    assert_eq!(
+        Snapshot::from(&project).sequence.loop_samples(),
+        0..loop_samples
+    );
+    assert_ne!(loop_samples % BLOCK as u64, 0);
+    let track = project.tracks()[0].id();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+
+    let passes = 5;
+    let blocks_per_pass = loop_samples as usize / BLOCK + 1;
+    for pass in 0..passes {
+        for block in 0..blocks_per_pass {
+            process_block(renderer.processor(), &mut buffer);
+            if block == blocks_per_pass / 2 {
+                // An edit: the same notes, a new cutoff. The clip's notes are
+                // shared with the snapshot the processor is playing.
+                project
+                    .apply(&Command::SetSynthParam {
+                        track,
+                        param: SynthParam::CutoffHz(500.0 + 1000.0 * pass as f32),
+                    })
+                    .unwrap();
+                renderer
+                    .controller
+                    .set_snapshot(Snapshot::from(&project))
+                    .unwrap();
+            }
+            renderer.controller.poll();
+        }
+    }
+    let status = renderer.controller.poll();
+    assert!(status.playing);
+    assert_eq!(status.dropped_note_events, 0);
+    assert_eq!(
+        status.position,
+        (passes * blocks_per_pass * BLOCK) as u64,
+        "played every block"
+    );
+}
+
+/// A block with more note events than it may handle skips the rest with a
+/// search, not a loop over each one, and still doesn't allocate.
+#[test]
+fn too_many_note_events_do_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    let count = 2 * MAX_NOTE_EVENTS_PER_BLOCK;
+    let notes = (0..count as u128)
+        .map(|i| note(i, 40 + (i % 60) as u8, 0, 480))
+        .collect();
+    let project = project(120.0, 1, &[], notes);
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+    for _ in 0..100 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+    assert_eq!(
+        renderer.controller.poll().dropped_note_events,
+        (2 * (count - MAX_NOTE_EVENTS_PER_BLOCK)) as u64
     );
 }
 
@@ -285,7 +369,7 @@ fn audio_callback_plays_and_hands_the_processor_back_without_allocating() {
         sample_rate: 48_000,
         channels: 2,
     };
-    let (mut controller, processor) = uta_engine::engine(config, Snapshot::default());
+    let (mut controller, processor) = uta_engine::engine(config, Snapshot::from(&demo_loop()));
     let (mut callback, mut home, handover) = AudioCallback::new(processor);
     let mut buffer = vec![0.0; BLOCK * 2];
 

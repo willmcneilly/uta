@@ -4,6 +4,8 @@
 //! `cargo test -p uta-engine --release --test timing -- --ignored --nocapture`.
 //! In CI it also writes the table to the job summary.
 
+mod common;
+
 use std::io::Write;
 use std::time::{Duration, Instant};
 
@@ -17,17 +19,17 @@ const BLOCKS: usize = 20_000;
 /// What the engine is doing while it's timed.
 #[derive(Clone, Copy)]
 enum Load {
-    /// The milestone 0 tone, with the volume gliding.
-    Tone,
+    /// The demo loop playing, with the volume gliding.
+    Loop,
     /// All 16 synth voices sounding saws, with the filter cutoff gliding, on
-    /// top of the tone.
+    /// top of an empty loop.
     Voices,
 }
 
 impl Load {
     fn name(self) -> &'static str {
         match self {
-            Self::Tone => "Tone",
+            Self::Loop => "Demo loop",
             Self::Voices => "16 voices",
         }
     }
@@ -47,7 +49,11 @@ fn measure(load: Load, block_size: usize) -> Report {
         sample_rate: SAMPLE_RATE,
         channels: CHANNELS,
     };
-    let mut renderer = Renderer::new(config, Snapshot::default(), block_size);
+    let snapshot = match load {
+        Load::Loop => Snapshot::from(&common::demo_loop()),
+        Load::Voices => Snapshot::default(),
+    };
+    let mut renderer = Renderer::new(config, snapshot, block_size);
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let mut times = Vec::with_capacity(BLOCKS);
     renderer.controller.play().unwrap();
@@ -63,7 +69,7 @@ fn measure(load: Load, block_size: usize) -> Report {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
             match load {
-                Load::Tone => renderer
+                Load::Loop => renderer
                     .controller
                     .set_volume_db(-(((i / 64) % 24) as f32))
                     .unwrap(),
@@ -115,7 +121,7 @@ fn report_block_timing() {
          | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
          |---|---|---|---|---|---|---|\n"
     );
-    for (load, block_size) in [Load::Tone, Load::Voices]
+    for (load, block_size) in [Load::Loop, Load::Voices]
         .into_iter()
         .flat_map(|load| [32, 128, 1024].map(|block_size| (load, block_size)))
     {

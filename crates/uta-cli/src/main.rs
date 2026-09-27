@@ -1,17 +1,19 @@
-//! The `uta` command. `render` writes the tone to a WAV without a sound
-//! device; `play` plays it through the default output until Ctrl-C.
+//! The `uta` command. `render` writes a project's loop to a WAV without a
+//! sound device; `play` loops it through the default output until Ctrl-C.
+//! Both build the project from a command list (`--commands`).
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use uta_core::Project;
+use uta_core::time::{TICKS_PER_QUARTER, TimeSignature};
+use uta_core::{CommandList, Project};
 use uta_engine::live::{self, DeviceState, DeviceStatus, LiveOutput};
-use uta_engine::{EngineConfig, Snapshot, offline};
+use uta_engine::{EngineConfig, Snapshot, Status, offline};
 
 #[derive(Parser)]
 #[command(name = "uta", version = version(), about = "Uta, from the terminal")]
@@ -22,17 +24,28 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Render the tone to a WAV file, offline (no sound device needed).
+    /// Render the loop to a WAV file, offline (no sound device needed). It
+    /// plays from the loop's start, then stops and lets the notes ring out.
     Render {
         /// Where to write the WAV.
         file: PathBuf,
-        /// How long to render, in seconds.
-        #[arg(long, default_value_t = 3.0, value_parser = positive_seconds)]
-        seconds: f64,
+        /// A JSON command list to build the project from, such as
+        /// `examples/demo-loop.json`. Without one, the project is empty and
+        /// the render is silent.
+        #[arg(long)]
+        commands: Option<PathBuf>,
+        /// How long to play, in seconds. Twice round the loop if not given.
+        #[arg(long, value_parser = positive_seconds)]
+        seconds: Option<f64>,
     },
-    /// Play the tone through the default output until Ctrl-C. Follows the
+    /// Loop the project through the default output until Ctrl-C. Follows the
     /// output when you switch, unplug or replug it.
     Play {
+        /// A JSON command list to build the project from, such as
+        /// `examples/demo-loop.json`. Without one, the loop is empty and
+        /// silent.
+        #[arg(long)]
+        commands: Option<PathBuf>,
         /// The buffer size in frames: 32, 64 or 128. If the device can't do
         /// it, it gets the nearest size it can.
         #[arg(long, default_value_t = live::DEFAULT_BUFFER_SIZE, value_parser = buffer_size)]
@@ -41,81 +54,134 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    match Cli::parse().command {
-        Command::Render { file, seconds } => render(&file, seconds),
-        Command::Play { buffer } => play(buffer),
-    }
-}
-
-fn render(file: &std::path::Path, seconds: f64) -> ExitCode {
-    let config = EngineConfig::default();
-    let samples = offline::render_tone(config, Snapshot::from(&Project::new()), seconds);
-    match offline::write_wav(file, config, &samples) {
-        Ok(()) => {
-            println!(
-                "Wrote {seconds} s of 440 Hz at {} Hz to {}",
-                config.sample_rate,
-                file.display()
-            );
-            ExitCode::SUCCESS
+    let result = match Cli::parse().command {
+        Command::Render {
+            file,
+            commands,
+            seconds,
+        } => load(commands.as_deref()).and_then(|project| render(&project, &file, seconds)),
+        Command::Play { commands, buffer } => {
+            load(commands.as_deref()).and_then(|project| play(&project, buffer))
         }
-        Err(error) => {
-            eprintln!("uta: couldn't write {}: {error}", file.display());
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => {
+            eprintln!("uta: {message}");
             ExitCode::FAILURE
         }
     }
 }
 
+/// The project a command list builds, or a new, empty one.
+fn load(commands: Option<&Path>) -> Result<Project, String> {
+    let Some(path) = commands else {
+        return Ok(Project::new());
+    };
+    let json = std::fs::read_to_string(path)
+        .map_err(|error| format!("couldn't read {}: {error}", path.display()))?;
+    build(&json).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+/// Builds the project a JSON command list describes.
+fn build(json: &str) -> Result<Project, String> {
+    let list: CommandList =
+        serde_json::from_str(json).map_err(|error| format!("isn't a command list: {error}"))?;
+    list.build()
+        .map_err(|(index, error)| format!("command {} failed: {error}", index + 1))
+}
+
+/// The loop's length in seconds.
+fn loop_seconds(project: &Project) -> f64 {
+    let transport = project.transport();
+    let rate = EngineConfig::default().sample_rate;
+    let samples = transport
+        .tempo_map()
+        .ticks_to_samples(transport.loop_start() + transport.loop_length(), rate)
+        - transport
+            .tempo_map()
+            .ticks_to_samples(transport.loop_start(), rate);
+    samples as f64 / f64::from(rate)
+}
+
+fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), String> {
+    let config = EngineConfig::default();
+    let seconds = seconds.unwrap_or_else(|| 2.0 * loop_seconds(project));
+    let samples = offline::render_loop(config, Snapshot::from(project), seconds);
+    offline::write_wav(file, config, &samples)
+        .map_err(|error| format!("couldn't write {}: {error}", file.display()))?;
+    println!(
+        "Wrote {seconds:.2} s of {} (plus the release) at {} Hz to {}",
+        describe_project(project),
+        config.sample_rate,
+        file.display()
+    );
+    Ok(())
+}
+
+/// A one-line summary: the notes, tempo and loop.
+fn describe_project(project: &Project) -> String {
+    let notes: usize = project
+        .tracks()
+        .iter()
+        .flat_map(|track| track.clips())
+        .map(|clip| clip.notes().len())
+        .sum();
+    let transport = project.transport();
+    let bars = transport.loop_length() / transport.time_signature().ticks_per_bar();
+    format!(
+        "{notes} notes in a {bars}-bar loop at {} BPM",
+        transport.tempo_map().bpm()
+    )
+}
+
 /// How often the status line updates.
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 
-fn play(buffer: u32) -> ExitCode {
+fn play(project: &Project, buffer: u32) -> Result<(), String> {
     let interrupted = Arc::new(AtomicBool::new(false));
-    if let Err(error) = ctrlc::set_handler({
+    ctrlc::set_handler({
         let interrupted = interrupted.clone();
         move || interrupted.store(true, Ordering::Relaxed)
-    }) {
-        eprintln!("uta: couldn't catch Ctrl-C: {error}");
-        return ExitCode::FAILURE;
-    }
+    })
+    .map_err(|error| format!("couldn't catch Ctrl-C: {error}"))?;
 
     // The supervisor moves the processor to the device's own rate before
-    // the first block, so the rate here doesn't matter.
+    // the first block, and the controller then retimes the notes for it, so
+    // the rate here doesn't matter.
     let (mut controller, processor) =
-        uta_engine::engine(EngineConfig::default(), Snapshot::from(&Project::new()));
-    let output = match LiveOutput::start(processor, buffer) {
-        Ok(output) => output,
-        Err(error) => {
-            eprintln!("uta: couldn't start playback: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
+        uta_engine::engine(EngineConfig::default(), Snapshot::from(project));
+    let output = LiveOutput::start(processor, buffer)
+        .map_err(|error| format!("couldn't start playback: {error}"))?;
     controller.play().expect("fresh queue has room");
-    println!("Playing 440 Hz. Press Ctrl-C to stop.");
+    println!(
+        "Playing {}. Press Ctrl-C to stop.",
+        describe_project(project)
+    );
 
     let mut last: Option<DeviceStatus> = None;
     while !interrupted.load(Ordering::Relaxed) {
         let status = output.status();
-        let position = controller.poll().position;
+        let engine = controller.poll();
         if last
             .as_ref()
             .is_none_or(|last| describe(last, buffer) != describe(&status, buffer))
         {
             println!("\r\x1b[2K{}", describe(&status, buffer));
         }
-        print!("\r{}", progress(&status, position));
+        print!("\r{}", progress(&status, &engine));
         let _ = std::io::stdout().flush();
         last = Some(status);
         std::thread::sleep(STATUS_INTERVAL);
     }
 
-    // Fade out before closing the stream, so stopping doesn't click.
+    // Release the notes; closing the output fades it out first, so stopping
+    // doesn't click.
     let _ = controller.stop();
-    std::thread::sleep(Duration::from_millis(50));
     let dropouts = output.status().dropouts;
     output.stop();
     println!("\nStopped. {dropouts} dropouts.");
-    ExitCode::SUCCESS
+    Ok(())
 }
 
 /// A line about the device, printed whenever it changes.
@@ -153,15 +219,21 @@ fn describe(status: &DeviceStatus, requested_buffer: u32) -> String {
     }
 }
 
-/// The running status line: time played and dropouts.
-fn progress(status: &DeviceStatus, position: u64) -> String {
-    let rate = status.device.as_ref().map_or(0, |d| d.sample_rate);
-    let seconds = if rate > 0 {
-        position as f64 / f64::from(rate)
-    } else {
-        0.0
-    };
-    format!("  {seconds:8.1} s  dropouts: {}  ", status.dropouts)
+/// The running status line: the playhead in bars and beats, dropouts, and
+/// any note events skipped for being too many in one block.
+fn progress(status: &DeviceStatus, engine: &Status) -> String {
+    let ticks_per_bar = TimeSignature::FOUR_FOUR.ticks_per_bar();
+    let bar = engine.playhead / ticks_per_bar + 1;
+    let beat = engine.playhead % ticks_per_bar / TICKS_PER_QUARTER + 1;
+    let mut line = format!("  bar {bar:3} beat {beat}  dropouts: {}", status.dropouts);
+    if engine.dropped_note_events > 0 {
+        line.push_str(&format!(
+            "  skipped note events: {}",
+            engine.dropped_note_events
+        ));
+    }
+    line.push_str("  ");
+    line
 }
 
 fn buffer_size(value: &str) -> Result<u32, String> {
@@ -240,7 +312,20 @@ mod tests {
             describe(&status, 128),
             "Output: Speakers at 48000 Hz, buffer 128"
         );
-        assert_eq!(progress(&status, 96_000).trim(), "2.0 s  dropouts: 2");
+        let engine = Status {
+            // Bar 2, beat 3.
+            playhead: 3840 + 2 * 960 + 100,
+            ..Status::default()
+        };
+        assert_eq!(
+            progress(&status, &engine).trim(),
+            "bar   2 beat 3  dropouts: 2"
+        );
+        let engine = Status {
+            dropped_note_events: 7,
+            ..engine
+        };
+        assert!(progress(&status, &engine).ends_with("skipped note events: 7  "));
     }
 
     #[test]
@@ -261,6 +346,28 @@ mod tests {
             describe(&status, 128),
             "No output device. Checking every 1.5 s."
         );
+    }
+
+    #[test]
+    fn the_demo_loop_builds() {
+        let json = include_str!("../../../examples/demo-loop.json");
+        let project = build(json).unwrap();
+        assert_eq!(
+            describe_project(&project),
+            "28 notes in a 2-bar loop at 112 BPM"
+        );
+        // 2 bars of 4/4 at 112 BPM.
+        assert!((loop_seconds(&project) - 8.0 * 60.0 / 112.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn bad_command_lists_say_what_went_wrong() {
+        assert!(build("[]").unwrap_err().starts_with("isn't a command list"));
+        let id = uta_core::ProjectId::random();
+        let json = format!(
+            r#"{{"project":"{id}","commands":[{{"format":2,"command":{{"type":"set_tempo","bpm":1000.0}}}}]}}"#
+        );
+        assert!(build(&json).unwrap_err().starts_with("command 1 failed"));
     }
 
     #[test]

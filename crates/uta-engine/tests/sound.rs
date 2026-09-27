@@ -1,15 +1,24 @@
 //! Sound tests: everything is rendered offline through the real processor and
 //! measured from the waveform. See `CLAUDE.md`, "Proving audio code works".
+//!
+//! These cover the transport and the master volume, with the loop playing.
+//! The synth's own sound is in `synth.rs`, and note timing in `sequencer.rs`.
 
 mod common;
 
 use std::path::{Path, PathBuf};
 
 use common::*;
+use uta_core::Project;
+use uta_core::time::Ticks;
 use uta_engine::offline::{self, Renderer};
-use uta_engine::{EngineConfig, FADE_SECONDS, Snapshot, VOLUME_SMOOTHING_SECONDS, db_to_gain};
+use uta_engine::{
+    EngineConfig, Snapshot, VOICE_LEVEL, VOLUME_SMOOTHING_SECONDS, db_to_gain, pitch_to_hz,
+};
 
 const RATE: u32 = 48_000;
+/// A 1-bar loop at 120 BPM, in samples.
+const LOOP: usize = 96_000;
 
 fn config() -> EngineConfig {
     EngineConfig {
@@ -18,41 +27,40 @@ fn config() -> EngineConfig {
     }
 }
 
-fn full_scale() -> Snapshot {
-    Snapshot::default().with_volume_db(0.0)
+/// A 1-bar loop of one A4 sine note filling the bar, at full velocity: a
+/// steady tone at exactly [`VOICE_LEVEL`] times the master volume between
+/// the note's attack and its release at the loop's end.
+fn held_a4() -> Project {
+    let a4 = uta_core::Note {
+        velocity: 127,
+        ..note(0, 69, 0, 3840)
+    };
+    project(120.0, 1, &PLAIN_SINE, vec![a4])
 }
 
-/// The click limit: the steepest step a full-scale 440 Hz tone takes, plus
-/// 10%. A fade or glide adds a little on top of the tone's own slope; a click
-/// is a jump of a large part of the waveform in one sample.
-fn click_limit() -> f32 {
-    sine_max_step(440.0, RATE) * 1.1
+/// The click limit for one sine voice at `level`: the steepest step the sine
+/// takes, plus the steepest the 5 ms attack adds, plus 10%. A click is a
+/// jump of a large part of the waveform in one sample.
+fn click_limit(level: f32) -> f32 {
+    let attack = 0.005 * f64::from(RATE);
+    (sine_max_step(pitch_to_hz(69), RATE) * level + level / attack as f32) * 1.1
 }
 
-/// Renders a steady tone at `volume_db` and returns a stretch well after the
-/// fade-in.
-fn steady_tone(volume_db: f32) -> Vec<f32> {
-    let mut renderer = Renderer::new(config(), Snapshot::default().with_volume_db(volume_db), 128);
+/// Renders the steady part of the held note at `volume_db`: from 0.1 s into
+/// the loop to 0.1 s before its end.
+fn steady_note(volume_db: f32) -> Vec<f32> {
+    let snapshot = Snapshot::from(&held_a4()).with_volume_db(volume_db);
+    let mut renderer = Renderer::new(config(), snapshot, 128);
     renderer.controller.play().unwrap();
-    renderer.render_seconds(1.1);
-    renderer.samples()[RATE as usize / 10..].to_vec()
-}
-
-#[test]
-fn pitch_is_440_hz() {
-    let tone = steady_tone(-12.0);
-    let frequency = measure_frequency(&tone, RATE);
-    assert!(
-        (frequency - 440.0).abs() < 0.01,
-        "measured {frequency} Hz, expected 440 Hz within 0.01 Hz"
-    );
+    renderer.render(LOOP);
+    renderer.samples()[LOOP / 20..LOOP - LOOP / 20].to_vec()
 }
 
 #[test]
 fn level_matches_the_volume() {
     for volume_db in [0.0, -6.0, -12.0, -40.0] {
-        let tone = steady_tone(volume_db);
-        let gain = f64::from(db_to_gain(volume_db));
+        let tone = steady_note(volume_db);
+        let gain = f64::from(db_to_gain(volume_db) * VOICE_LEVEL);
         let rms = rms(&tone);
         let expected_rms = gain / std::f64::consts::SQRT_2;
         assert!(
@@ -69,39 +77,52 @@ fn level_matches_the_volume() {
 
 #[test]
 fn silent_until_play() {
-    let mut renderer = Renderer::new(config(), full_scale(), 128);
-    renderer.render_seconds(0.1);
+    let mut renderer = Renderer::new(config(), Snapshot::from(&demo_loop()), 128);
+    renderer.render_seconds(1.0);
     assert_eq!(peak(renderer.samples()), 0.0);
 }
 
 #[test]
-fn play_fades_in_and_stop_fades_out() {
-    let mut renderer = Renderer::new(config(), full_scale(), 128);
-    let fade = renderer.frames_for(FADE_SECONDS);
+fn an_empty_loop_is_silent() {
+    let mut renderer = Renderer::new(config(), Snapshot::default(), 128);
     renderer.controller.play().unwrap();
-    renderer.render_seconds(0.1);
-    renderer.controller.stop().unwrap();
-    renderer.render_seconds(0.1);
-    let samples = renderer.samples();
+    renderer.render_seconds(1.0);
+    assert_eq!(peak(renderer.samples()), 0.0);
+    assert!(renderer.controller.poll().playing);
+}
 
-    // The fade-in's first samples are quieter than the tone can be.
-    assert!(peak(&samples[..fade / 4]) < 0.3, "no fade-in");
-    // Stopped: silent once the fade-out is over.
-    let stop = renderer.frames_for(0.1);
+#[test]
+fn stop_releases_rather_than_cuts() {
+    let snapshot = Snapshot::from(&held_a4()).with_volume_db(0.0);
+    let mut renderer = Renderer::new(config(), snapshot, 128);
+    renderer.controller.play().unwrap();
+    renderer.render(LOOP / 2);
+    renderer.controller.stop().unwrap();
+    renderer.render(LOOP / 2);
+    let samples = renderer.samples();
+    let release = renderer.frames_for(0.001);
+
     assert!(
-        peak(&samples[stop..stop + fade]) > 0.0,
-        "cut off without a fade-out"
+        peak(&samples[LOOP / 2..LOOP / 2 + release]) > 0.0,
+        "cut off without a release"
     );
     assert_eq!(
-        peak(&samples[stop + fade..]),
+        peak(&samples[LOOP / 2 + release + 1..]),
         0.0,
         "still sounding after Stop"
+    );
+    let (jump, at) = max_jump(samples);
+    let limit = click_limit(VOICE_LEVEL);
+    assert!(
+        jump <= limit,
+        "jump of {jump} at sample {at}, limit {limit}"
     );
 }
 
 #[test]
 fn volume_change_glides() {
-    let mut renderer = Renderer::new(config(), full_scale(), 128);
+    let snapshot = Snapshot::from(&held_a4()).with_volume_db(0.0);
+    let mut renderer = Renderer::new(config(), snapshot, 128);
     renderer.controller.play().unwrap();
     renderer.render_seconds(0.2);
     renderer.controller.set_volume_db(-40.0).unwrap();
@@ -112,38 +133,40 @@ fn volume_change_glides() {
 
     // Halfway through the glide the level is between the two volumes.
     let mid = &samples[change + glide / 2 - 60..change + glide / 2 + 60];
-    let level = peak(mid);
-    assert!(level > 0.3 && level < 0.7, "mid-glide peak {level}");
+    let level = peak(mid) / VOICE_LEVEL;
+    assert!(level > 0.3 && level < 0.7, "mid-glide level {level}");
     // After the glide it has arrived.
     let after = &samples[change + glide + 100..];
-    assert!((peak(after) / db_to_gain(-40.0) - 1.0).abs() < 1e-3);
+    assert!((peak(after) / (db_to_gain(-40.0) * VOICE_LEVEL) - 1.0).abs() < 1e-3);
 }
 
-/// Play and Stop over and over, including before a fade finishes, plus big
-/// volume jumps, all at full scale: nothing may jump more than the tone does.
+/// Play and Stop over and over, big volume jumps, and the loop point, with
+/// the note at full level: nothing may jump more than the note itself does.
 #[test]
-fn no_clicks_across_play_stop_and_volume() {
-    let mut renderer = Renderer::new(config(), full_scale(), 128);
-    let limit = click_limit();
+fn no_clicks_across_play_stop_volume_and_the_loop_point() {
+    let snapshot = Snapshot::from(&held_a4()).with_volume_db(0.0);
+    let mut renderer = Renderer::new(config(), snapshot, 128);
 
     // Twenty quick Play/Stop pairs with different spacings, some shorter than
-    // the fade, so the fades are interrupted part-way.
+    // the attack, so notes are released part-way in.
     for i in 0..20 {
         renderer.controller.play().unwrap();
         renderer.render(37 + i * 53);
         renderer.controller.stop().unwrap();
         renderer.render(11 + i * 29);
     }
-    // Volume jumps while playing, including mid-glide reversals.
+    // Round the loop a few times, with volume jumps while it plays,
+    // including mid-glide reversals.
     renderer.controller.play().unwrap();
-    renderer.render_seconds(0.05);
     for volume_db in [-60.0, 0.0, -20.0, 0.0, -120.0, 0.0] {
         renderer.controller.set_volume_db(volume_db).unwrap();
         renderer.render(300);
     }
+    renderer.render(3 * LOOP);
     renderer.controller.stop().unwrap();
     renderer.render_seconds(0.05);
 
+    let limit = click_limit(VOICE_LEVEL);
     let (jump, at) = max_jump(renderer.samples());
     assert!(
         jump <= limit,
@@ -151,42 +174,42 @@ fn no_clicks_across_play_stop_and_volume() {
     );
 }
 
-/// Guards the click test itself: a hard cut in a full-scale tone must fail it.
+/// Guards the click test itself: a hard cut in a full-level note must fail it.
 #[test]
 fn click_limit_catches_a_hard_cut() {
-    let mut tone = steady_tone(0.0);
-    // Cut at the tone's loudest point.
-    let loudest = tone.iter().position(|s| s.abs() > 0.999).unwrap();
+    let mut tone = steady_note(0.0);
+    // Cut at the note's loudest point.
+    let loudest = tone
+        .iter()
+        .position(|s| s.abs() > 0.999 * VOICE_LEVEL)
+        .unwrap();
     tone[loudest + 1..].fill(0.0);
-    assert!(max_jump(&tone).0 > click_limit() * 5.0);
+    assert!(max_jump(&tone).0 > click_limit(VOICE_LEVEL) * 5.0);
 }
 
-/// Renders the same session in blocks of `block_size`. Events land on
-/// multiples of 1024 frames, which every tested block size divides, so they
-/// hit the same sample in every render.
+/// Renders the demo loop in blocks of `block_size`, round the loop and on,
+/// with a volume change, a Stop and a Play. The notes land wherever the tempo
+/// puts them; the commands land on multiples of 1024 frames, which every
+/// tested block size divides, so they hit the same sample in every render.
 fn session(block_size: usize) -> Vec<f32> {
-    let mut renderer = Renderer::new(config(), Snapshot::default(), block_size);
+    let mut renderer = Renderer::new(config(), Snapshot::from(&demo_loop()), block_size);
     renderer.render(1024);
     renderer.controller.play().unwrap();
-    renderer.render(1024 * 10);
+    renderer.render(1024 * 150);
     renderer.controller.set_volume_db(-3.0).unwrap();
-    renderer.render(1024 * 5);
-    renderer
-        .controller
-        .set_snapshot(Snapshot {
-            frequency_hz: 660.0,
-            ..renderer.controller.snapshot().clone()
-        })
-        .unwrap();
-    renderer.render(1024 * 5);
+    renderer.render(1024 * 100);
     renderer.controller.stop().unwrap();
-    renderer.render(1024 * 3);
+    renderer.render(1024 * 10);
+    renderer.controller.play().unwrap();
+    renderer.render(1024 * 50);
     renderer.into_samples()
 }
 
 #[test]
 fn block_size_does_not_change_the_audio() {
     let reference = session(1024);
+    // Round the demo loop (4.3 s) at least once.
+    assert!(reference.len() > 3 * 48_000 * 2);
     for block_size in [32, 128] {
         let difference = max_difference(&session(block_size), &reference);
         assert!(
@@ -197,15 +220,26 @@ fn block_size_does_not_change_the_audio() {
 }
 
 fn golden_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/tone.wav")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/demo-loop.wav")
 }
 
-/// The milestone 0 render: what `uta render` writes, half a second long.
-/// Regenerate with `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a
-/// human approves every change to the file.
+/// How long the golden render plays: once round the demo loop and a beat
+/// more, so it includes the loop point.
+fn golden_seconds(project: &Project) -> f64 {
+    let transport = project.transport();
+    let ticks: Ticks = transport.loop_length() + 960;
+    transport.tempo_map().ticks_to_samples(ticks, RATE) as f64 / f64::from(RATE)
+}
+
+/// The demo loop, as `uta render --commands examples/demo-loop.json` writes
+/// it but shorter. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
 #[test]
 fn matches_the_golden_wav() {
-    let rendered = offline::render_tone(config(), Snapshot::default(), 0.5);
+    let project = demo_loop();
+    let rendered =
+        offline::render_loop(config(), Snapshot::from(&project), golden_seconds(&project));
     let path = golden_path();
     if std::env::var_os("UTA_GOLDEN").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -229,14 +263,23 @@ fn matches_the_golden_wav() {
 }
 
 #[test]
-fn every_channel_carries_the_tone() {
+fn a_render_ends_in_silence() {
+    let rendered = offline::render_loop(config(), Snapshot::from(&demo_loop()), 1.0);
+    assert!(peak(&rendered[..rendered.len() / 2]) > 0.1, "too quiet");
+    assert_eq!(*rendered.last().unwrap(), 0.0);
+}
+
+#[test]
+fn every_channel_carries_the_sound() {
     let stereo = EngineConfig {
         channels: 2,
         ..config()
     };
-    let samples = offline::render_tone(stereo, Snapshot::default(), 0.1);
-    let mono = offline::render_tone(config(), Snapshot::default(), 0.1);
+    let snapshot = Snapshot::from(&demo_loop());
+    let samples = offline::render_loop(stereo, snapshot.clone(), 0.5);
+    let mono = offline::render_loop(config(), snapshot, 0.5);
     assert_eq!(samples.len(), mono.len() * 2);
+    assert!(peak(&mono) > 0.0);
     let (frames, rest) = samples.as_chunks::<2>();
     assert!(rest.is_empty());
     for (frame, &expected) in frames.iter().zip(&mono) {

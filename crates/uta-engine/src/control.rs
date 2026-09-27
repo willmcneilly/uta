@@ -77,12 +77,17 @@ pub struct Controller {
     used_snapshots: Consumer<Box<Snapshot>>,
     /// The last snapshot sent, as the base for the next change.
     snapshot: Snapshot,
+    /// The rate the engine last reported. Snapshots are sent timed at it.
+    sample_rate: u32,
+    /// A snapshot retimed for a new rate couldn't be sent yet.
+    retime_pending: bool,
     latest: Status,
 }
 
 impl Controller {
     pub(crate) fn new(
         snapshot: Snapshot,
+        sample_rate: u32,
         commands: Producer<Command>,
         status: Consumer<Status>,
         used_snapshots: Consumer<Box<Snapshot>>,
@@ -92,6 +97,8 @@ impl Controller {
             status,
             used_snapshots,
             snapshot,
+            sample_rate,
+            retime_pending: false,
             latest: Status::default(),
         }
     }
@@ -105,11 +112,14 @@ impl Controller {
     }
 
     /// Sends a whole new snapshot, which the audio thread swaps in at the
-    /// start of its next block.
+    /// start of its next block. Its notes are retimed to the rate the engine
+    /// is running at, so it can be built at any rate.
     pub fn set_snapshot(&mut self, snapshot: Snapshot) -> Result<(), QueueFull> {
         self.free_used_snapshots();
+        let snapshot = snapshot.at_sample_rate(self.sample_rate);
         self.send(Command::SetSnapshot(Box::new(snapshot.clone())))?;
         self.snapshot = snapshot;
+        self.retime_pending = false;
         Ok(())
     }
 
@@ -167,12 +177,24 @@ impl Controller {
     /// Reads everything the audio thread has reported and frees the snapshots
     /// it has finished with. Returns the newest status, with `peak` the
     /// loudest level since the previous call.
+    ///
+    /// If the engine has moved to a new sample rate (a device switch), sends
+    /// the snapshot again, retimed for it.
     pub fn poll(&mut self) -> Status {
         self.free_used_snapshots();
         let mut peak = 0.0f32;
         while let Ok(status) = self.status.pop() {
             peak = peak.max(status.peak);
             self.latest = status;
+        }
+        let rate = self.latest.sample_rate;
+        if rate > 0 && rate != self.sample_rate {
+            self.sample_rate = rate;
+            self.retime_pending = true;
+        }
+        if self.retime_pending {
+            // If the queue is full, it's tried again at the next poll.
+            let _ = self.set_snapshot(self.snapshot.clone());
         }
         Status {
             peak,
@@ -200,6 +222,7 @@ mod tests {
     use super::*;
     use crate::EngineConfig;
     use crate::offline::Renderer;
+    use crate::snapshot::busy_loop;
 
     fn playing_renderer() -> Renderer {
         let mut renderer = Renderer::new(EngineConfig::default(), Snapshot::default(), 128);
@@ -248,12 +271,52 @@ mod tests {
         renderer.controller.set_volume_db(40.0).unwrap();
         assert_eq!(renderer.controller.snapshot().gain, 1.0);
 
+        // A full-velocity chord, as loud as the voices get.
+        for pitch in [48, 55, 60, 64] {
+            renderer
+                .controller
+                .note_on(NoteKey(u128::from(pitch)), pitch, 127)
+                .unwrap();
+        }
         renderer.render_seconds(0.1);
         let peak = renderer
             .samples()
             .iter()
             .fold(0.0f32, |p, s| p.max(s.abs()));
         assert!(peak <= 1.0, "peak {peak} is past full scale");
-        assert!(peak > 0.99, "peak {peak}: the tone should reach full scale");
+        assert!(peak > 0.5, "peak {peak}: the chord should play at 0 dB");
+    }
+
+    /// A device switch moves the engine to a new rate: the controller sees
+    /// it in the status and sends the snapshot again, retimed, and from then
+    /// on times every snapshot it sends for the new rate.
+    #[test]
+    fn snapshots_follow_the_engines_sample_rate() {
+        let mut renderer = playing_renderer();
+        renderer.controller.set_snapshot(busy_loop()).unwrap();
+        renderer.render(128);
+        assert_eq!(
+            renderer.controller.snapshot().sequence.sample_rate(),
+            48_000
+        );
+
+        // What the supervisor does between streams.
+        renderer.processor().prepare(44_100, 1);
+        renderer.render(128);
+        let snapshot = renderer.controller.snapshot();
+        assert_eq!(snapshot.sequence.sample_rate(), 44_100);
+        assert_eq!(snapshot, &busy_loop().at_sample_rate(44_100));
+
+        // A snapshot built at the default rate is sent retimed.
+        renderer
+            .controller
+            .set_snapshot(Snapshot::default())
+            .unwrap();
+        assert_eq!(
+            renderer.controller.snapshot().sequence.sample_rate(),
+            44_100
+        );
+        renderer.render(128);
+        assert_eq!(renderer.controller.poll().sample_rate, 44_100);
     }
 }

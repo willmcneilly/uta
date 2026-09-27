@@ -20,3 +20,5 @@ cpal = "0.18.2"
 # assert_no_alloc and permit_alloc. Default features off so it stays active in
 # release test builds too.
 assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", rev = "a6fb4f62b9624715291e320ea5f0f70e73b035cf", default-features = false, features = ["backtrace"] }
+serde_json = "1"
+uuid = "1"
