@@ -51,6 +51,19 @@ impl Renderer {
         }
     }
 
+    /// Renders `frames` more frames without keeping them, for getting far
+    /// into a render quickly without holding it all in memory.
+    pub fn skip(&mut self, frames: usize) {
+        let channels = self.config.channels;
+        let mut remaining = frames;
+        while remaining > 0 {
+            let len = remaining.min(self.block_size);
+            self.processor.process(&mut self.block[..len * channels]);
+            remaining -= len;
+            self.controller.poll();
+        }
+    }
+
     /// Renders `seconds` more seconds, rounded to the nearest frame.
     pub fn render_seconds(&mut self, seconds: f64) {
         self.render(self.frames_for(seconds));
@@ -80,18 +93,22 @@ impl Renderer {
     }
 }
 
-/// Plays the tone at `snapshot` for `seconds`, fading in at the start and out
-/// so it ends in silence exactly at `seconds`. What `uta render` writes.
-pub fn render_tone(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
+/// Plays the loop in `snapshot` from its start for `seconds`, then stops and
+/// renders the notes' release, so it ends in silence. What `uta render`
+/// writes.
+pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
+    let tail = f64::from(snapshot.synth.clamped().release_seconds) + RELEASE_MARGIN_SECONDS;
     let mut renderer = Renderer::new(config, snapshot, 128);
-    let total = renderer.frames_for(seconds);
-    let fade = renderer.frames_for(crate::FADE_SECONDS).min(total);
     renderer.controller.play().expect("fresh queue has room");
-    renderer.render(total - fade);
+    renderer.render_seconds(seconds);
     renderer.controller.stop().expect("queue was drained");
-    renderer.render(fade);
+    renderer.render_seconds(tail);
     renderer.into_samples()
 }
+
+/// How long [`render_loop`] renders after the release time, so the release
+/// has finished.
+const RELEASE_MARGIN_SECONDS: f64 = 0.01;
 
 /// Writes interleaved samples to a 32-bit float WAV.
 pub fn write_wav(path: &Path, config: EngineConfig, samples: &[f32]) -> Result<(), hound::Error> {

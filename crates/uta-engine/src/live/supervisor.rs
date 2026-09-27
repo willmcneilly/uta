@@ -191,6 +191,15 @@ impl<O: Output> Supervisor<O> {
         }
     }
 
+    /// Starts fading the stream out, ahead of closing it for good: notes may
+    /// still be releasing, and cutting them off would click. It's silent
+    /// after [`HANDOVER_TIME`].
+    pub fn fade_out(&mut self) {
+        if let State::Running(running) = &self.state {
+            running.handover.start();
+        }
+    }
+
     /// cpal has rerouted the stream to the new default output. That's enough
     /// unless the new device plays at a different rate, or the stream lost
     /// the buffer size it was asked for.
@@ -209,7 +218,7 @@ impl<O: Output> Supervisor<O> {
             buffer.is_some_and(|b| b != info.buffer_size_for(self.requested_buffer));
         if rate_changed || buffer_changed {
             // The stream is still healthy, so fade it out before replacing
-            // it, rather than cutting it off mid-tone.
+            // it, rather than cutting it off mid-note.
             running.handover.start();
             running.rebuild_at.get_or_insert(now + HANDOVER_TIME);
         } else {
@@ -341,7 +350,8 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::{Controller, EngineConfig, Snapshot};
+    use crate::snapshot::busy_loop;
+    use crate::{Controller, EngineConfig};
 
     /// The fake system: its default output, and what the supervisor did.
     #[derive(Default)]
@@ -428,14 +438,14 @@ mod tests {
         start: Instant,
     }
 
-    /// A supervisor started on `device` with the tone playing.
+    /// A supervisor started on `device` with a loop playing that always has
+    /// a note sounding.
     fn start(device: Option<DeviceInfo>, buffer: u32) -> Test {
         let world = Rc::new(RefCell::new(World {
             device,
             ..World::default()
         }));
-        let (mut controller, processor) =
-            crate::engine(EngineConfig::default(), Snapshot::default());
+        let (mut controller, processor) = crate::engine(EngineConfig::default(), busy_loop());
         controller.play().unwrap();
         let start = Instant::now();
         let supervisor = Supervisor::start(FakeOutput(world.clone()), processor, buffer, start);
@@ -487,7 +497,7 @@ mod tests {
     }
 
     /// Before a planned rebuild the old stream fades to silence, so it isn't
-    /// cut off mid-tone.
+    /// cut off mid-note.
     fn assert_fades_out(samples: &[f32]) {
         let start = samples[..20].iter().fold(0.0f32, |p, s| p.max(s.abs()));
         assert!(start > 0.0, "it was already silent");
@@ -657,6 +667,16 @@ mod tests {
         let samples = test.play(4800);
         assert_eq!(test.position(), 4800 + 4800);
         assert_fades_in(&samples);
+    }
+
+    #[test]
+    fn fading_out_before_closing_silences_releasing_notes() {
+        let mut test = start(Some(speakers()), 128);
+        test.play(4800);
+        // Stop releases the notes over 200 ms: longer than the handover.
+        test.controller.stop().unwrap();
+        test.supervisor.fade_out();
+        assert_fades_out(&test.play(2400));
     }
 
     #[test]

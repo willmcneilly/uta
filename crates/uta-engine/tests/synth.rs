@@ -2,8 +2,8 @@
 //! offline through the real processor, and measured from the waveform. See
 //! `CLAUDE.md`, "Proving audio code works".
 //!
-//! The transport stays stopped, so the milestone 0 tone is silent and only
-//! the synth sounds. The master volume is 0 dB, so a voice at full velocity
+//! The transport stays stopped, so only the notes started here sound. The
+//! master volume is 0 dB, so a voice at full velocity
 //! peaks at [`VOICE_LEVEL`].
 
 mod common;

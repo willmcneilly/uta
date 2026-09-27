@@ -66,6 +66,8 @@ impl LiveOutput {
                             *shared = supervisor.status().clone();
                         }
                     }
+                    supervisor.fade_out();
+                    std::thread::sleep(HANDOVER_TIME);
                     // Dropping the supervisor drops the stream.
                 }
             })?;
@@ -87,7 +89,7 @@ impl LiveOutput {
             .clone()
     }
 
-    /// Closes the stream and stops the supervisor thread.
+    /// Fades the stream out, closes it and stops the supervisor thread.
     pub fn stop(mut self) {
         self.shut_down();
     }

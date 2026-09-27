@@ -174,7 +174,7 @@ impl Uta {
     }
 
     /// Reopens the output at a new buffer size, carrying on playing if it
-    /// was. The tone fades out and back in.
+    /// was. The sound fades out, and the loop starts again from its start.
     pub fn set_buffer_size(&mut self, size: u32) -> Result<(), String> {
         if !live::BUFFER_SIZES.contains(&size) {
             return Err(format!(
@@ -235,7 +235,8 @@ impl Uta {
         }
     }
 
-    /// Fades the tone out and closes the output, so quitting doesn't click.
+    /// Stops the loop and fades the output out before closing it, so quitting
+    /// doesn't click.
     pub fn shut_down(&mut self) {
         self.close_output();
     }
@@ -406,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn frames_report_playing_position_and_level() {
+    fn frames_report_playing_and_position() {
         let mut uta = offline();
         let idle = uta.frame();
         assert!(!idle.playing);
@@ -418,11 +419,9 @@ mod tests {
         let frame = uta.frame();
         assert!(frame.playing);
         assert!((frame.position_seconds - 0.5).abs() < 0.01, "{frame:?}");
-        let expected = uta_engine::db_to_gain(-12.0);
-        assert!((frame.peak - expected).abs() < 0.01, "{frame:?}");
-
-        // Each peak is reported once.
-        assert_eq!(uta.frame().peak, 0.0);
+        // A new project's loop has no notes until they can be drawn (UTA-12),
+        // so it plays silence.
+        assert_eq!(frame.peak, 0.0);
     }
 
     #[test]

@@ -4191,6 +4191,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ctrlc",
+ "serde_json",
  "uta-core",
  "uta-engine",
 ]
@@ -4214,7 +4215,9 @@ dependencies = [
  "hound",
  "rtrb",
  "rtsan-standalone",
+ "serde_json",
  "uta-core",
+ "uuid",
 ]
 
 [[package]]
