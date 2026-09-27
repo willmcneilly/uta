@@ -81,7 +81,8 @@ Nobody listens to every change, so the tests are the evidence:
 
 ## Code conventions
 
-- Rust 2024 edition, stable toolchain. `cargo fmt` defaults. Clippy warnings are errors in CI.
+- Rust 2024 edition. `cargo fmt` defaults. Clippy warnings are errors in CI.
+- The Rust version is pinned in `rust-toolchain.toml`, and CI installs the same one; rustup fetches it on first use. To upgrade, bump the version in its own PR and fix any new lints there, not in a feature PR.
 - Tests live next to the code (`#[cfg(test)] mod tests`), integration tests in `crates/<name>/tests/`.
 - Keep `uta-core` free of audio and UI dependencies, and `uta-engine` free of Tauri.
 - Frontend: React function components, strict TypeScript, no `any`. Tests next to the component (`Foo.test.tsx`). UI tests run against Tauri's mocked back end (`@tauri-apps/api/mocks`), never a real one.

@@ -124,6 +124,23 @@ Build milestone 0 from RFC-001: a Uta window where you press Play and hear a cle
 
 **Context:** RFC-001, "The UI draws on canvas and receives streamed updates" and "The milestone 0 deliverable".
 
+### 6. [UTA-6] Pin the Rust toolchain (Chore)
+
+**Goal:** Local builds and CI use exactly the same Rust version, so a check that passes locally passes in CI. Upgrading Rust becomes a deliberate change in its own PR.
+
+**Acceptance criteria**
+- [ ] `rust-toolchain.toml` at the repository root pins a specific stable version with the `rustfmt` and `clippy` components.
+- [ ] Every CI job that builds Rust uses the pinned version, and its log shows it.
+- [ ] `cargo --version` in the repository picks up the pinned version locally.
+- [ ] `CLAUDE.md` says where the toolchain is pinned and how to upgrade it.
+- [ ] All checks pass on the pinned version, locally and in CI.
+
+**Out of scope:** The Node version, other tools, and adopting new Rust features.
+
+**Depends on:** Nothing. Added after ticket 2's PR, where CI's newer Rust failed a lint that passed locally.
+
+**Context:** RFC-001, "Repository and checks".
+
 ## Order and checkpoints
 
 ```
@@ -132,6 +149,7 @@ Build milestone 0 from RFC-001: a Uta window where you press Play and hear a cle
 ```
 
 - Ticket 1 goes first. Then 2 and 3 can run in parallel, 4 follows 2, and 5 needs both 3 and 4.
+- Ticket 6 depends on nothing and can land at any point.
 - **Checkpoint after 1:** run `npm run tauri dev` and see an empty Uta window. PRs show green checks.
 - **Checkpoint after 2:** run `uta render tone.wav` and listen to the file.
 - **Checkpoint after 4:** run `uta play`, then switch outputs, unplug and replug your interface while it plays.
