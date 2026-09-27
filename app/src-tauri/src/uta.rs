@@ -649,6 +649,7 @@ mod tests {
         uta.add_stress_notes().unwrap();
         assert_eq!(uta.project().track.clip.notes.len(), 2 * stress::NOTE_COUNT);
         uta.undo();
+        assert_eq!(uta.project().track.clip.notes.len(), stress::NOTE_COUNT);
         uta.undo();
         assert!(uta.project().track.clip.notes.is_empty());
         assert!(!uta.project().can_undo);

@@ -50,6 +50,25 @@ describe("PianoRollScene", () => {
     expect(renderer.lastNotes().map((n) => n.id)).toEqual(["a"]);
   });
 
+  it("doesn't redraw the notes when a new view from Rust has the same notes", () => {
+    scene.draw(0);
+    // Rust sends a fresh copy with every change, here for a volume change.
+    const fresh = JSON.parse(
+      JSON.stringify(projectView({ volumeDb: -20 }, [note("a", 0), note("b", 7680)])),
+    ) as ReturnType<typeof projectView>;
+    scene.setProject(fresh);
+    scene.draw(0);
+    expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
+  });
+
+  it("redraws the notes when a note changes in a new view from Rust", () => {
+    scene.draw(0);
+    scene.setProject(projectView({}, [note("a", 0, 73), note("b", 7680)]));
+    scene.draw(0);
+    expect(renderer.notes).toHaveLength(2);
+    expect(renderer.lastNotes().map((n) => n.pitch)).toEqual([73, 72]);
+  });
+
   it("redraws the grid when the loop changes", () => {
     scene.draw(0);
     scene.setProject(projectView({ loopBars: 2, loopLength: 2 * 3840 }));
@@ -73,6 +92,17 @@ describe("PianoRollScene", () => {
     scene.changeView((view) => ({ ...view, scrollTicks: 7680 }));
     scene.draw(0);
     expect(renderer.lastNotes().map((n) => n.id)).toEqual(["b"]);
+  });
+
+  it("draws only the pitches in view", () => {
+    scene.setProject(projectView({}, [note("high", 0, 80), note("low", 0, 40)]));
+    scene.draw(0);
+    // Opens with about C3 to C6 in view: pitch 40 (E2) is below it.
+    expect(renderer.lastNotes().map((n) => n.id)).toEqual(["high"]);
+    // Scroll down until pitch 80 is above the view and 40 is in it.
+    scene.changeView((view) => ({ ...view, scrollY: (127 - 50) * view.keyHeight }));
+    scene.draw(0);
+    expect(renderer.lastNotes().map((n) => n.id)).toEqual(["low"]);
   });
 
   it("sizes a new renderer to the piano roll", () => {

@@ -3,7 +3,7 @@
 // calls `draw` once a screen frame. Kept out of React so that scrolling and
 // the playhead never re-render anything.
 
-import type { ProjectView } from "../backend";
+import type { ClipView, ProjectView } from "../backend";
 import { NoteIndex } from "./notes";
 import type { PianoRollRenderer } from "./renderer";
 import {
@@ -35,7 +35,9 @@ export class PianoRollScene {
     const loopChanged =
       this.project?.loopStart !== project.loopStart ||
       this.project.loopLength !== project.loopLength;
-    if (this.project?.track.clip !== project.track.clip) {
+    // Every view from Rust is a fresh object, so compare what's in it: a
+    // volume or tempo change mustn't re-sort and redraw thousands of notes.
+    if (!this.project || !sameClip(this.project.track.clip, project.track.clip)) {
       this.index = new NoteIndex(project.track.clip);
       this.notesDirty = true;
     }
@@ -144,4 +146,21 @@ function sameView(a: Viewport, b: Viewport): boolean {
     a.pixelsPerTick === b.pixelsPerTick &&
     a.keyHeight === b.keyHeight
   );
+}
+
+/** Whether two clips have the same position, length and notes, in the same order. */
+export function sameClip(a: ClipView, b: ClipView): boolean {
+  if (a === b) return true;
+  if (a.id !== b.id || a.start !== b.start || a.length !== b.length) return false;
+  if (a.notes.length !== b.notes.length) return false;
+  return a.notes.every((note, i) => {
+    const other = b.notes[i];
+    return (
+      note.id === other.id &&
+      note.pitch === other.pitch &&
+      note.velocity === other.velocity &&
+      note.start === other.start &&
+      note.length === other.length
+    );
+  });
 }
