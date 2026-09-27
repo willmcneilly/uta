@@ -35,10 +35,15 @@ pub struct Processor {
     synth: Box<Synth>,
 
     playing: bool,
-    /// Where the loop is playing, in samples from the start of the song.
+    /// Where the loop is playing, in samples from the start of the song,
+    /// timed at the snapshot's rate.
     playhead: u64,
     /// The next event in the snapshot's sequence: every event before it is
     /// earlier than the playhead.
+    ///
+    /// Like the voices, it's a plain value, never a reference into the
+    /// snapshot, so nothing on the audio thread shares ownership of snapshot
+    /// data. See RFC-002, "The shared model", point 7.
     bookmark: usize,
     volume: Ramp,
     /// Fades everything out before a stream is replaced, and back in on the
@@ -92,16 +97,17 @@ impl Processor {
     /// control side between streams, never while a stream owns it.
     ///
     /// The snapshot is retimed to the new rate, and the playhead keeps its
-    /// place in the music. The sound fades in, so the switch doesn't click.
-    /// Every note falls silent.
+    /// place in the music, as it does when a new snapshot changes the tempo.
+    /// The sound fades in, so the switch doesn't click. Every note falls
+    /// silent.
     pub(crate) fn prepare(&mut self, sample_rate: u32, channels: usize) {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
-        let ticks = self.snapshot.sequence.ticks_at(self.playhead);
-        if self.snapshot.sequence.sample_rate() != sample_rate {
-            *self.snapshot = self.snapshot.at_sample_rate(sample_rate);
-        }
-        self.playhead = self.snapshot.sequence.sample_at(ticks);
+        let retimed = self.snapshot.at_sample_rate(sample_rate);
+        self.playhead = retimed
+            .sequence
+            .playhead_from(&self.snapshot.sequence, self.playhead);
+        *self.snapshot = retimed;
         self.find_bookmark();
 
         let sample_rate = f64::from(sample_rate);
@@ -210,6 +216,7 @@ impl Processor {
                         key,
                         pitch,
                         velocity,
+                        sequenced: true,
                     }),
                     NoteEventKind::Off { key } => self.synth.note_off(key),
                 }
@@ -245,6 +252,22 @@ impl Processor {
             .sequence
             .events()
             .partition_point(|event| event.sample < playhead);
+    }
+
+    /// After a new snapshot, releases every note the sequencer started that
+    /// the snapshot no longer plays at the playhead: deleted, re-pitched,
+    /// moved or shortened away from it, or left behind when the playhead
+    /// went back to the loop's start. Otherwise its end event would never
+    /// come, and it would stick. Bounded by the number of voices, each a
+    /// binary search.
+    fn release_changed_notes(&mut self) {
+        let sequence = &self.snapshot.sequence;
+        let playhead = self.playhead;
+        self.synth.release_sequenced_unless(|key, pitch| {
+            sequence
+                .note(key)
+                .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
+        });
     }
 
     /// Renders the synth into `output`, which holds whole frames.
@@ -285,7 +308,12 @@ impl Processor {
                     self.volume.set_target(new.gain);
                     self.synth.set_settings(new.synth);
                     let old = std::mem::replace(&mut self.snapshot, new);
+                    self.playhead = self
+                        .snapshot
+                        .sequence
+                        .playhead_from(&old.sequence, self.playhead);
                     self.find_bookmark();
+                    self.release_changed_notes();
                     // Checked above: there is room, so this never drops `old`.
                     let _ = self.used_snapshots.push(old);
                 }
@@ -297,6 +325,7 @@ impl Processor {
                     key,
                     pitch,
                     velocity,
+                    sequenced: false,
                 }),
                 Command::NoteOff { key } => self.synth.note_off(key),
             }
@@ -325,6 +354,142 @@ impl Processor {
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use uta_core::time::{TempoMap, Ticks};
+    use uta_core::{Command, Note, NoteId, Project, ProjectId, SynthParam};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::offline::Renderer;
+    use crate::{EngineConfig, VOICE_LEVEL, db_to_gain, velocity_to_gain};
+
+    const BEAT: Ticks = 960;
+
+    /// A 1-bar loop at 120 BPM: A4 on every beat, an eighth note long, as a
+    /// sine at full sustain with a 5 ms release.
+    fn beats() -> Project {
+        let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+        let track = project.tracks()[0].id();
+        let clip = project.tracks()[0].clips()[0].id();
+        let notes = (0..4)
+            .map(|i| Note {
+                id: NoteId::from_uuid(Uuid::from_u128(100 + i)),
+                pitch: 69,
+                velocity: 100,
+                start: i as Ticks * BEAT,
+                length: BEAT / 2,
+            })
+            .collect();
+        let commands = [
+            Command::SetLoopLength { bars: 1 },
+            Command::SetSynthParam {
+                track,
+                param: SynthParam::Waveform(uta_core::Waveform::Sine),
+            },
+            Command::SetSynthParam {
+                track,
+                param: SynthParam::Sustain(1.0),
+            },
+            Command::SetSynthParam {
+                track,
+                param: SynthParam::ReleaseSeconds(0.005),
+            },
+            Command::AddNotes { clip, notes },
+        ];
+        for command in &commands {
+            project.apply(command).unwrap();
+        }
+        project
+    }
+
+    /// Where each note starts: the sample before each sound that follows at
+    /// least 100 samples of silence.
+    fn onsets(samples: &[f32]) -> Vec<usize> {
+        let mut onsets = Vec::new();
+        let mut silent = usize::MAX;
+        for (i, &sample) in samples.iter().enumerate() {
+            if sample == 0.0 {
+                silent = silent.saturating_add(1);
+            } else {
+                if silent >= 100 {
+                    onsets.push(i.saturating_sub(1));
+                }
+                silent = 0;
+            }
+        }
+        onsets
+    }
+
+    /// A device switch mid-note, from 48 kHz to 44.1 kHz and back, the way
+    /// the supervisor does it: fade out, move the processor to the new rate,
+    /// carry on. The loop keeps its bar and beat, and every note after the
+    /// switch lands on its exact sample at the new rate, for ten passes.
+    #[test]
+    fn a_new_sample_rate_keeps_the_loop_in_time() {
+        for (from, to) in [(48_000, 44_100), (44_100, 96_000)] {
+            let config = EngineConfig {
+                sample_rate: from,
+                channels: 1,
+            };
+            let mut renderer = Renderer::new(config, Snapshot::from(&beats()), 128);
+            renderer.controller.play().unwrap();
+            // Mid-note on beat 3.
+            renderer.render(renderer.frames_for(1.23) / 128 * 128);
+            renderer.processor().fade_out_for_handover();
+            renderer.render((FADE_SECONDS * f64::from(from)) as usize);
+            let switch_at = renderer.samples().len();
+            renderer.processor().prepare(to, 1);
+            assert_eq!(renderer.processor().sample_rate(), to);
+            let loop_at_new_rate = (2 * to) as usize;
+            renderer.render(10 * loop_at_new_rate);
+            // The controller has sent the snapshot again, retimed.
+            assert_eq!(renderer.controller.snapshot().sequence.sample_rate(), to);
+
+            // The first tick the old rate hadn't reached, at the new rate.
+            let tempo = TempoMap::new(120.0);
+            let tick = (0..)
+                .find(|&tick| tempo.ticks_to_samples(tick, from) >= switch_at as u64)
+                .unwrap();
+            let playhead = tempo.ticks_to_samples(tick, to) as usize;
+            let pass_start = switch_at as i64 - playhead as i64;
+            let mut expected: Vec<usize> = (0..4)
+                .map(|beat| tempo.ticks_to_samples(beat * BEAT, from) as usize)
+                .filter(|&at| at < switch_at)
+                .collect();
+            for pass in 0..11 {
+                for beat in 0..4 {
+                    let at = pass_start
+                        + (pass * loop_at_new_rate) as i64
+                        + tempo.ticks_to_samples(beat * BEAT, to) as i64;
+                    if at >= switch_at as i64 && (at as usize) < renderer.samples().len() {
+                        expected.push(at as usize);
+                    }
+                }
+            }
+            let samples = renderer.samples();
+            assert_eq!(onsets(samples), expected, "{from} Hz to {to} Hz");
+
+            // No clicks: one A4 sine voice moving at most as fast as its
+            // tone, its 5 ms attack and its release allow, plus 10%.
+            let level =
+                VOICE_LEVEL * velocity_to_gain(100) * db_to_gain(Snapshot::DEFAULT_VOLUME_DB);
+            let rate = f64::from(from.min(to));
+            let tone = (2.0 * (std::f64::consts::PI * 440.0 / rate).sin()) as f32;
+            let release = 7.0 / (0.005 * rate) as f32;
+            let limit = level * (tone + release) * 1.1;
+            let jump = samples
+                .windows(2)
+                .map(|pair| (pair[1] - pair[0]).abs())
+                .fold(0.0f32, f32::max);
+            assert!(
+                jump <= limit,
+                "{from} Hz to {to} Hz: jump {jump}, limit {limit}"
+            );
         }
     }
 }

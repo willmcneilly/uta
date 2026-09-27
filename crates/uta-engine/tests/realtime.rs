@@ -156,8 +156,9 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
 /// allocates or frees on the audio thread.
 ///
 /// Each edit's snapshot is built afresh from the project, so it shares no
-/// data with the one the processor is playing. Sharing unchanged clips
-/// between snapshots comes with UTA-11, which tests it here too.
+/// data with the one the processor is playing.
+/// [`many_swaps_sharing_clip_data_do_not_allocate_or_free`] covers snapshots
+/// that do.
 #[test]
 fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
     rtsan_standalone::ensure_initialized();
@@ -208,6 +209,85 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
         (passes * blocks_per_pass * BLOCK) as u64,
         "played every block"
     );
+}
+
+/// Edits while the loop plays, each sent the way the app sends them
+/// (`set_project`), so every snapshot shares the clip's notes with the one
+/// before it unless the edit touched them. The swaps move the playhead
+/// (tempo and loop length changes) and release notes that were moved away
+/// from it, several swaps arrive in one block, and the processor never
+/// allocates, or frees what it shares with the control side. See RFC-002,
+/// "The shared model", point 7.
+#[test]
+fn many_swaps_sharing_clip_data_do_not_allocate_or_free() {
+    rtsan_standalone::ensure_initialized();
+    // Legato eighth notes, so notes are always sounding when an edit lands.
+    let notes: Vec<_> = (0..16u8)
+        .map(|i| note(u128::from(i), 48 + i, u64::from(i) * 480, 480))
+        .collect();
+    let mut project = project(120.0, 2, &[SynthParam::ReleaseSeconds(0.01)], notes.clone());
+    let track = project.tracks()[0].id();
+    let clip = project.tracks()[0].clips()[0].id();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+
+    let mut shared = 0;
+    for step in 0..600u32 {
+        let before = std::sync::Arc::clone(&renderer.controller.snapshot().sequence.clips()[0]);
+        let edits = 1 + step as usize % 3;
+        for edit in 0..edits {
+            let n = step as usize * 3 + edit;
+            let command = match n % 5 {
+                0 => Command::SetTempo {
+                    bpm: 90.0 + (n % 60) as f32,
+                },
+                1 => Command::SetSynthParam {
+                    track,
+                    param: SynthParam::CutoffHz(300.0 + (n % 40) as f32 * 100.0),
+                },
+                2 => {
+                    renderer
+                        .controller
+                        .set_volume_db(-6.0 - (n % 12) as f32)
+                        .unwrap();
+                    continue;
+                }
+                // Moves notes, so the clip's notes are new.
+                3 => Command::SetNotes {
+                    clip,
+                    notes: notes
+                        .iter()
+                        .map(|note| uta_core::Note {
+                            start: (note.start + (n as u64 % 7) * 60) % 7680,
+                            ..*note
+                        })
+                        .collect(),
+                },
+                _ => Command::SetLoopLength {
+                    bars: 1 + (n / 5 % 2) as u32,
+                },
+            };
+            project.apply(&command).unwrap();
+            renderer.controller.set_project(&project).unwrap();
+        }
+        let after = &renderer.controller.snapshot().sequence.clips()[0];
+        if std::sync::Arc::ptr_eq(&before, after) {
+            shared += 1;
+        }
+        drop(before);
+        process_block(renderer.processor(), &mut buffer);
+        process_block(renderer.processor(), &mut buffer);
+        renderer.controller.poll();
+    }
+    assert!(shared > 100, "only {shared} steps shared the clip's notes");
+    renderer.controller.stop().unwrap();
+    for _ in 0..10 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+    let status = renderer.controller.poll();
+    assert!(!status.playing);
+    assert_eq!(status.dropped_note_events, 0);
 }
 
 /// A block with more note events than it may handle skips the rest with a

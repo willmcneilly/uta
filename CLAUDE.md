@@ -64,6 +64,7 @@ These aren't negotiable. The audio thread is called hundreds of times a second, 
 Instead:
 - Messages go through fixed-size lock-free queues (`rtrb`) in both directions: commands in; status (position, peak, dropout count) out; used snapshots back to the control side.
 - Changes to what's playing are made off the audio thread as whole new snapshots, swapped in at a block boundary. The old snapshot goes back through a queue; the audio thread never frees it.
+- State the audio thread keeps outside the snapshot (voices, the bookmark, the playhead) holds only plain values, such as note IDs, pitches and positions, never its own reference (`Arc`, `Box`, borrowed slice) to snapshot data. Snapshots share data through `Arc`s, and whoever drops the last reference frees it, so the audio thread must never hold one of its own.
 - The cpal error callback only pushes an error code into a queue and returns. cpal 0.18's own error reporting allocates there; don't build on it.
 - Preallocate everything at stream setup, sized for the largest block.
 

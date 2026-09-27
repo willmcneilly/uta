@@ -56,12 +56,19 @@ pub(crate) struct NoteOn {
     pub key: NoteKey,
     pub pitch: u8,
     pub velocity: u8,
+    /// Whether it's one of the project's notes, played by the sequencer,
+    /// rather than a live note. Only the sequencer's are released when the
+    /// notes change under them.
+    pub sequenced: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Voice {
     /// The note this voice is playing, or last played.
     key: Option<NoteKey>,
+    /// Its pitch, and whether the sequencer started it.
+    pitch: u8,
+    sequenced: bool,
     /// A note waiting to start here once the take-over fade ends.
     pending: Option<NoteOn>,
     /// Samples left in the take-over fade. Zero when not being taken over.
@@ -206,6 +213,29 @@ impl Synth {
         }
     }
 
+    /// Releases every note the sequencer started that `keep` doesn't accept,
+    /// given its key and pitch, and cancels any such note still waiting for
+    /// a voice. Live notes are left alone. Bounded by the number of voices.
+    pub(crate) fn release_sequenced_unless(&mut self, keep: impl Fn(NoteKey, u8) -> bool) {
+        for voice in self.voices.iter_mut() {
+            if voice.is_taken_over() {
+                if voice
+                    .pending
+                    .is_some_and(|pending| pending.sequenced && !keep(pending.key, pending.pitch))
+                {
+                    voice.pending = None;
+                }
+            } else if voice.sequenced
+                && !matches!(voice.envelope.stage(), Stage::Idle | Stage::Release)
+                && voice.key.is_some_and(|key| !keep(key, voice.pitch))
+            {
+                self.clock += 1;
+                voice.released = self.clock;
+                voice.envelope.release(&self.times);
+            }
+        }
+    }
+
     /// Releases every note, and cancels any waiting for a voice.
     pub(crate) fn release_all(&mut self) {
         for voice in self.voices.iter_mut() {
@@ -280,6 +310,8 @@ impl Synth {
     fn start_voice(&mut self, index: usize, note: NoteOn) {
         let voice = &mut self.voices[index];
         voice.key = Some(note.key);
+        voice.pitch = note.pitch;
+        voice.sequenced = note.sequenced;
         voice.pending = None;
         voice.take_over_remaining = 0;
         voice
@@ -355,6 +387,16 @@ mod tests {
             key: NoteKey(key),
             pitch: 60,
             velocity: 100,
+            sequenced: false,
+        }
+    }
+
+    fn sequenced(key: u128, pitch: u8) -> NoteOn {
+        NoteOn {
+            key: NoteKey(key),
+            pitch,
+            velocity: 100,
+            sequenced: true,
         }
     }
 
@@ -502,6 +544,39 @@ mod tests {
         );
         run(&mut synth, RATE as usize);
         assert!(synth.voices.iter().all(Voice::is_free));
+    }
+
+    #[test]
+    fn only_sequenced_notes_that_are_not_kept_are_released() {
+        let mut synth = Synth::new(SynthSettings::default(), RATE);
+        synth.note_on(note(1));
+        synth.note_on(sequenced(2, 62));
+        synth.note_on(sequenced(3, 64));
+        run(&mut synth, 100);
+        // Keep note 3 at its pitch; note 2 isn't accepted, and the live note
+        // 1 isn't the sequencer's to release.
+        synth.release_sequenced_unless(|key, pitch| key == NoteKey(3) && pitch == 64);
+        let stage =
+            |synth: &Synth, key| synth.voices[voice_of(synth, key).unwrap()].envelope.stage();
+        assert_ne!(stage(&synth, 1), Stage::Release);
+        assert_eq!(stage(&synth, 2), Stage::Release);
+        assert_ne!(stage(&synth, 3), Stage::Release);
+        // The same key at a new pitch isn't kept.
+        synth.release_sequenced_unless(|key, pitch| key == NoteKey(3) && pitch == 65);
+        assert_eq!(stage(&synth, 3), Stage::Release);
+    }
+
+    #[test]
+    fn a_sequenced_note_waiting_for_a_voice_is_cancelled_if_not_kept() {
+        let mut synth = full_synth();
+        let index = voice_of(&synth, 0).unwrap();
+        synth.note_on(sequenced(100, 60));
+        synth.release_sequenced_unless(|_, _| false);
+        let fade = synth.take_over_samples as usize;
+        run(&mut synth, fade);
+        assert!(synth.voices[index].is_free());
+        // The live notes still sound.
+        assert!(synth.voices.iter().filter(|v| !v.is_free()).count() == VOICES - 1);
     }
 
     #[test]
