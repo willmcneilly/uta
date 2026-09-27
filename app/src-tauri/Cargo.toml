@@ -1,0 +1,18 @@
+[package]
+name = "uta-app"
+description = "The Uta desktop app"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name, which
+# otherwise conflicts on Windows (rust-lang/cargo#8519).
+name = "uta_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
