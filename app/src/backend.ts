@@ -12,6 +12,63 @@ export interface ProjectView {
   maxVolumeDb: number;
   canUndo: boolean;
   canRedo: boolean;
+  /** Quarter notes per minute. */
+  bpm: number;
+  minBpm: number;
+  maxBpm: number;
+  loopBars: number;
+  minLoopBars: number;
+  maxLoopBars: number;
+  /** Where the loop starts, in ticks. */
+  loopStart: number;
+  /** How long the loop is, in ticks. */
+  loopLength: number;
+  ticksPerQuarter: number;
+  /** Always 4 for now (4/4). */
+  beatsPerBar: number;
+  /** The project's one track. */
+  track: TrackView;
+}
+
+/** A track: its synth and its one clip. */
+export interface TrackView {
+  id: string;
+  synth: SynthView;
+  clip: ClipView;
+}
+
+export type Waveform = "sine" | "triangle" | "saw" | "square";
+
+/** The synth's settings. */
+export interface SynthView {
+  waveform: Waveform;
+  cutoffHz: number;
+  resonance: number;
+  attackSeconds: number;
+  decaySeconds: number;
+  /** A linear level, from 0 to 1. */
+  sustain: number;
+  releaseSeconds: number;
+}
+
+/** A clip and its notes. Positions and lengths are in ticks. */
+export interface ClipView {
+  id: string;
+  /** Where the clip starts, from the start of the song. */
+  start: number;
+  length: number;
+  notes: NoteView[];
+}
+
+export interface NoteView {
+  id: string;
+  /** The MIDI note number, from 0 to 127. Middle C (C4) is 60. */
+  pitch: number;
+  /** From 1 to 127. */
+  velocity: number;
+  /** In ticks from the start of its clip. */
+  start: number;
+  length: number;
 }
 
 export type OutputState = "running" | "waiting" | "failed";
@@ -33,7 +90,8 @@ export interface OutputView {
 /** Everything fast-changing, sent once per screen frame. */
 export interface Frame {
   playing: boolean;
-  positionSeconds: number;
+  /** The playhead, in ticks from the start of the song. It stays inside the loop. */
+  playhead: number;
   /** The loudest sample since the last frame, as a linear level. */
   peak: number;
   dropouts: number;
@@ -50,6 +108,16 @@ export function getProject(): Promise<ProjectView> {
 /** Changes with the same `gesture` (one drag) undo as one step. */
 export function setVolume(volumeDb: number, gesture?: number): Promise<ProjectView> {
   return invoke<ProjectView>("set_volume", { volumeDb, gesture: gesture ?? null });
+}
+
+/** Changes with the same `gesture` (one drag) undo as one step. */
+export function setTempo(bpm: number, gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("set_tempo", { bpm, gesture: gesture ?? null });
+}
+
+/** Changes with the same `gesture` (one drag) undo as one step. */
+export function setLoopLength(bars: number, gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("set_loop_length", { bars, gesture: gesture ?? null });
 }
 
 export function play(): Promise<void> {

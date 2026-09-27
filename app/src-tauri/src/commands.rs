@@ -64,6 +64,33 @@ pub fn set_volume<R: Runtime>(
     edit(&app, |uta| uta.set_volume(volume_db, gesture))
 }
 
+/// Sets the tempo, in BPM. Calls with the same `gesture` undo as one step.
+#[tauri::command]
+pub fn set_tempo<R: Runtime>(
+    app: AppHandle<R>,
+    bpm: f32,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_tempo(bpm, gesture))
+}
+
+/// Sets the loop's length, in bars. Calls with the same `gesture` undo as
+/// one step.
+#[tauri::command]
+pub fn set_loop_length<R: Runtime>(
+    app: AppHandle<R>,
+    bars: u32,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_loop_length(bars, gesture))
+}
+
+/// Fills the loop with a few thousand notes, as one undo step. The Develop
+/// menu calls it.
+pub fn add_stress_notes<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
+    edit(&app, Uta::add_stress_notes)
+}
+
 #[tauri::command]
 pub fn undo<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
     edit(&app, |uta| {

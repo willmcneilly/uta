@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
   type Frame,
@@ -8,28 +8,37 @@ import {
   onProjectChanged,
   play,
   setBufferSize,
+  setLoopLength,
+  setTempo,
   setVolume,
   stop,
   subscribe,
 } from "./backend";
 import { Meter } from "./Meter";
 import { MeterLevel } from "./meterLevel";
+import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
+import { FrameTime } from "./pianoRoll/FrameTime";
+import { FrameStats } from "./pianoRoll/frameStats";
+import { PianoRoll } from "./pianoRoll/PianoRoll";
+import { PlayheadClock } from "./pianoRoll/playhead";
+import type { RendererFactory } from "./pianoRoll/renderer";
+import { Transport } from "./Transport";
 import { Volume } from "./Volume";
 
 /** The slow-changing part of a frame: what the text on screen shows. */
 interface Status {
   playing: boolean;
-  /** Tenths of a second, so it re-renders ten times a second, not sixty. */
-  tenths: number;
+  /** Bars and beats, so it re-renders once a beat, not sixty times a second. */
+  position: BarBeat;
   dropouts: number;
   output: OutputView;
 }
 
-function toStatus(frame: Frame): Status {
+function toStatus(frame: Frame, project: ProjectView | null): Status {
   return {
     playing: frame.playing,
-    tenths: Math.floor(frame.positionSeconds * 10),
+    position: barBeat(frame.playhead, project?.ticksPerQuarter ?? 960, project?.beatsPerBar ?? 4),
     dropouts: frame.dropouts,
     output: frame.output,
   };
@@ -39,12 +48,21 @@ function sameStatus(a: Status | null, b: Status): boolean {
   return a !== null && JSON.stringify(a) === JSON.stringify(b);
 }
 
-function App() {
+interface Props {
+  /** Draws the piano roll. Tests pass their own; the app uses Canvas 2D. */
+  createRenderer?: RendererFactory;
+}
+
+function App({ createRenderer }: Props) {
   const [project, setProject] = useState<ProjectView | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changingBuffer, setChangingBuffer] = useState(false);
   const [level] = useState(() => new MeterLevel());
+  const [clock] = useState(() => new PlayheadClock());
+  const [stats] = useState(() => new FrameStats());
+  // The frame stream reads the latest project without re-subscribing.
+  const projectRef = useRef<ProjectView | null>(null);
 
   const report = (reason: unknown) => setError(String(reason));
 
@@ -53,7 +71,7 @@ function App() {
     getProject()
       .then((view) => active && setProject(view))
       .catch((reason: unknown) => active && setError(String(reason)));
-    // Undo and Redo from the menu arrive this way.
+    // Undo, Redo and the Develop menu's changes arrive this way.
     const unlisten = onProjectChanged((view) => active && setProject(view));
     return () => {
       active = false;
@@ -62,21 +80,42 @@ function App() {
   }, []);
 
   useEffect(() => {
+    projectRef.current = project;
+    if (project) {
+      clock.setTiming({
+        bpm: project.bpm,
+        ticksPerQuarter: project.ticksPerQuarter,
+        loopStart: project.loopStart,
+        loopLength: project.loopLength,
+      });
+    }
+  }, [project, clock]);
+
+  useEffect(() => {
     let active = true;
     const channel = subscribe((frame) => {
       if (!active) return;
       level.push(frame.peak);
-      const next = toStatus(frame);
+      clock.report(frame.playhead, frame.playing, performance.now());
+      const next = toStatus(frame, projectRef.current);
       setStatus((previous) => (sameStatus(previous, next) ? previous : next));
     });
     channel.catch((reason: unknown) => active && setError(String(reason)));
     return () => {
       active = false;
     };
-  }, [level]);
+  }, [level, clock]);
 
   const changeVolume = (volumeDb: number, gesture?: number) => {
     setVolume(volumeDb, gesture).then(setProject, report);
+  };
+
+  const changeTempo = (bpm: number, gesture?: number) => {
+    setTempo(bpm, gesture).then(setProject, report);
+  };
+
+  const changeLoopLength = (bars: number, gesture?: number) => {
+    setLoopLength(bars, gesture).then(setProject, report);
   };
 
   const changeBuffer = (size: number) => {
@@ -88,40 +127,43 @@ function App() {
 
   return (
     <main className="app">
-      <section className="transport" aria-label="Transport">
-        <button type="button" onClick={() => play().catch(report)}>
-          Play
-        </button>
-        <button type="button" onClick={() => stop().catch(report)}>
-          Stop
-        </button>
-        <span className="state" data-testid="transport">
-          {status?.playing ? "Playing" : "Stopped"}
-        </span>
-        <span className="position" data-testid="position">
-          {((status?.tenths ?? 0) / 10).toFixed(1)} s
-        </span>
-      </section>
+      <Transport
+        project={project}
+        playing={status?.playing ?? false}
+        position={status?.position ?? { bar: 1, beat: 1 }}
+        onPlay={() => play().catch(report)}
+        onStop={() => stop().catch(report)}
+        onTempo={changeTempo}
+        onLoopLength={changeLoopLength}
+      />
 
-      <section className="level" aria-label="Level">
-        {project && <Volume project={project} onChange={changeVolume} />}
-        <Meter level={level} />
-      </section>
+      <div className="panels">
+        <section className="level" aria-label="Level">
+          {project && <Volume project={project} onChange={changeVolume} />}
+          <Meter level={level} />
+        </section>
 
-      {status && (
-        <Output
-          output={status.output}
-          dropouts={status.dropouts}
-          busy={changingBuffer}
-          onBufferSize={changeBuffer}
-        />
-      )}
+        {status && (
+          <Output
+            output={status.output}
+            dropouts={status.dropouts}
+            busy={changingBuffer}
+            onBufferSize={changeBuffer}
+          />
+        )}
+      </div>
 
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
+
+      {project && (
+        <PianoRoll project={project} clock={clock} stats={stats} createRenderer={createRenderer} />
+      )}
+
+      <FrameTime stats={stats} />
     </main>
   );
 }

@@ -3,6 +3,7 @@
 
 mod commands;
 mod menu;
+mod stress;
 mod uta;
 
 use std::sync::Mutex;
@@ -30,6 +31,7 @@ pub fn run() {
                 let result = match event.id().as_ref() {
                     menu::UNDO => commands::undo(app.clone()),
                     menu::REDO => commands::redo(app.clone()),
+                    menu::ADD_STRESS_NOTES => commands::add_stress_notes(app.clone()),
                     _ => return,
                 };
                 if let Err(error) = result {
@@ -48,6 +50,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_project,
             commands::set_volume,
+            commands::set_tempo,
+            commands::set_loop_length,
             commands::undo,
             commands::redo,
             commands::play,
@@ -64,7 +68,7 @@ pub fn run() {
         });
 }
 
-/// Sends the UI one [`uta::Frame`] per screen frame: the level, position,
+/// Sends the UI one [`uta::Frame`] per screen frame: the level, playhead,
 /// dropouts and output, batched since the last one. Runs for the life of the
 /// app. It polls the engine even with no subscriber, so used snapshots are
 /// still freed.
