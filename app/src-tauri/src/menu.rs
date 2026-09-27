@@ -9,6 +9,7 @@ use crate::uta::ProjectView;
 
 pub const UNDO: &str = "undo";
 pub const REDO: &str = "redo";
+pub const ADD_STRESS_NOTES: &str = "add-stress-notes";
 
 /// The Edit menu's Undo and Redo, kept to enable them as the history changes.
 pub struct EditMenu<R: Runtime> {
@@ -25,7 +26,7 @@ impl<R: Runtime> EditMenu<R> {
 }
 
 /// Builds the menu bar: the usual app, Edit and Window menus, with our own
-/// Undo and Redo.
+/// Undo and Redo, and a Develop menu of tools for testing Uta itself.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu<R>)> {
     let undo = MenuItemBuilder::with_id(UNDO, "Undo")
         .accelerator("CmdOrCtrl+Z")
@@ -56,6 +57,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu
         .paste()
         .select_all()
         .build()?;
+    let develop = SubmenuBuilder::new(app, "Develop")
+        .item(&MenuItemBuilder::with_id(ADD_STRESS_NOTES, "Add Stress Notes").build(app)?)
+        .build()?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
         .maximize()
@@ -63,7 +67,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu
         .close_window()
         .build()?;
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &edit, &window])
+        .items(&[&app_menu, &edit, &develop, &window])
         .build()?;
     Ok((menu, EditMenu { undo, redo }))
 }

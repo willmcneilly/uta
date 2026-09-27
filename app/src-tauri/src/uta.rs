@@ -5,8 +5,11 @@
 
 use std::time::Duration;
 
+use crate::stress;
+
 use serde::Serialize;
-use uta_core::{Command, Project, Session};
+use uta_core::time::{TICKS_PER_QUARTER, Ticks};
+use uta_core::{ClipId, Command, Note, Project, Session, Source, SynthSettings, TrackId, Waveform};
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, Processor, Snapshot, Status};
 
@@ -23,6 +26,69 @@ pub struct ProjectView {
     pub max_volume_db: f32,
     pub can_undo: bool,
     pub can_redo: bool,
+    pub bpm: f32,
+    pub min_bpm: f32,
+    pub max_bpm: f32,
+    pub loop_bars: u32,
+    pub min_loop_bars: u32,
+    pub max_loop_bars: u32,
+    /// Where the loop starts, in ticks.
+    pub loop_start: Ticks,
+    /// How long the loop is, in ticks.
+    pub loop_length: Ticks,
+    pub ticks_per_quarter: Ticks,
+    /// Always 4 for now (4/4).
+    pub beats_per_bar: u32,
+    /// The project's one track.
+    pub track: TrackView,
+}
+
+/// A track as the UI shows it: its synth and its one clip.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackView {
+    pub id: TrackId,
+    pub synth: SynthView,
+    pub clip: ClipView,
+}
+
+/// The synth's settings, in the units of the "Synth settings" table in
+/// `docs/plans/make-a-loop.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthView {
+    pub waveform: Waveform,
+    pub cutoff_hz: f32,
+    pub resonance: f32,
+    pub attack_seconds: f32,
+    pub decay_seconds: f32,
+    pub sustain: f32,
+    pub release_seconds: f32,
+}
+
+impl From<&SynthSettings> for SynthView {
+    fn from(settings: &SynthSettings) -> Self {
+        Self {
+            waveform: settings.waveform,
+            cutoff_hz: settings.cutoff_hz,
+            resonance: settings.resonance,
+            attack_seconds: settings.attack_seconds,
+            decay_seconds: settings.decay_seconds,
+            sustain: settings.sustain,
+            release_seconds: settings.release_seconds,
+        }
+    }
+}
+
+/// A clip and its notes. Note starts are in ticks from the clip's start.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipView {
+    pub id: ClipId,
+    pub start: Ticks,
+    pub length: Ticks,
+    /// In order of ID.
+    pub notes: Vec<Note>,
 }
 
 /// Everything fast-changing, sent to the UI once per screen frame.
@@ -30,8 +96,9 @@ pub struct ProjectView {
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     pub playing: bool,
-    /// Time played, in seconds. It restarts when the output does.
-    pub position_seconds: f64,
+    /// The playhead, in ticks from the start of the song. It stays inside
+    /// the loop.
+    pub playhead: Ticks,
     /// The loudest sample since the last frame, as a linear level.
     pub peak: f32,
     /// Dropouts since the app started, across every output.
@@ -87,7 +154,7 @@ pub struct Uta {
     engine_behind: bool,
     /// Dropouts from outputs that have since been replaced.
     earlier_dropouts: u64,
-    /// The volume drag the latest change came from.
+    /// The drag the latest change came from.
     gesture: Option<u32>,
 }
 
@@ -120,19 +187,80 @@ impl Uta {
     }
 
     pub fn project(&self) -> ProjectView {
+        let project = self.session.project();
+        let transport = project.transport();
+        let bar = transport.time_signature().ticks_per_bar();
+        // Project 1 always has exactly one track with one clip.
+        let track = &project.tracks()[0];
+        let clip = &track.clips()[0];
+        let Source::Synth(synth) = track.source();
         ProjectView {
-            volume_db: self.session.project().master_volume_db(),
+            volume_db: project.master_volume_db(),
             min_volume_db: VOLUME_RANGE_DB.0,
             max_volume_db: VOLUME_RANGE_DB.1,
             can_undo: self.session.can_undo(),
             can_redo: self.session.can_redo(),
+            bpm: transport.tempo_map().bpm(),
+            min_bpm: Project::MIN_BPM,
+            max_bpm: Project::MAX_BPM,
+            loop_bars: u32::try_from(transport.loop_length() / bar).unwrap_or(u32::MAX),
+            min_loop_bars: Project::MIN_LOOP_BARS,
+            max_loop_bars: Project::MAX_LOOP_BARS,
+            loop_start: transport.loop_start(),
+            loop_length: transport.loop_length(),
+            ticks_per_quarter: TICKS_PER_QUARTER,
+            beats_per_bar: transport.time_signature().beats_per_bar,
+            track: TrackView {
+                id: track.id(),
+                synth: synth.into(),
+                clip: ClipView {
+                    id: clip.id(),
+                    start: clip.start(),
+                    length: clip.length(),
+                    notes: clip.notes().copied().collect(),
+                },
+            },
         }
     }
 
     /// Sets the master volume through the project core. Changes that share a
     /// `gesture` (one drag of the volume control) undo as one.
     pub fn set_volume(&mut self, volume_db: f32, gesture: Option<u32>) -> Result<(), String> {
-        let command = Command::SetMasterVolume { volume_db };
+        self.change(Command::SetMasterVolume { volume_db }, gesture)
+    }
+
+    /// Sets the tempo, in BPM. Changes that share a `gesture` undo as one.
+    pub fn set_tempo(&mut self, bpm: f32, gesture: Option<u32>) -> Result<(), String> {
+        self.change(Command::SetTempo { bpm }, gesture)
+    }
+
+    /// Sets the loop's length, in bars. Changes that share a `gesture` undo
+    /// as one.
+    pub fn set_loop_length(&mut self, bars: u32, gesture: Option<u32>) -> Result<(), String> {
+        self.change(Command::SetLoopLength { bars }, gesture)
+    }
+
+    /// Fills the loop with [`stress::NOTE_COUNT`] notes, as one undoable
+    /// `AddNotes`, to test how the piano roll copes with many notes.
+    pub fn add_stress_notes(&mut self) -> Result<(), String> {
+        let project = self.session.project();
+        let clip = &project.tracks()[0].clips()[0];
+        // Seeded by the notes already there, so pressing it again adds a
+        // different pattern.
+        let notes = stress::notes(project.transport().loop_length(), clip.notes().len() as u64);
+        self.change(
+            Command::AddNotes {
+                clip: clip.id(),
+                notes,
+            },
+            None,
+        )
+    }
+
+    /// Applies `command` through the project core and sends the engine the
+    /// result. A change that continues the latest one's `gesture` (the same
+    /// drag) is amended into it, so the drag undoes as one step.
+    fn change(&mut self, command: Command, gesture: Option<u32>) -> Result<(), String> {
         let continues = gesture.is_some() && gesture == self.gesture;
         let result = if continues {
             self.session.amend(command)
@@ -214,10 +342,7 @@ impl Uta {
         let sample_rate = device.device.as_ref().map(|d| d.sample_rate);
         Frame {
             playing: status.playing,
-            position_seconds: match sample_rate {
-                Some(rate) if rate > 0 => status.position as f64 / f64::from(rate),
-                _ => 0.0,
-            },
+            playhead: status.playhead,
             peak: status.peak,
             dropouts: self.earlier_dropouts + device.dropouts,
             output: OutputView {
@@ -418,10 +543,115 @@ mod tests {
         uta.render(24_000);
         let frame = uta.frame();
         assert!(frame.playing);
-        assert!((frame.position_seconds - 0.5).abs() < 0.01, "{frame:?}");
-        // A new project's loop has no notes until they can be drawn (UTA-12),
-        // so it plays silence.
+        // Half a second at 120 BPM is one beat, to within a block.
+        let block_ticks = 128 * TICKS_PER_QUARTER / 24_000;
+        assert!(
+            frame.playhead.abs_diff(TICKS_PER_QUARTER) <= block_ticks,
+            "{frame:?}"
+        );
+        // A new project's loop has no notes, so it plays silence.
         assert_eq!(frame.peak, 0.0);
+    }
+
+    #[test]
+    fn a_new_project_shows_its_tempo_loop_notes_and_synth() {
+        let view = offline().project();
+        assert_eq!(view.bpm, Project::DEFAULT_BPM);
+        assert_eq!((view.min_bpm, view.max_bpm), (20.0, 300.0));
+        assert_eq!(view.loop_bars, Project::DEFAULT_LOOP_BARS);
+        assert_eq!((view.min_loop_bars, view.max_loop_bars), (1, 16));
+        assert_eq!(view.loop_start, 0);
+        assert_eq!(view.loop_length, 4 * 4 * TICKS_PER_QUARTER);
+        assert_eq!((view.ticks_per_quarter, view.beats_per_bar), (960, 4));
+        assert_eq!(view.track.clip.length, view.loop_length);
+        assert!(view.track.clip.notes.is_empty());
+        assert_eq!(view.track.synth, (&SynthSettings::default()).into());
+    }
+
+    #[test]
+    fn the_project_view_serialises_for_the_ui() {
+        let mut uta = offline();
+        uta.add_stress_notes().unwrap();
+        let json = serde_json::to_value(uta.project()).unwrap();
+        assert_eq!(json["bpm"], 120.0);
+        assert_eq!(json["loopBars"], 4);
+        assert_eq!(json["track"]["synth"]["waveform"], "saw");
+        assert_eq!(json["track"]["synth"]["cutoffHz"], 20_000.0);
+        let note = &json["track"]["clip"]["notes"][0];
+        for field in ["id", "pitch", "velocity", "start", "length"] {
+            assert!(!note[field].is_null(), "{field} missing from {note}");
+        }
+        assert!(json["track"]["id"].is_string());
+    }
+
+    #[test]
+    fn tempo_and_loop_length_go_through_the_project_to_the_engine() {
+        let mut uta = offline();
+        uta.set_tempo(90.0, None).unwrap();
+        uta.set_loop_length(2, None).unwrap();
+        let view = uta.project();
+        assert_eq!((view.bpm, view.loop_bars), (90.0, 2));
+        assert_eq!(view.track.clip.length, 2 * 4 * TICKS_PER_QUARTER);
+        let rate = uta.controller.snapshot().sequence.sample_rate();
+        // Two bars of 4/4 at 90 BPM: 8 beats of 2/3 s.
+        let loop_samples = uta.controller.snapshot().sequence.loop_samples();
+        assert_eq!(
+            loop_samples.end - loop_samples.start,
+            u64::from(rate) * 16 / 3
+        );
+
+        uta.undo();
+        assert_eq!(uta.project().loop_bars, 4);
+        uta.undo();
+        assert_eq!(uta.project().bpm, 120.0);
+    }
+
+    #[test]
+    fn out_of_range_tempo_and_loop_lengths_are_refused() {
+        let mut uta = offline();
+        assert!(uta.set_tempo(19.0, None).is_err());
+        assert!(uta.set_tempo(f32::NAN, None).is_err());
+        assert!(uta.set_loop_length(0, None).is_err());
+        assert!(uta.set_loop_length(17, None).is_err());
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn one_tempo_or_loop_drag_undoes_as_one_step() {
+        let mut uta = offline();
+        for bpm in [121.0, 130.0, 140.0] {
+            uta.set_tempo(bpm, Some(1)).unwrap();
+        }
+        for bars in [5, 6, 8] {
+            uta.set_loop_length(bars, Some(2)).unwrap();
+        }
+        uta.set_tempo(150.0, Some(3)).unwrap();
+
+        uta.undo();
+        assert_eq!(uta.project().bpm, 140.0);
+        uta.undo();
+        assert_eq!(uta.project().loop_bars, 4);
+        assert_eq!(uta.project().bpm, 140.0);
+        uta.undo();
+        assert_eq!(uta.project().bpm, 120.0);
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn stress_notes_are_one_undo_step() {
+        let mut uta = offline();
+        uta.add_stress_notes().unwrap();
+        assert_eq!(uta.project().track.clip.notes.len(), stress::NOTE_COUNT);
+        assert!(
+            !uta.controller.snapshot().sequence.events().is_empty(),
+            "the engine plays them"
+        );
+        uta.add_stress_notes().unwrap();
+        assert_eq!(uta.project().track.clip.notes.len(), 2 * stress::NOTE_COUNT);
+        uta.undo();
+        uta.undo();
+        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(!uta.project().can_undo);
     }
 
     #[test]
@@ -439,7 +669,7 @@ mod tests {
         let json = serde_json::to_value(offline().frame()).unwrap();
         assert_eq!(json["output"]["state"], "running");
         assert_eq!(json["output"]["requestedBufferSize"], 128);
-        assert!(json["positionSeconds"].is_number());
+        assert!(json["playhead"].is_number());
     }
 
     #[test]
