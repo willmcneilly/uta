@@ -4,3 +4,16 @@ version.workspace = true
 edition.workspace = true
 publish = false
 description = "Uta's real-time audio engine."
+
+[dependencies]
+hound = "3.5"
+rtrb = "0.4"
+# Marks the process path real-time. A no-op unless built with RTSAN_ENABLE=1,
+# which the CI "Real-time safety" job does.
+rtsan-standalone = "0.3"
+
+[dev-dependencies]
+# nih-plug's fork: the crates.io release is from 2021 and can't nest
+# assert_no_alloc and permit_alloc. Default features off so it stays active in
+# release test builds too.
+assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", rev = "a6fb4f62b9624715291e320ea5f0f70e73b035cf", default-features = false, features = ["backtrace"] }
