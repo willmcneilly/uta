@@ -497,6 +497,40 @@ mod tests {
         assert!(snapshot.sequence.events().is_empty());
     }
 
+    /// In project 1 the clip is always as long as the loop, so the clip's
+    /// length trims notes before the loop's end can. Here the clip is longer
+    /// than the loop and starts before it, so only the loop checks keep notes
+    /// inside it.
+    #[test]
+    fn notes_are_trimmed_to_a_loop_shorter_than_the_clip() {
+        // A 4-bar clip; the loop is bar 2 (ticks 3,840 to 7,680).
+        let clip = Arc::new(ClipNotes {
+            start: 0,
+            length: 4 * 3840,
+            notes: vec![
+                // Starts before the loop and runs into it: doesn't play.
+                note(1, 60, 3840 - 480, 960),
+                // Starts on the loop's start.
+                note(2, 62, 3840, 480),
+                // Crosses the loop's end: released there.
+                note(3, 64, 7680 - 480, 960),
+                // Starts on the loop's end: doesn't play.
+                note(4, 65, 7680, 480),
+            ],
+        });
+        let sequence = Sequence::build(TempoMap::new(120.0), 3840, 3840, vec![clip], 48_000);
+        assert_eq!(sequence.loop_samples(), 96_000..192_000);
+        assert_eq!(
+            sequence.events(),
+            [
+                on(96_000, 2, 62),
+                off(108_000, 2),
+                on(180_000, 3, 64),
+                off(192_000, 3),
+            ]
+        );
+    }
+
     #[test]
     fn events_follow_the_tempo_and_sample_rate() {
         let mut project = with_notes(vec![note(1, 60, 960, 960)]);

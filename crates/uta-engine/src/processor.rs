@@ -184,7 +184,8 @@ impl Processor {
     /// are skipped and counted.
     fn handle_due_events(&mut self, budget: &mut usize) {
         // Two rounds at most: the events due now, then those at the loop's
-        // start after going back to it.
+        // start after going back to it. Handling both here means the caller
+        // always has at least one frame to render next.
         for _ in 0..2 {
             let sequence = &self.snapshot.sequence;
             let events = sequence.events();

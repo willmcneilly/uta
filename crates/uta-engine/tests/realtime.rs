@@ -152,9 +152,12 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
 
 /// The loop playing: notes starting and ending mid-block, the loop going
 /// back to its start mid-block, more notes at once than voices so voices are
-/// taken over, and edits arriving as new snapshots that share the clips'
-/// notes with the old ones. None of it allocates or frees on the audio
-/// thread.
+/// taken over, and edits arriving as whole new snapshots. None of it
+/// allocates or frees on the audio thread.
+///
+/// Each edit's snapshot is built afresh from the project, so it shares no
+/// data with the one the processor is playing. Sharing unchanged clips
+/// between snapshots comes with UTA-11, which tests it here too.
 #[test]
 fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
     rtsan_standalone::ensure_initialized();
@@ -182,8 +185,7 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
         for block in 0..blocks_per_pass {
             process_block(renderer.processor(), &mut buffer);
             if block == blocks_per_pass / 2 {
-                // An edit: the same notes, a new cutoff. The clip's notes are
-                // shared with the snapshot the processor is playing.
+                // An edit: the same notes, a new cutoff, in a new snapshot.
                 project
                     .apply(&Command::SetSynthParam {
                         track,
