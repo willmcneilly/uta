@@ -13,3 +13,4 @@ path = "src/main.rs"
 uta-core = { path = "../uta-core" }
 uta-engine = { path = "../uta-engine" }
 clap = { version = "4.6", features = ["derive", "string"] }
+ctrlc = "3"

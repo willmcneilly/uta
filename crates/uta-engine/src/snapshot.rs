@@ -21,13 +21,19 @@ impl Snapshot {
     pub const DEFAULT_FREQUENCY_HZ: f64 = 440.0;
     /// The default volume, in dB.
     pub const DEFAULT_VOLUME_DB: f32 = -12.0;
+    /// The loudest volume, in dB. At 0 dB the tone peaks at full scale, so no
+    /// volume can make it clip.
+    pub const MAX_VOLUME_DB: f32 = 0.0;
 
-    /// A snapshot with the given volume in dB.
+    /// A snapshot with the given volume in dB, clamped to
+    /// [`Self::MAX_VOLUME_DB`]. NaN is silence.
     pub fn with_volume_db(self, volume_db: f32) -> Self {
-        Self {
-            gain: db_to_gain(volume_db),
-            ..self
-        }
+        let gain = if volume_db.is_nan() {
+            0.0
+        } else {
+            db_to_gain(volume_db.min(Self::MAX_VOLUME_DB))
+        };
+        Self { gain, ..self }
     }
 }
 
@@ -75,6 +81,16 @@ mod tests {
         let snapshot = Snapshot::default();
         assert_eq!(snapshot.frequency_hz, 440.0);
         assert_eq!(snapshot.gain, db_to_gain(-12.0));
+    }
+
+    #[test]
+    fn volume_is_clamped_to_the_ceiling() {
+        let snapshot = Snapshot::default();
+        assert_eq!(snapshot.clone().with_volume_db(40.0).gain, 1.0);
+        assert_eq!(snapshot.clone().with_volume_db(f32::INFINITY).gain, 1.0);
+        assert_eq!(snapshot.clone().with_volume_db(0.0).gain, 1.0);
+        assert_eq!(snapshot.clone().with_volume_db(f32::NAN).gain, 0.0);
+        assert_eq!(snapshot.with_volume_db(-6.0).gain, db_to_gain(-6.0));
     }
 
     #[test]

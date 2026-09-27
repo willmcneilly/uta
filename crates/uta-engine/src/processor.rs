@@ -69,6 +69,41 @@ impl Processor {
         }
     }
 
+    /// Moves the processor to a new stream: a device's sample rate and
+    /// channel count, which may differ from the last one's. Called on the
+    /// control side between streams, never while a stream owns it.
+    ///
+    /// The playback position is kept, converted to the new rate so it stays
+    /// at the same time. If the transport is playing, the sound fades in, so
+    /// the switch doesn't click.
+    pub(crate) fn prepare(&mut self, sample_rate: u32, channels: usize) {
+        assert!(sample_rate > 0, "sample rate must be positive");
+        assert!(channels > 0, "need at least one channel");
+        let sample_rate = f64::from(sample_rate);
+        self.position = (self.position as f64 * sample_rate / self.sample_rate).round() as u64;
+        self.sample_rate = sample_rate;
+        self.channels = channels;
+
+        let samples = |seconds: f64| (seconds * sample_rate).round() as u32;
+        self.transport_gain = Ramp::new(0.0, samples(FADE_SECONDS));
+        if self.playing {
+            self.transport_gain.set_target(1.0);
+        }
+        self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sample_rate(&self) -> u32 {
+        self.sample_rate as u32
+    }
+
+    /// Fades the sound out without stopping the transport, so a healthy
+    /// stream can be closed without a click before it's replaced. The next
+    /// [`Processor::prepare`] fades it back in. Real-time safe.
+    pub(crate) fn fade_out_for_handover(&mut self) {
+        self.transport_gain.set_target(0.0);
+    }
+
     /// Fills `output` with the next block of interleaved audio.
     ///
     /// Commands are applied at the start of the block, and one status message

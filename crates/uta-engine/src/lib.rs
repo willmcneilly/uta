@@ -6,16 +6,17 @@
 //! - [`Controller`] stays on the control side. It sends commands and new
 //!   snapshots, reads status, and frees the snapshots the processor is done
 //!   with.
-//! - [`Processor`] goes to the audio thread, or to [`offline::Renderer`] for
-//!   rendering without a device.
+//! - [`Processor`] goes to the audio thread, through [`live::LiveOutput`], or
+//!   to [`offline::Renderer`] for rendering without a device.
 
 mod control;
+pub mod live;
 pub mod offline;
 mod processor;
 mod ramp;
 mod snapshot;
 
-pub use control::{Controller, QueueFull};
+pub use control::{Controller, QueueFull, VolumeError};
 pub use processor::{FADE_SECONDS, Processor, VOLUME_SMOOTHING_SECONDS};
 pub use snapshot::{Snapshot, db_to_gain};
 
