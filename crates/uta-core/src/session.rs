@@ -130,10 +130,20 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{self, note, note_id};
+    use crate::{ClipId, Note, Source, SynthParam, TrackId};
     use proptest::prelude::*;
 
     fn volume(volume_db: f32) -> Command {
         Command::SetMasterVolume { volume_db }
+    }
+
+    fn clip_id(session: &Session) -> ClipId {
+        session.project().tracks()[0].clips()[0].id()
+    }
+
+    fn track_id(session: &Session) -> TrackId {
+        session.project().tracks()[0].id()
     }
 
     #[test]
@@ -238,6 +248,140 @@ mod tests {
         assert!(session.can_redo(), "a rejected command must not clear redo");
     }
 
+    #[test]
+    fn a_drag_of_set_notes_undoes_as_one_step() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0), note(1, 64, 0), note(2, 67, 0)],
+            })
+            .unwrap();
+        let before = session.project().clone();
+
+        // Drag notes 0 and 1 right and up, a step at a time.
+        let dragged = |step: u64| Command::SetNotes {
+            clip,
+            notes: vec![
+                Note {
+                    start: step * 120,
+                    ..note(0, 60 + step as u8, 0)
+                },
+                Note {
+                    start: step * 120,
+                    ..note(1, 64 + step as u8, 0)
+                },
+            ],
+        };
+        session.apply(dragged(1)).unwrap();
+        for step in 2..=24 {
+            session.amend(dragged(step)).unwrap();
+        }
+        let clip_now = session.project().clip(clip).unwrap();
+        assert_eq!(clip_now.note(note_id(0)).unwrap().start, 24 * 120);
+        assert_eq!(clip_now.note(note_id(1)).unwrap().pitch, 88);
+
+        session.undo().unwrap();
+        assert_eq!(
+            session.project(),
+            &before,
+            "one undo reverts the whole drag"
+        );
+        session.undo().unwrap();
+        assert_eq!(session.project().clip(clip).unwrap().notes().len(), 0);
+
+        session.redo().unwrap();
+        session.redo().unwrap();
+        assert_eq!(
+            session
+                .project()
+                .clip(clip)
+                .unwrap()
+                .note(note_id(0))
+                .unwrap()
+                .start,
+            24 * 120,
+            "redo replays the drag's last step"
+        );
+    }
+
+    #[test]
+    fn set_notes_on_other_notes_is_a_new_step() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0), note(1, 64, 0)],
+            })
+            .unwrap();
+        session
+            .apply(Command::SetNotes {
+                clip,
+                notes: vec![note(0, 61, 0)],
+            })
+            .unwrap();
+        session
+            .amend(Command::SetNotes {
+                clip,
+                notes: vec![note(1, 65, 0)],
+            })
+            .unwrap();
+        session.undo().unwrap();
+        let clip_now = session.project().clip(clip).unwrap();
+        assert_eq!(clip_now.note(note_id(0)).unwrap().pitch, 61);
+        assert_eq!(clip_now.note(note_id(1)).unwrap().pitch, 64);
+    }
+
+    #[test]
+    fn tempo_loop_and_synth_drags_undo_as_one_step_each() {
+        let mut session = Session::new(testing::project());
+        let before = session.project().clone();
+        let track = track_id(&session);
+
+        session.apply(Command::SetTempo { bpm: 121.0 }).unwrap();
+        for bpm in [125.0, 140.0, 90.0] {
+            session.amend(Command::SetTempo { bpm }).unwrap();
+        }
+        session.apply(Command::SetLoopLength { bars: 5 }).unwrap();
+        for bars in [8, 2] {
+            session.amend(Command::SetLoopLength { bars }).unwrap();
+        }
+        let cutoff = |hz| Command::SetSynthParam {
+            track,
+            param: SynthParam::CutoffHz(hz),
+        };
+        session.apply(cutoff(10_000.0)).unwrap();
+        for hz in [5_000.0, 800.0] {
+            session.amend(cutoff(hz)).unwrap();
+        }
+        // A different setting is a new step, even when amended.
+        session
+            .amend(Command::SetSynthParam {
+                track,
+                param: SynthParam::Resonance(0.4),
+            })
+            .unwrap();
+
+        let Source::Synth(settings) = session.project().tracks()[0].source();
+        assert_eq!(settings.cutoff_hz, 800.0);
+        assert_eq!(settings.resonance, 0.4);
+
+        session.undo().unwrap();
+        let Source::Synth(settings) = session.project().tracks()[0].source();
+        assert_eq!((settings.cutoff_hz, settings.resonance), (800.0, 0.0));
+        session.undo().unwrap();
+        let Source::Synth(settings) = session.project().tracks()[0].source();
+        assert_eq!(settings.cutoff_hz, 20_000.0);
+        session.undo().unwrap();
+        assert_eq!(session.project().transport().loop_length(), 4 * 3840);
+        assert_eq!(session.project().transport().tempo_map().bpm(), 90.0);
+        session.undo().unwrap();
+        assert_eq!(session.project(), &before);
+        assert!(!session.can_undo());
+    }
+
     /// One step a user might take.
     #[derive(Debug, Clone)]
     enum Step {
@@ -247,21 +391,11 @@ mod tests {
         Redo,
     }
 
+    /// Any step, with commands of every kind: mostly valid, some rejected.
     fn step() -> impl Strategy<Value = Step> {
-        // Mostly valid volumes, with some that must be rejected.
-        let volume_db = prop_oneof![
-            8 => Project::MIN_VOLUME_DB..=Project::MAX_VOLUME_DB,
-            1 => prop_oneof![
-                Just(f32::NAN),
-                Just(f32::INFINITY),
-                Just(f32::NEG_INFINITY),
-                7.0f32..1000.0,
-                -1000.0f32..-121.0,
-            ],
-        ];
         prop_oneof![
-            4 => volume_db.clone().prop_map(|volume_db| Step::Apply(volume(volume_db))),
-            2 => volume_db.prop_map(|volume_db| Step::Amend(volume(volume_db))),
+            4 => testing::any_command().prop_map(Step::Apply),
+            2 => testing::any_command().prop_map(Step::Amend),
             2 => Just(Step::Undo),
             1 => Just(Step::Redo),
         ]
@@ -269,7 +403,7 @@ mod tests {
 
     /// Runs `steps` and returns the session and the journal of changes.
     fn run(steps: &[Step]) -> (Project, Session, Vec<Applied>) {
-        let start = Project::new();
+        let start = testing::project();
         let mut session = Session::new(start.clone());
         let mut journal = Vec::new();
         for step in steps {
