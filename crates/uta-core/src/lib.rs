@@ -14,6 +14,7 @@
 //! play" snapshot from a [`Project`].
 
 mod command;
+mod command_list;
 mod id;
 mod project;
 mod session;
@@ -24,6 +25,7 @@ pub mod time;
 mod track;
 
 pub use command::{COMMAND_FORMAT, Command, CommandError};
+pub use command_list::CommandList;
 pub use id::{ClipId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};
