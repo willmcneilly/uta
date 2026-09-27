@@ -17,6 +17,31 @@ impl std::fmt::Display for QueueFull {
 
 impl std::error::Error for QueueFull {}
 
+/// Why [`Controller::set_volume_db`] didn't change the volume.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VolumeError {
+    /// The volume was NaN or infinite.
+    NotFinite(f32),
+    QueueFull,
+}
+
+impl std::fmt::Display for VolumeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFinite(volume_db) => write!(f, "{volume_db} dB isn't a volume"),
+            Self::QueueFull => QueueFull.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for VolumeError {}
+
+impl From<QueueFull> for VolumeError {
+    fn from(_: QueueFull) -> Self {
+        Self::QueueFull
+    }
+}
+
 /// Drives the engine from the control side.
 pub struct Controller {
     commands: Producer<Command>,
@@ -60,9 +85,15 @@ impl Controller {
         Ok(())
     }
 
-    /// Sets the volume in dB, by sending a new snapshot.
-    pub fn set_volume_db(&mut self, volume_db: f32) -> Result<(), QueueFull> {
-        self.set_snapshot(self.snapshot.clone().with_volume_db(volume_db))
+    /// Sets the volume in dB, by sending a new snapshot. NaN and infinite
+    /// values are rejected, and anything above [`Snapshot::MAX_VOLUME_DB`] is
+    /// clamped to it, so no volume can push samples past full scale.
+    pub fn set_volume_db(&mut self, volume_db: f32) -> Result<(), VolumeError> {
+        if !volume_db.is_finite() {
+            return Err(VolumeError::NotFinite(volume_db));
+        }
+        self.set_snapshot(self.snapshot.clone().with_volume_db(volume_db))?;
+        Ok(())
     }
 
     /// The last snapshot sent.
@@ -98,5 +129,50 @@ impl Controller {
 
     fn send(&mut self, command: Command) -> Result<(), QueueFull> {
         self.commands.push(command).map_err(|_| QueueFull)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EngineConfig;
+    use crate::offline::Renderer;
+
+    fn playing_renderer() -> Renderer {
+        let mut renderer = Renderer::new(EngineConfig::default(), Snapshot::default(), 128);
+        renderer.controller.play().unwrap();
+        renderer
+    }
+
+    /// From the UTA-2 review: NaN reached the samples.
+    #[test]
+    fn nan_and_infinite_volumes_are_rejected() {
+        let mut renderer = playing_renderer();
+        for volume_db in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(matches!(
+                renderer.controller.set_volume_db(volume_db),
+                Err(VolumeError::NotFinite(_))
+            ));
+        }
+        assert_eq!(renderer.controller.snapshot(), &Snapshot::default());
+
+        renderer.render_seconds(0.1);
+        assert!(renderer.samples().iter().all(|s| s.is_finite()));
+    }
+
+    /// From the UTA-2 review: +40 dB made samples at 100x full scale.
+    #[test]
+    fn loud_volumes_are_clamped_to_full_scale() {
+        let mut renderer = playing_renderer();
+        renderer.controller.set_volume_db(40.0).unwrap();
+        assert_eq!(renderer.controller.snapshot().gain, 1.0);
+
+        renderer.render_seconds(0.1);
+        let peak = renderer
+            .samples()
+            .iter()
+            .fold(0.0f32, |p, s| p.max(s.abs()));
+        assert!(peak <= 1.0, "peak {peak} is past full scale");
+        assert!(peak > 0.99, "peak {peak}: the tone should reach full scale");
     }
 }

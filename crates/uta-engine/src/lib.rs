@@ -15,7 +15,7 @@ mod processor;
 mod ramp;
 mod snapshot;
 
-pub use control::{Controller, QueueFull};
+pub use control::{Controller, QueueFull, VolumeError};
 pub use processor::{FADE_SECONDS, Processor, VOLUME_SMOOTHING_SECONDS};
 pub use snapshot::{Snapshot, db_to_gain};
 
