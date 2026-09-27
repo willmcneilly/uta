@@ -6,6 +6,18 @@
 
 Build project 1 from RFC-002. You set a tempo and a loop length, draw notes in a piano roll, shape a synth's sound and hear it loop, editing while it plays, with every change undoable. Underneath, the shared model RFC-002 settles (musical time, tracks, clips and notes with permanent IDs, sample-exact playback) is in place for Make a song and Play it in. We also find out whether a Canvas 2D piano roll is smooth enough in Tauri's web view.
 
+## Synth settings
+
+UTA-8 and UTA-9 run in parallel and each define the synth's settings: the core's for `SetSynthParam` to check, the engine's to play. Both use exactly these units, ranges and defaults, so UTA-10 only has to copy values across.
+
+| Setting | Unit and range | Default |
+|---|---|---|
+| Waveform | sine, triangle, saw, square | saw |
+| Cutoff | 20 Hz to 20 kHz, on a log scale | 20 kHz (fully open) |
+| Resonance | 0 to 1 | 0 |
+| Attack, decay, release | 1 ms to 10 s | 5 ms, 200 ms, 200 ms |
+| Sustain | 0 to 1, linear level | 0.7 |
+
 ## Tickets
 
 ### 1. [UTA-8] Add musical time, tracks, clips and notes to the project core (Feature)
@@ -14,9 +26,10 @@ Build project 1 from RFC-002. You set a tempo and a loop length, draw notes in a
 
 **Acceptance criteria**
 - [ ] Musical time in `uta-core`: positions and lengths are whole ticks at 960 per quarter note. A tempo map (one section for now, shaped to hold more) and a time signature fixed at 4/4. Converting ticks to samples and back works from the start of the tempo section, never by adding up steps.
-- [ ] A new project has one track and one clip, each with a permanent ID. The track has a source (the synth's settings: waveform, cutoff, resonance, attack, decay, sustain, release), an empty effects list and a mixer strip (volume, pan, mute). The clip has a start, a length and its notes. The defaults are 120 BPM and a 4-bar loop.
+- [ ] A new project has one track and one clip, each with a permanent ID. The track has a source (the synth's settings: waveform, cutoff, resonance, attack, decay, sustain, release), an empty effects list and a mixer strip (volume, pan, mute). The synth's settings follow the "Synth settings" table above. The clip has a start, a length and its notes. The defaults are 120 BPM and a 4-bar loop.
 - [ ] A note has a permanent ID, a pitch (0–127), a velocity (1–127), a start relative to its clip and a length. Notes outside the clip's length are kept.
 - [ ] New commands, each validated with a clear error: `AddNotes` and `RemoveNotes` (each other's inverse), `SetNotes` (absolute values), `SetTempo` (20–300 BPM), `SetLoopLength` (1–16 bars) and `SetSynthParam`. The loop is stored on the transport, and `SetLoopLength` sets the loop and the clip's length together, undoing both in one step. New IDs travel inside the command. The command format goes up to 2, once, for all of them, and format 1 commands still load.
+- [ ] The part of `Project` the engine and app already use (`Project::new`, `master_volume_db()`, the volume constants, `Command::SetMasterVolume`) keeps working unchanged, so this PR doesn't touch `uta-engine` or the app.
 - [ ] `SetNotes`, `SetTempo`, `SetLoopLength` and `SetSynthParam` merge into one undo step through `Session::amend` when they continue the same change (for `SetNotes`: the same notes).
 - [ ] Tests pass:
   - every new command undoes to the exact previous state, and round-trips through serialisation;
@@ -37,8 +50,8 @@ Build project 1 from RFC-002. You set a tempo and a loop length, draw notes in a
 **Acceptance criteria**
 - [ ] 16 voices, all created when the processor is, so playing a note never allocates. When all are busy, a new note takes a free voice, then the oldest fading-out voice, then the oldest held one. A taken-over voice fades out over a few milliseconds first.
 - [ ] Each voice has a PolyBLEP oscillator (sine, triangle, saw, square), a Simper state-variable low-pass filter (cutoff, resonance) and an envelope (attack, decay, sustain, release) worked out every sample.
-- [ ] The synth's settings travel in the engine's snapshot. Changing one while notes sound glides rather than jumps, so a filter sweep doesn't click.
-- [ ] `Controller` can start and stop a note directly (pitch, velocity), without going through the project.
+- [ ] The synth's settings travel in the engine's snapshot, with the units, ranges and defaults in the "Synth settings" table above. Changing one while notes sound glides rather than jumps, so a filter sweep doesn't click.
+- [ ] `Controller` can start and stop a note directly (pitch, velocity), without going through the project. Each voice identifies its note by a plain, copyable key (no heap data), which ticket 4 fills with the note's permanent ID from ticket 1.
 - [ ] Sound tests pass, driving the real process path offline:
   - a range of MIDI notes measure at the expected frequency;
   - velocity changes the level by the documented amount;
@@ -51,7 +64,7 @@ Build project 1 from RFC-002. You set a tempo and a loop length, draw notes in a
 
 **Out of scope:** Playing notes from the project (ticket 3). The milestone 0 tone stays for Play until ticket 3 replaces it. Any UI.
 
-**Depends on:** Nothing. It can run alongside ticket 1: the engine keeps its own synth settings type, and ticket 3 fills it from the project.
+**Depends on:** Nothing. It can run alongside ticket 1: the engine keeps its own synth settings type, matching the "Synth settings" table, and ticket 3 fills it from the project.
 
 **Context:** RFC-002, "The shared model" points 4 and 6.
 
