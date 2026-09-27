@@ -56,3 +56,64 @@ pub fn max_difference(a: &[f32], b: &[f32]) -> f32 {
         .zip(b)
         .fold(0.0f32, |max, (x, y)| max.max((x - y).abs()))
 }
+
+/// The magnitude spectrum of `samples` (whose length must be a power of two)
+/// under a 4-term Blackman-Harris window, whose side lobes are 92 dB down,
+/// so a strong partial doesn't hide quiet ones far from it. Bin `k` is
+/// `k * sample_rate / samples.len()` Hz; only the bins up to half the sample
+/// rate are returned.
+pub fn spectrum(samples: &[f32]) -> Vec<f64> {
+    let n = samples.len();
+    assert!(n.is_power_of_two(), "FFT length must be a power of two");
+    let window = |i: usize| {
+        let x = std::f64::consts::TAU * i as f64 / n as f64;
+        0.35875 - 0.48829 * x.cos() + 0.14128 * (2.0 * x).cos() - 0.01168 * (3.0 * x).cos()
+    };
+    let mut re: Vec<f64> = samples
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| f64::from(s) * window(i))
+        .collect();
+    let mut im = vec![0.0; n];
+
+    // Iterative radix-2 FFT: bit-reversal, then butterflies.
+    let mut j = 0;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j |= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let mut len = 2;
+    while len <= n {
+        let angle = -std::f64::consts::TAU / len as f64;
+        for start in (0..n).step_by(len) {
+            for k in 0..len / 2 {
+                let (w_re, w_im) = ((angle * k as f64).cos(), (angle * k as f64).sin());
+                let (a, b) = (start + k, start + k + len / 2);
+                let t_re = re[b] * w_re - im[b] * w_im;
+                let t_im = re[b] * w_im + im[b] * w_re;
+                re[b] = re[a] - t_re;
+                im[b] = im[a] - t_im;
+                re[a] += t_re;
+                im[a] += t_im;
+            }
+        }
+        len <<= 1;
+    }
+    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
+}
+
+/// The loudest sample within `window / 2` samples of `at`. With a window of
+/// at least a cycle, it's a tone's level at that point.
+pub fn level_at(samples: &[f32], at: usize, window: usize) -> f32 {
+    let start = at.saturating_sub(window / 2);
+    let end = (at + window / 2).min(samples.len());
+    peak(&samples[start..end])
+}

@@ -8,13 +8,33 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 use uta_engine::offline::Renderer;
-use uta_engine::{EngineConfig, Snapshot};
+use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, VOICES};
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
 const BLOCKS: usize = 20_000;
 
+/// What the engine is doing while it's timed.
+#[derive(Clone, Copy)]
+enum Load {
+    /// The milestone 0 tone, with the volume gliding.
+    Tone,
+    /// All 16 synth voices sounding saws, with the filter cutoff gliding, on
+    /// top of the tone.
+    Voices,
+}
+
+impl Load {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Tone => "Tone",
+            Self::Voices => "16 voices",
+        }
+    }
+}
+
 struct Report {
+    load: Load,
     block_size: usize,
     deadline: Duration,
     p50: Duration,
@@ -22,7 +42,7 @@ struct Report {
     max: Duration,
 }
 
-fn measure(block_size: usize) -> Report {
+fn measure(load: Load, block_size: usize) -> Report {
     let config = EngineConfig {
         sample_rate: SAMPLE_RATE,
         channels: CHANNELS,
@@ -31,13 +51,33 @@ fn measure(block_size: usize) -> Report {
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let mut times = Vec::with_capacity(BLOCKS);
     renderer.controller.play().unwrap();
+    if let Load::Voices = load {
+        for i in 0..VOICES as u8 {
+            renderer
+                .controller
+                .note_on(NoteKey(u128::from(i)), 36 + i * 3, 100)
+                .unwrap();
+        }
+    }
     for i in 0..BLOCKS {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
-            renderer
-                .controller
-                .set_volume_db(-(((i / 64) % 24) as f32))
-                .unwrap();
+            match load {
+                Load::Tone => renderer
+                    .controller
+                    .set_volume_db(-(((i / 64) % 24) as f32))
+                    .unwrap(),
+                // Sustain 1, so the voices never fade to silence.
+                Load::Voices => renderer
+                    .controller
+                    .set_synth_settings(SynthSettings {
+                        cutoff_hz: 200.0 * (1 + (i / 64) % 50) as f32,
+                        resonance: 0.5,
+                        sustain: 1.0,
+                        ..SynthSettings::default()
+                    })
+                    .unwrap(),
+            }
         }
         let start = Instant::now();
         renderer.processor().process(&mut buffer);
@@ -47,6 +87,7 @@ fn measure(block_size: usize) -> Report {
     times.sort_unstable();
     let percentile = |p: f64| times[((times.len() - 1) as f64 * p).round() as usize];
     Report {
+        load,
         block_size,
         deadline: Duration::from_secs_f64(block_size as f64 / f64::from(SAMPLE_RATE)),
         p50: percentile(0.5),
@@ -71,13 +112,17 @@ fn share(duration: Duration, deadline: Duration) -> String {
 fn report_block_timing() {
     let mut table = format!(
         "### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n\
-         | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
-         |---|---|---|---|---|---|\n"
+         | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
+         |---|---|---|---|---|---|---|\n"
     );
-    for block_size in [32, 128, 1024] {
-        let r = measure(block_size);
+    for (load, block_size) in [Load::Tone, Load::Voices]
+        .into_iter()
+        .flat_map(|load| [32, 128, 1024].map(|block_size| (load, block_size)))
+    {
+        let r = measure(load, block_size);
         table += &format!(
-            "| {} | {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} |\n",
+            r.load.name(),
             r.block_size,
             micros(r.deadline),
             micros(r.p50),
