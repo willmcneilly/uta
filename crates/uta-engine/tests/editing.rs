@@ -575,11 +575,43 @@ fn a_drag_of_edits_while_playing_does_not_click_or_stick() {
             );
         }
     }
-    renderer.controller.stop().unwrap();
+    // End the drag by removing every note while the loop still plays. Only
+    // the swap can release the notes sounding now: a voice left holding
+    // one would sound on.
+    // Render on (a block at a time, for at most a second) until notes are
+    // sounding.
+    for _ in 0..RATE as usize / 64 {
+        renderer.render(64);
+        let samples = renderer.samples();
+        if samples[samples.len() - 64..].iter().all(|&s| s != 0.0) {
+            break;
+        }
+    }
+    let removed_at = renderer.samples().len();
+    assert!(
+        level_at(renderer.samples(), removed_at - 32, 64) > 0.0,
+        "notes sounding before they're removed"
+    );
+    let every_note = project.tracks()[0].clips()[0]
+        .notes()
+        .map(|n| n.id)
+        .collect();
+    edit(
+        &mut renderer,
+        &mut project,
+        Command::RemoveNotes {
+            clip,
+            notes: every_note,
+        },
+    );
     renderer.render(RATE as usize / 10);
+    assert!(renderer.controller.poll().playing);
     let samples = renderer.samples();
     // Up to 5 notes overlap.
     assert_no_clicks(samples, 5, "the drag");
-    let end = samples.len();
-    assert_silent(samples, end - 1_000..end, "after Stop");
+    assert_silent(
+        samples,
+        removed_at + RELEASE_SAMPLES + 1..samples.len(),
+        "after removing every note",
+    );
 }
