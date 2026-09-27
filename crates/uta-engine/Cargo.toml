@@ -6,6 +6,7 @@ publish = false
 description = "Uta's real-time audio engine."
 
 [dependencies]
+uta-core = { path = "../uta-core" }
 hound = "3.5"
 rtrb = "0.4"
 # Marks the process path real-time. A no-op unless built with RTSAN_ENABLE=1,

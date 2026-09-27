@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc de9d1c97d397c80f6cea845bc2752aa35973a0a1d2ebd5365d158f290325634e # shrinks to steps = [Apply(SetMasterVolume { volume_db: 0.0 }), Undo]

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use uta_core::Project;
 use uta_engine::{EngineConfig, Snapshot, offline};
 
 #[derive(Parser)]
@@ -34,7 +35,7 @@ fn main() -> ExitCode {
 
 fn render(file: &std::path::Path, seconds: f64) -> ExitCode {
     let config = EngineConfig::default();
-    let samples = offline::render_tone(config, Snapshot::default(), seconds);
+    let samples = offline::render_tone(config, Snapshot::from(&Project::new()), seconds);
     match offline::write_wav(file, config, &samples) {
         Ok(()) => {
             println!(
