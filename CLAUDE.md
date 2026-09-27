@@ -19,7 +19,7 @@ docs/plans            project plans: tickets, order, checkpoints
 How the pieces talk:
 - The UI never changes project data. It sends **commands** to Rust as Tauri calls. The project core applies them, records the inverse for undo, and returns the new state.
 - Commands are serde-serialisable, versioned, and refer to things by permanent IDs, so replaying them always rebuilds the same project.
-- The core builds a complete "what to play" snapshot and hands it to the engine. The audio thread swaps it in at the start of a block and sends the old one back to be freed.
+- The engine builds a complete "what to play" snapshot from the core's project (`Snapshot::from(&Project)`). The audio thread swaps it in at the start of a block and sends the old one back to be freed.
 - Fast data (meters, playhead, dropouts) streams to the UI through a Tauri channel, batched once per frame. Busy views draw on a canvas.
 
 ## Commands
@@ -84,7 +84,7 @@ Nobody listens to every change, so the tests are the evidence:
 - Rust 2024 edition. `cargo fmt` defaults. Clippy warnings are errors in CI.
 - The Rust version is pinned in `rust-toolchain.toml`, and CI installs the same one; rustup fetches it on first use. To upgrade, bump the version in its own PR and fix any new lints there, not in a feature PR.
 - Tests live next to the code (`#[cfg(test)] mod tests`), integration tests in `crates/<name>/tests/`.
-- Keep `uta-core` free of audio and UI dependencies, and `uta-engine` free of Tauri.
+- Keep `uta-core` free of audio and UI dependencies (`uta-engine` depends on it, never the reverse), and `uta-engine` free of Tauri.
 - Frontend: React function components, strict TypeScript, no `any`. Tests next to the component (`Foo.test.tsx`). UI tests run against Tauri's mocked back end (`@tauri-apps/api/mocks`), never a real one.
 - No project state in the UI: it renders what Rust sends.
 - Pin major versions: Tauri 2.x (not the 3.0 alphas), cpal 0.18.x.

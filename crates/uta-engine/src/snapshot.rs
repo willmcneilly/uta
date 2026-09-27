@@ -1,5 +1,7 @@
 //! The "what to play" snapshot.
 
+use uta_core::Project;
+
 /// Everything the audio thread needs to know about what to play.
 ///
 /// The control side builds a whole new snapshot for every change, and the
@@ -38,6 +40,14 @@ impl Default for Snapshot {
     }
 }
 
+/// What the engine plays for a project. The control side sends the result
+/// with [`crate::Controller::set_snapshot`] after each change.
+impl From<&Project> for Snapshot {
+    fn from(project: &Project) -> Self {
+        Self::default().with_volume_db(project.master_volume_db())
+    }
+}
+
 /// Converts decibels to a linear gain. Anything at or below -120 dB is silence.
 pub fn db_to_gain(db: f32) -> f32 {
     if db <= -120.0 {
@@ -65,5 +75,21 @@ mod tests {
         let snapshot = Snapshot::default();
         assert_eq!(snapshot.frequency_hz, 440.0);
         assert_eq!(snapshot.gain, db_to_gain(-12.0));
+    }
+
+    #[test]
+    fn a_new_project_plays_the_default_snapshot() {
+        assert_eq!(Snapshot::from(&Project::new()), Snapshot::default());
+    }
+
+    #[test]
+    fn the_snapshot_follows_the_master_volume() {
+        let mut project = Project::new();
+        project
+            .apply(&uta_core::Command::SetMasterVolume { volume_db: -6.0 })
+            .unwrap();
+        let snapshot = Snapshot::from(&project);
+        assert_eq!(snapshot.gain, db_to_gain(-6.0));
+        assert_eq!(snapshot.frequency_hz, Snapshot::DEFAULT_FREQUENCY_HZ);
     }
 }

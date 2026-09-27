@@ -3986,6 +3986,7 @@ dependencies = [
  "hound",
  "rtrb",
  "rtsan-standalone",
+ "uta-core",
 ]
 
 [[package]]
