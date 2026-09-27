@@ -15,10 +15,15 @@ pub mod offline;
 mod processor;
 mod ramp;
 mod snapshot;
+mod synth;
 
-pub use control::{Controller, QueueFull, VolumeError};
+pub use control::{Controller, NoteError, QueueFull, VolumeError};
 pub use processor::{FADE_SECONDS, Processor, VOLUME_SMOOTHING_SECONDS};
 pub use snapshot::{Snapshot, db_to_gain};
+pub use synth::{
+    NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
+    Waveform, pitch_to_hz, velocity_to_gain,
+};
 
 /// The crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -41,6 +46,16 @@ pub enum Command {
     Stop,
     /// Swap in a new "what to play" snapshot at the start of the next block.
     SetSnapshot(Box<Snapshot>),
+    /// Start a note on the synth, whether or not the transport is playing.
+    NoteOn {
+        key: NoteKey,
+        /// MIDI note number, 0 to 127.
+        pitch: u8,
+        /// 1 to 127.
+        velocity: u8,
+    },
+    /// Release the note started with this key.
+    NoteOff { key: NoteKey },
 }
 
 /// What the audio thread reports after each block.

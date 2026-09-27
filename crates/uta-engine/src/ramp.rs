@@ -36,6 +36,23 @@ impl Ramp {
         self.step = (target - self.current) / self.length as f32;
     }
 
+    /// Jumps straight to `value`, with no ramp.
+    pub(crate) fn jump_to(&mut self, value: f32) {
+        self.current = value;
+        self.target = value;
+        self.remaining = 0;
+    }
+
+    /// The value the next sample will have.
+    pub(crate) fn value(&self) -> f32 {
+        self.current
+    }
+
+    /// Whether it's still on its way to its target.
+    pub(crate) fn is_moving(&self) -> bool {
+        self.remaining > 0
+    }
+
     /// Returns the value for this sample and advances by one.
     #[inline]
     pub(crate) fn next_value(&mut self) -> f32 {
