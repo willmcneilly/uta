@@ -225,7 +225,7 @@ fn audio_callback_plays_and_hands_the_processor_back_without_allocating() {
         channels: 2,
     };
     let (mut controller, processor) = uta_engine::engine(config, Snapshot::default());
-    let (mut callback, mut home) = AudioCallback::new(processor);
+    let (mut callback, mut home, handover) = AudioCallback::new(processor);
     let mut buffer = vec![0.0; BLOCK * 2];
 
     controller.play().unwrap();
@@ -234,9 +234,16 @@ fn audio_callback_plays_and_hands_the_processor_back_without_allocating() {
     }
     assert!(controller.poll().peak > 0.0, "the callback made no sound");
 
+    // Fading out ahead of a rebuild.
+    handover.start();
+    for _ in 0..10 {
+        assert_no_alloc(|| callback.render(&mut buffer));
+    }
+    assert!(buffer.iter().all(|&s| s == 0.0), "it didn't fade out");
+
     // What happens when cpal drops a stream, wherever it drops it.
     assert_no_alloc(|| drop(callback));
     let mut processor = home.pop().expect("the processor didn't come home");
     process_block(&mut processor, &mut buffer);
-    assert_eq!(controller.poll().position, (11 * BLOCK) as u64);
+    assert_eq!(controller.poll().position, (21 * BLOCK) as u64);
 }

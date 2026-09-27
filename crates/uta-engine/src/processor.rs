@@ -97,6 +97,13 @@ impl Processor {
         self.sample_rate as u32
     }
 
+    /// Fades the sound out without stopping the transport, so a healthy
+    /// stream can be closed without a click before it's replaced. The next
+    /// [`Processor::prepare`] fades it back in. Real-time safe.
+    pub(crate) fn fade_out_for_handover(&mut self) {
+        self.transport_gain.set_target(0.0);
+    }
+
     /// Fills `output` with the next block of interleaved audio.
     ///
     /// Commands are applied at the start of the block, and one status message

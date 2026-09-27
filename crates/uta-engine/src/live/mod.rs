@@ -15,10 +15,10 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-pub use callbacks::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
+pub use callbacks::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback, Handover};
 pub use cpal_output::CpalOutput;
 pub use supervisor::{
-    DEVICE_POLL_INTERVAL, DeviceInfo, DeviceState, DeviceStatus, Output, Supervisor,
+    DEVICE_POLL_INTERVAL, DeviceInfo, DeviceState, DeviceStatus, HANDOVER_TIME, Output, Supervisor,
 };
 
 use crate::Processor;

@@ -9,12 +9,15 @@ use std::time::{Duration, Instant};
 
 use rtrb::Consumer;
 
-use super::{AudioCallback, DeviceError, ErrorCallback};
+use super::{AudioCallback, DeviceError, ErrorCallback, Handover};
 use crate::Processor;
 
 /// How often the supervisor looks for a device while there isn't one. cpal
 /// can't announce new devices, so it has to ask.
 pub const DEVICE_POLL_INTERVAL: Duration = Duration::from_millis(1500);
+/// How long a healthy stream gets to fade out before it's replaced: the
+/// fade plus the audio already queued in the device, with room to spare.
+pub const HANDOVER_TIME: Duration = Duration::from_millis(50);
 /// How long to wait for a dropped stream to hand the processor back.
 const PROCESSOR_RETURN_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -98,6 +101,9 @@ struct Running<S> {
     stream: S,
     errors: Consumer<DeviceError>,
     home: Consumer<Processor>,
+    handover: Handover,
+    /// When a planned rebuild is due, once the stream has faded out.
+    rebuild_at: Option<Instant>,
 }
 
 enum State<S> {
@@ -166,6 +172,15 @@ impl<O: Output> Supervisor<O> {
             self.device_changed(now);
         }
 
+        if let State::Running(Running {
+            rebuild_at: Some(at),
+            ..
+        }) = &self.state
+            && now >= *at
+        {
+            self.rebuild(now);
+        }
+
         if let State::Waiting { next_poll, .. } = &self.state
             && now >= *next_poll
         {
@@ -184,7 +199,7 @@ impl<O: Output> Supervisor<O> {
             self.pause(now);
             return;
         };
-        let State::Running(running) = &self.state else {
+        let State::Running(running) = &mut self.state else {
             return;
         };
         let rate_changed =
@@ -193,7 +208,10 @@ impl<O: Output> Supervisor<O> {
         let buffer_changed =
             buffer.is_some_and(|b| b != info.buffer_size_for(self.requested_buffer));
         if rate_changed || buffer_changed {
-            self.rebuild(now);
+            // The stream is still healthy, so fade it out before replacing
+            // it, rather than cutting it off mid-tone.
+            running.handover.start();
+            running.rebuild_at.get_or_insert(now + HANDOVER_TIME);
         } else {
             self.status.device = Some(info);
         }
@@ -241,7 +259,7 @@ impl<O: Output> Supervisor<O> {
         let buffer_size = info.buffer_size_for(self.requested_buffer);
         processor.prepare(info.sample_rate, usize::from(info.channels));
 
-        let (audio, mut home) = AudioCallback::new(processor);
+        let (audio, mut home, handover) = AudioCallback::new(processor);
         let (error_callback, errors) = ErrorCallback::new();
         match self
             .output
@@ -257,6 +275,8 @@ impl<O: Output> Supervisor<O> {
                     stream,
                     errors,
                     home,
+                    handover,
+                    rebuild_at: None,
                 });
             }
             Err(error) => {
@@ -277,6 +297,10 @@ impl<O: Output> Supervisor<O> {
         };
     }
 
+    /// Gives up: there's no processor left to play. Only reached if a
+    /// dropped stream never hands the processor back. If cpal drops the
+    /// callback later still, its push goes into a queue nobody reads, and the
+    /// processor is freed on whichever cpal thread dropped it.
     fn fail(&mut self) {
         self.status.state = DeviceState::Failed;
         self.state = State::Failed;
@@ -462,6 +486,18 @@ mod tests {
         }
     }
 
+    /// Before a planned rebuild the old stream fades to silence, so it isn't
+    /// cut off mid-tone.
+    fn assert_fades_out(samples: &[f32]) {
+        let start = samples[..20].iter().fold(0.0f32, |p, s| p.max(s.abs()));
+        assert!(start > 0.0, "it was already silent");
+        let tail = &samples[samples.len() - 20..];
+        assert!(
+            tail.iter().all(|&s| s == 0.0),
+            "no fade-out: it ends at {tail:?}"
+        );
+    }
+
     /// The first samples after a rebuild start from silence and rise, so the
     /// switch doesn't click.
     fn assert_fades_in(samples: &[f32]) {
@@ -520,26 +556,37 @@ mod tests {
         test.report(cpal::ErrorKind::DeviceChanged);
         test.tick_at(1.0);
 
+        // The old stream, rerouted and still healthy, fades out first.
+        assert_eq!(test.opens(), 1);
+        assert_fades_out(&test.play(2400));
+        test.tick_at(1.0 + HANDOVER_TIME.as_secs_f64());
+
         assert_eq!(test.opens(), 2);
         assert_eq!(test.supervisor.status().rebuilds, 1);
         assert_eq!(test.processor_rate(), 44_100);
         let samples = test.play(4410);
-        // One second in, at the new rate.
-        assert_eq!(test.position(), 44_100 + 4410);
+        // 1.05 s in, at the new rate.
+        assert_eq!(test.position(), 46_305 + 4410);
         assert_fades_in(&samples);
     }
 
     #[test]
     fn device_changed_that_lost_the_buffer_size_rebuilds() {
         let mut test = start(Some(speakers()), 64);
+        test.play(9600);
         test.world.borrow_mut().device = Some(headphones());
         // cpal doesn't re-apply a fixed buffer size when it reroutes.
         test.stream().buffer_size = 512;
         test.report(cpal::ErrorKind::DeviceChanged);
-        test.tick_at(0.1);
+        test.tick_at(0.2);
+        assert_fades_out(&test.play(2400));
+        test.tick_at(0.2 + HANDOVER_TIME.as_secs_f64());
 
         assert_eq!(test.opens(), 2);
         assert_eq!(test.supervisor.status().buffer_size, 64);
+        let samples = test.play(4800);
+        assert_eq!(test.position(), 9600 + 2400 + 4800);
+        assert_fades_in(&samples);
     }
 
     #[test]
@@ -597,6 +644,7 @@ mod tests {
     #[test]
     fn a_failed_open_waits_and_tries_again() {
         let mut test = start(Some(speakers()), 128);
+        test.play(4800);
         test.world.borrow_mut().fail_next_open = true;
         test.report(cpal::ErrorKind::StreamInvalidated);
         test.tick_at(0.1);
@@ -606,7 +654,9 @@ mod tests {
 
         test.tick_at(0.1 + DEVICE_POLL_INTERVAL.as_secs_f64());
         assert_eq!(test.supervisor.status().state, DeviceState::Running);
-        assert!(test.play(128).iter().any(|&s| s != 0.0));
+        let samples = test.play(4800);
+        assert_eq!(test.position(), 4800 + 4800);
+        assert_fades_in(&samples);
     }
 
     #[test]

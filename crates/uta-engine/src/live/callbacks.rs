@@ -1,6 +1,9 @@
 //! The two callbacks a device stream calls. Both can run on the audio thread,
 //! so both follow the audio thread rules in `CLAUDE.md`.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::Processor;
@@ -47,24 +50,39 @@ impl From<cpal::ErrorKind> for DeviceError {
 pub struct AudioCallback {
     processor: Option<Processor>,
     home: Producer<Processor>,
+    handover: Arc<AtomicBool>,
+}
+
+/// Asks a playing [`AudioCallback`] to fade out, ahead of closing its stream.
+pub struct Handover(Arc<AtomicBool>);
+
+impl Handover {
+    pub fn start(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
 }
 
 impl AudioCallback {
-    /// A callback that plays `processor`, and the queue it comes back through
-    /// when the callback is dropped.
-    pub fn new(processor: Processor) -> (Self, Consumer<Processor>) {
+    /// A callback that plays `processor`, the queue it comes back through
+    /// when the callback is dropped, and the switch that fades it out.
+    pub fn new(processor: Processor) -> (Self, Consumer<Processor>, Handover) {
         let (home, returned) = RingBuffer::new(1);
+        let handover = Arc::new(AtomicBool::new(false));
         let callback = Self {
             processor: Some(processor),
             home,
+            handover: handover.clone(),
         };
-        (callback, returned)
+        (callback, returned, Handover(handover))
     }
 
     /// Fills `output` with the next block. What the stream calls.
     #[rtsan_standalone::nonblocking]
     pub fn render(&mut self, output: &mut [f32]) {
         if let Some(processor) = &mut self.processor {
+            if self.handover.load(Ordering::Relaxed) {
+                processor.fade_out_for_handover();
+            }
             processor.process(output);
         }
     }
