@@ -237,7 +237,9 @@ fn every_channel_carries_the_tone() {
     let samples = offline::render_tone(stereo, Snapshot::default(), 0.1);
     let mono = offline::render_tone(config(), Snapshot::default(), 0.1);
     assert_eq!(samples.len(), mono.len() * 2);
-    for (frame, &expected) in samples.chunks_exact(2).zip(&mono) {
-        assert_eq!(frame, [expected, expected]);
+    let (frames, rest) = samples.as_chunks::<2>();
+    assert!(rest.is_empty());
+    for (frame, &expected) in frames.iter().zip(&mono) {
+        assert_eq!(*frame, [expected, expected]);
     }
 }
