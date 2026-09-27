@@ -1,0 +1,13 @@
+# Rust
+/target/
+
+# Frontend
+node_modules/
+dist/
+
+# macOS
+.DS_Store
+
+# Local tooling
+.claude/settings.local.json
+.crit/
