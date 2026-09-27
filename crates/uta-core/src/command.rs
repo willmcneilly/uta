@@ -20,6 +20,18 @@ pub enum Command {
     SetMasterVolume { volume_db: f32 },
 }
 
+impl Command {
+    /// Whether `other` sets the same thing as this command, so a run of them
+    /// can be undone as one (see [`crate::Session::amend`]). Only commands
+    /// that set an absolute value qualify: the first one's inverse then
+    /// undoes the whole run.
+    pub fn sets_same_as(&self, other: &Command) -> bool {
+        match (self, other) {
+            (Self::SetMasterVolume { .. }, Self::SetMasterVolume { .. }) => true,
+        }
+    }
+}
+
 /// Why a command couldn't be applied.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CommandError {

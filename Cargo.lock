@@ -4171,8 +4171,12 @@ dependencies = [
 name = "uta-app"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
+ "uta-core",
+ "uta-engine",
 ]
 
 [[package]]
