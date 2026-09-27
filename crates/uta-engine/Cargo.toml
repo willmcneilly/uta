@@ -12,6 +12,8 @@ rtrb = "0.4"
 # Marks the process path real-time. A no-op unless built with RTSAN_ENABLE=1,
 # which the CI "Real-time safety" job does.
 rtsan-standalone = "0.3"
+# Sound devices. Pinned to 0.18.x (CLAUDE.md).
+cpal = "0.18.2"
 
 [dev-dependencies]
 # nih-plug's fork: the crates.io release is from 2021 and can't nest
