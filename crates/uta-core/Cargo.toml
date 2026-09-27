@@ -1,0 +1,6 @@
+[package]
+name = "uta-core"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Uta's project model: the project, commands and undo."

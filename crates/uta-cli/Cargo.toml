@@ -1,0 +1,14 @@
+[package]
+name = "uta-cli"
+description = "The `uta` command: offline render and terminal playback."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "uta"
+path = "src/main.rs"
+
+[dependencies]
+uta-core = { path = "../uta-core" }
+uta-engine = { path = "../uta-engine" }

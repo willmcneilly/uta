@@ -1,0 +1,6 @@
+[package]
+name = "uta-engine"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Uta's real-time audio engine."
