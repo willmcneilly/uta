@@ -182,6 +182,15 @@ export function removeNotes(clip: string, notes: string[]): Promise<ProjectView>
   return invoke<ProjectView>("remove_notes", { clip, notes });
 }
 
+/**
+ * Trims the notes of the same pitch that `notes` cover, so none hides behind
+ * another: when a drag of them ends, or a paste lands. It joins `gesture`'s
+ * undo step, and ends the gesture.
+ */
+export function trimNotes(clip: string, notes: string[], gesture: number): Promise<ProjectView> {
+  return invoke<ProjectView>("trim_notes", { clip, notes, gesture });
+}
+
 /** Puts back everything `gesture` (one drag) changed, as if it never happened. */
 export function cancelGesture(gesture: number): Promise<ProjectView> {
   return invoke<ProjectView>("cancel_gesture", { gesture });

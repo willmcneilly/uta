@@ -10,8 +10,8 @@ use crate::stress;
 use serde::Serialize;
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    ClipId, Command, Note, NoteId, Project, Session, Source, SynthParam, SynthSettings, TrackId,
-    Waveform,
+    ClipId, Command, CommandError, Note, NoteId, Project, Session, Source, SynthParam,
+    SynthSettings, TrackId, Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -343,6 +343,40 @@ impl Uta {
         self.change(Command::RemoveNotes { clip, notes }, None)
     }
 
+    /// Trims the notes of the same pitch that `notes` now cover, so none
+    /// hides behind another (see [`Clip::trims_under`]): when a drag of them
+    /// ends, or a paste lands. The trim joins `gesture`'s undo step, so one
+    /// undo brings the trimmed notes back too. It ends the gesture. Does
+    /// nothing if the latest change came from something else, such as a
+    /// drag that hasn't changed anything.
+    pub fn trim_notes(
+        &mut self,
+        clip: ClipId,
+        notes: Vec<NoteId>,
+        gesture: u32,
+    ) -> Result<(), String> {
+        if self.gesture != Some(gesture) {
+            return Ok(());
+        }
+        self.gesture = None;
+        let trims = self
+            .session
+            .project()
+            .clip(clip)
+            .ok_or_else(|| CommandError::UnknownClip(clip).to_string())?
+            .trims_under(&notes, NoteId::random);
+        if trims.is_empty() {
+            return Ok(());
+        }
+        for command in trims {
+            self.session
+                .join(command)
+                .expect("trims are worked out from the clip as it is");
+        }
+        self.sync_engine();
+        Ok(())
+    }
+
     /// Puts back everything `gesture` changed, as if the drag never happened:
     /// Esc during a drag. Does nothing if the latest change came from
     /// something else, such as a drag that hasn't changed anything yet.
@@ -351,7 +385,7 @@ impl Uta {
             return;
         }
         self.gesture = None;
-        if self.session.withdraw().is_some() {
+        if !self.session.withdraw().is_empty() {
             self.sync_engine();
         }
     }
@@ -410,7 +444,7 @@ impl Uta {
     /// Undoes the latest change. Does nothing if there's none.
     pub fn undo(&mut self) {
         self.gesture = None;
-        if self.session.undo().is_some() {
+        if !self.session.undo().is_empty() {
             self.sync_engine();
         }
     }
@@ -418,7 +452,7 @@ impl Uta {
     /// Redoes the latest undone change. Does nothing if there's none.
     pub fn redo(&mut self) {
         self.gesture = None;
-        if self.session.redo().is_some() {
+        if !self.session.redo().is_empty() {
             self.sync_engine();
         }
     }
@@ -987,6 +1021,116 @@ mod tests {
         uta.undo();
         uta.cancel_gesture(5);
         assert!(uta.project().can_redo, "the undo is still there to redo");
+    }
+
+    #[test]
+    fn a_drag_that_covers_notes_trims_them_when_it_ends_as_one_undo_step() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        let others = vec![note(2, 60, 480, 480), note(3, 60, 1200, 480)];
+        uta.add_notes(
+            clip,
+            [vec![note(1, 60, 0, 240)], others.clone()].concat(),
+            None,
+        )
+        .unwrap();
+        let before = uta.project();
+
+        // Lengthen note 1 to 1440: over note 2, and half over note 3.
+        for length in [720, 1440] {
+            uta.set_notes(clip, vec![note(1, 60, 0, length)], Some(8))
+                .unwrap();
+        }
+        assert_eq!(
+            uta.project().track.clip.notes.len(),
+            3,
+            "nothing is trimmed mid-drag"
+        );
+        uta.trim_notes(clip, vec![note_id(1)], 8).unwrap();
+        let mut notes = uta.project().track.clip.notes;
+        notes.sort_by_key(|note| note.start);
+        assert_eq!(notes, vec![note(1, 60, 0, 1440), note(3, 60, 1440, 240)]);
+        assert_eq!(
+            uta.controller.snapshot().sequence.events().len(),
+            4,
+            "the engine plays the trimmed notes"
+        );
+
+        uta.undo();
+        assert_eq!(
+            uta.project().track.clip.notes,
+            before.track.clip.notes,
+            "one undo brings them back"
+        );
+        uta.redo();
+        assert_eq!(uta.project().track.clip.notes.len(), 2);
+    }
+
+    #[test]
+    fn a_paste_trims_what_it_lands_on_as_one_undo_step() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 960)], None)
+            .unwrap();
+        uta.add_notes(clip, vec![note(2, 60, 480, 960)], Some(9))
+            .unwrap();
+        uta.trim_notes(clip, vec![note_id(2)], 9).unwrap();
+        let mut notes = uta.project().track.clip.notes;
+        notes.sort_by_key(|note| note.start);
+        assert_eq!(notes, vec![note(1, 60, 0, 480), note(2, 60, 480, 960)]);
+        uta.undo();
+        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 960)]);
+    }
+
+    #[test]
+    fn a_note_dropped_inside_a_longer_one_splits_it_as_one_undo_step() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 1920), note(2, 64, 0, 240)], None)
+            .unwrap();
+        let before = uta.project();
+        // Move note 2 into the middle of note 1.
+        uta.set_notes(clip, vec![note(2, 60, 480, 240)], Some(10))
+            .unwrap();
+        uta.trim_notes(clip, vec![note_id(2)], 10).unwrap();
+
+        let mut notes = uta.project().track.clip.notes;
+        notes.sort_by_key(|note| note.start);
+        let spans: Vec<_> = notes.iter().map(|note| (note.start, note.length)).collect();
+        assert_eq!(spans, [(0, 480), (480, 240), (720, 1200)]);
+        assert_eq!(notes[0].id, note_id(1), "the head keeps the note's ID");
+        assert!(
+            ![note_id(1), note_id(2)].contains(&notes[2].id),
+            "the tail is new"
+        );
+
+        uta.undo();
+        assert_eq!(uta.project().track.clip.notes, before.track.clip.notes);
+    }
+
+    #[test]
+    fn trimming_only_joins_the_drag_it_ends() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 960), note(2, 60, 480, 960)], None)
+            .unwrap();
+        // A drag that changed nothing trims nothing.
+        uta.trim_notes(clip, vec![note_id(1)], 6).unwrap();
+        assert_eq!(uta.project().track.clip.notes.len(), 2);
+
+        uta.set_notes(clip, vec![note(1, 60, 0, 1200)], Some(7))
+            .unwrap();
+        uta.trim_notes(clip, vec![note_id(1)], 7).unwrap();
+        uta.cancel_gesture(7);
+        assert_eq!(
+            uta.project().track.clip.notes[0].length,
+            1200,
+            "the drag has ended, so Esc changes nothing"
+        );
+        uta.trim_notes(clip, vec![note_id(1)], 7).unwrap();
+        uta.undo();
+        assert_eq!(uta.project().track.clip.notes[0].length, 960);
+        assert_eq!(uta.project().track.clip.notes[1].start, 480);
     }
 
     #[test]

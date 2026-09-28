@@ -137,6 +137,18 @@ pub fn remove_notes<R: Runtime>(
     edit(&app, |uta| uta.remove_notes(clip, notes))
 }
 
+/// Trims the notes of the same pitch that `notes` cover, as part of
+/// `gesture`'s undo step: when a drag of them ends, or a paste lands.
+#[tauri::command]
+pub fn trim_notes<R: Runtime>(
+    app: AppHandle<R>,
+    clip: ClipId,
+    notes: Vec<NoteId>,
+    gesture: u32,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.trim_notes(clip, notes, gesture))
+}
+
 /// Puts back everything `gesture` (one drag) changed: Esc mid-drag.
 #[tauri::command]
 pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<ProjectView, String> {

@@ -15,19 +15,24 @@ pub struct Applied {
     pub command: Command,
 }
 
-/// A command and its inverse, as kept on the undo and redo stacks.
+/// A command and its inverse.
 #[derive(Debug, Clone)]
 struct Entry {
     command: Command,
     inverse: Command,
 }
 
+/// One undo step, as kept on the undo and redo stacks: the commands it
+/// applied, in order. Usually one; more when a change joins it (see
+/// [`Session::join`]).
+type Step = Vec<Entry>;
+
 /// Owns a project, applies commands to it and keeps the undo history.
 #[derive(Debug, Clone)]
 pub struct Session {
     project: Project,
-    undo: Vec<Entry>,
-    redo: Vec<Entry>,
+    undo: Vec<Step>,
+    redo: Vec<Step>,
     last_sequence: u64,
 }
 
@@ -65,10 +70,10 @@ impl Session {
     pub fn apply(&mut self, command: Command) -> Result<Applied, CommandError> {
         let inverse = self.project.apply(&command)?;
         self.redo.clear();
-        self.undo.push(Entry {
+        self.undo.push(vec![Entry {
             command: command.clone(),
             inverse,
-        });
+        }]);
         Ok(self.record(command))
     }
 
@@ -82,54 +87,92 @@ impl Session {
         let Some(continued) = self
             .undo
             .last()
+            .and_then(|step| step.last())
             .and_then(|entry| entry.command.continued_by(&command))
         else {
             return self.apply(command);
         };
         self.project.apply(&command)?;
         self.redo.clear();
-        let entry = self.undo.last_mut().expect("checked above");
+        let entry = self
+            .undo
+            .last_mut()
+            .and_then(|step| step.last_mut())
+            .expect("checked above");
         entry.command = continued;
         Ok(self.record(command))
     }
 
-    /// Undoes the latest command and forgets it, as if it had never been
-    /// made: it can't be redone. For cancelling a drag with Esc. Like a new
-    /// change, it clears the redo history, whose commands were recorded
-    /// against a state that's now gone. Returns `None` if there's nothing to
-    /// undo. The inverse still gets a sequence number, so replaying the
-    /// journal gives the same project.
-    pub fn withdraw(&mut self) -> Option<Applied> {
-        let entry = self.undo.pop()?;
+    /// Applies a command as part of the latest undo step, so one undo
+    /// reverts both: trimming the notes an edit covers, say. With nothing to
+    /// undo, it's the same as [`Self::apply`].
+    pub fn join(&mut self, command: Command) -> Result<Applied, CommandError> {
+        if self.undo.is_empty() {
+            return self.apply(command);
+        }
+        let inverse = self.project.apply(&command)?;
         self.redo.clear();
-        let command = self.apply_recorded(&entry.inverse);
-        Some(self.record(command))
+        self.undo.last_mut().expect("checked above").push(Entry {
+            command: command.clone(),
+            inverse,
+        });
+        Ok(self.record(command))
     }
 
-    /// Undoes the latest command. Returns `None` if there's nothing to undo.
-    pub fn undo(&mut self) -> Option<Applied> {
-        let entry = self.undo.pop()?;
-        let command = self.apply_recorded(&entry.inverse);
-        self.redo.push(entry);
-        Some(self.record(command))
+    /// Undoes the latest step and forgets it, as if it had never been made:
+    /// it can't be redone. For cancelling a drag with Esc. Like a new change,
+    /// it clears the redo history, whose commands were recorded against a
+    /// state that's now gone. Returns the inverses it applied, or nothing if
+    /// there's nothing to undo. They still get sequence numbers, so replaying
+    /// the journal gives the same project.
+    pub fn withdraw(&mut self) -> Vec<Applied> {
+        let Some(step) = self.undo.pop() else {
+            return Vec::new();
+        };
+        self.redo.clear();
+        self.apply_inverses(&step)
     }
 
-    /// Redoes the latest undone command. Returns `None` if there's nothing to
-    /// redo.
-    pub fn redo(&mut self) -> Option<Applied> {
-        let entry = self.redo.pop()?;
-        let command = self.apply_recorded(&entry.command);
-        self.undo.push(entry);
-        Some(self.record(command))
+    /// Undoes the latest step. Returns the inverses it applied, in order, or
+    /// nothing if there's nothing to undo.
+    pub fn undo(&mut self) -> Vec<Applied> {
+        let Some(step) = self.undo.pop() else {
+            return Vec::new();
+        };
+        let applied = self.apply_inverses(&step);
+        self.redo.push(step);
+        applied
+    }
+
+    /// Redoes the latest undone step. Returns the commands it applied, in
+    /// order, or nothing if there's nothing to redo.
+    pub fn redo(&mut self) -> Vec<Applied> {
+        let Some(step) = self.redo.pop() else {
+            return Vec::new();
+        };
+        let applied = step
+            .iter()
+            .map(|entry| self.apply_recorded(&entry.command))
+            .collect();
+        self.undo.push(step);
+        applied
+    }
+
+    /// Applies a step's inverses, latest first.
+    fn apply_inverses(&mut self, step: &Step) -> Vec<Applied> {
+        step.iter()
+            .rev()
+            .map(|entry| self.apply_recorded(&entry.inverse))
+            .collect()
     }
 
     /// Applies a command from the history. The history only holds commands
     /// that applied to exactly this state before, so they always apply again.
-    fn apply_recorded(&mut self, command: &Command) -> Command {
+    fn apply_recorded(&mut self, command: &Command) -> Applied {
         self.project
             .apply(command)
             .expect("a command from the history applies to the state it was recorded against");
-        command.clone()
+        self.record(command.clone())
     }
 
     fn record(&mut self, command: Command) -> Applied {
@@ -160,12 +203,111 @@ mod tests {
         session.project().tracks()[0].id()
     }
 
+    /// The one command an undo, redo or withdraw applied.
+    fn only(applied: Vec<Applied>) -> Applied {
+        let [applied] = <[Applied; 1]>::try_from(applied).expect("exactly one command");
+        applied
+    }
+
+    #[test]
+    fn a_joined_command_undoes_and_redoes_with_the_step_before_it() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        session.apply(volume(-6.0)).unwrap();
+        let before = session.project().clone();
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0), note(1, 60, 960)],
+            })
+            .unwrap();
+        session
+            .join(Command::SetNotes {
+                clip,
+                notes: vec![note(0, 62, 0)],
+            })
+            .unwrap();
+        session
+            .join(Command::RemoveNotes {
+                clip,
+                notes: vec![note_id(1)],
+            })
+            .unwrap();
+        let after = session.project().clone();
+
+        let undone = session.undo();
+        let commands: Vec<_> = undone.iter().map(|applied| &applied.command).collect();
+        assert_eq!(
+            commands,
+            [
+                &Command::AddNotes {
+                    clip,
+                    notes: vec![note(1, 60, 960)],
+                },
+                &Command::SetNotes {
+                    clip,
+                    notes: vec![note(0, 60, 0)],
+                },
+                &Command::RemoveNotes {
+                    clip,
+                    notes: vec![note_id(0), note_id(1)],
+                },
+            ],
+            "the inverses, latest first"
+        );
+        assert_eq!(session.project(), &before);
+        assert_eq!(session.redo().len(), 3);
+        assert_eq!(session.project(), &after);
+        session.undo();
+        assert_eq!(
+            only(session.undo()).command,
+            volume(-12.0),
+            "the step before is its own"
+        );
+    }
+
+    #[test]
+    fn withdrawing_takes_back_a_joined_step_whole() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        let before = session.project().clone();
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0)],
+            })
+            .unwrap();
+        session.join(volume(-3.0)).unwrap();
+        assert_eq!(session.withdraw().len(), 2);
+        assert_eq!(session.project(), &before);
+        assert!(!session.can_undo() && !session.can_redo());
+    }
+
+    #[test]
+    fn joining_with_nothing_to_undo_applies() {
+        let mut session = Session::new(Project::new());
+        session.join(volume(-6.0)).unwrap();
+        assert_eq!(only(session.undo()).command, volume(-12.0));
+    }
+
+    #[test]
+    fn an_invalid_join_changes_nothing() {
+        let mut session = Session::new(Project::new());
+        session.apply(volume(-6.0)).unwrap();
+        session.apply(volume(-3.0)).unwrap();
+        session.undo();
+        assert!(session.join(volume(f32::NAN)).is_err());
+        assert!(session.can_redo(), "a rejected command must not clear redo");
+        assert_eq!(session.last_sequence(), 3);
+        assert_eq!(only(session.undo()).command, volume(-12.0));
+    }
+
     #[test]
     fn apply_then_undo_gives_the_exact_previous_state() {
         let mut session = Session::new(Project::new());
         let before = session.project().clone();
         session.apply(volume(-3.0)).unwrap();
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project(), &before);
     }
 
@@ -175,17 +317,17 @@ mod tests {
         session.apply(volume(-6.0)).unwrap();
         session.apply(volume(0.0)).unwrap();
 
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().master_volume_db(), -6.0);
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().master_volume_db(), -12.0);
-        assert!(session.undo().is_none());
+        assert!(session.undo().is_empty());
 
-        session.redo().unwrap();
+        only(session.redo());
         assert_eq!(session.project().master_volume_db(), -6.0);
-        session.redo().unwrap();
+        only(session.redo());
         assert_eq!(session.project().master_volume_db(), 0.0);
-        assert!(session.redo().is_none());
+        assert!(session.redo().is_empty());
     }
 
     #[test]
@@ -197,16 +339,16 @@ mod tests {
         }
         assert_eq!(session.project().master_volume_db(), -9.0);
 
-        assert_eq!(session.undo().unwrap().command, volume(-12.0));
+        assert_eq!(only(session.undo()).command, volume(-12.0));
         assert!(!session.can_undo());
-        assert_eq!(session.redo().unwrap().command, volume(-9.0));
+        assert_eq!(only(session.redo()).command, volume(-9.0));
     }
 
     #[test]
     fn amending_with_nothing_to_undo_applies() {
         let mut session = Session::new(Project::new());
         session.amend(volume(-6.0)).unwrap();
-        assert_eq!(session.undo().unwrap().command, volume(-12.0));
+        assert_eq!(only(session.undo()).command, volume(-12.0));
     }
 
     #[test]
@@ -216,19 +358,19 @@ mod tests {
         assert!(session.amend(volume(f32::NAN)).is_err());
         assert_eq!(session.project().master_volume_db(), -6.0);
         assert_eq!(session.last_sequence(), 1);
-        assert_eq!(session.undo().unwrap().command, volume(-12.0));
-        assert_eq!(session.redo().unwrap().command, volume(-6.0));
+        assert_eq!(only(session.undo()).command, volume(-12.0));
+        assert_eq!(only(session.redo()).command, volume(-6.0));
     }
 
     #[test]
     fn a_new_command_clears_redo() {
         let mut session = Session::new(Project::new());
         session.apply(volume(-6.0)).unwrap();
-        session.undo().unwrap();
+        only(session.undo());
         assert!(session.can_redo());
         session.apply(volume(-1.0)).unwrap();
         assert!(!session.can_redo());
-        assert!(session.redo().is_none());
+        assert!(session.redo().is_empty());
     }
 
     #[test]
@@ -236,8 +378,8 @@ mod tests {
         let mut session = Session::new(Project::new());
         assert_eq!(session.last_sequence(), 0);
         assert_eq!(session.apply(volume(-6.0)).unwrap().sequence, 1);
-        assert_eq!(session.undo().unwrap().sequence, 2);
-        assert_eq!(session.redo().unwrap().sequence, 3);
+        assert_eq!(only(session.undo()).sequence, 2);
+        assert_eq!(only(session.redo()).sequence, 3);
         assert_eq!(session.last_sequence(), 3);
     }
 
@@ -245,15 +387,15 @@ mod tests {
     fn undo_reports_the_inverse_it_applied() {
         let mut session = Session::new(Project::new());
         session.apply(volume(-6.0)).unwrap();
-        assert_eq!(session.undo().unwrap().command, volume(-12.0));
-        assert_eq!(session.redo().unwrap().command, volume(-6.0));
+        assert_eq!(only(session.undo()).command, volume(-12.0));
+        assert_eq!(only(session.redo()).command, volume(-6.0));
     }
 
     #[test]
     fn an_invalid_command_changes_nothing() {
         let mut session = Session::new(Project::new());
         session.apply(volume(-6.0)).unwrap();
-        session.undo().unwrap();
+        only(session.undo());
         let before = session.project().clone();
 
         assert!(session.apply(volume(f32::NAN)).is_err());
@@ -296,17 +438,17 @@ mod tests {
         assert_eq!(clip_now.note(note_id(0)).unwrap().start, 24 * 120);
         assert_eq!(clip_now.note(note_id(1)).unwrap().pitch, 88);
 
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(
             session.project(),
             &before,
             "one undo reverts the whole drag"
         );
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().clip(clip).unwrap().notes().len(), 0);
 
-        session.redo().unwrap();
-        session.redo().unwrap();
+        only(session.redo());
+        only(session.redo());
         assert_eq!(
             session
                 .project()
@@ -342,7 +484,7 @@ mod tests {
                 notes: vec![note(1, 65, 0)],
             })
             .unwrap();
-        session.undo().unwrap();
+        only(session.undo());
         let clip_now = session.project().clip(clip).unwrap();
         assert_eq!(clip_now.note(note_id(0)).unwrap().pitch, 61);
         assert_eq!(clip_now.note(note_id(1)).unwrap().pitch, 64);
@@ -376,10 +518,10 @@ mod tests {
             1200
         );
 
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project(), &before, "one undo removes the note");
         assert!(!session.can_undo());
-        session.redo().unwrap();
+        only(session.redo());
         assert_eq!(
             session.project(),
             &drawn,
@@ -404,7 +546,7 @@ mod tests {
                 notes: vec![note(0, 61, 0)],
             })
             .unwrap();
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().clip(clip).unwrap().notes().len(), 2);
     }
 
@@ -432,7 +574,7 @@ mod tests {
             })
             .unwrap();
 
-        let withdrawn = session.withdraw().unwrap();
+        let withdrawn = only(session.withdraw());
         assert_eq!(session.project(), &before);
         assert_eq!(
             withdrawn.command,
@@ -444,14 +586,14 @@ mod tests {
         );
         assert!(!session.can_redo(), "a withdrawn change can't be redone");
         assert!(session.can_undo(), "earlier changes are still there");
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().clip(clip).unwrap().notes().len(), 0);
     }
 
     #[test]
     fn withdrawing_with_nothing_to_undo_does_nothing() {
         let mut session = Session::new(Project::new());
-        assert!(session.withdraw().is_none());
+        assert!(session.withdraw().is_empty());
         assert_eq!(session.last_sequence(), 0);
     }
 
@@ -489,16 +631,16 @@ mod tests {
         assert_eq!(settings.cutoff_hz, 800.0);
         assert_eq!(settings.resonance, 0.4);
 
-        session.undo().unwrap();
+        only(session.undo());
         let Source::Synth(settings) = session.project().tracks()[0].source();
         assert_eq!((settings.cutoff_hz, settings.resonance), (800.0, 0.0));
-        session.undo().unwrap();
+        only(session.undo());
         let Source::Synth(settings) = session.project().tracks()[0].source();
         assert_eq!(settings.cutoff_hz, 20_000.0);
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project().transport().loop_length(), 4 * 3840);
         assert_eq!(session.project().transport().tempo_map().bpm(), 90.0);
-        session.undo().unwrap();
+        only(session.undo());
         assert_eq!(session.project(), &before);
         assert!(!session.can_undo());
     }
@@ -508,6 +650,7 @@ mod tests {
     enum Step {
         Apply(Command),
         Amend(Command),
+        Join(Command),
         Undo,
         Redo,
         Withdraw,
@@ -518,6 +661,7 @@ mod tests {
         prop_oneof![
             4 => testing::any_command().prop_map(Step::Apply),
             2 => testing::any_command().prop_map(Step::Amend),
+            1 => testing::any_command().prop_map(Step::Join),
             2 => Just(Step::Undo),
             1 => Just(Step::Redo),
             1 => Just(Step::Withdraw),
@@ -530,9 +674,10 @@ mod tests {
         let mut session = Session::new(start.clone());
         let mut journal = Vec::new();
         for step in steps {
-            let applied = match step {
-                Step::Apply(command) => session.apply(command.clone()).ok(),
-                Step::Amend(command) => session.amend(command.clone()).ok(),
+            let applied: Vec<Applied> = match step {
+                Step::Apply(command) => session.apply(command.clone()).into_iter().collect(),
+                Step::Amend(command) => session.amend(command.clone()).into_iter().collect(),
+                Step::Join(command) => session.join(command.clone()).into_iter().collect(),
                 Step::Undo => session.undo(),
                 Step::Redo => session.redo(),
                 Step::Withdraw => session.withdraw(),
@@ -578,11 +723,11 @@ mod tests {
         ) {
             let (start, mut session, _) = run(&steps);
             // The latest state in the history, past any pending redos.
-            while session.redo().is_some() {}
+            while !session.redo().is_empty() {}
             let end = session.project().clone();
-            while session.undo().is_some() {}
+            while !session.undo().is_empty() {}
             prop_assert_eq!(session.project(), &start);
-            while session.redo().is_some() {}
+            while !session.redo().is_empty() {}
             prop_assert_eq!(session.project(), &end);
         }
 
@@ -594,7 +739,7 @@ mod tests {
             let (_, mut session, _) = run(&steps);
             let before = session.project().clone();
             session.apply(volume(volume_db)).unwrap();
-            session.undo().unwrap();
+            only(session.undo());
             prop_assert_eq!(session.project(), &before);
         }
     }

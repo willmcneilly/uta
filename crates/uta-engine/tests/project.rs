@@ -56,7 +56,7 @@ fn core_changes_and_their_undo_reach_the_audio() {
     send(&mut renderer, &session);
     assert_level(next_level(&mut renderer), -3.0);
 
-    session.undo().unwrap();
+    assert!(!session.undo().is_empty());
     send(&mut renderer, &session);
     assert_level(next_level(&mut renderer), Project::DEFAULT_MASTER_VOLUME_DB);
 }
@@ -89,7 +89,7 @@ fn notes_added_through_the_core_play_and_undo_removes_them() {
 
     // Undone once the note has ended (releasing a note deleted while it
     // sounds is UTA-11): the next pass is silent.
-    session.undo().unwrap();
+    assert!(!session.undo().is_empty());
     send(&mut renderer, &session);
     renderer.render(72_000 + 96_000);
     assert_eq!(
