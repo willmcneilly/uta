@@ -1,3 +1,4 @@
+import { type KeyboardEvent, useRef } from "react";
 import type { Limits, ProjectView, SynthParam, Waveform } from "./backend";
 import {
   SLIDER_STEPS,
@@ -62,27 +63,70 @@ function Slider({ label, name, value, limits, scale, format, onChange }: SliderP
   );
 }
 
+const ARROW_STEPS: Record<string, number> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+};
+
+/**
+ * The waveform, as a radio group. WebKit on macOS doesn't focus a radio
+ * button when it's clicked, and leaves radios out of the Tab order, so the
+ * group focuses them itself and handles the arrow keys itself.
+ */
+function WaveformPicker({
+  waveform,
+  onChange,
+}: {
+  waveform: Waveform;
+  onChange: Props["onChange"];
+}) {
+  const radios = useRef(new Map<Waveform, HTMLInputElement>());
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>, index: number) => {
+    const step = ARROW_STEPS[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const next = WAVEFORMS[(index + step + WAVEFORMS.length) % WAVEFORMS.length].value;
+    radios.current.get(next)?.focus();
+    onChange({ name: "waveform", value: next });
+  };
+
+  return (
+    <fieldset className="waveform">
+      <legend>Waveform</legend>
+      {WAVEFORMS.map(({ value, label }, index) => (
+        <label key={value}>
+          <input
+            ref={(radio) => {
+              if (radio) radios.current.set(value, radio);
+              else radios.current.delete(value);
+            }}
+            type="radio"
+            name="waveform"
+            value={value}
+            checked={waveform === value}
+            // An explicit tabIndex puts it in WebKit's Tab order.
+            tabIndex={waveform === value ? 0 : -1}
+            onClick={(event) => event.currentTarget.focus()}
+            onKeyDown={(event) => onKeyDown(event, index)}
+            onChange={() => onChange({ name: "waveform", value })}
+          />
+          {label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 /** The track's synth: waveform, filter and envelope. */
 export function SynthPanel({ project, onChange }: Props) {
   const synth = project.track.synth;
   const limits = project.synthLimits;
   return (
     <section className="synth" aria-label="Synth">
-      <fieldset className="waveform">
-        <legend>Waveform</legend>
-        {WAVEFORMS.map(({ value, label }) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name="waveform"
-              value={value}
-              checked={synth.waveform === value}
-              onChange={() => onChange({ name: "waveform", value })}
-            />
-            {label}
-          </label>
-        ))}
-      </fieldset>
+      <WaveformPicker waveform={synth.waveform} onChange={onChange} />
 
       <fieldset>
         <legend>Filter</legend>

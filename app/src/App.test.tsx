@@ -351,6 +351,34 @@ describe("App", () => {
       }
     });
 
+    it("focuses a waveform when it's clicked, and moves with the arrow keys", async () => {
+      await renderApp();
+      const radio = (name: string) => synth().getByRole("radio", { name });
+      // Only the checked waveform is in the Tab order.
+      expect(radio("Saw")).toHaveAttribute("tabindex", "0");
+      expect(radio("Sine")).toHaveAttribute("tabindex", "-1");
+
+      fireEvent.click(radio("Triangle"));
+      await waitFor(() => expect(radio("Triangle")).toBeChecked());
+      expect(radio("Triangle")).toHaveFocus();
+
+      fireEvent.keyDown(radio("Triangle"), { key: "ArrowRight" });
+      await waitFor(() => expect(radio("Saw")).toBeChecked());
+      expect(radio("Saw")).toHaveFocus();
+      fireEvent.keyDown(radio("Saw"), { key: "ArrowDown" });
+      await waitFor(() => expect(radio("Square")).toBeChecked());
+      // The ends wrap round.
+      fireEvent.keyDown(radio("Square"), { key: "ArrowRight" });
+      await waitFor(() => expect(radio("Sine")).toBeChecked());
+      fireEvent.keyDown(radio("Sine"), { key: "ArrowUp" });
+      await waitFor(() => expect(radio("Square")).toBeChecked());
+      expect(radio("Square")).toHaveFocus();
+      expect(radio("Square")).toHaveAttribute("tabindex", "0");
+
+      const waveforms = synthCalls().map((args) => (args.param as SynthParam).value);
+      expect(waveforms).toEqual(["triangle", "saw", "square", "sine", "square"]);
+    });
+
     it("sends each slider's setting to Rust and shows what comes back", async () => {
       await renderApp();
       // Halfway along each slider: log scales land on the geometric middle.
