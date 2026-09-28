@@ -10,7 +10,8 @@ use crate::stress;
 use serde::Serialize;
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    ClipId, Command, Note, NoteId, Project, Session, Source, SynthSettings, TrackId, Waveform,
+    ClipId, Command, Note, NoteId, Project, Session, Source, SynthParam, SynthSettings, TrackId,
+    Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -41,6 +42,8 @@ pub struct ProjectView {
     pub ticks_per_quarter: Ticks,
     /// Always 4 for now (4/4).
     pub beats_per_bar: u32,
+    /// The limits of the synth's settings, the same for every track.
+    pub synth_limits: SynthLimits,
     /// The project's one track.
     pub track: TrackView,
 }
@@ -80,6 +83,29 @@ impl From<&SynthSettings> for SynthView {
             release_seconds: settings.release_seconds,
         }
     }
+}
+
+/// The inclusive `[min, max]` of each synth setting that has a range.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthLimits {
+    pub cutoff_hz: (f32, f32),
+    pub resonance: (f32, f32),
+    /// For attack, decay and release.
+    pub envelope_seconds: (f32, f32),
+    pub sustain: (f32, f32),
+}
+
+impl SynthLimits {
+    const ALL: Self = {
+        use SynthSettings as S;
+        Self {
+            cutoff_hz: (S::MIN_CUTOFF_HZ, S::MAX_CUTOFF_HZ),
+            resonance: (S::MIN_RESONANCE, S::MAX_RESONANCE),
+            envelope_seconds: (S::MIN_ENVELOPE_SECONDS, S::MAX_ENVELOPE_SECONDS),
+            sustain: (S::MIN_SUSTAIN, S::MAX_SUSTAIN),
+        }
+    };
 }
 
 /// A clip and its notes. Note starts are in ticks from the clip's start.
@@ -231,6 +257,7 @@ impl Uta {
             loop_length: transport.loop_length(),
             ticks_per_quarter: TICKS_PER_QUARTER,
             beats_per_bar: transport.time_signature().beats_per_bar,
+            synth_limits: SynthLimits::ALL,
             track: TrackView {
                 id: track.id(),
                 synth: synth.into(),
@@ -259,6 +286,17 @@ impl Uta {
     /// as one.
     pub fn set_loop_length(&mut self, bars: u32, gesture: Option<u32>) -> Result<(), String> {
         self.change(Command::SetLoopLength { bars }, gesture)
+    }
+
+    /// Sets one of a track's synth settings. Changes to the same setting
+    /// that share a `gesture` (one drag of its control) undo as one.
+    pub fn set_synth_param(
+        &mut self,
+        track: TrackId,
+        param: SynthParam,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetSynthParam { track, param }, gesture)
     }
 
     /// Fills the loop with [`stress::NOTE_COUNT`] notes, as one undoable
@@ -733,6 +771,88 @@ mod tests {
         uta.undo();
         assert_eq!(uta.project().bpm, 120.0);
         assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn the_project_view_carries_the_synth_limits() {
+        let json = serde_json::to_value(offline().project()).unwrap();
+        let limits = &json["synthLimits"];
+        assert_eq!(limits["cutoffHz"], serde_json::json!([20.0, 20_000.0]));
+        assert_eq!(limits["resonance"], serde_json::json!([0.0, 1.0]));
+        assert_eq!(limits["sustain"], serde_json::json!([0.0, 1.0]));
+        let envelope = limits["envelopeSeconds"].as_array().unwrap();
+        assert_eq!(envelope[1], 10.0);
+        // 0.001 as an f32 isn't exactly 0.001 as a JSON number.
+        assert!((envelope[0].as_f64().unwrap() - 0.001).abs() < 1e-9);
+    }
+
+    #[test]
+    fn synth_settings_go_through_the_project_to_the_engine() {
+        let mut uta = offline();
+        let track = uta.project().track.id;
+        uta.set_synth_param(track, SynthParam::Waveform(Waveform::Square), None)
+            .unwrap();
+        uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
+            .unwrap();
+        let view = uta.project().track.synth;
+        assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
+        let engine = uta.controller.snapshot().synth;
+        assert_eq!(engine.waveform, uta_engine::Waveform::Square);
+        assert_eq!(engine.cutoff_hz, 800.0);
+
+        uta.undo();
+        assert_eq!(uta.project().track.synth.cutoff_hz, 20_000.0);
+        assert_eq!(uta.controller.snapshot().synth.cutoff_hz, 20_000.0);
+        uta.redo();
+        assert_eq!(uta.project().track.synth.cutoff_hz, 800.0);
+    }
+
+    #[test]
+    fn out_of_range_synth_settings_are_refused() {
+        let mut uta = offline();
+        let track = uta.project().track.id;
+        assert!(
+            uta.set_synth_param(track, SynthParam::Resonance(1.5), None)
+                .is_err()
+        );
+        assert!(
+            uta.set_synth_param(track, SynthParam::AttackSeconds(0.0), None)
+                .is_err()
+        );
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn one_synth_drag_undoes_as_one_step() {
+        let mut uta = offline();
+        let track = uta.project().track.id;
+        for hz in [10_000.0, 2_000.0, 500.0] {
+            uta.set_synth_param(track, SynthParam::CutoffHz(hz), Some(1))
+                .unwrap();
+        }
+        for level in [0.5, 0.2] {
+            uta.set_synth_param(track, SynthParam::Sustain(level), Some(2))
+                .unwrap();
+        }
+
+        uta.undo();
+        let synth = uta.project().track.synth;
+        assert_eq!((synth.cutoff_hz, synth.sustain), (500.0, 0.7));
+        uta.undo();
+        assert_eq!(uta.project().track.synth.cutoff_hz, 20_000.0);
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn synth_params_arrive_from_the_ui_as_name_and_value() {
+        let param: SynthParam =
+            serde_json::from_value(serde_json::json!({"name": "cutoff_hz", "value": 440.0}))
+                .unwrap();
+        assert_eq!(param, SynthParam::CutoffHz(440.0));
+        let param: SynthParam =
+            serde_json::from_value(serde_json::json!({"name": "waveform", "value": "triangle"}))
+                .unwrap();
+        assert_eq!(param, SynthParam::Waveform(Waveform::Triangle));
     }
 
     #[test]

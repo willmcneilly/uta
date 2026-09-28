@@ -55,6 +55,7 @@ pub fn run() {
             commands::set_volume,
             commands::set_tempo,
             commands::set_loop_length,
+            commands::set_synth_param,
             commands::add_notes,
             commands::set_notes,
             commands::remove_notes,
