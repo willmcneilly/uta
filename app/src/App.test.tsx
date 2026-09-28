@@ -12,7 +12,7 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { Frame, NoteView, ProjectView } from "./backend";
+import type { Frame, NoteView, ProjectView, SynthParam, SynthView } from "./backend";
 import { type RecordingRenderer, projectView, recordingFactory } from "./pianoRoll/testing";
 import type { RendererFactory } from "./pianoRoll/renderer";
 
@@ -23,6 +23,16 @@ interface Call {
   cmd: string;
   args: Record<string, unknown>;
 }
+
+const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthView> = {
+  waveform: "waveform",
+  cutoff_hz: "cutoffHz",
+  resonance: "resonance",
+  attack_seconds: "attackSeconds",
+  decay_seconds: "decaySeconds",
+  sustain: "sustain",
+  release_seconds: "releaseSeconds",
+};
 
 let calls: Call[];
 let project: ProjectView;
@@ -97,6 +107,14 @@ beforeEach(() => {
           const loopLength = bars * 3840;
           const clip = { ...project.track.clip, length: loopLength };
           project = { ...project, loopBars: bars, loopLength, track: { ...project.track, clip } };
+          return project;
+        }
+        case "set_synth_param": {
+          const param = args.param as SynthParam;
+          // Rust stores f32s, so what comes back isn't quite what was sent.
+          const value = param.name === "waveform" ? param.value : Math.fround(param.value);
+          const synth = { ...project.track.synth, [SYNTH_FIELDS[param.name]]: value };
+          project = { ...project, canUndo: true, track: { ...project.track, synth } };
           return project;
         }
         case "subscribe":
@@ -294,6 +312,151 @@ describe("App", () => {
     expect(gestures[2]).toBeNull();
     expect(gestures[3]).toEqual(expect.any(Number));
     expect(gestures[3]).not.toBe(gestures[0]);
+  });
+
+  describe("synth panel", () => {
+    const synth = () => within(screen.getByRole("region", { name: "Synth" }));
+    const slider = (name: string) =>
+      synth().getByRole("slider", { name: new RegExp(`^${name}`) });
+    const synthCalls = () => calls.filter((c) => c.cmd === "set_synth_param").map((c) => c.args);
+
+    it("shows the synth settings Rust sends", async () => {
+      await renderApp();
+      expect(synth().getByRole("radio", { name: "Saw" })).toBeChecked();
+      expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "20.0 kHz");
+      expect(slider("Cutoff")).toHaveValue("1000");
+      expect(slider("Resonance")).toHaveAttribute("aria-valuetext", "0.00");
+      expect(slider("Attack")).toHaveAttribute("aria-valuetext", "5.0 ms");
+      expect(slider("Decay")).toHaveAttribute("aria-valuetext", "200 ms");
+      expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "70%");
+      expect(slider("Sustain")).toHaveValue("700");
+      expect(slider("Release")).toHaveAttribute("aria-valuetext", "200 ms");
+    });
+
+    it("sends each waveform to Rust and shows what comes back", async () => {
+      await renderApp();
+      for (const [label, value] of [
+        ["Sine", "sine"],
+        ["Triangle", "triangle"],
+        ["Square", "square"],
+        ["Saw", "saw"],
+      ]) {
+        fireEvent.click(synth().getByRole("radio", { name: label }));
+        await waitFor(() => expect(synth().getByRole("radio", { name: label })).toBeChecked());
+        expect(synthCalls().at(-1)).toEqual({
+          track: "track-1",
+          param: { name: "waveform", value },
+          gesture: null,
+        });
+      }
+    });
+
+    it("focuses a waveform when it's clicked, and moves with the arrow keys", async () => {
+      await renderApp();
+      const radio = (name: string) => synth().getByRole("radio", { name });
+      // Only the checked waveform is in the Tab order.
+      expect(radio("Saw")).toHaveAttribute("tabindex", "0");
+      expect(radio("Sine")).toHaveAttribute("tabindex", "-1");
+
+      fireEvent.click(radio("Triangle"));
+      await waitFor(() => expect(radio("Triangle")).toBeChecked());
+      expect(radio("Triangle")).toHaveFocus();
+
+      fireEvent.keyDown(radio("Triangle"), { key: "ArrowRight" });
+      await waitFor(() => expect(radio("Saw")).toBeChecked());
+      expect(radio("Saw")).toHaveFocus();
+      fireEvent.keyDown(radio("Saw"), { key: "ArrowDown" });
+      await waitFor(() => expect(radio("Square")).toBeChecked());
+      // The ends wrap round.
+      fireEvent.keyDown(radio("Square"), { key: "ArrowRight" });
+      await waitFor(() => expect(radio("Sine")).toBeChecked());
+      fireEvent.keyDown(radio("Sine"), { key: "ArrowUp" });
+      await waitFor(() => expect(radio("Square")).toBeChecked());
+      expect(radio("Square")).toHaveFocus();
+      expect(radio("Square")).toHaveAttribute("tabindex", "0");
+
+      const waveforms = synthCalls().map((args) => (args.param as SynthParam).value);
+      expect(waveforms).toEqual(["triangle", "saw", "square", "sine", "square"]);
+    });
+
+    it("sends each slider's setting to Rust and shows what comes back", async () => {
+      await renderApp();
+      // Halfway along each slider: log scales land on the geometric middle.
+      const cases: [string, SynthParam["name"], number, string][] = [
+        ["Cutoff", "cutoff_hz", 632.456, "632 Hz"],
+        ["Resonance", "resonance", 0.5, "0.50"],
+        ["Attack", "attack_seconds", 0.1, "100 ms"],
+        ["Decay", "decay_seconds", 0.1, "100 ms"],
+        ["Sustain", "sustain", 0.5, "50%"],
+        ["Release", "release_seconds", 0.1, "100 ms"],
+      ];
+      for (const [label, name, value, shown] of cases) {
+        fireEvent.change(slider(label), { target: { value: "500" } });
+        await waitFor(() => expect(slider(label)).toHaveAttribute("aria-valuetext", shown));
+        expect(slider(label)).toHaveValue("500");
+        const sent = synthCalls().at(-1)!;
+        expect(sent.track).toBe("track-1");
+        expect(sent.gesture).toBeNull();
+        const param = sent.param as SynthParam;
+        expect(param.name).toBe(name);
+        expect(param.value).toBeCloseTo(value, 3);
+      }
+    });
+
+    it("sends the limits exactly at each end of a slider", async () => {
+      await renderApp();
+      fireEvent.change(slider("Cutoff"), { target: { value: "0" } });
+      fireEvent.change(slider("Release"), { target: { value: "1000" } });
+      await waitFor(() => expect(synthCalls()).toHaveLength(2));
+      expect(synthCalls().map((args) => args.param)).toEqual([
+        { name: "cutoff_hz", value: 20 },
+        { name: "release_seconds", value: 10 },
+      ]);
+    });
+
+    it("marks every change in one drag with the same gesture", async () => {
+      await renderApp();
+      fireEvent.pointerDown(slider("Cutoff"));
+      fireEvent.change(slider("Cutoff"), { target: { value: "800" } });
+      fireEvent.change(slider("Cutoff"), { target: { value: "600" } });
+      fireEvent.pointerUp(window);
+      fireEvent.pointerDown(slider("Sustain"));
+      fireEvent.change(slider("Sustain"), { target: { value: "300" } });
+      fireEvent.pointerUp(window);
+      fireEvent.change(slider("Sustain"), { target: { value: "200" } });
+
+      await waitFor(() => expect(synthCalls()).toHaveLength(4));
+      const gestures = synthCalls().map((args) => args.gesture);
+      expect(gestures[0]).toEqual(expect.any(Number));
+      expect(gestures[1]).toBe(gestures[0]);
+      expect(gestures[2]).toEqual(expect.any(Number));
+      expect(gestures[2]).not.toBe(gestures[0]);
+      expect(gestures[3]).toBeNull();
+    });
+
+    it("follows undo and redo, which Rust announces", async () => {
+      await renderApp();
+      const undone = projectView();
+      undone.track.synth = {
+        waveform: "square",
+        cutoffHz: 200,
+        resonance: 0.8,
+        attackSeconds: 1,
+        decaySeconds: 0.01,
+        sustain: 0.25,
+        releaseSeconds: 2.5,
+      };
+      await act(() => emit("project-changed", undone));
+      expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
+      expect(slider("Cutoff")).toHaveValue("333");
+      expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
+      expect(slider("Resonance")).toHaveValue("800");
+      expect(slider("Attack")).toHaveValue("750");
+      expect(slider("Attack")).toHaveAttribute("aria-valuetext", "1.00 s");
+      expect(slider("Decay")).toHaveAttribute("aria-valuetext", "10 ms");
+      expect(slider("Sustain")).toHaveValue("250");
+      expect(slider("Release")).toHaveAttribute("aria-valuetext", "2.50 s");
+    });
   });
 
   it("shows undo and redo from the menu, which Rust announces", async () => {

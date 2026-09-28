@@ -9,7 +9,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use uta_core::{ClipId, Note, NoteId};
+use uta_core::{ClipId, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::EditMenu;
 use crate::uta::{Frame, ProjectView, Uta};
@@ -90,6 +90,18 @@ pub fn set_loop_length<R: Runtime>(
     gesture: Option<u32>,
 ) -> Result<ProjectView, String> {
     edit(&app, |uta| uta.set_loop_length(bars, gesture))
+}
+
+/// Sets one of a track's synth settings. Calls to the same setting with the
+/// same `gesture` (one drag) undo as one step.
+#[tauri::command]
+pub fn set_synth_param<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    param: SynthParam,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_synth_param(track, param, gesture))
 }
 
 /// Adds notes to a clip. The UI picks each new note's ID. A `set_notes` of

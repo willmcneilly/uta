@@ -23,6 +23,12 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
     loopLength: 4 * 3840,
     ticksPerQuarter: 960,
     beatsPerBar: 4,
+    synthLimits: {
+      cutoffHz: [20, 20_000],
+      resonance: [0, 1],
+      envelopeSeconds: [0.001, 10],
+      sustain: [0, 1],
+    },
     track: {
       id: "track-1",
       synth: {
