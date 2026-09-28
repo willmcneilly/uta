@@ -4,6 +4,7 @@ import {
   type Frame,
   type OutputView,
   type ProjectView,
+  type SynthParam,
   addNotes,
   auditionNote,
   cancelGesture,
@@ -15,6 +16,7 @@ import {
   setBufferSize,
   setLoopLength,
   setNotes,
+  setSynthParam,
   setTempo,
   setVolume,
   stop,
@@ -29,6 +31,7 @@ import { FrameStats } from "./pianoRoll/frameStats";
 import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
+import { SynthPanel } from "./SynthPanel";
 import { Transport } from "./Transport";
 import { Volume } from "./Volume";
 
@@ -131,6 +134,12 @@ function App({ createRenderer }: Props) {
     setLoopLength(bars, gesture).then(setProject, report);
   };
 
+  // The synth panel and the piano roll edit the project's one track.
+  const changeSynth = (param: SynthParam, gesture?: number) => {
+    if (!project) return;
+    setSynthParam(project.track.id, param, gesture).then(setProject, report);
+  };
+
   // The piano roll edits the project's one clip.
   const clip = project?.track.clip.id ?? "";
   const editor: NoteEditor = {
@@ -175,6 +184,8 @@ function App({ createRenderer }: Props) {
           />
         )}
       </div>
+
+      {project && <SynthPanel project={project} onChange={changeSynth} />}
 
       {error && (
         <p className="error" role="alert">

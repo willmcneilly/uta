@@ -26,6 +26,8 @@ export interface ProjectView {
   ticksPerQuarter: number;
   /** Always 4 for now (4/4). */
   beatsPerBar: number;
+  /** The limits of the synth's settings, the same for every track. */
+  synthLimits: SynthLimits;
   /** The project's one track. */
   track: TrackView;
 }
@@ -50,6 +52,32 @@ export interface SynthView {
   sustain: number;
   releaseSeconds: number;
 }
+
+/** An inclusive range: `[min, max]`. */
+export type Limits = [number, number];
+
+/** The limits of each synth setting that has a range. */
+export interface SynthLimits {
+  cutoffHz: Limits;
+  resonance: Limits;
+  /** For attack, decay and release. */
+  envelopeSeconds: Limits;
+  sustain: Limits;
+}
+
+/** One synth setting and its new value, as `set_synth_param` takes it. */
+export type SynthParam =
+  | { name: "waveform"; value: Waveform }
+  | {
+      name:
+        | "cutoff_hz"
+        | "resonance"
+        | "attack_seconds"
+        | "decay_seconds"
+        | "sustain"
+        | "release_seconds";
+      value: number;
+    };
 
 /** A clip and its notes. Positions and lengths are in ticks. */
 export interface ClipView {
@@ -123,6 +151,18 @@ export function setTempo(bpm: number, gesture?: number): Promise<ProjectView> {
 /** Changes with the same `gesture` (one drag) undo as one step. */
 export function setLoopLength(bars: number, gesture?: number): Promise<ProjectView> {
   return invoke<ProjectView>("set_loop_length", { bars, gesture: gesture ?? null });
+}
+
+/**
+ * Sets one of a track's synth settings. Changes to the same setting with
+ * the same `gesture` (one drag) undo as one step.
+ */
+export function setSynthParam(
+  track: string,
+  param: SynthParam,
+  gesture?: number,
+): Promise<ProjectView> {
+  return invoke<ProjectView>("set_synth_param", { track, param, gesture: gesture ?? null });
 }
 
 /** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
