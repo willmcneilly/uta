@@ -134,7 +134,7 @@ function App({ createRenderer }: Props) {
     setLoopLength(bars, gesture).then(setProject, report);
   };
 
-  // The synth panel and the piano roll edit the project's one track.
+  // The synth panel edits the project's one track.
   const changeSynth = (param: SynthParam, gesture?: number) => {
     if (!project) return;
     setSynthParam(project.track.id, param, gesture).then(setProject, report);
