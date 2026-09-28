@@ -4,11 +4,16 @@ import {
   MAX_KEY_HEIGHT,
   MIN_PIXELS_PER_TICK,
   RULER_HEIGHT,
+  VELOCITY_LANE_HEIGHT,
   type Viewport,
   clampViewport,
   gridStep,
+  noteArea,
   pitchToY,
   tickToX,
+  velocityLane,
+  velocityPerPixel,
+  velocityToY,
   visiblePitches,
   visibleTicks,
   xToTick,
@@ -19,7 +24,8 @@ import {
 
 const view = (overrides: Partial<Viewport> = {}): Viewport => ({
   width: KEYBOARD_WIDTH + 800,
-  height: RULER_HEIGHT + 240,
+  // 240 px of notes.
+  height: RULER_HEIGHT + 240 + VELOCITY_LANE_HEIGHT,
   scrollTicks: 0,
   scrollY: 0,
   pixelsPerTick: 0.1,
@@ -125,5 +131,30 @@ describe("gridStep", () => {
   it("skips bars when even they're too close", () => {
     // A bar is 1.92 px: every 5th bar is 9.6 px.
     expect(gridStep(0.0005, 960, 4)).toBe(5 * 3840);
+  });
+});
+
+describe("the velocity lane", () => {
+  it("sits under the notes, as wide as them, to the bottom", () => {
+    const v = view();
+    expect(noteArea(v)).toEqual({ x: KEYBOARD_WIDTH, y: RULER_HEIGHT, width: 800, height: 240 });
+    expect(velocityLane(v)).toEqual({
+      x: KEYBOARD_WIDTH,
+      y: RULER_HEIGHT + 240,
+      width: 800,
+      height: VELOCITY_LANE_HEIGHT,
+    });
+  });
+
+  it("puts louder notes' bars higher, inside the lane", () => {
+    const v = view();
+    const lane = velocityLane(v);
+    const top = velocityToY(v, 127);
+    const bottom = velocityToY(v, 0);
+    expect(top).toBeGreaterThan(lane.y);
+    expect(bottom).toBeLessThan(lane.y + lane.height);
+    expect(velocityToY(v, 127 / 2)).toBeCloseTo((top + bottom) / 2, 9);
+    // Moving the pointer the lane's usable height covers the whole range.
+    expect((bottom - top) * velocityPerPixel(v)).toBeCloseTo(127, 9);
   });
 });

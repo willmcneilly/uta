@@ -1,6 +1,6 @@
-//! The native menu bar. Undo and Redo are our own items, not the system's,
-//! so ⌘Z and ⇧⌘Z reach the project core instead of the web view's text
-//! editing.
+//! The native menu bar. Undo, Redo, Copy, Paste and Duplicate are our own
+//! items, not the system's, so ⌘Z, ⇧⌘Z, ⌘C, ⌘V and ⌘D reach the project
+//! core and the piano roll instead of the web view's text editing.
 
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};
@@ -9,6 +9,9 @@ use crate::uta::ProjectView;
 
 pub const UNDO: &str = "undo";
 pub const REDO: &str = "redo";
+pub const COPY: &str = "copy";
+pub const PASTE: &str = "paste";
+pub const DUPLICATE: &str = "duplicate";
 pub const ADD_STRESS_NOTES: &str = "add-stress-notes";
 
 /// The Edit menu's Undo and Redo, kept to enable them as the history changes.
@@ -26,7 +29,8 @@ impl<R: Runtime> EditMenu<R> {
 }
 
 /// Builds the menu bar: the usual app, Edit and Window menus, with our own
-/// Undo and Redo, and a Develop menu of tools for testing Uta itself.
+/// Undo, Redo, Copy, Paste and Duplicate, and a Develop menu of tools for
+/// testing Uta itself.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu<R>)> {
     let undo = MenuItemBuilder::with_id(UNDO, "Undo")
         .accelerator("CmdOrCtrl+Z")
@@ -35,6 +39,15 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu
     let redo = MenuItemBuilder::with_id(REDO, "Redo")
         .accelerator("CmdOrCtrl+Shift+Z")
         .enabled(false)
+        .build(app)?;
+    let copy = MenuItemBuilder::with_id(COPY, "Copy")
+        .accelerator("CmdOrCtrl+C")
+        .build(app)?;
+    let paste = MenuItemBuilder::with_id(PASTE, "Paste")
+        .accelerator("CmdOrCtrl+V")
+        .build(app)?;
+    let duplicate = MenuItemBuilder::with_id(DUPLICATE, "Duplicate")
+        .accelerator("CmdOrCtrl+D")
         .build(app)?;
 
     let app_menu = SubmenuBuilder::new(app, "Uta")
@@ -53,8 +66,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, EditMenu
         .item(&redo)
         .separator()
         .cut()
-        .copy()
-        .paste()
+        .item(&copy)
+        .item(&paste)
+        .item(&duplicate)
         .select_all()
         .build()?;
     let develop = SubmenuBuilder::new(app, "Develop")

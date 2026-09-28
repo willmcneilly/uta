@@ -1,12 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Channel } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import type { NoteView, ProjectView } from "../backend";
+import type { EditMenuItem, Frame, NoteView, ProjectView } from "../backend";
 import { type RecordingRenderer, projectView, recordingFactory } from "./testing";
 import type { RendererFactory } from "./renderer";
-import { pitchToY, tickToX } from "./viewport";
+import { pitchToY, tickToX, velocityLane, velocityPerPixel } from "./viewport";
 
 // Editing notes in the piano roll, against Tauri's mocked back end. The mock
 // applies the note commands to its own project and sends it back, so the
@@ -23,6 +24,7 @@ let project: ProjectView;
 let beforeGesture: Map<number, ProjectView>;
 let renderer: RecordingRenderer;
 let factory: RendererFactory;
+let frames: Channel<Frame> | null;
 
 const note = (id: string, pitch: number, start: number, length = 480): NoteView => ({
   id,
@@ -54,6 +56,7 @@ beforeEach(() => {
   calls = [];
   project = projectView({}, [note("low", 60, 0), note("high", 72, 3840)]);
   beforeGesture = new Map();
+  frames = null;
   ({ renderer, factory } = recordingFactory());
   vi.stubGlobal("ResizeObserver", FixedSizeObserver);
   mockIPC(
@@ -84,6 +87,9 @@ beforeEach(() => {
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
           return project;
+        case "subscribe":
+          frames = args.onFrame as Channel<Frame>;
+          return null;
         default:
           return null;
       }
@@ -109,7 +115,12 @@ async function renderApp() {
 const roll = () => screen.getByRole("application", { name: "Notes" });
 
 /** The pointer at `tick` (from the song's start) in the middle of `pitch`'s row. */
-function at(tick: number, pitch: number, modifiers: { metaKey?: boolean } = {}) {
+interface Modifiers {
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}
+
+function at(tick: number, pitch: number, modifiers: Modifiers = {}) {
   const view = renderer.lastView();
   return {
     clientX: tickToX(view, tick),
@@ -119,13 +130,13 @@ function at(tick: number, pitch: number, modifiers: { metaKey?: boolean } = {}) 
   };
 }
 
-async function press(tick: number, pitch: number, modifiers: { metaKey?: boolean } = {}) {
+async function press(tick: number, pitch: number, modifiers: Modifiers = {}) {
   await act(async () => {
     fireEvent.pointerDown(roll(), at(tick, pitch, modifiers));
   });
 }
 
-async function moveTo(tick: number, pitch: number, modifiers: { metaKey?: boolean } = {}) {
+async function moveTo(tick: number, pitch: number, modifiers: Modifiers = {}) {
   await act(async () => {
     fireEvent.pointerMove(window, at(tick, pitch, modifiers));
   });
@@ -141,6 +152,40 @@ async function key(target: Window | HTMLElement, name: string) {
   await act(async () => {
     fireEvent.keyDown(target, { key: name });
   });
+}
+
+/** Clicks a note: presses and releases without moving. */
+async function click(tick: number, pitch: number, modifiers: Modifiers = {}) {
+  await press(tick, pitch, modifiers);
+  await release();
+}
+
+/** The pointer in the velocity lane at `tick`, `fromTop` pixels below its top. */
+function inLane(tick: number, fromTop: number, modifiers: Modifiers = {}) {
+  const view = renderer.lastView();
+  return {
+    clientX: tickToX(view, tick),
+    clientY: velocityLane(view).y + fromTop,
+    button: 0,
+    ...modifiers,
+  };
+}
+
+async function pressLane(tick: number, fromTop: number, modifiers: Modifiers = {}) {
+  await act(async () => {
+    fireEvent.pointerDown(roll(), inLane(tick, fromTop, modifiers));
+  });
+}
+
+async function moveInLane(tick: number, fromTop: number) {
+  await act(async () => {
+    fireEvent.pointerMove(window, inLane(tick, fromTop));
+  });
+}
+
+/** Chooses Copy, Paste or Duplicate from the Edit menu. */
+async function menu(item: EditMenuItem) {
+  await act(() => emit("edit-menu", item));
 }
 
 const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd).map((call) => call.args);
@@ -165,7 +210,7 @@ describe("drawing a note", () => {
     expect(add.gesture).toEqual(expect.any(Number));
     // It's drawn from what Rust sent back, and selected.
     await waitFor(() => expect(drawnNote(added.id)).toBeDefined());
-    await waitFor(() => expect(renderer.lastSelected()).toBe(added.id));
+    await waitFor(() => expect(renderer.lastSelected()).toEqual([added.id]));
   });
 
   it("plays the note as you place it", async () => {
@@ -219,7 +264,7 @@ describe("moving and resizing a note", () => {
     await moveTo(240 + 20, 60); // 1 px: not a drag
     await release();
     expect(edits()).toEqual([]);
-    await waitFor(() => expect(renderer.lastSelected()).toBe("low"));
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["low"]));
   });
 
   it("moves it in time and pitch, snapped, as one gesture", async () => {
@@ -312,7 +357,7 @@ describe("Esc during a drag", () => {
     const gesture = sent("add_notes")[0].gesture;
     expect(sent("cancel_gesture")).toEqual([{ gesture }]);
     await waitFor(() => expect(renderer.lastNotes()).toHaveLength(2));
-    await waitFor(() => expect(renderer.lastSelected()).toBeNull());
+    await waitFor(() => expect(renderer.lastSelected()).toEqual([]));
   });
 
   it("sends nothing if the drag hasn't changed anything", async () => {
@@ -320,7 +365,7 @@ describe("Esc during a drag", () => {
     await press(240, 60);
     await key(window, "Escape");
     expect(edits()).toEqual([]);
-    await waitFor(() => expect(renderer.lastSelected()).toBe("low"));
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["low"]));
   });
 });
 
@@ -357,5 +402,253 @@ describe("deleting a note", () => {
     });
     expect(sent("remove_notes")).toEqual([{ clip: "clip-1", notes: ["high"] }]);
     await waitFor(() => expect(drawnNote("high")).toBeUndefined());
+  });
+});
+
+describe("selecting several notes", () => {
+  it("adds and removes notes with Shift-click", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high", "low"]));
+    await click(240, 60, { shiftKey: true });
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high"]));
+    expect(edits()).toEqual([]);
+  });
+
+  it("box-selects with Shift-drag on empty space, adding to the selection", async () => {
+    await renderApp();
+    await click(3840 + 240, 72);
+    // From empty space, back over "low" (0 to 480, at 60).
+    await press(1920, 62, { shiftKey: true });
+    await moveTo(100, 59);
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high", "low"]));
+    expect(renderer.boxes.at(-1)).not.toBeNull();
+    // Shrinking the box leaves "low" out again.
+    await moveTo(1000, 59);
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high"]));
+    await moveTo(100, 59);
+    await release();
+    await waitFor(() => expect(renderer.boxes.at(-1)).toBeNull());
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+    // Box-selecting draws and changes nothing.
+    expect(edits()).toEqual([]);
+  });
+
+  it("puts the selection back on Esc during a box", async () => {
+    await renderApp();
+    await click(3840 + 240, 72);
+    await press(1920, 62, { shiftKey: true });
+    await moveTo(100, 59);
+    await key(window, "Escape");
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high"]));
+    await waitFor(() => expect(renderer.boxes.at(-1)).toBeNull());
+  });
+
+  it("clears the selection on Esc", async () => {
+    await renderApp();
+    await click(240, 60);
+    await key(roll(), "Escape");
+    await waitFor(() => expect(renderer.lastSelected()).toEqual([]));
+  });
+
+  it("selects just the note clicked from a larger selection", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await click(240, 60);
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["low"]));
+  });
+});
+
+describe("moving and deleting a selection", () => {
+  const selectBoth = async () => {
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+  };
+
+  it("moves every selected note together, as one gesture", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60);
+    await moveTo(240 + 960, 62);
+    await moveTo(240 + 1920, 62);
+    await release();
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 62, 960), note("high", 74, 4800)],
+      [note("low", 62, 1920), note("high", 74, 5760)],
+    ]);
+    expect(sets[1].gesture).toBe(sets[0].gesture);
+    await waitFor(() => expect(drawnNote("high")).toMatchObject({ pitch: 74, start: 5760 }));
+    // Still both selected, to move again.
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("puts them all back on Esc", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(3840 + 240, 72);
+    await moveTo(3840 + 240 + 960, 70);
+    await key(window, "Escape");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: sent("set_notes")[0].gesture }]);
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 }));
+    expect(drawnNote("high")).toMatchObject({ pitch: 72, start: 3840 });
+  });
+
+  it("deletes the selection with Backspace, in one command", async () => {
+    await renderApp();
+    await selectBoth();
+    await key(roll(), "Backspace");
+    expect(sent("remove_notes")).toEqual([{ clip: "clip-1", notes: ["low", "high"] }]);
+    await waitFor(() => expect(renderer.lastNotes()).toEqual([]));
+    expect(renderer.lastSelected()).toEqual([]);
+  });
+});
+
+describe("copy, paste and duplicate from the Edit menu", () => {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  it("pastes the copied notes at the playhead, snapped to the grid, as one AddNotes", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await menu("copy");
+    expect(edits()).toEqual([]);
+
+    // The playhead just past bar 3: the paste snaps back to it.
+    await waitFor(() => expect(frames).not.toBeNull());
+    act(() =>
+      frames!.onmessage({
+        playing: false,
+        playhead: 7680 + 100,
+        peak: 0,
+        dropouts: 0,
+        output: {
+          state: "running",
+          device: null,
+          sampleRate: 48000,
+          bufferSize: 128,
+          requestedBufferSize: 128,
+          bufferSizes: [128],
+        },
+      }),
+    );
+    await menu("paste");
+
+    const adds = sent("add_notes");
+    expect(adds).toHaveLength(1);
+    const pasted = adds[0].notes as NoteView[];
+    expect(pasted.map(({ pitch, start }) => [pitch, start])).toEqual([
+      [60, 7680],
+      [72, 7680 + 3840],
+    ]);
+    for (const added of pasted) expect(added.id).toMatch(uuid);
+    expect(adds[0].gesture).toEqual(expect.any(Number));
+    // The pasted notes are drawn from what Rust sent back, and selected.
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(4));
+    expect(renderer.lastSelected()).toEqual(pasted.map((n) => n.id).sort());
+
+    // The clipboard stays for another paste, with new IDs.
+    await menu("paste");
+    const again = sent("add_notes")[1].notes as NoteView[];
+    expect(again.map((n) => n.start)).toEqual([7680, 7680 + 3840]);
+    expect(again.map((n) => n.id)).not.toContain(pasted[0].id);
+  });
+
+  it("duplicates the selection right after itself, rounded up to the beat", async () => {
+    await renderApp();
+    // "low" runs from 0 to 480: its copy goes a beat on.
+    await click(240, 60);
+    await menu("duplicate");
+    const [first] = sent("add_notes");
+    const copy = (first.notes as NoteView[])[0];
+    expect(copy).toEqual({ ...note("low", 60, 960), id: copy.id });
+    expect(copy.id).toMatch(uuid);
+    await waitFor(() => expect(renderer.lastSelected()).toEqual([copy.id]));
+
+    // Duplicating again repeats the copy, since it's now selected.
+    await menu("duplicate");
+    expect((sent("add_notes")[1].notes as NoteView[])[0].start).toBe(1920);
+  });
+
+  it("duplicates a spread of notes past the last one's end", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await menu("duplicate");
+    // From 0 to 4320, rounded up to 4800.
+    const copies = sent("add_notes")[0].notes as NoteView[];
+    expect(copies.map(({ pitch, start }) => [pitch, start])).toEqual([
+      [60, 4800],
+      [72, 8640],
+    ]);
+  });
+
+  it("does nothing with nothing selected or copied", async () => {
+    await renderApp();
+    await menu("copy");
+    await menu("paste");
+    await menu("duplicate");
+    expect(edits()).toEqual([]);
+  });
+});
+
+describe("the velocity lane", () => {
+  /** The velocity change for dragging `pixels` up the lane. */
+  const change = (pixels: number) => Math.round(pixels * velocityPerPixel(renderer.lastView()));
+
+  it("drags a note's bar to change its velocity, as one gesture", async () => {
+    await renderApp();
+    await pressLane(0, 30);
+    await moveInLane(0, 40);
+    await moveInLane(0, 50);
+    await release();
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([
+      [{ ...note("low", 60, 0), velocity: 100 - change(10) }],
+      [{ ...note("low", 60, 0), velocity: 100 - change(20) }],
+    ]);
+    expect(sets[1].gesture).toBe(sets[0].gesture);
+    await waitFor(() => expect(drawnNote("low")?.velocity).toBe(100 - change(20)));
+    expect(renderer.lastSelected()).toEqual(["low"]);
+  });
+
+  it("changes every selected note together", async () => {
+    await renderApp();
+    project = withNotes([note("low", 60, 0), { ...note("high", 72, 3840), velocity: 40 }]);
+    await act(() => emit("project-changed", project));
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await pressLane(3840, 40);
+    await moveInLane(3840, 30);
+    await release();
+
+    expect(sent("set_notes").map((set) => set.notes)).toEqual([
+      [
+        { ...note("low", 60, 0), velocity: 100 + change(10) },
+        { ...note("high", 72, 3840), velocity: 40 + change(10) },
+      ],
+    ]);
+  });
+
+  it("puts the velocities back on Esc", async () => {
+    await renderApp();
+    await pressLane(0, 30);
+    await moveInLane(0, 60);
+    await key(window, "Escape");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: sent("set_notes")[0].gesture }]);
+    await waitFor(() => expect(drawnNote("low")?.velocity).toBe(100));
+  });
+
+  it("does nothing where there's no bar", async () => {
+    await renderApp();
+    await pressLane(1920, 30);
+    await moveInLane(1920, 60);
+    await release();
+    expect(edits()).toEqual([]);
+    expect(renderer.lastSelected()).toEqual([]);
   });
 });

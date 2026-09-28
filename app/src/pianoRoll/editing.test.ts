@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { NoteView } from "../backend";
-import { type Drag, EDGE_PIXELS, dragNote, hitTest, sameNote } from "./editing";
+import {
+  type Drag,
+  EDGE_PIXELS,
+  dragNote,
+  dragVelocities,
+  hitTest,
+  hitVelocity,
+  moveNotes,
+  sameNote,
+} from "./editing";
 import type { PlacedNote } from "./notes";
-import { KEYBOARD_WIDTH, RULER_HEIGHT, type Viewport, pitchToY, tickToX } from "./viewport";
+import {
+  KEYBOARD_WIDTH,
+  RULER_HEIGHT,
+  type Viewport,
+  pitchToY,
+  tickToX,
+  velocityPerPixel,
+} from "./viewport";
 
 // 0.1 px a tick: a quarter note is 96 px, a sixteenth 24 px. Pitch 127's row
 // is at the top.
@@ -144,5 +160,83 @@ describe("dragging a note", () => {
     for (const change of changes) {
       expect(sameNote(from, { ...from, ...change })).toBe(false);
     }
+  });
+});
+
+describe("moving several notes", () => {
+  const n = (id: string, pitch: number, start: number): NoteView => ({
+    id,
+    pitch,
+    velocity: 100,
+    start,
+    length: 240,
+  });
+  const group = [n("a", 60, 480), n("b", 64, 960), n("c", 67, 1920)];
+  // Dragging "b" from where it was pressed.
+  const drag: Drag = { kind: "move", from: group[1], tick: 1000, pitch: 64 };
+
+  it("moves them all by the dragged note's snapped move", () => {
+    // "b" goes from 960 to 1300, and snaps to 1200: 240 later, 2 up.
+    expect(moveNotes(group, drag, 1340, 66, 240, 0)).toEqual([
+      n("a", 62, 720),
+      n("b", 66, 1200),
+      n("c", 69, 2160),
+    ]);
+  });
+
+  it("stops the move where the earliest would pass the clip's start", () => {
+    const moved = moveNotes(group, drag, 0, 64, 240, 0);
+    expect(moved.map((note) => note.start)).toEqual([0, 480, 1440]);
+  });
+
+  it("stops the move where any would go off the keyboard", () => {
+    expect(moveNotes(group, drag, 1000, 127, 240, 0).map((note) => note.pitch)).toEqual([
+      120, 124, 127,
+    ]);
+    expect(moveNotes(group, drag, 1000, 0, 240, 0).map((note) => note.pitch)).toEqual([0, 4, 7]);
+  });
+
+  it("moves one note as dragging it alone does", () => {
+    const one: Drag = { kind: "move", from: group[0], tick: 500, pitch: 60 };
+    for (const [tick, pitch] of [
+      [900, 62],
+      [-500, 60],
+      [500, 200],
+    ]) {
+      expect(moveNotes([group[0]], one, tick, pitch, 240, 3840)).toEqual([
+        dragNote(one, tick, pitch, 240, 3840),
+      ]);
+    }
+  });
+});
+
+describe("velocity bars", () => {
+  const chord = [placed("root", 60, 960, 480), placed("third", 64, 960, 480)];
+  const x = tickToX(view, 960);
+
+  it("finds the bar at a note's start, within a few pixels", () => {
+    expect(hitVelocity(view, chord, new Set(), x + 3)?.id).toBe("third");
+    expect(hitVelocity(view, chord, new Set(), x + 6)).toBeNull();
+  });
+
+  it("prefers a selected note where bars overlap", () => {
+    expect(hitVelocity(view, chord, new Set(["root"]), x)?.id).toBe("root");
+    expect(hitVelocity(view, chord, new Set(["root", "third"]), x)?.id).toBe("third");
+  });
+
+  it("changes every note's velocity by the same amount as the pointer moves", () => {
+    const notes = [
+      { id: "a", pitch: 60, velocity: 100, start: 0, length: 240 },
+      { id: "b", pitch: 62, velocity: 40, start: 240, length: 240 },
+    ];
+    const pixels = 20 / velocityPerPixel(view);
+    expect(dragVelocities(view, notes, pixels).map((note) => note.velocity)).toEqual([120, 60]);
+    expect(dragVelocities(view, notes, -pixels).map((note) => note.velocity)).toEqual([80, 20]);
+  });
+
+  it("keeps velocities from 1 to 127", () => {
+    const notes = [{ id: "a", pitch: 60, velocity: 100, start: 0, length: 240 }];
+    expect(dragVelocities(view, notes, 1000)[0].velocity).toBe(127);
+    expect(dragVelocities(view, notes, -1000)[0].velocity).toBe(1);
   });
 });

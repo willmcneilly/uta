@@ -8,6 +8,7 @@ import {
   auditionNote,
   cancelGesture,
   getProject,
+  onEditMenu,
   onProjectChanged,
   play,
   removeNotes,
@@ -25,7 +26,7 @@ import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
-import { type NoteEditor, PianoRoll } from "./pianoRoll/PianoRoll";
+import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { Transport } from "./Transport";
@@ -68,6 +69,7 @@ function App({ createRenderer }: Props) {
   const [stats] = useState(() => new FrameStats());
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
+  const pianoRoll = useRef<PianoRollHandle>(null);
 
   const report = (reason: unknown) => setError(String(reason));
 
@@ -82,6 +84,12 @@ function App({ createRenderer }: Props) {
       active = false;
       void unlisten.then((stopListening) => stopListening());
     };
+  }, []);
+
+  // Copy, Paste and Duplicate from the Edit menu act on the piano roll.
+  useEffect(() => {
+    const unlisten = onEditMenu((item) => pianoRoll.current?.[item]());
+    return () => void unlisten.then((stopListening) => stopListening());
   }, []);
 
   useEffect(() => {
@@ -176,6 +184,7 @@ function App({ createRenderer }: Props) {
 
       {project && (
         <PianoRoll
+          ref={pianoRoll}
           project={project}
           editor={editor}
           clock={clock}

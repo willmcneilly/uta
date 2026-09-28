@@ -4,14 +4,17 @@
 // the playhead never re-render anything.
 
 import type { ClipView, ProjectView } from "../backend";
-import { type Hit, hitTest } from "./editing";
-import { NoteIndex } from "./notes";
+import { type Hit, VELOCITY_HIT_PIXELS, hitTest, hitVelocity } from "./editing";
+import { NoteIndex, type PlacedNote } from "./notes";
 import type { PianoRollRenderer } from "./renderer";
 import {
   PITCH_COUNT,
+  type Rect,
   type Viewport,
   clampViewport,
+  inRect,
   noteArea,
+  velocityLane,
   visiblePitches,
   visibleTicks,
   xToTick,
@@ -32,7 +35,8 @@ export class PianoRollScene {
   private notesDirty = true;
   private topDirty = true;
   private lastPlayhead = NaN;
-  private selected: string | null = null;
+  private selected: ReadonlySet<string> = new Set();
+  private box: Rect | null = null;
 
   /** A new project view from Rust: the notes or the loop may have changed. */
   setProject(project: ProjectView): void {
@@ -81,18 +85,27 @@ export class PianoRollScene {
     return this.view;
   }
 
-  /** Highlights the note with this ID, or none. */
-  setSelection(id: string | null): void {
-    if (id === this.selected) return;
-    this.selected = id;
+  /** Highlights the notes with these IDs. */
+  setSelection(ids: ReadonlySet<string>): void {
+    if (ids.size === this.selected.size && [...ids].every((id) => this.selected.has(id))) return;
+    this.selected = new Set(ids);
     this.notesDirty = true;
+  }
+
+  /** Shows the selection box being dragged out, in CSS pixels, or hides it with `null`. */
+  setBox(box: Rect | null): void {
+    this.box = box;
+    this.topDirty = true;
   }
 
   /** Whether `x`, `y` (CSS pixels from the top left) is where notes are drawn. */
   inNoteArea(x: number, y: number): boolean {
-    if (!this.view) return false;
-    const area = noteArea(this.view);
-    return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
+    return this.view !== null && inRect(noteArea(this.view), x, y);
+  }
+
+  /** Whether `x`, `y` is in the velocity lane. */
+  inVelocityLane(x: number, y: number): boolean {
+    return this.view !== null && inRect(velocityLane(this.view), x, y);
   }
 
   /** The note drawn under `x`, `y`, and which part of it. */
@@ -104,6 +117,39 @@ export class PianoRollScene {
     // A pixel either side, for notes drawn wider than they are long.
     const slack = 1 / view.pixelsPerTick;
     return hitTest(view, index.visible(tick - slack, tick + slack, pitch, pitch), x, y);
+  }
+
+  /** The note whose velocity bar is under `x`, if any. */
+  hitVelocity(x: number): PlacedNote | null {
+    const { view, index } = this;
+    if (!view || !index) return null;
+    const tick = xToTick(view, x);
+    // Bars are drawn at notes' starts; look at any starting near the pointer.
+    const slack = (VELOCITY_HIT_PIXELS + 1) / view.pixelsPerTick;
+    return hitVelocity(
+      view,
+      index.visible(tick - slack, tick + slack, 0, PITCH_COUNT - 1),
+      this.selected,
+      x,
+    );
+  }
+
+  /**
+   * The IDs of the notes with any part inside `box` (CSS pixels), which is
+   * kept to where notes are drawn.
+   */
+  notesIn(box: Rect): string[] {
+    const { view, index } = this;
+    if (!view || !index) return [];
+    const area = noteArea(view);
+    const left = Math.max(area.x, box.x);
+    const right = Math.min(area.x + area.width, box.x + box.width);
+    const top = Math.max(area.y, box.y);
+    const bottom = Math.min(area.y + area.height, box.y + box.height);
+    if (right <= left || bottom <= top) return [];
+    return index
+      .visible(xToTick(view, left), xToTick(view, right), yToPitch(view, bottom - 1e-6), yToPitch(view, top))
+      .map((note) => note.id);
   }
 
   /** Redraws the layers that need it, with the playhead at `playhead` ticks. */
@@ -123,15 +169,16 @@ export class PianoRollScene {
     if (this.notesDirty) {
       const ticks = visibleTicks(view);
       const pitches = visiblePitches(view);
-      renderer.drawNotes(
+      renderer.drawNotes({
         view,
-        index.visible(ticks.start, ticks.end, pitches.low, pitches.high),
-        this.selected,
-      );
+        notes: index.visible(ticks.start, ticks.end, pitches.low, pitches.high),
+        velocities: index.visible(ticks.start, ticks.end, 0, PITCH_COUNT - 1),
+        selected: this.selected,
+      });
       this.notesDirty = false;
     }
     if (this.topDirty || playhead !== this.lastPlayhead) {
-      renderer.drawTop(view, playhead);
+      renderer.drawTop(view, playhead, this.box);
       this.lastPlayhead = playhead;
       this.topDirty = false;
     }

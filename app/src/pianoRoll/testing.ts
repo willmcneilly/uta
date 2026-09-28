@@ -3,8 +3,8 @@
 
 import type { NoteView, ProjectView } from "../backend";
 import type { PlacedNote } from "./notes";
-import type { GridScene, PianoRollRenderer, RendererFactory } from "./renderer";
-import type { Viewport } from "./viewport";
+import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory } from "./renderer";
+import type { Rect, Viewport } from "./viewport";
 
 export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteView[] = []): ProjectView {
   return {
@@ -43,8 +43,9 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
 export class RecordingRenderer implements PianoRollRenderer {
   sizes: [number, number][] = [];
   grids: GridScene[] = [];
-  notes: { view: Viewport; notes: readonly PlacedNote[]; selected: string | null }[] = [];
+  notes: NotesScene[] = [];
   tops: number[] = [];
+  boxes: (Rect | null)[] = [];
 
   resize(width: number, height: number): void {
     this.sizes.push([width, height]);
@@ -52,11 +53,12 @@ export class RecordingRenderer implements PianoRollRenderer {
   drawGrid(scene: GridScene): void {
     this.grids.push(scene);
   }
-  drawNotes(view: Viewport, notes: readonly PlacedNote[], selected: string | null): void {
-    this.notes.push({ view, notes, selected });
+  drawNotes(scene: NotesScene): void {
+    this.notes.push(scene);
   }
-  drawTop(_view: Viewport, playhead: number): void {
+  drawTop(_view: Viewport, playhead: number, box: Rect | null): void {
     this.tops.push(playhead);
+    this.boxes.push(box);
   }
 
   /** The view the notes were last drawn in. */
@@ -66,9 +68,9 @@ export class RecordingRenderer implements PianoRollRenderer {
     return view;
   }
 
-  /** The note drawn as selected most recently. */
-  lastSelected(): string | null {
-    return this.notes.at(-1)?.selected ?? null;
+  /** The IDs of the notes drawn as selected most recently, sorted. */
+  lastSelected(): string[] {
+    return [...(this.notes.at(-1)?.selected ?? [])].sort();
   }
 
   /** The notes drawn most recently. */
