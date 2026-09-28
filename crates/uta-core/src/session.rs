@@ -73,23 +73,37 @@ impl Session {
     }
 
     /// Applies a command that continues the latest one, such as the next step
-    /// of a volume drag, so a single undo reverts the whole run. If the
-    /// latest command sets something else, or there's nothing to undo, it's
-    /// the same as [`Self::apply`]. The change still gets its own sequence
-    /// number, so replaying the journal is unaffected.
+    /// of a volume drag, so a single undo reverts the whole run. If it
+    /// doesn't continue the latest command (see [`Command::continued_by`]),
+    /// or there's nothing to undo, it's the same as [`Self::apply`]. The
+    /// change still gets its own sequence number, so replaying the journal is
+    /// unaffected.
     pub fn amend(&mut self, command: Command) -> Result<Applied, CommandError> {
-        let continues = self
+        let Some(continued) = self
             .undo
             .last()
-            .is_some_and(|entry| entry.command.sets_same_as(&command));
-        if !continues {
+            .and_then(|entry| entry.command.continued_by(&command))
+        else {
             return self.apply(command);
-        }
+        };
         self.project.apply(&command)?;
         self.redo.clear();
         let entry = self.undo.last_mut().expect("checked above");
-        entry.command = command.clone();
+        entry.command = continued;
         Ok(self.record(command))
+    }
+
+    /// Undoes the latest command and forgets it, as if it had never been
+    /// made: it can't be redone. For cancelling a drag with Esc. Like a new
+    /// change, it clears the redo history, whose commands were recorded
+    /// against a state that's now gone. Returns `None` if there's nothing to
+    /// undo. The inverse still gets a sequence number, so replaying the
+    /// journal gives the same project.
+    pub fn withdraw(&mut self) -> Option<Applied> {
+        let entry = self.undo.pop()?;
+        self.redo.clear();
+        let command = self.apply_recorded(&entry.inverse);
+        Some(self.record(command))
     }
 
     /// Undoes the latest command. Returns `None` if there's nothing to undo.
@@ -335,6 +349,113 @@ mod tests {
     }
 
     #[test]
+    fn drawing_a_note_and_dragging_its_length_undoes_as_one_step() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        let before = session.project().clone();
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0)],
+            })
+            .unwrap();
+        for length in [720, 960, 1200] {
+            session
+                .amend(Command::SetNotes {
+                    clip,
+                    notes: vec![Note {
+                        length,
+                        ..note(0, 60, 0)
+                    }],
+                })
+                .unwrap();
+        }
+        let drawn = session.project().clone();
+        assert_eq!(
+            drawn.clip(clip).unwrap().note(note_id(0)).unwrap().length,
+            1200
+        );
+
+        session.undo().unwrap();
+        assert_eq!(session.project(), &before, "one undo removes the note");
+        assert!(!session.can_undo());
+        session.redo().unwrap();
+        assert_eq!(
+            session.project(),
+            &drawn,
+            "redo adds it at its final length"
+        );
+    }
+
+    #[test]
+    fn set_notes_on_other_notes_after_adding_is_a_new_step() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0), note(1, 64, 0)],
+            })
+            .unwrap();
+        // Only one of the two added notes: not a continuation.
+        session
+            .amend(Command::SetNotes {
+                clip,
+                notes: vec![note(0, 61, 0)],
+            })
+            .unwrap();
+        session.undo().unwrap();
+        assert_eq!(session.project().clip(clip).unwrap().notes().len(), 2);
+    }
+
+    #[test]
+    fn withdrawing_puts_the_project_and_history_back() {
+        let mut session = Session::new(testing::project());
+        let clip = clip_id(&session);
+        session
+            .apply(Command::AddNotes {
+                clip,
+                notes: vec![note(0, 60, 0)],
+            })
+            .unwrap();
+        let before = session.project().clone();
+        session
+            .apply(Command::SetNotes {
+                clip,
+                notes: vec![note(0, 72, 960)],
+            })
+            .unwrap();
+        session
+            .amend(Command::SetNotes {
+                clip,
+                notes: vec![note(0, 74, 1920)],
+            })
+            .unwrap();
+
+        let withdrawn = session.withdraw().unwrap();
+        assert_eq!(session.project(), &before);
+        assert_eq!(
+            withdrawn.command,
+            Command::SetNotes {
+                clip,
+                notes: vec![note(0, 60, 0)],
+            },
+            "the journal records the inverse"
+        );
+        assert!(!session.can_redo(), "a withdrawn change can't be redone");
+        assert!(session.can_undo(), "earlier changes are still there");
+        session.undo().unwrap();
+        assert_eq!(session.project().clip(clip).unwrap().notes().len(), 0);
+    }
+
+    #[test]
+    fn withdrawing_with_nothing_to_undo_does_nothing() {
+        let mut session = Session::new(Project::new());
+        assert!(session.withdraw().is_none());
+        assert_eq!(session.last_sequence(), 0);
+    }
+
+    #[test]
     fn tempo_loop_and_synth_drags_undo_as_one_step_each() {
         let mut session = Session::new(testing::project());
         let before = session.project().clone();
@@ -389,6 +510,7 @@ mod tests {
         Amend(Command),
         Undo,
         Redo,
+        Withdraw,
     }
 
     /// Any step, with commands of every kind: mostly valid, some rejected.
@@ -398,6 +520,7 @@ mod tests {
             2 => testing::any_command().prop_map(Step::Amend),
             2 => Just(Step::Undo),
             1 => Just(Step::Redo),
+            1 => Just(Step::Withdraw),
         ]
     }
 
@@ -412,6 +535,7 @@ mod tests {
                 Step::Amend(command) => session.amend(command.clone()).ok(),
                 Step::Undo => session.undo(),
                 Step::Redo => session.redo(),
+                Step::Withdraw => session.withdraw(),
             };
             journal.extend(applied);
         }

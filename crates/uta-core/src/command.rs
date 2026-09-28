@@ -70,6 +70,35 @@ impl Command {
     }
 }
 
+impl Command {
+    /// What the undo history keeps when `next` continues this command as
+    /// part of the same run (see [`crate::Session::amend`]), or `None` if it
+    /// doesn't continue it. A command that sets the same thing replaces this
+    /// one. A [`Command::SetNotes`] of exactly the notes this
+    /// [`Command::AddNotes`] added folds into it, as the notes' new values,
+    /// so drawing a note and dragging out its length undoes as one step.
+    pub fn continued_by(&self, next: &Command) -> Option<Command> {
+        if self.sets_same_as(next) {
+            return Some(next.clone());
+        }
+        match (self, next) {
+            (
+                Self::AddNotes { clip, notes },
+                Self::SetNotes {
+                    clip: next_clip,
+                    notes: next_notes,
+                },
+            ) if clip == next_clip && sorted_ids(notes) == sorted_ids(next_notes) => {
+                Some(Self::AddNotes {
+                    clip: *clip,
+                    notes: next_notes.clone(),
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
 fn sorted_ids(notes: &[Note]) -> Vec<NoteId> {
     let mut ids: Vec<_> = notes.iter().map(|note| note.id).collect();
     ids.sort_unstable();
