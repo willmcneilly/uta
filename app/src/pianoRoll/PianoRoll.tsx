@@ -37,6 +37,11 @@ export interface NoteEditor {
   /** Sets every value of existing notes. One drag's changes share a `gesture`. */
   set(notes: NoteView[], gesture: number): void;
   remove(ids: string[]): void;
+  /**
+   * Trims the notes of the same pitch that notes `ids` cover, as part of
+   * `gesture`: once a drag of them ends, or a paste lands.
+   */
+  trim(ids: string[], gesture: number): void;
   /** Puts back everything `gesture` changed. */
   cancel(gesture: number): void;
   /** Plays a note briefly, without changing the project. */
@@ -288,6 +293,14 @@ export function PianoRoll({
         last = next;
         sent = true;
       },
+      /**
+       * Once the drag ends, trims the notes it now covers, as part of the
+       * same undo step. Never mid-drag, so dragging across notes and back
+       * leaves them as they were.
+       */
+      end() {
+        if (sent) latest.current.editor.trim(last.map((note) => note.id), gesture);
+      },
       cancel() {
         if (sent) latest.current.editor.cancel(gesture);
       },
@@ -358,6 +371,7 @@ export function PianoRoll({
       const changes = noteChanges(gesture, [note], true);
       startDrag(x, y, {
         move: (x, y, move) => changes.send([dragAt(drag, x, y, move)]),
+        end: changes.end,
         cancel: () => {
           changes.cancel();
           // A cancelled drawing leaves no note to select.
@@ -377,6 +391,7 @@ export function PianoRoll({
       const changes = noteChanges(gesture, [from], false);
       startDrag(x, y, {
         move: (x, y, move) => changes.send([dragAt(drag, x, y, move)]),
+        end: changes.end,
         cancel: changes.cancel,
       });
       return;
@@ -409,6 +424,7 @@ export function PianoRoll({
       },
       // A click on a note of a larger selection selects just that note.
       end: (moved) => {
+        changes.end();
         if (!moved && wasSelected) select([from.id]);
       },
       cancel: changes.cancel,
@@ -508,6 +524,16 @@ export function PianoRoll({
     select([]);
   };
 
+  /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
+  const land = (notes: NoteView[]) => {
+    const { editor } = latest.current;
+    const gesture = nextGesture();
+    const ids = notes.map((note) => note.id);
+    editor.add(notes, gesture);
+    editor.trim(ids, gesture);
+    select(ids);
+  };
+
   useImperativeHandle(ref, () => ({
     copy() {
       const notes = selectedNotes();
@@ -516,24 +542,21 @@ export function PianoRoll({
     paste() {
       const view = scene.getView();
       if (dragging.current || !view || clipboard.current.length === 0) return;
-      const { project, editor, snap } = latest.current;
+      const { project, snap } = latest.current;
       const step = snapStep(snap, project.ticksPerQuarter);
       const at = snapDown(clock.at(performance.now()), step);
       const notes = pasteNotes(clipboard.current, at, project.track.clip.start, () =>
         crypto.randomUUID(),
       );
-      editor.add(notes, nextGesture());
-      select(notes.map((note) => note.id));
+      land(notes);
     },
     duplicate() {
       if (dragging.current) return;
-      const { project, editor } = latest.current;
+      const { project } = latest.current;
       const notes = duplicateNotes(selectedNotes(), project.ticksPerQuarter, () =>
         crypto.randomUUID(),
       );
-      if (notes.length === 0) return;
-      editor.add(notes, nextGesture());
-      select(notes.map((note) => note.id));
+      if (notes.length > 0) land(notes);
     },
   }));
 

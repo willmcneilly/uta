@@ -16,6 +16,7 @@ import {
   setBufferSize,
   setLoopLength,
   setNotes,
+  trimNotes,
   setSynthParam,
   setTempo,
   setVolume,
@@ -146,6 +147,7 @@ function App({ createRenderer }: Props) {
     add: (notes, gesture) => void addNotes(clip, notes, gesture).then(setProject, report),
     set: (notes, gesture) => void setNotes(clip, notes, gesture).then(setProject, report),
     remove: (ids) => void removeNotes(clip, ids).then(setProject, report),
+    trim: (ids, gesture) => void trimNotes(clip, ids, gesture).then(setProject, report),
     cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
     audition: (pitch, velocity) => void auditionNote(pitch, velocity).catch(report),
   };

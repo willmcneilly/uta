@@ -59,6 +59,7 @@ pub fn run() {
             commands::add_notes,
             commands::set_notes,
             commands::remove_notes,
+            commands::trim_notes,
             commands::cancel_gesture,
             commands::audition_note,
             commands::undo,

@@ -84,6 +84,9 @@ beforeEach(() => {
           project = withNotes(notes.filter((n) => !ids.includes(n.id)));
           return project;
         }
+        case "trim_notes":
+          // Rust works out the trim; the tests check it's asked for.
+          return project;
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
           return project;
@@ -592,6 +595,105 @@ describe("copy, paste and duplicate from the Edit menu", () => {
     await menu("paste");
     await menu("duplicate");
     expect(edits()).toEqual([]);
+  });
+});
+
+describe("trimming the notes an edit covers", () => {
+  // "low" runs from 0 to 480 and "next", the same pitch, from 960 to 1440.
+  beforeEach(() => {
+    project = projectView({}, [note("low", 60, 0), note("next", 60, 960), note("high", 72, 3840)]);
+  });
+
+  it("trims once a lengthen ends, never mid-drag, as part of its gesture", async () => {
+    await renderApp();
+    await press(470, 60);
+    await moveTo(470 + 1440, 60); // over "next"
+    await moveTo(470, 60); // and back
+    await moveTo(470 + 720, 60); // half over it
+    expect(sent("trim_notes")).toEqual([]);
+    await release();
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 60, 0, 1920)],
+      [note("low", 60, 0, 480)],
+      [note("low", 60, 0, 1200)],
+    ]);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low"], gesture: sets[0].gesture },
+    ]);
+    expect(edits()).toEqual(["set_notes", "set_notes", "set_notes", "trim_notes"]);
+  });
+
+  it("trims once a move of a selection ends, with every moved note", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await press(240, 60);
+    await moveTo(240 + 960, 60);
+    expect(sent("trim_notes")).toEqual([]);
+    await moveTo(240 + 480, 60);
+    await release();
+
+    const sets = sent("set_notes");
+    expect(sets.at(-1)?.notes).toEqual([note("low", 60, 480), note("high", 72, 4320)]);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low", "high"], gesture: sets[0].gesture },
+    ]);
+  });
+
+  it("trims under a drawn note when it's placed", async () => {
+    await renderApp();
+    await press(500, 60); // in the gap: draws from 480
+    await moveTo(500 + 480, 60); // out over "next"
+    expect(sent("trim_notes")).toEqual([]);
+    await release();
+    const [add] = sent("add_notes");
+    const id = (add.notes as NoteView[])[0].id;
+    expect(sent("set_notes")).toEqual([
+      { clip: "clip-1", notes: [note(id, 60, 480, 720)], gesture: add.gesture },
+    ]);
+    expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: [id], gesture: add.gesture }]);
+  });
+
+  it("trims nothing for a click, Esc, or a velocity drag", async () => {
+    await renderApp();
+    await click(240, 60);
+    await press(240, 60);
+    await moveTo(240 + 960, 60);
+    await key(window, "Escape");
+    await release();
+    await pressLane(0, 30);
+    await moveInLane(0, 50);
+    await release();
+    expect(sent("set_notes")).toHaveLength(2);
+    expect(sent("trim_notes")).toEqual([]);
+  });
+
+  it("trims under a paste, as part of its gesture", async () => {
+    await renderApp();
+    await click(240, 60);
+    await menu("copy");
+    // The playhead is at 0, so the copy lands on "low" itself.
+    await menu("paste");
+    const [add] = sent("add_notes");
+    const ids = (add.notes as NoteView[]).map((n) => n.id);
+    expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ids, gesture: add.gesture }]);
+    expect(edits()).toEqual(["add_notes", "trim_notes"]);
+  });
+
+  it("trims under a duplicate, as part of its gesture", async () => {
+    await renderApp();
+    await click(240, 60);
+    // "low"'s copy goes a beat on, onto "next".
+    await menu("duplicate");
+    const [add] = sent("add_notes");
+    const copy = (add.notes as NoteView[])[0];
+    expect(copy).toEqual({ ...note("low", 60, 960), id: copy.id });
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: [copy.id], gesture: add.gesture },
+    ]);
+    expect(edits()).toEqual(["add_notes", "trim_notes"]);
   });
 });
 
