@@ -29,8 +29,11 @@ export interface PianoRollRenderer {
   /** Sizes every layer, in CSS pixels, at `pixelRatio` device pixels to each. */
   resize(width: number, height: number, pixelRatio: number): void;
   drawGrid(scene: GridScene): void;
-  /** `notes` are only those in view (see `NoteIndex.visible`). */
-  drawNotes(view: Viewport, notes: readonly PlacedNote[]): void;
+  /**
+   * `notes` are only those in view (see `NoteIndex.visible`), in the order to
+   * draw them. `selected` is the selected note's ID, if any.
+   */
+  drawNotes(view: Viewport, notes: readonly PlacedNote[], selected: string | null): void;
   /** `playhead` is in ticks from the start of the song. */
   drawTop(view: Viewport, playhead: number): void;
 }

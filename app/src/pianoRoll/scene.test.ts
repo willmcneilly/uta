@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { NoteView } from "../backend";
 import { PianoRollScene } from "./scene";
 import { RecordingRenderer, projectView } from "./testing";
-import { KEYBOARD_WIDTH, RULER_HEIGHT } from "./viewport";
+import { KEYBOARD_WIDTH, RULER_HEIGHT, pitchToY, tickToX } from "./viewport";
 
 const note = (id: string, start: number, pitch = 72): NoteView => ({
   id,
@@ -116,5 +116,26 @@ describe("PianoRollScene", () => {
   it("draws nothing without a renderer", () => {
     scene.setRenderer(null);
     expect(() => scene.draw(0)).not.toThrow();
+  });
+
+  it("redraws only the notes when the selection changes", () => {
+    scene.draw(0);
+    scene.setSelection("b");
+    scene.draw(0);
+    scene.setSelection("b");
+    scene.draw(0);
+    expect(renderer.grids).toHaveLength(1);
+    expect(renderer.notes.map((drawn) => drawn.selected)).toEqual([null, "b"]);
+  });
+
+  it("finds the note under the pointer, only where notes are drawn", () => {
+    const view = scene.getView()!;
+    const y = pitchToY(view, 72) + view.keyHeight / 2;
+    expect(scene.hitTest(tickToX(view, 240), y)?.note.id).toBe("a");
+    expect(scene.hitTest(tickToX(view, 7680 + 240), y)?.note.id).toBe("b");
+    expect(scene.hitTest(tickToX(view, 1000), y)).toBeNull();
+    expect(scene.inNoteArea(KEYBOARD_WIDTH - 1, y)).toBe(false);
+    expect(scene.inNoteArea(KEYBOARD_WIDTH, RULER_HEIGHT - 1)).toBe(false);
+    expect(scene.inNoteArea(KEYBOARD_WIDTH, RULER_HEIGHT)).toBe(true);
   });
 });

@@ -21,6 +21,7 @@
   --roll-playhead: #e5484d;
   --roll-note-soft: #b9d4f5;
   --roll-note-hard: #1f5fbf;
+  --roll-note-selected: #1c1c1e;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 14px;
   color-scheme: light dark;
@@ -50,6 +51,7 @@
     --roll-playhead: #ff6b5e;
     --roll-note-soft: #2d4a73;
     --roll-note-hard: #7ab8ff;
+    --roll-note-selected: #ffffff;
   }
 }
 
@@ -188,10 +190,20 @@ body {
   height: 100%;
 }
 
-.piano-roll .zoom {
+.piano-roll-canvas:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.piano-roll-tools {
   position: absolute;
   right: 8px;
   bottom: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.piano-roll .zoom,
+.piano-roll .snap {
   display: flex;
   align-items: center;
   gap: 4px;

@@ -4,11 +4,16 @@ import {
   type Frame,
   type OutputView,
   type ProjectView,
+  addNotes,
+  auditionNote,
+  cancelGesture,
   getProject,
   onProjectChanged,
   play,
+  removeNotes,
   setBufferSize,
   setLoopLength,
+  setNotes,
   setTempo,
   setVolume,
   stop,
@@ -20,7 +25,7 @@ import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
-import { PianoRoll } from "./pianoRoll/PianoRoll";
+import { type NoteEditor, PianoRoll } from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { Transport } from "./Transport";
@@ -118,6 +123,16 @@ function App({ createRenderer }: Props) {
     setLoopLength(bars, gesture).then(setProject, report);
   };
 
+  // The piano roll edits the project's one clip.
+  const clip = project?.track.clip.id ?? "";
+  const editor: NoteEditor = {
+    add: (notes, gesture) => void addNotes(clip, notes, gesture).then(setProject, report),
+    set: (notes, gesture) => void setNotes(clip, notes, gesture).then(setProject, report),
+    remove: (ids) => void removeNotes(clip, ids).then(setProject, report),
+    cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
+    audition: (pitch, velocity) => void auditionNote(pitch, velocity).catch(report),
+  };
+
   const changeBuffer = (size: number) => {
     setChangingBuffer(true);
     setBufferSize(size)
@@ -160,7 +175,13 @@ function App({ createRenderer }: Props) {
       )}
 
       {project && (
-        <PianoRoll project={project} clock={clock} stats={stats} createRenderer={createRenderer} />
+        <PianoRoll
+          project={project}
+          editor={editor}
+          clock={clock}
+          stats={stats}
+          createRenderer={createRenderer}
+        />
       )}
 
       <FrameTime stats={stats} />

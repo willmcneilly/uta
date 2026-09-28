@@ -4,6 +4,7 @@
 // the playhead never re-render anything.
 
 import type { ClipView, ProjectView } from "../backend";
+import { type Hit, hitTest } from "./editing";
 import { NoteIndex } from "./notes";
 import type { PianoRollRenderer } from "./renderer";
 import {
@@ -13,6 +14,8 @@ import {
   noteArea,
   visiblePitches,
   visibleTicks,
+  xToTick,
+  yToPitch,
 } from "./viewport";
 
 /** The pitch shown at the top when the piano roll opens: C6, so C3 to C6 or so is in view. */
@@ -29,6 +32,7 @@ export class PianoRollScene {
   private notesDirty = true;
   private topDirty = true;
   private lastPlayhead = NaN;
+  private selected: string | null = null;
 
   /** A new project view from Rust: the notes or the loop may have changed. */
   setProject(project: ProjectView): void {
@@ -77,6 +81,31 @@ export class PianoRollScene {
     return this.view;
   }
 
+  /** Highlights the note with this ID, or none. */
+  setSelection(id: string | null): void {
+    if (id === this.selected) return;
+    this.selected = id;
+    this.notesDirty = true;
+  }
+
+  /** Whether `x`, `y` (CSS pixels from the top left) is where notes are drawn. */
+  inNoteArea(x: number, y: number): boolean {
+    if (!this.view) return false;
+    const area = noteArea(this.view);
+    return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
+  }
+
+  /** The note drawn under `x`, `y`, and which part of it. */
+  hitTest(x: number, y: number): Hit | null {
+    const { view, index } = this;
+    if (!view || !index || !this.inNoteArea(x, y)) return null;
+    const tick = xToTick(view, x);
+    const pitch = yToPitch(view, y);
+    // A pixel either side, for notes drawn wider than they are long.
+    const slack = 1 / view.pixelsPerTick;
+    return hitTest(view, index.visible(tick - slack, tick + slack, pitch, pitch), x, y);
+  }
+
   /** Redraws the layers that need it, with the playhead at `playhead` ticks. */
   draw(playhead: number): void {
     const { renderer, view, project, index } = this;
@@ -94,7 +123,11 @@ export class PianoRollScene {
     if (this.notesDirty) {
       const ticks = visibleTicks(view);
       const pitches = visiblePitches(view);
-      renderer.drawNotes(view, index.visible(ticks.start, ticks.end, pitches.low, pitches.high));
+      renderer.drawNotes(
+        view,
+        index.visible(ticks.start, ticks.end, pitches.low, pitches.high),
+        this.selected,
+      );
       this.notesDirty = false;
     }
     if (this.topDirty || playhead !== this.lastPlayhead) {

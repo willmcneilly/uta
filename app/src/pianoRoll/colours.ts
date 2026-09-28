@@ -15,6 +15,8 @@ export interface Theme {
   blackKey: string;
   keyText: string;
   playhead: string;
+  /** The outline of the selected note. */
+  selectedNote: string;
   /** A note's fill at each velocity, 0 to 127 (0 is never used). */
   noteByVelocity: string[];
 }
@@ -37,6 +39,7 @@ export function readTheme(element: Element): Theme {
     blackKey: read("--roll-black-key", "#2c2c2e"),
     keyText: read("--roll-key-text", "#6e6e73"),
     playhead: read("--roll-playhead", "#e5484d"),
+    selectedNote: read("--roll-note-selected", "#1c1c1e"),
     noteByVelocity: velocityColours(
       read("--roll-note-soft", "#b9d4f5"),
       read("--roll-note-hard", "#1f5fbf"),

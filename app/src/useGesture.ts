@@ -4,6 +4,12 @@ import { useRef } from "react";
 // different controls.
 let gestures = 0;
 
+/** A new drag's number, never used before. */
+export function nextGesture(): number {
+  gestures += 1;
+  return gestures;
+}
+
 /**
  * Numbers the drags of one control. Call `start` on pointer down; `current`
  * is then the drag's number until the pointer is released, and `undefined`
@@ -14,8 +20,7 @@ export function useGesture(): { start: () => void; current: () => number | undef
   const gesture = useRef<number | undefined>(undefined);
   return {
     start: () => {
-      gestures += 1;
-      gesture.current = gestures;
+      gesture.current = nextGesture();
       // The pointer can be released outside the control.
       window.addEventListener(
         "pointerup",
