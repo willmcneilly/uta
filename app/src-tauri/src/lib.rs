@@ -29,9 +29,12 @@ pub fn run() {
             app.manage(edit_menu);
             app.on_menu_event(|app, event| {
                 let result = match event.id().as_ref() {
-                    menu::UNDO => commands::undo(app.clone()),
-                    menu::REDO => commands::redo(app.clone()),
-                    menu::ADD_STRESS_NOTES => commands::add_stress_notes(app.clone()),
+                    menu::UNDO => commands::undo(app.clone()).map(drop),
+                    menu::REDO => commands::redo(app.clone()).map(drop),
+                    id @ (menu::COPY | menu::PASTE | menu::DUPLICATE) => {
+                        commands::edit_menu(app, id)
+                    }
+                    menu::ADD_STRESS_NOTES => commands::add_stress_notes(app.clone()).map(drop),
                     _ => return,
                 };
                 if let Err(error) = result {

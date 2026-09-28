@@ -18,6 +18,12 @@ use crate::uta::{Frame, ProjectView, Uta};
 /// wherever it came from (a command or the menu).
 pub const PROJECT_CHANGED: &str = "project-changed";
 
+/// The event sent when Copy, Paste or Duplicate is chosen from the Edit
+/// menu, with the item's ID. The piano roll acts on it: the clipboard of
+/// notes and the selection live in the UI, and what they change arrives as
+/// ordinary commands.
+pub const EDIT_MENU: &str = "edit-menu";
+
 pub struct AppState {
     pub uta: Mutex<Uta>,
     /// Where the frame thread sends each [`Frame`], once the UI subscribes.
@@ -132,6 +138,11 @@ pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<Pro
 #[tauri::command]
 pub fn audition_note(state: State<'_, AppState>, pitch: u8, velocity: u8) -> Result<(), String> {
     lock(&state.uta).audition(pitch, velocity)
+}
+
+/// Passes an Edit menu item (Copy, Paste or Duplicate) on to the UI.
+pub fn edit_menu<R: Runtime>(app: &AppHandle<R>, item: &str) -> Result<(), String> {
+    app.emit(EDIT_MENU, item).map_err(|error| error.to_string())
 }
 
 /// Fills the loop with a few thousand notes, as one undo step. The Develop
