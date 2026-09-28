@@ -7,6 +7,7 @@
 //!   saved commands keep loading as the format changes.
 //! - [`Session`] owns a project with its undo and redo history, and numbers
 //!   every change.
+//! - [`Clip::trims_under`] works out how an edit trims the notes it covers.
 //! - Positions and lengths are musical: whole ticks, turned into samples by
 //!   the [`time::TempoMap`]. See RFC-002, "The shared model".
 //!
@@ -23,6 +24,7 @@ mod synth;
 mod testing;
 pub mod time;
 mod track;
+mod trim;
 
 pub use command::{COMMAND_FORMAT, Command, CommandError};
 pub use command_list::CommandList;
