@@ -193,7 +193,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.fillRect(0, 0, KEYBOARD_WIDTH, RULER_HEIGHT);
   }
 
-  drawNotes(view: Viewport, notes: readonly PlacedNote[]): void {
+  drawNotes(view: Viewport, notes: readonly PlacedNote[], selected: string | null): void {
     const context = this.contexts.notes;
     const colours = this.theme.noteByVelocity;
     const area = noteArea(view);
@@ -211,6 +211,11 @@ class Canvas2DRenderer implements PianoRollRenderer {
       context.globalAlpha = note.outside ? 0.35 : 1;
       context.fillStyle = colours[note.velocity];
       context.fillRect(x, y + gap, width, view.keyHeight - gap);
+      if (note.id === selected) {
+        context.strokeStyle = this.theme.selectedNote;
+        context.lineWidth = 2;
+        context.strokeRect(x + 1, y + gap + 1, Math.max(0, width - 2), view.keyHeight - gap - 2);
+      }
     }
     context.restore();
   }

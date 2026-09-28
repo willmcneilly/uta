@@ -1,4 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { Channel } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -299,7 +307,9 @@ describe("App", () => {
     sendFrame({
       output: { ...frame().output, bufferSizes: [64, 128] },
     });
-    const options = screen.getAllByRole<HTMLOptionElement>("option");
+    const options = within(screen.getByLabelText("Buffer")).getAllByRole<HTMLOptionElement>(
+      "option",
+    );
     expect(options.map((o) => [o.value, o.disabled])).toEqual([
       ["64", false],
       ["128", false],

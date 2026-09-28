@@ -43,7 +43,7 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
 export class RecordingRenderer implements PianoRollRenderer {
   sizes: [number, number][] = [];
   grids: GridScene[] = [];
-  notes: { view: Viewport; notes: readonly PlacedNote[] }[] = [];
+  notes: { view: Viewport; notes: readonly PlacedNote[]; selected: string | null }[] = [];
   tops: number[] = [];
 
   resize(width: number, height: number): void {
@@ -52,11 +52,23 @@ export class RecordingRenderer implements PianoRollRenderer {
   drawGrid(scene: GridScene): void {
     this.grids.push(scene);
   }
-  drawNotes(view: Viewport, notes: readonly PlacedNote[]): void {
-    this.notes.push({ view, notes });
+  drawNotes(view: Viewport, notes: readonly PlacedNote[], selected: string | null): void {
+    this.notes.push({ view, notes, selected });
   }
   drawTop(_view: Viewport, playhead: number): void {
     this.tops.push(playhead);
+  }
+
+  /** The view the notes were last drawn in. */
+  lastView(): Viewport {
+    const view = this.notes.at(-1)?.view;
+    if (!view) throw new Error("no notes drawn yet");
+    return view;
+  }
+
+  /** The note drawn as selected most recently. */
+  lastSelected(): string | null {
+    return this.notes.at(-1)?.selected ?? null;
   }
 
   /** The notes drawn most recently. */

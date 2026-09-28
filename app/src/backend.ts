@@ -120,6 +120,33 @@ export function setLoopLength(bars: number, gesture?: number): Promise<ProjectVi
   return invoke<ProjectView>("set_loop_length", { bars, gesture: gesture ?? null });
 }
 
+/** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
+export function addNotes(clip: string, notes: NoteView[], gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("add_notes", { clip, notes, gesture: gesture ?? null });
+}
+
+/**
+ * Sets every value of existing notes. Changes with the same `gesture` (one
+ * drag) undo as one step, together with an `addNotes` of the same notes.
+ */
+export function setNotes(clip: string, notes: NoteView[], gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("set_notes", { clip, notes, gesture: gesture ?? null });
+}
+
+export function removeNotes(clip: string, notes: string[]): Promise<ProjectView> {
+  return invoke<ProjectView>("remove_notes", { clip, notes });
+}
+
+/** Puts back everything `gesture` (one drag) changed, as if it never happened. */
+export function cancelGesture(gesture: number): Promise<ProjectView> {
+  return invoke<ProjectView>("cancel_gesture", { gesture });
+}
+
+/** Plays a note briefly, without changing the project, even while stopped. */
+export function auditionNote(pitch: number, velocity: number): Promise<void> {
+  return invoke<void>("audition_note", { pitch, velocity });
+}
+
 export function play(): Promise<void> {
   return invoke<void>("play");
 }

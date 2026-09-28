@@ -3,15 +3,17 @@
 //! frame thread reads it once per screen frame. Nothing here runs on the
 //! audio thread.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::stress;
 
 use serde::Serialize;
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
-use uta_core::{ClipId, Command, Note, Project, Session, Source, SynthSettings, TrackId, Waveform};
+use uta_core::{
+    ClipId, Command, Note, NoteId, Project, Session, Source, SynthSettings, TrackId, Waveform,
+};
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
-use uta_engine::{Controller, EngineConfig, Processor, Snapshot, Status};
+use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
 
 /// The volume control's range, in dB. The top is the engine's ceiling, so
 /// the control never asks for a volume the engine would clamp.
@@ -131,6 +133,17 @@ pub enum OutputState {
     Failed,
 }
 
+/// How long a note sounds when it's auditioned: placed in the piano roll, or
+/// dragged to a new pitch.
+pub const AUDITION_TIME: Duration = Duration::from_millis(200);
+
+/// A note sounding through the live route, and when to release it.
+#[derive(Debug, Clone, Copy)]
+struct Audition {
+    key: NoteKey,
+    ends: Instant,
+}
+
 /// Where the processor is.
 enum Playback {
     /// Playing through the default output.
@@ -156,6 +169,12 @@ pub struct Uta {
     earlier_dropouts: u64,
     /// The drag the latest change came from.
     gesture: Option<u32>,
+    /// The note being auditioned, if one is still sounding.
+    audition: Option<Audition>,
+    /// The key of the latest auditioned note. Live keys count up from 1, so
+    /// they never match a sequenced note's key, which is a random UUID's
+    /// number (always at least 2^78, because of the UUID's version bits).
+    last_audition_key: u128,
 }
 
 impl Uta {
@@ -183,6 +202,8 @@ impl Uta {
             engine_behind: false,
             earlier_dropouts: 0,
             gesture: None,
+            audition: None,
+            last_audition_key: 0,
         }
     }
 
@@ -257,6 +278,81 @@ impl Uta {
         )
     }
 
+    /// Adds `notes` to `clip`. Their IDs were chosen by the caller. A later
+    /// [`Uta::set_notes`] of the same notes with the same `gesture` (drawing
+    /// a note, then dragging out its length) undoes with it as one step.
+    pub fn add_notes(
+        &mut self,
+        clip: ClipId,
+        notes: Vec<Note>,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::AddNotes { clip, notes }, gesture)
+    }
+
+    /// Sets every value of existing notes in `clip`. Changes that share a
+    /// `gesture` (one drag) undo as one.
+    pub fn set_notes(
+        &mut self,
+        clip: ClipId,
+        notes: Vec<Note>,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetNotes { clip, notes }, gesture)
+    }
+
+    pub fn remove_notes(&mut self, clip: ClipId, notes: Vec<NoteId>) -> Result<(), String> {
+        self.change(Command::RemoveNotes { clip, notes }, None)
+    }
+
+    /// Puts back everything `gesture` changed, as if the drag never happened:
+    /// Esc during a drag. Does nothing if the latest change came from
+    /// something else, such as a drag that hasn't changed anything yet.
+    pub fn cancel_gesture(&mut self, gesture: u32) {
+        if self.gesture != Some(gesture) {
+            return;
+        }
+        self.gesture = None;
+        if self.session.withdraw().is_some() {
+            self.sync_engine();
+        }
+    }
+
+    /// Plays a note briefly through the live route, whether or not the loop
+    /// is playing: for hearing a note as it's placed. It's not a change to
+    /// the project. Any note still being auditioned is released first, and
+    /// the frame thread releases this one after [`AUDITION_TIME`].
+    pub fn audition(&mut self, pitch: u8, velocity: u8) -> Result<(), String> {
+        self.release_audition();
+        self.last_audition_key += 1;
+        let key = NoteKey(self.last_audition_key);
+        self.controller
+            .note_on(key, pitch, velocity)
+            .map_err(|error| error.to_string())?;
+        self.audition = Some(Audition {
+            key,
+            ends: Instant::now() + AUDITION_TIME,
+        });
+        Ok(())
+    }
+
+    /// Releases the auditioned note if it's due by `now`.
+    fn end_audition_by(&mut self, now: Instant) {
+        if self.audition.is_some_and(|audition| audition.ends <= now) {
+            self.release_audition();
+        }
+    }
+
+    /// Releases the auditioned note. If the engine's queue is full, it's
+    /// kept, and the next frame tries again.
+    fn release_audition(&mut self) {
+        if let Some(audition) = self.audition.take()
+            && self.controller.note_off(audition.key).is_err()
+        {
+            self.audition = Some(audition);
+        }
+    }
+
     /// Applies `command` through the project core and sends the engine the
     /// result. A change that continues the latest one's `gesture` (the same
     /// drag) is amended into it, so the drag undoes as one step.
@@ -319,6 +415,8 @@ impl Uta {
         let (controller, processor) = new_engine(&self.session);
         self.controller = controller;
         self.engine_behind = false;
+        // It was sounding on the engine that's gone.
+        self.audition = None;
         self.requested_buffer = size;
         self.playback = Some(if live {
             Playback::Live(LiveOutput::start(processor, size).map_err(|e| e.to_string())?)
@@ -337,6 +435,7 @@ impl Uta {
         if self.engine_behind {
             self.sync_engine();
         }
+        self.end_audition_by(Instant::now());
         let status: Status = self.controller.poll();
         let device = self.device_status();
         let sample_rate = device.device.as_ref().map(|d| d.sample_rate);
@@ -652,6 +751,155 @@ mod tests {
         uta.undo();
         assert!(uta.project().track.clip.notes.is_empty());
         assert!(!uta.project().can_undo);
+    }
+
+    /// A known note ID, as the UI would send it.
+    fn note_id(id: u64) -> NoteId {
+        serde_json::from_value(format!("00000000-0000-4000-8000-{id:012x}").into()).unwrap()
+    }
+
+    fn note(id: u64, pitch: u8, start: Ticks, length: Ticks) -> Note {
+        Note {
+            id: note_id(id),
+            pitch,
+            velocity: 100,
+            start,
+            length,
+        }
+    }
+
+    fn clip_id(uta: &Uta) -> ClipId {
+        uta.project().track.clip.id
+    }
+
+    #[test]
+    fn notes_are_added_set_and_removed_through_the_project_to_the_engine() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
+            .unwrap();
+        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 240)]);
+        assert_eq!(uta.controller.snapshot().sequence.events().len(), 2);
+
+        uta.set_notes(clip, vec![note(1, 64, 960, 480)], None)
+            .unwrap();
+        assert_eq!(uta.project().track.clip.notes, vec![note(1, 64, 960, 480)]);
+
+        uta.remove_notes(clip, vec![note_id(1)]).unwrap();
+        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.controller.snapshot().sequence.events().is_empty());
+        assert!(uta.remove_notes(clip, vec![note_id(1)]).is_err());
+    }
+
+    #[test]
+    fn drawing_a_note_and_dragging_its_length_is_one_undo_step() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], Some(7))
+            .unwrap();
+        for length in [480, 720, 960] {
+            uta.set_notes(clip, vec![note(1, 60, 0, length)], Some(7))
+                .unwrap();
+        }
+        assert_eq!(uta.project().track.clip.notes[0].length, 960);
+        uta.undo();
+        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(!uta.project().can_undo);
+        uta.redo();
+        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 960)]);
+    }
+
+    #[test]
+    fn cancelling_a_drag_puts_everything_back() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
+            .unwrap();
+        let before = uta.project();
+        for start in [240, 480, 720] {
+            uta.set_notes(clip, vec![note(1, 62, start, 240)], Some(3))
+                .unwrap();
+        }
+        uta.cancel_gesture(3);
+        assert_eq!(
+            uta.project(),
+            before,
+            "the note is back, and so is the history"
+        );
+        assert_eq!(
+            uta.controller.snapshot().sequence.events()[0].sample,
+            0,
+            "and the engine plays it where it was"
+        );
+        uta.undo();
+        assert!(uta.project().track.clip.notes.is_empty());
+    }
+
+    #[test]
+    fn cancelling_a_drawn_note_removes_it() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], Some(4))
+            .unwrap();
+        uta.set_notes(clip, vec![note(1, 60, 0, 960)], Some(4))
+            .unwrap();
+        uta.cancel_gesture(4);
+        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(!uta.project().can_undo && !uta.project().can_redo);
+    }
+
+    #[test]
+    fn cancelling_only_undoes_that_drag() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], Some(1))
+            .unwrap();
+        // A drag that hasn't changed anything, or an older one, cancels nothing.
+        uta.cancel_gesture(2);
+        assert_eq!(uta.project().track.clip.notes.len(), 1);
+        uta.set_volume(-6.0, None).unwrap();
+        uta.cancel_gesture(1);
+        assert_eq!(uta.project().track.clip.notes.len(), 1);
+        assert_eq!(uta.project().volume_db, -6.0);
+        // And after an undo, the drag is no longer the latest change.
+        uta.set_notes(clip, vec![note(1, 61, 0, 240)], Some(5))
+            .unwrap();
+        uta.undo();
+        uta.cancel_gesture(5);
+        assert!(uta.project().can_redo, "the undo is still there to redo");
+    }
+
+    #[test]
+    fn an_auditioned_note_sounds_while_stopped_then_stops() {
+        let mut uta = offline();
+        uta.audition(69, 127).unwrap();
+        uta.render(4_800);
+        let frame = uta.frame();
+        assert!(!frame.playing);
+        assert!(frame.peak > 0.05, "{frame:?}");
+
+        // The frame thread releases it once it's due.
+        uta.end_audition_by(Instant::now() + AUDITION_TIME);
+        assert!(uta.audition.is_none());
+        // Past the release (0.2 s by default), it's silent.
+        uta.render(24_000);
+        uta.frame();
+        uta.render(4_800);
+        assert_eq!(uta.frame().peak, 0.0);
+    }
+
+    #[test]
+    fn a_new_audition_releases_the_last_one() {
+        let mut uta = offline();
+        uta.audition(60, 100).unwrap();
+        let first = uta.audition.unwrap().key;
+        uta.audition(62, 100).unwrap();
+        let second = uta.audition.unwrap().key;
+        assert_ne!(first, second);
+        // Not due yet, so still sounding.
+        uta.end_audition_by(Instant::now());
+        assert!(uta.audition.is_some());
+        assert!(uta.audition(128, 100).is_err());
     }
 
     #[test]

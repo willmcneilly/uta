@@ -9,6 +9,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use uta_core::{ClipId, Note, NoteId};
 
 use crate::menu::EditMenu;
 use crate::uta::{Frame, ProjectView, Uta};
@@ -83,6 +84,54 @@ pub fn set_loop_length<R: Runtime>(
     gesture: Option<u32>,
 ) -> Result<ProjectView, String> {
     edit(&app, |uta| uta.set_loop_length(bars, gesture))
+}
+
+/// Adds notes to a clip. The UI picks each new note's ID. A `set_notes` of
+/// the same notes with the same `gesture` undoes with it as one step.
+#[tauri::command]
+pub fn add_notes<R: Runtime>(
+    app: AppHandle<R>,
+    clip: ClipId,
+    notes: Vec<Note>,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.add_notes(clip, notes, gesture))
+}
+
+/// Sets every value of existing notes in a clip. Calls with the same
+/// `gesture` (one drag) undo as one step.
+#[tauri::command]
+pub fn set_notes<R: Runtime>(
+    app: AppHandle<R>,
+    clip: ClipId,
+    notes: Vec<Note>,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_notes(clip, notes, gesture))
+}
+
+#[tauri::command]
+pub fn remove_notes<R: Runtime>(
+    app: AppHandle<R>,
+    clip: ClipId,
+    notes: Vec<NoteId>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.remove_notes(clip, notes))
+}
+
+/// Puts back everything `gesture` (one drag) changed: Esc mid-drag.
+#[tauri::command]
+pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<ProjectView, String> {
+    edit(&app, |uta| {
+        uta.cancel_gesture(gesture);
+        Ok(())
+    })
+}
+
+/// Plays a note briefly, without changing the project, even while stopped.
+#[tauri::command]
+pub fn audition_note(state: State<'_, AppState>, pitch: u8, velocity: u8) -> Result<(), String> {
+    lock(&state.uta).audition(pitch, velocity)
 }
 
 /// Fills the loop with a few thousand notes, as one undo step. The Develop
