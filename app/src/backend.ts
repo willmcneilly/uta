@@ -101,6 +101,11 @@ export interface Frame {
 /** Sent with a ProjectView after every change, including undo and redo from the menu. */
 export const PROJECT_CHANGED = "project-changed";
 
+/** Sent with the item's ID when Copy, Paste or Duplicate is chosen from the Edit menu. */
+export const EDIT_MENU = "edit-menu";
+
+export type EditMenuItem = "copy" | "paste" | "duplicate";
+
 export function getProject(): Promise<ProjectView> {
   return invoke<ProjectView>("get_project");
 }
@@ -161,6 +166,10 @@ export function setBufferSize(size: number): Promise<void> {
 
 export function onProjectChanged(handler: (project: ProjectView) => void): Promise<UnlistenFn> {
   return listen<ProjectView>(PROJECT_CHANGED, (event) => handler(event.payload));
+}
+
+export function onEditMenu(handler: (item: EditMenuItem) => void): Promise<UnlistenFn> {
+  return listen<EditMenuItem>(EDIT_MENU, (event) => handler(event.payload));
 }
 
 /** Starts the stream of frames. Rust keeps only the latest subscriber. */

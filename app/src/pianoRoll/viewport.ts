@@ -5,6 +5,10 @@
 export const KEYBOARD_WIDTH = 56;
 /** The bar and beat ruler's height, across the top. */
 export const RULER_HEIGHT = 24;
+/** The velocity lane's height, along the bottom, under the notes. */
+export const VELOCITY_LANE_HEIGHT = 72;
+/** Space above and below the velocity lane's tallest and shortest bars. */
+const VELOCITY_LANE_PADDING = 6;
 /** MIDI notes 0 to 127. */
 export const PITCH_COUNT = 128;
 
@@ -28,14 +32,49 @@ export interface Viewport {
   keyHeight: number;
 }
 
-/** The area the notes are drawn in: right of the keyboard, under the ruler. */
-export function noteArea(view: Viewport): { x: number; y: number; width: number; height: number } {
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The area the notes are drawn in: right of the keyboard, between the ruler
+ * and the velocity lane.
+ */
+export function noteArea(view: Viewport): Rect {
   return {
     x: KEYBOARD_WIDTH,
     y: RULER_HEIGHT,
     width: Math.max(0, view.width - KEYBOARD_WIDTH),
-    height: Math.max(0, view.height - RULER_HEIGHT),
+    height: Math.max(0, view.height - RULER_HEIGHT - VELOCITY_LANE_HEIGHT),
   };
+}
+
+/** The velocity lane: under the notes, as wide as them. */
+export function velocityLane(view: Viewport): Rect {
+  const notes = noteArea(view);
+  const y = notes.y + notes.height;
+  return { x: notes.x, y, width: notes.width, height: Math.max(0, view.height - y) };
+}
+
+/** Whether `x`, `y` is inside `rect`. */
+export function inRect(rect: Rect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+/** The top of a velocity bar: 127 near the lane's top, 0 near its bottom. */
+export function velocityToY(view: Viewport, velocity: number): number {
+  const lane = velocityLane(view);
+  const bottom = lane.y + lane.height - VELOCITY_LANE_PADDING;
+  const range = Math.max(0, lane.height - 2 * VELOCITY_LANE_PADDING);
+  return bottom - (velocity / 127) * range;
+}
+
+/** How many velocity steps a pointer movement of one pixel up the lane is. */
+export function velocityPerPixel(view: Viewport): number {
+  return 127 / Math.max(1, velocityLane(view).height - 2 * VELOCITY_LANE_PADDING);
 }
 
 export function tickToX(view: Viewport, ticks: number): number {

@@ -4,15 +4,18 @@
 // "The shared model", point 8).
 
 import type { PlacedNote } from "./notes";
-import type { Viewport } from "./viewport";
+import type { Rect, Viewport } from "./viewport";
 
 /** The three stacked canvases, bottom to top. */
 export interface Layers {
-  /** The keyboard, the ruler and the grid. Redrawn on scroll, zoom or a loop change. */
+  /**
+   * The keyboard, the ruler, the grid and the velocity lane's background.
+   * Redrawn on scroll, zoom or a loop change.
+   */
   grid: HTMLCanvasElement;
-  /** The notes. Redrawn when the notes or the view change. */
+  /** The notes and their velocity bars. Redrawn when the notes, the selection or the view change. */
   notes: HTMLCanvasElement;
-  /** The playhead, and later the selection box and drag previews. Redrawn every frame. */
+  /** The playhead and the selection box. Redrawn when either moves. */
   top: HTMLCanvasElement;
 }
 
@@ -25,17 +28,27 @@ export interface GridScene {
   loopEnd: number;
 }
 
+/** What the notes layer shows. */
+export interface NotesScene {
+  view: Viewport;
+  /** Only those in view (see `NoteIndex.visible`), in the order to draw them. */
+  notes: readonly PlacedNote[];
+  /** The notes whose velocity bars are in view: those in view in time, at any pitch. */
+  velocities: readonly PlacedNote[];
+  /** The selected notes' IDs. */
+  selected: ReadonlySet<string>;
+}
+
 export interface PianoRollRenderer {
   /** Sizes every layer, in CSS pixels, at `pixelRatio` device pixels to each. */
   resize(width: number, height: number, pixelRatio: number): void;
   drawGrid(scene: GridScene): void;
+  drawNotes(scene: NotesScene): void;
   /**
-   * `notes` are only those in view (see `NoteIndex.visible`), in the order to
-   * draw them. `selected` is the selected note's ID, if any.
+   * `playhead` is in ticks from the start of the song. `box` is the
+   * selection box being dragged out, in CSS pixels, if any.
    */
-  drawNotes(view: Viewport, notes: readonly PlacedNote[], selected: string | null): void;
-  /** `playhead` is in ticks from the start of the song. */
-  drawTop(view: Viewport, playhead: number): void;
+  drawTop(view: Viewport, playhead: number, box: Rect | null): void;
 }
 
 /** Makes a renderer for `layers`, or `null` if this one can't draw here. */

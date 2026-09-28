@@ -15,8 +15,12 @@ export interface Theme {
   blackKey: string;
   keyText: string;
   playhead: string;
-  /** The outline of the selected note. */
+  /** The outline of a selected note, and its velocity bar. */
   selectedNote: string;
+  velocityLane: string;
+  /** The selection box's fill and edge. */
+  selectionBox: string;
+  selectionBoxEdge: string;
   /** A note's fill at each velocity, 0 to 127 (0 is never used). */
   noteByVelocity: string[];
 }
@@ -40,6 +44,9 @@ export function readTheme(element: Element): Theme {
     keyText: read("--roll-key-text", "#6e6e73"),
     playhead: read("--roll-playhead", "#e5484d"),
     selectedNote: read("--roll-note-selected", "#1c1c1e"),
+    velocityLane: read("--roll-velocity-lane", "#f7f7f5"),
+    selectionBox: read("--roll-selection-box", "rgba(31, 95, 191, 0.12)"),
+    selectionBoxEdge: read("--roll-selection-box-edge", "#1f5fbf"),
     noteByVelocity: velocityColours(
       read("--roll-note-soft", "#b9d4f5"),
       read("--roll-note-hard", "#1f5fbf"),

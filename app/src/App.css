@@ -22,6 +22,9 @@
   --roll-note-soft: #b9d4f5;
   --roll-note-hard: #1f5fbf;
   --roll-note-selected: #1c1c1e;
+  --roll-velocity-lane: #f7f7f5;
+  --roll-selection-box: rgba(31, 95, 191, 0.12);
+  --roll-selection-box-edge: #1f5fbf;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 14px;
   color-scheme: light dark;
@@ -52,6 +55,9 @@
     --roll-note-soft: #2d4a73;
     --roll-note-hard: #7ab8ff;
     --roll-note-selected: #ffffff;
+    --roll-velocity-lane: #1c1c1e;
+    --roll-selection-box: rgba(122, 184, 255, 0.15);
+    --roll-selection-box-edge: #7ab8ff;
   }
 }
 

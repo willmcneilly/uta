@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { NoteView } from "../backend";
 import { PianoRollScene } from "./scene";
 import { RecordingRenderer, projectView } from "./testing";
-import { KEYBOARD_WIDTH, RULER_HEIGHT, pitchToY, tickToX } from "./viewport";
+import {
+  KEYBOARD_WIDTH,
+  RULER_HEIGHT,
+  pitchToY,
+  tickToX,
+  velocityLane,
+} from "./viewport";
 
 const note = (id: string, start: number, pitch = 72): NoteView => ({
   id,
@@ -120,12 +126,14 @@ describe("PianoRollScene", () => {
 
   it("redraws only the notes when the selection changes", () => {
     scene.draw(0);
-    scene.setSelection("b");
+    scene.setSelection(new Set(["b"]));
     scene.draw(0);
-    scene.setSelection("b");
+    scene.setSelection(new Set(["b"]));
+    scene.draw(0);
+    scene.setSelection(new Set(["a", "b"]));
     scene.draw(0);
     expect(renderer.grids).toHaveLength(1);
-    expect(renderer.notes.map((drawn) => drawn.selected)).toEqual([null, "b"]);
+    expect(renderer.notes.map((drawn) => [...drawn.selected])).toEqual([[], ["b"], ["a", "b"]]);
   });
 
   it("finds the note under the pointer, only where notes are drawn", () => {
@@ -137,5 +145,55 @@ describe("PianoRollScene", () => {
     expect(scene.inNoteArea(KEYBOARD_WIDTH - 1, y)).toBe(false);
     expect(scene.inNoteArea(KEYBOARD_WIDTH, RULER_HEIGHT - 1)).toBe(false);
     expect(scene.inNoteArea(KEYBOARD_WIDTH, RULER_HEIGHT)).toBe(true);
+  });
+
+  it("finds the notes inside a box, only where notes are drawn", () => {
+    const view = scene.getView()!;
+    const row = (pitch: number) => pitchToY(view, pitch);
+    // Around "a" (0–480 at 72), from above its row to below it.
+    const box = (from: number, to: number, high: number, low: number) => ({
+      x: tickToX(view, from),
+      y: row(high),
+      width: tickToX(view, to) - tickToX(view, from),
+      height: row(low) + view.keyHeight - row(high),
+    });
+    expect(scene.notesIn(box(100, 200, 73, 71))).toEqual(["a"]);
+    expect(scene.notesIn(box(500, 7000, 80, 60))).toEqual([]);
+    expect(scene.notesIn(box(0, 8000, 72, 72))).toEqual(["a", "b"]);
+    // A row above or below misses.
+    expect(scene.notesIn(box(0, 8000, 74, 73))).toEqual([]);
+    // Dragged out past the keyboard, into the ruler: kept to the notes.
+    expect(scene.notesIn({ x: 0, y: 0, width: tickToX(view, 100), height: row(71) })).toEqual([
+      "a",
+    ]);
+  });
+
+  it("finds a note's velocity bar in the lane", () => {
+    const view = scene.getView()!;
+    const lane = velocityLane(view);
+    expect(scene.inVelocityLane(KEYBOARD_WIDTH + 10, lane.y + 10)).toBe(true);
+    expect(scene.inNoteArea(KEYBOARD_WIDTH + 10, lane.y + 10)).toBe(false);
+    expect(scene.inVelocityLane(KEYBOARD_WIDTH + 10, lane.y - 1)).toBe(false);
+    expect(scene.hitVelocity(tickToX(view, 7680) + 2)?.id).toBe("b");
+    expect(scene.hitVelocity(tickToX(view, 3840))).toBeNull();
+  });
+
+  it("draws every note's velocity bar in view, at any pitch", () => {
+    scene.setProject(projectView({}, [note("a", 0), note("low", 960, 5)]));
+    scene.draw(0);
+    const drawn = renderer.notes.at(-1)!;
+    expect(drawn.notes.map((n) => n.id)).toEqual(["a"]);
+    expect(drawn.velocities.map((n) => n.id)).toEqual(["a", "low"]);
+  });
+
+  it("redraws only the top layer as the selection box moves", () => {
+    scene.draw(0);
+    const box = { x: 100, y: 100, width: 50, height: 40 };
+    scene.setBox(box);
+    scene.draw(0);
+    scene.setBox(null);
+    scene.draw(0);
+    expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
+    expect(renderer.boxes).toEqual([null, box, null]);
   });
 });
