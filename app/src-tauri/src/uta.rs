@@ -364,7 +364,7 @@ impl Uta {
             .project()
             .clip(clip)
             .ok_or_else(|| CommandError::UnknownClip(clip).to_string())?
-            .trims_under(&notes);
+            .trims_under(&notes, NoteId::random);
         if trims.is_empty() {
             return Ok(());
         }
@@ -1080,6 +1080,32 @@ mod tests {
         assert_eq!(notes, vec![note(1, 60, 0, 480), note(2, 60, 480, 960)]);
         uta.undo();
         assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 960)]);
+    }
+
+    #[test]
+    fn a_note_dropped_inside_a_longer_one_splits_it_as_one_undo_step() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 1920), note(2, 64, 0, 240)], None)
+            .unwrap();
+        let before = uta.project();
+        // Move note 2 into the middle of note 1.
+        uta.set_notes(clip, vec![note(2, 60, 480, 240)], Some(10))
+            .unwrap();
+        uta.trim_notes(clip, vec![note_id(2)], 10).unwrap();
+
+        let mut notes = uta.project().track.clip.notes;
+        notes.sort_by_key(|note| note.start);
+        let spans: Vec<_> = notes.iter().map(|note| (note.start, note.length)).collect();
+        assert_eq!(spans, [(0, 480), (480, 240), (720, 1200)]);
+        assert_eq!(notes[0].id, note_id(1), "the head keeps the note's ID");
+        assert!(
+            ![note_id(1), note_id(2)].contains(&notes[2].id),
+            "the tail is new"
+        );
+
+        uta.undo();
+        assert_eq!(uta.project().track.clip.notes, before.track.clip.notes);
     }
 
     #[test]
