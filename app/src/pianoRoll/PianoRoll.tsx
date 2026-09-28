@@ -17,7 +17,15 @@ import type { PlayheadClock } from "./playhead";
 import type { RendererFactory } from "./renderer";
 import { PianoRollScene } from "./scene";
 import { DEFAULT_SNAP, SNAPS, type Snap, snapDown, snapStep } from "./snap";
-import { type Rect, noteArea, xToTick, yToPitch, zoomPitch, zoomTime } from "./viewport";
+import {
+  type Rect,
+  VELOCITY_LANE_HEIGHT,
+  noteArea,
+  xToTick,
+  yToPitch,
+  zoomPitch,
+  zoomTime,
+} from "./viewport";
 
 /**
  * What the piano roll's edits do. The app sends each to Rust; the piano roll
@@ -557,7 +565,8 @@ export function PianoRoll({
         <canvas ref={notesRef} aria-hidden="true" />
         <canvas ref={topRef} aria-hidden="true" />
       </div>
-      <div className="piano-roll-tools">
+      {/* Above the velocity lane, so it never hides a bar. */}
+      <div className="piano-roll-tools" style={{ bottom: VELOCITY_LANE_HEIGHT + 8 }}>
         <label className="snap">
           <span>Snap</span>
           <select value={snap} onChange={(event) => setSnap(event.target.value as Snap)}>
