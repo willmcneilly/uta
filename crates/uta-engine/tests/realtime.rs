@@ -18,8 +18,8 @@ use uta_core::{Command, SynthParam};
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, NoteKey, Processor, STATUS_CAPACITY, Snapshot,
-    SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
+    EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor, STATUS_CAPACITY,
+    Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
 };
 
 #[global_allocator]
@@ -209,6 +209,67 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
         (passes * blocks_per_pass * BLOCK) as u64,
         "played every block"
     );
+}
+
+/// Mixer changes while a loud chord plays: volume, pan and mute glide, the
+/// master clips, and the processor never allocates. In stereo, and in mono
+/// and on four channels, where the mix is folded down or padded out.
+#[test]
+fn mixer_changes_and_clipping_do_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    // Twelve square notes at full velocity: past full scale at +6 dB.
+    let notes = (0..12u8)
+        .map(|i| uta_core::Note {
+            velocity: 127,
+            ..note(u128::from(i), 40 + i * 2, 0, 3840)
+        })
+        .collect();
+    let project = project(
+        120.0,
+        1,
+        &[SynthParam::Waveform(uta_core::Waveform::Square)],
+        notes,
+    );
+    let strips = [
+        (6.0, 0.0, false),
+        (-20.0, -1.0, false),
+        (6.0, 1.0, false),
+        (6.0, 0.5, true),
+        (3.0, -0.3, false),
+    ];
+    for channels in [1, 2, 4] {
+        let config = EngineConfig {
+            channels,
+            ..stereo()
+        };
+        let snapshot = Snapshot::from(&project).with_volume_db(0.0);
+        let mut renderer = Renderer::new(config, snapshot.clone(), BLOCK);
+        let mut buffer = vec![0.0; BLOCK * channels];
+        renderer.controller.play().unwrap();
+        for _ in 0..4 {
+            for (volume_db, pan, mute) in strips {
+                let mixer = MixerStrip {
+                    volume_db,
+                    pan,
+                    mute,
+                };
+                renderer
+                    .controller
+                    .set_snapshot(Snapshot {
+                        mixer,
+                        ..snapshot.clone()
+                    })
+                    .unwrap();
+                for _ in 0..3 {
+                    process_block(renderer.processor(), &mut buffer);
+                }
+                renderer.controller.poll();
+            }
+        }
+        let status = renderer.controller.poll();
+        assert!(status.clips > 0, "{channels} channels: nothing clipped");
+        assert!(status.playing);
+    }
 }
 
 /// Edits while the loop plays, each sent the way the app sends them

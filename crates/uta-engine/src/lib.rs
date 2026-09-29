@@ -11,6 +11,7 @@
 
 mod control;
 pub mod live;
+mod mixer;
 pub mod offline;
 mod processor;
 mod ramp;
@@ -18,6 +19,7 @@ mod snapshot;
 mod synth;
 
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
+pub use mixer::MixerStrip;
 pub use processor::{FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, VOLUME_SMOOTHING_SECONDS};
 pub use snapshot::{ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, db_to_gain};
 pub use synth::{
@@ -71,6 +73,9 @@ pub struct Status {
     pub playhead: uta_core::time::Ticks,
     /// The loudest sample since the last status message, as a linear level.
     pub peak: f32,
+    /// Samples the master has clipped so far, left and right counted
+    /// separately: each one was past full scale and was cut off there.
+    pub clips: u64,
     /// Dropouts the device driver has reported so far.
     pub dropouts: u64,
     /// Whether the transport is playing.
@@ -86,7 +91,8 @@ pub struct Status {
 #[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
     pub sample_rate: u32,
-    /// Output channels. Every channel carries the same signal for now.
+    /// Output channels. The first two get the left and right of the mix,
+    /// and any more are silent. With one, it gets their average.
     pub channels: usize,
 }
 
