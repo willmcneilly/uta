@@ -13,7 +13,8 @@ use crate::{COMMAND_CAPACITY, Command, NoteEventKind, Snapshot, Status};
 /// How long the output takes to fade out before a stream is replaced, and
 /// back in on the next one.
 pub const FADE_SECONDS: f64 = 0.005;
-/// How long a volume change takes to glide to its new level.
+/// How long a change to the master volume, or to a track's volume, pan or
+/// mute, takes to glide to its new level.
 pub const VOLUME_SMOOTHING_SECONDS: f64 = 0.02;
 /// The most note starts and ends handled in one block, so the work per block
 /// stays bounded however dense the notes are. Any more in the same block are
@@ -45,6 +46,9 @@ pub struct Processor {
     /// snapshot, so nothing on the audio thread shares ownership of snapshot
     /// data. See RFC-002, "The shared model", point 7.
     bookmark: usize,
+    /// The track's gain for the left and right, from its mixer strip.
+    track_gains: [Ramp; 2],
+    /// The master volume.
     volume: Ramp,
     /// Fades everything out before a stream is replaced, and back in on the
     /// next one.
@@ -53,6 +57,8 @@ pub struct Processor {
     position: u64,
     dropouts: u64,
     dropped_note_events: u64,
+    /// Samples the hard clip has cut off so far.
+    clips: u64,
     /// The loudest sample since status was last delivered.
     peak: f32,
 }
@@ -80,12 +86,17 @@ impl Processor {
             playing: false,
             playhead: snapshot.sequence.loop_samples().start,
             bookmark: 0,
+            track_gains: snapshot
+                .mixer
+                .gains()
+                .map(|gain| Ramp::new(gain, samples(VOLUME_SMOOTHING_SECONDS))),
             volume: Ramp::new(snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS)),
             output_gain: Ramp::new(1.0, samples(FADE_SECONDS)),
             snapshot,
             position: 0,
             dropouts: 0,
             dropped_note_events: 0,
+            clips: 0,
             peak: 0.0,
         };
         processor.find_bookmark();
@@ -116,6 +127,11 @@ impl Processor {
         self.channels = channels;
 
         let samples = |seconds: f64| (seconds * sample_rate).round() as u32;
+        self.track_gains = self
+            .snapshot
+            .mixer
+            .gains()
+            .map(|gain| Ramp::new(gain, samples(VOLUME_SMOOTHING_SECONDS)));
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
         self.output_gain.set_target(1.0);
@@ -270,16 +286,38 @@ impl Processor {
         });
     }
 
-    /// Renders the synth into `output`, which holds whole frames.
+    /// Renders the synth into `output`, which holds whole frames: the
+    /// track's volume, pan and mute make it stereo, then the master volume,
+    /// then a hard clip at full scale. The first two channels get the left
+    /// and right, and any more are silent. A single channel gets their
+    /// average, so a centred track sounds the same in mono. See RFC-003, "The
+    /// master and headroom".
     fn render(&mut self, output: &mut [f32]) {
         let mut peak = self.peak;
+        let mut clips = self.clips;
+        let [left_gain, right_gain] = &mut self.track_gains;
         for frame in output.chunks_exact_mut(self.channels) {
+            let sample = self.synth.next_sample();
             let master = self.volume.next_value() * self.output_gain.next_value();
-            let sample = self.synth.next_sample() * master;
-            frame.fill(sample);
-            peak = peak.max(sample.abs());
+            let left = hard_clip(sample * left_gain.next_value() * master, &mut clips);
+            let right = hard_clip(sample * right_gain.next_value() * master, &mut clips);
+            // The peak is of what the device gets.
+            match frame {
+                [mono] => {
+                    *mono = (left + right) * 0.5;
+                    peak = peak.max(mono.abs());
+                }
+                [first, second, rest @ ..] => {
+                    *first = left;
+                    *second = right;
+                    rest.fill(0.0);
+                    peak = peak.max(left.abs()).max(right.abs());
+                }
+                [] => {}
+            }
         }
         self.peak = peak;
+        self.clips = clips;
     }
 
     /// Applies queued commands. At most a queue's worth per block, so the
@@ -305,6 +343,9 @@ impl Processor {
                     self.synth.release_all();
                 }
                 Command::SetSnapshot(new) => {
+                    for (ramp, gain) in self.track_gains.iter_mut().zip(new.mixer.gains()) {
+                        ramp.set_target(gain);
+                    }
                     self.volume.set_target(new.gain);
                     self.synth.set_settings(new.synth);
                     let old = std::mem::replace(&mut self.snapshot, new);
@@ -347,6 +388,7 @@ impl Processor {
             position: self.position,
             playhead: sequence.ticks_at(playhead),
             peak: self.peak,
+            clips: self.clips,
             dropouts: self.dropouts,
             playing: self.playing,
             dropped_note_events: self.dropped_note_events,
@@ -355,6 +397,22 @@ impl Processor {
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
         }
+    }
+}
+
+/// Cuts `sample` off at full scale, counting it in `clips` if it was past it.
+/// No delay and no state, so a sample within full scale passes through
+/// exactly. NaN isn't a sound, so it becomes silence, and counts too.
+#[inline]
+fn hard_clip(sample: f32, clips: &mut u64) -> f32 {
+    if sample.abs() <= 1.0 {
+        return sample;
+    }
+    *clips += 1;
+    if sample.is_nan() {
+        0.0
+    } else {
+        sample.clamp(-1.0, 1.0)
     }
 }
 
@@ -423,6 +481,41 @@ mod tests {
             }
         }
         onsets
+    }
+
+    /// A sample within full scale comes out of the hard clip bit for bit
+    /// and isn't counted; one past it is cut off at full scale and counted,
+    /// and NaN is silenced and counted.
+    #[test]
+    fn the_hard_clip_passes_quiet_samples_through_exactly() {
+        let mut clips = 0;
+        // Every 1,000th value from 0 to 1, both signs, and the ends.
+        for bits in (0..=1.0f32.to_bits())
+            .step_by(1_000)
+            .chain([1.0f32.to_bits()])
+        {
+            for sample in [f32::from_bits(bits), -f32::from_bits(bits)] {
+                assert_eq!(hard_clip(sample, &mut clips).to_bits(), sample.to_bits());
+            }
+        }
+        assert_eq!(clips, 0);
+
+        let past = [
+            1.000_000_1,
+            -1.000_000_1,
+            4.0,
+            -250.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -f32::NAN,
+        ];
+        let cut: Vec<f32> = past
+            .iter()
+            .map(|&sample| hard_clip(sample, &mut clips))
+            .collect();
+        assert_eq!(cut, [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 0.0, 0.0]);
+        assert_eq!(clips, past.len() as u64);
     }
 
     /// A device switch mid-note, from 48 kHz to 44.1 kHz and back, the way

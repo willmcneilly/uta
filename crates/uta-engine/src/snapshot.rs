@@ -5,7 +5,7 @@ use std::sync::Arc;
 use uta_core::time::{TempoMap, Ticks};
 use uta_core::{Note, Project, Source};
 
-use crate::{DEFAULT_SAMPLE_RATE, NoteKey, SynthSettings, Waveform};
+use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, Waveform};
 
 /// Everything the audio thread needs to know about what to play.
 ///
@@ -15,19 +15,21 @@ use crate::{DEFAULT_SAMPLE_RATE, NoteKey, SynthSettings, Waveform};
 /// queues, so the audio thread only ever moves a pointer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
-    /// The output volume as a linear gain (1.0 is full scale).
+    /// The master volume as a linear gain (1.0 is full scale).
     pub gain: f32,
     /// How the synth sounds.
     pub synth: SynthSettings,
+    /// The first track's volume, pan and mute.
+    pub mixer: MixerStrip,
     /// The notes and the loop, timed in samples.
     pub sequence: Sequence,
 }
 
 impl Snapshot {
-    /// The default volume, in dB.
+    /// The master's default volume, in dB.
     pub const DEFAULT_VOLUME_DB: f32 = -12.0;
-    /// The loudest volume, in dB. Above it, loud chords could push samples
-    /// past full scale.
+    /// The master's loudest volume, in dB. Above it, loud chords could push
+    /// samples past full scale, where the hard clip cuts them off.
     pub const MAX_VOLUME_DB: f32 = 0.0;
 
     /// What the engine plays for `project`, with its notes timed at
@@ -49,22 +51,25 @@ impl Snapshot {
     }
 
     fn build(project: &Project, sample_rate: u32, previous: &[Arc<ClipNotes>]) -> Self {
-        let synth = project
-            .tracks()
-            .first()
+        let first = project.tracks().first();
+        let synth = first
             .map(|track| match track.source() {
                 Source::Synth(settings) => synth_settings(settings),
             })
             .unwrap_or_default();
+        let mixer = first
+            .map(|track| MixerStrip::from(track.mixer()))
+            .unwrap_or_default();
         Self {
             gain: 1.0,
             synth,
+            mixer,
             sequence: Sequence::new(project, sample_rate, previous),
         }
         .with_volume_db(project.master_volume_db())
     }
 
-    /// A snapshot with the given volume in dB, clamped to
+    /// A snapshot with the given master volume in dB, clamped to
     /// [`Self::MAX_VOLUME_DB`]. NaN is silence.
     pub fn with_volume_db(self, volume_db: f32) -> Self {
         let gain = if volume_db.is_nan() {
@@ -489,6 +494,7 @@ mod tests {
         let snapshot = Snapshot::default();
         assert_eq!(snapshot.gain, db_to_gain(Snapshot::DEFAULT_VOLUME_DB));
         assert_eq!(snapshot.synth, SynthSettings::default());
+        assert_eq!(snapshot.mixer, MixerStrip::default());
         let sequence = &snapshot.sequence;
         assert_eq!(sequence.sample_rate(), DEFAULT_SAMPLE_RATE);
         // 4 bars at 120 BPM is 8 s.
