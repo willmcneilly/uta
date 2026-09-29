@@ -188,7 +188,10 @@ impl Session {
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
-    use crate::{ClipId, Note, Source, SynthParam, TrackId};
+    use crate::{
+        Clip, ClipId, ClipPosition, MixerStrip, Note, PlacedTrack, Source, SynthParam,
+        SynthSettings, Track, TrackId, Waveform,
+    };
     use proptest::prelude::*;
 
     fn volume(volume_db: f32) -> Command {
@@ -643,6 +646,102 @@ mod tests {
         only(session.undo());
         assert_eq!(session.project(), &before);
         assert!(!session.can_undo());
+    }
+
+    #[test]
+    fn clip_and_track_mixer_drags_undo_as_one_step_each() {
+        let mut session = Session::new(testing::project());
+        let before = session.project().clone();
+        let track = track_id(&session);
+        let clip = clip_id(&session);
+
+        let position = |start| Command::SetClips {
+            clips: vec![ClipPosition {
+                id: clip,
+                track,
+                start,
+                length: 2 * 3840,
+            }],
+        };
+        session.apply(position(960)).unwrap();
+        for start in [1920, 3840, 7680] {
+            session.amend(position(start)).unwrap();
+        }
+        let mixer = |volume_db, pan| Command::SetTrackMixer {
+            track,
+            mixer: MixerStrip {
+                volume_db,
+                pan,
+                ..MixerStrip::default()
+            },
+        };
+        session.apply(mixer(-1.0, 0.0)).unwrap();
+        for (volume_db, pan) in [(-3.0, 0.0), (-3.0, -0.5), (4.5, -0.5)] {
+            session.amend(mixer(volume_db, pan)).unwrap();
+        }
+        let project = session.project();
+        assert_eq!(project.clip(clip).unwrap().start(), 7680);
+        assert_eq!(project.track(track).unwrap().mixer().volume_db, 4.5);
+
+        only(session.undo());
+        let project = session.project();
+        assert_eq!(
+            project.track(track).unwrap().mixer(),
+            &MixerStrip::default()
+        );
+        assert_eq!(project.clip(clip).unwrap().start(), 7680);
+        only(session.undo());
+        assert_eq!(session.project(), &before);
+        assert!(!session.can_undo());
+    }
+
+    #[test]
+    fn undoing_a_track_delete_brings_it_back_whole() {
+        let mut session = Session::new(testing::project());
+        let first = track_id(&session);
+        let second = testing::track_id(0);
+        let track = Track::new(
+            second,
+            session.project().next_track_name(),
+            Source::Synth(SynthSettings {
+                waveform: Waveform::Sine,
+                ..SynthSettings::default()
+            }),
+        )
+        .with_mixer(MixerStrip {
+            volume_db: -9.0,
+            pan: 0.3,
+            mute: false,
+            solo: true,
+        })
+        .with_clips([
+            Clip::new(testing::clip_id(0), 3840, 3840).with_notes([note(0, 40, 0)]),
+            Clip::new(testing::clip_id(1), 0, 7680).with_notes([note(1, 43, 960)]),
+        ]);
+        session
+            .apply(Command::AddTracks {
+                tracks: vec![PlacedTrack { index: 0, track }],
+            })
+            .unwrap();
+        session
+            .apply(Command::MoveTrack {
+                track: first,
+                index: 0,
+            })
+            .unwrap();
+        let before = session.project().clone();
+
+        session
+            .apply(Command::RemoveTracks {
+                tracks: vec![second],
+            })
+            .unwrap();
+        assert_eq!(session.project().tracks().len(), 1);
+        only(session.undo());
+        assert_eq!(session.project(), &before);
+        assert_eq!(session.project().tracks()[1].id(), second, "in its place");
+        only(session.redo());
+        assert!(session.project().track(second).is_none());
     }
 
     /// One step a user might take.

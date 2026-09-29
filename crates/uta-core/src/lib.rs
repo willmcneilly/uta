@@ -7,7 +7,10 @@
 //!   saved commands keep loading as the format changes.
 //! - [`Session`] owns a project with its undo and redo history, and numbers
 //!   every change.
-//! - [`Clip::trims_under`] works out how an edit trims the notes it covers.
+//! - [`Clip::trims_under`] works out how an edit trims the notes it covers,
+//!   within one clip. Clip commands never trim notes.
+//! - [`Clip::copy`] and [`Track::copy`] copy with new IDs throughout, for
+//!   pasting and duplicating.
 //! - Positions and lengths are musical: whole ticks, turned into samples by
 //!   the [`time::TempoMap`]. See RFC-002, "The shared model".
 //!
@@ -26,7 +29,7 @@ pub mod time;
 mod track;
 mod trim;
 
-pub use command::{COMMAND_FORMAT, Command, CommandError};
+pub use command::{COMMAND_FORMAT, ClipPosition, Command, CommandError, PlacedClip, PlacedTrack};
 pub use command_list::CommandList;
 pub use id::{ClipId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};

@@ -8,12 +8,12 @@ use crate::{Command, CommandError, Project, ProjectId};
 /// them:
 ///
 /// ```json
-/// {"project": "<uuid>", "commands": [{"format": 2, "command": {...}}, ...]}
+/// {"project": "<uuid>", "commands": [{"format": 3, "command": {...}}, ...]}
 /// ```
 ///
-/// Commands find the project's track and clip by IDs worked out from the
-/// project's ID (see [`Project::with_id`]), so the list names the project it
-/// was written for.
+/// Commands find the project's first track and clip by IDs worked out from
+/// the project's ID (see [`Project::with_id`]), so the list names the project
+/// it was written for. Lists written in older formats still load.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommandList {
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":2,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
+        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":3,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
         let list: CommandList = serde_json::from_str(json).unwrap();
         assert_eq!(list.commands, [Command::SetTempo { bpm: 100.0 }]);
         assert_eq!(serde_json::to_string(&list).unwrap(), json);
