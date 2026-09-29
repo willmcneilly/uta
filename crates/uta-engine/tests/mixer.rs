@@ -353,3 +353,61 @@ fn a_quiet_mix_is_never_clipped() {
         assert!(peak(renderer.samples()) < 1.0);
     }
 }
+
+/// The hard clip comes after the master volume, where the sound leaves for
+/// the device: a track that sums past full scale is only clipped if the
+/// master leaves it there. Six loud sines at +6 dB are past it with the
+/// master at 0 dB, and well under it at −12 dB, where they come through
+/// unclipped, louder than a clip before the master would let them be.
+#[test]
+fn the_clip_comes_after_the_master_volume() {
+    let chord = (0..6)
+        .map(|i| uta_core::Note {
+            velocity: 127,
+            ..note(i, 57 + i as u8 * 4, 0, 3840)
+        })
+        .collect();
+    let loud = project(120.0, 1, &PLAIN_SINE, chord);
+    let render = |master_db| {
+        let snapshot = Snapshot {
+            mixer: strip(6.0, 0.0),
+            ..Snapshot::from(&loud).with_volume_db(master_db)
+        };
+        let mut renderer = Renderer::new(config(2), snapshot, 128);
+        renderer.controller.play().unwrap();
+        renderer.render(LOOP / 2);
+        (renderer.controller.poll().clips, peak(renderer.samples()))
+    };
+
+    let (clips, _) = render(0.0);
+    assert!(clips > 0, "the track never went past full scale");
+    let (clips, loudest) = render(-12.0);
+    assert_eq!(clips, 0);
+    // A clip before the master would hold it to the master's gain.
+    assert!(
+        loudest > db_to_gain(-12.0) * 1.5 && loudest < 1.0,
+        "peak {loudest}"
+    );
+}
+
+/// The peak in `Status` is of what the device gets: on a mono device, the
+/// average of left and right. A track panned hard left is 3 dB up on the
+/// left and silent on the right, so a mono device gets it 3 dB down.
+#[test]
+fn the_peak_is_what_the_device_gets() {
+    let snapshot = held_a4_through(strip(0.0, -1.0));
+    for (channels, expected) in [
+        (2, VOICE_LEVEL * std::f32::consts::SQRT_2),
+        (1, VOICE_LEVEL * std::f32::consts::FRAC_1_SQRT_2),
+    ] {
+        let mut renderer = Renderer::new(config(channels), snapshot.clone(), 128);
+        renderer.controller.play().unwrap();
+        // Driven block by block, so this poll sees every block's peak.
+        let mut block = vec![0.0; 128 * channels];
+        for _ in 0..LOOP / 2 / 128 {
+            renderer.processor().process(&mut block);
+        }
+        let peak = renderer.controller.poll().peak;
+        assert!(close(peak, expected), "{channels} channels: peak {peak}");
+    }
+}

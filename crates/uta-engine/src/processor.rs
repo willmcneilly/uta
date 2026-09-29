@@ -301,13 +301,17 @@ impl Processor {
             let master = self.volume.next_value() * self.output_gain.next_value();
             let left = hard_clip(sample * left_gain.next_value() * master, &mut clips);
             let right = hard_clip(sample * right_gain.next_value() * master, &mut clips);
-            peak = peak.max(left.abs()).max(right.abs());
+            // The peak is of what the device gets.
             match frame {
-                [mono] => *mono = (left + right) * 0.5,
+                [mono] => {
+                    *mono = (left + right) * 0.5;
+                    peak = peak.max(mono.abs());
+                }
                 [first, second, rest @ ..] => {
                     *first = left;
                     *second = right;
                     rest.fill(0.0);
+                    peak = peak.max(left.abs()).max(right.abs());
                 }
                 [] => {}
             }
@@ -398,14 +402,17 @@ impl Processor {
 
 /// Cuts `sample` off at full scale, counting it in `clips` if it was past it.
 /// No delay and no state, so a sample within full scale passes through
-/// exactly.
+/// exactly. NaN isn't a sound, so it becomes silence, and counts too.
 #[inline]
 fn hard_clip(sample: f32, clips: &mut u64) -> f32 {
-    if sample.abs() > 1.0 {
-        *clips += 1;
-        sample.clamp(-1.0, 1.0)
+    if sample.abs() <= 1.0 {
+        return sample;
+    }
+    *clips += 1;
+    if sample.is_nan() {
+        0.0
     } else {
-        sample
+        sample.clamp(-1.0, 1.0)
     }
 }
 
@@ -477,7 +484,8 @@ mod tests {
     }
 
     /// A sample within full scale comes out of the hard clip bit for bit
-    /// and isn't counted; one past it is cut off at full scale and counted.
+    /// and isn't counted; one past it is cut off at full scale and counted,
+    /// and NaN is silenced and counted.
     #[test]
     fn the_hard_clip_passes_quiet_samples_through_exactly() {
         let mut clips = 0;
@@ -492,12 +500,21 @@ mod tests {
         }
         assert_eq!(clips, 0);
 
-        let past = [1.000_000_1, -1.000_000_1, 4.0, -250.0, f32::INFINITY];
+        let past = [
+            1.000_000_1,
+            -1.000_000_1,
+            4.0,
+            -250.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -f32::NAN,
+        ];
         let cut: Vec<f32> = past
             .iter()
             .map(|&sample| hard_clip(sample, &mut clips))
             .collect();
-        assert_eq!(cut, [1.0, -1.0, 1.0, -1.0, 1.0]);
+        assert_eq!(cut, [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 0.0, 0.0]);
         assert_eq!(clips, past.len() as u64);
     }
 
