@@ -35,6 +35,8 @@ Ask a few focused questions at a time, not a questionnaire. Stop when you could 
 
 If the research changes the scope from step 1, tell Will before drafting.
 
+Research worth keeping goes in Notion's **Research** database (see the `notion` skill), related to the RFC it served. Examples: findings the RFC only summarises, or work for a later RFC that this one only outlines. Research doesn't go in the repo. Save it when the RFC is first pushed, or sooner if scope moves part of it to another RFC.
+
 ### 3. Draft locally
 
 The **local markdown file is the working copy**. Notion is where the RFC is published, and it's only updated when Will asks (see "Pushing to Notion").
