@@ -403,6 +403,47 @@ mod tests {
         assert_eq!(session.project(), &edited);
     }
 
+    #[test]
+    fn trimming_leaves_an_overlapping_clips_notes_alone() {
+        let covered = note(0, 60, 0, 1920);
+        let mut session = session_with(&[covered]);
+        let track = session.project().tracks()[0].id();
+        let edited_clip = clip_id(session.project());
+        // Another clip on the same track, over the first, with a note of
+        // the same pitch at the same place in the song.
+        let other = crate::testing::clip_id(0);
+        session
+            .apply(Command::AddClips {
+                clips: vec![crate::PlacedClip {
+                    track,
+                    clip: Clip::new(other, 0, 3840).with_notes([note(1, 60, 480, 480)]),
+                }],
+            })
+            .unwrap();
+        let before = session.project().clone();
+        let edited = note(2, 60, 960, 480);
+        session
+            .apply(Command::AddNotes {
+                clip: edited_clip,
+                notes: vec![edited],
+            })
+            .unwrap();
+        let trims = session
+            .project()
+            .clip(edited_clip)
+            .unwrap()
+            .trims_under(&[edited.id], piece_ids());
+        assert!(!trims.is_empty(), "the note in the same clip is trimmed");
+        for command in trims {
+            session.join(command).unwrap();
+        }
+        assert_eq!(
+            session.project().clip(other),
+            before.clip(other),
+            "the other clip is untouched"
+        );
+    }
+
     proptest! {
         #[test]
         fn no_edited_note_is_left_overlapping_one_of_the_same_pitch(

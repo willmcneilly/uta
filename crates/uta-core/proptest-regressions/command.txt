@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 48dfd0b58477a3c3bffa4c86d421f2eabed754677522f4604fab553e911dbe8c # shrinks to command = SetTrackMixer { track: TrackId(2a717962-578e-55e8-8009-97bae76e3b88), mixer: MixerStrip { volume_db: 0.0, pan: NaN, mute: false, solo: false } }, far = 0

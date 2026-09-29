@@ -17,7 +17,11 @@ pub enum Waveform {
 }
 
 /// Everything that shapes the synth's sound.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// Serialises with the same names as [`SynthParam`], as `AddTracks` carries
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SynthSettings {
     pub waveform: Waveform,
     /// The low-pass filter's cutoff, in Hz. Controls move it on a log scale.
@@ -42,6 +46,27 @@ impl SynthSettings {
     pub const MAX_ENVELOPE_SECONDS: f32 = 10.0;
     pub const MIN_SUSTAIN: f32 = 0.0;
     pub const MAX_SUSTAIN: f32 = 1.0;
+
+    /// Every setting, as `SetSynthParam` carries them.
+    pub fn params(&self) -> [SynthParam; 7] {
+        [
+            SynthParam::Waveform(self.waveform),
+            SynthParam::CutoffHz(self.cutoff_hz),
+            SynthParam::Resonance(self.resonance),
+            SynthParam::AttackSeconds(self.attack_seconds),
+            SynthParam::DecaySeconds(self.decay_seconds),
+            SynthParam::Sustain(self.sustain),
+            SynthParam::ReleaseSeconds(self.release_seconds),
+        ]
+    }
+
+    /// Checks every setting is in range, or returns the first that isn't.
+    pub(crate) fn validate(&self) -> Result<(), SynthParam> {
+        match self.params().into_iter().find(|param| !param.in_range()) {
+            Some(param) => Err(param),
+            None => Ok(()),
+        }
+    }
 
     /// Sets one setting and returns the old value, or an error if `param`
     /// is out of range. On error, nothing changes.

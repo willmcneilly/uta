@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClipId, Note, NoteId, SynthParam, TrackId};
+use crate::time::Ticks;
+use crate::{Clip, ClipId, MixerStrip, Note, NoteId, SynthParam, Track, TrackId};
 
 /// The command format written by this version of Uta. Bump it when a saved
 /// command's shape changes, and teach [`Command`]'s deserialisation to read
@@ -10,12 +11,13 @@ use crate::{ClipId, Note, NoteId, SynthParam, TrackId};
 ///
 /// - Format 1: `set_master_volume`.
 /// - Format 2 adds the notes, tempo, loop and synth commands (RFC-002).
-pub const COMMAND_FORMAT: u32 = 2;
+/// - Format 3 adds the track, clip and loop region commands (RFC-003).
+pub const COMMAND_FORMAT: u32 = 3;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":2,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":3,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -33,24 +35,85 @@ pub enum Command {
     SetNotes { clip: ClipId, notes: Vec<Note> },
     /// Set the tempo, in quarter notes per minute.
     SetTempo { bpm: f32 },
-    /// Set the loop's length in bars. In project 1 this sets the length of
-    /// the project's one clip too, and both undo together.
+    /// Set the loop's length in bars, and the length of the first track's
+    /// first clip to match, as in Make a loop, where they were always the
+    /// same. It's refused once they differ, or the loop is outside 1 to 16
+    /// bars: use [`Command::SetLoop`] and [`Command::SetClips`] instead.
     SetLoopLength { bars: u32 },
     /// Set one of a track's synth settings.
     SetSynthParam { track: TrackId, param: SynthParam },
+    /// Add tracks, each at its place in the order. The inverse of
+    /// [`Command::RemoveTracks`].
+    AddTracks { tracks: Vec<PlacedTrack> },
+    /// Remove tracks, with their clips. The inverse of
+    /// [`Command::AddTracks`].
+    RemoveTracks { tracks: Vec<TrackId> },
+    /// Move a track to `index` in the order, counting from 0.
+    MoveTrack { track: TrackId, index: usize },
+    /// Set a track's volume, pan, mute and solo.
+    SetTrackMixer { track: TrackId, mixer: MixerStrip },
+    /// Add clips to tracks. The inverse of [`Command::RemoveClips`].
+    AddClips { clips: Vec<PlacedClip> },
+    /// Remove clips, with their notes. The inverse of
+    /// [`Command::AddClips`].
+    RemoveClips { clips: Vec<ClipId> },
+    /// Set existing clips' track, start and length. Each clip is found by
+    /// its ID, so moving a clip to another track is one command.
+    SetClips { clips: Vec<ClipPosition> },
+    /// Set the loop region: where it starts and how long it is, in bars.
+    SetLoop { start_bar: u32, bars: u32 },
+    /// Switch the loop on or off.
+    SetLoopEnabled { enabled: bool },
+}
+
+/// A track to add, and where it goes: its index in the order once it's
+/// added, counting from 0.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedTrack {
+    pub index: usize,
+    pub track: Track,
+}
+
+/// A clip to add, and the track it goes on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedClip {
+    pub track: TrackId,
+    pub clip: Clip,
+}
+
+/// Where a clip is: its track, start and length, as
+/// [`Command::SetClips`] carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClipPosition {
+    pub id: ClipId,
+    pub track: TrackId,
+    /// In ticks from the start of the song.
+    pub start: Ticks,
+    pub length: Ticks,
 }
 
 impl Command {
     /// Whether `other` sets the same thing as this command, so a run of them
     /// can be undone as one (see [`crate::Session::amend`]). Only commands
     /// that set an absolute value qualify: the first one's inverse then
-    /// undoes the whole run. For [`Command::SetNotes`], that means the same
-    /// notes in the same clip.
+    /// undoes the whole run. For [`Command::SetNotes`] and
+    /// [`Command::SetClips`], that means the same notes or clips.
     pub fn sets_same_as(&self, other: &Command) -> bool {
         match (self, other) {
             (Self::SetMasterVolume { .. }, Self::SetMasterVolume { .. })
             | (Self::SetTempo { .. }, Self::SetTempo { .. })
-            | (Self::SetLoopLength { .. }, Self::SetLoopLength { .. }) => true,
+            | (Self::SetLoopLength { .. }, Self::SetLoopLength { .. })
+            | (Self::SetLoop { .. }, Self::SetLoop { .. }) => true,
+            (
+                Self::SetTrackMixer { track, .. },
+                Self::SetTrackMixer {
+                    track: other_track, ..
+                },
+            ) => track == other_track,
+            (Self::SetClips { clips }, Self::SetClips { clips: other_clips }) => {
+                sorted_clip_ids(clips) == sorted_clip_ids(other_clips)
+            }
             (
                 Self::SetNotes { clip, notes },
                 Self::SetNotes {
@@ -105,22 +168,65 @@ fn sorted_ids(notes: &[Note]) -> Vec<NoteId> {
     ids
 }
 
+fn sorted_clip_ids(clips: &[ClipPosition]) -> Vec<ClipId> {
+    let mut ids: Vec<_> = clips.iter().map(|clip| clip.id).collect();
+    ids.sort_unstable();
+    ids
+}
+
 /// Why a command couldn't be applied.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CommandError {
-    /// The volume was outside the project's limits, or not a number.
+    /// The master or a track's volume was outside its limits, or not a
+    /// number.
     VolumeOutOfRange(f32),
+    /// A track's pan was outside -1 to 1, or not a number.
+    PanOutOfRange(f32),
     /// The tempo was outside 20 to 300 BPM, or not a number.
     TempoOutOfRange(f32),
     /// The loop length was outside 1 to 16 bars.
     LoopLengthOutOfRange(u32),
+    /// [`Command::SetLoopLength`] once the loop is outside 1 to 16 bars, or
+    /// the first track's first clip is no longer as long as it.
+    LoopLengthUnavailable,
+    /// A loop region with no length, or that ends too late.
+    LoopOutOfRange {
+        start_bar: u32,
+        bars: u32,
+    },
     /// A synth setting was outside its range, or not a number.
     SynthParamOutOfRange(SynthParam),
     UnknownTrack(TrackId),
     UnknownClip(ClipId),
+    /// A track to add has the same ID as one already in the project.
+    TrackAlreadyExists(TrackId),
+    /// The same track appears more than once in one command.
+    TrackListedTwice(TrackId),
+    /// A tracks command with no tracks in it.
+    NoTracks,
+    /// Adding the tracks would take the project past
+    /// [`crate::Project::MAX_TRACKS`].
+    TooManyTracks,
+    /// A place in the track order past the end.
+    TrackIndexOutOfRange(usize),
+    /// Two tracks to add at the same place in the order.
+    TrackIndexListedTwice(usize),
+    /// A track to add with no name.
+    UnnamedTrack(TrackId),
+    /// A clip to add has the same ID as one already in the project.
+    ClipAlreadyExists(ClipId),
+    /// The same clip appears more than once in one command.
+    ClipListedTwice(ClipId),
+    /// A clips command with no clips in it.
+    NoClips,
+    /// A clip with a length of 0.
+    EmptyClip(ClipId),
+    /// A clip that ends after [`crate::time::MAX_TICKS`].
+    ClipTooLate(ClipId),
     /// A note to remove or set isn't in the clip.
     UnknownNote(NoteId),
-    /// A note to add has the same ID as one already in the clip.
+    /// A note to add has the same ID as one already in the project, in any
+    /// clip.
     NoteAlreadyExists(NoteId),
     /// The same note appears more than once in one command.
     NoteListedTwice(NoteId),
@@ -147,6 +253,12 @@ impl std::fmt::Display for CommandError {
             Self::VolumeOutOfRange(volume_db) => {
                 write!(f, "volume {volume_db} dB is out of range")
             }
+            Self::PanOutOfRange(pan) => write!(
+                f,
+                "pan {pan} is out of range ({} to {})",
+                MixerStrip::MIN_PAN,
+                MixerStrip::MAX_PAN
+            ),
             Self::TempoOutOfRange(bpm) => write!(
                 f,
                 "tempo {bpm} BPM is out of range ({} to {})",
@@ -159,6 +271,16 @@ impl std::fmt::Display for CommandError {
                 Project::MIN_LOOP_BARS,
                 Project::MAX_LOOP_BARS
             ),
+            Self::LoopLengthUnavailable => write!(
+                f,
+                "set_loop_length only works while the loop is {} to {} bars and the first clip is as long as it; set the loop region and the clips instead",
+                Project::MIN_LOOP_BARS,
+                Project::MAX_LOOP_BARS
+            ),
+            Self::LoopOutOfRange { start_bar, bars } => write!(
+                f,
+                "a loop of {bars} bars from bar {start_bar} is out of range: it needs at least 1 bar and must end in time"
+            ),
             Self::SynthParamOutOfRange(param) => match param.range() {
                 Some((value, min, max)) => {
                     write!(f, "{param:?}: {value} is out of range ({min} to {max})")
@@ -167,8 +289,28 @@ impl std::fmt::Display for CommandError {
             },
             Self::UnknownTrack(id) => write!(f, "there's no track {id}"),
             Self::UnknownClip(id) => write!(f, "there's no clip {id}"),
+            Self::TrackAlreadyExists(id) => write!(f, "track {id} is already in the project"),
+            Self::TrackListedTwice(id) => write!(f, "track {id} is listed more than once"),
+            Self::NoTracks => write!(f, "the command has no tracks"),
+            Self::TooManyTracks => write!(
+                f,
+                "a project can have at most {} tracks",
+                Project::MAX_TRACKS
+            ),
+            Self::TrackIndexOutOfRange(index) => {
+                write!(f, "track position {index} is past the end")
+            }
+            Self::TrackIndexListedTwice(index) => {
+                write!(f, "two tracks are added at position {index}")
+            }
+            Self::UnnamedTrack(id) => write!(f, "track {id} has no name"),
+            Self::ClipAlreadyExists(id) => write!(f, "clip {id} is already in the project"),
+            Self::ClipListedTwice(id) => write!(f, "clip {id} is listed more than once"),
+            Self::NoClips => write!(f, "the command has no clips"),
+            Self::EmptyClip(id) => write!(f, "clip {id} has no length"),
+            Self::ClipTooLate(id) => write!(f, "clip {id} ends too late"),
             Self::UnknownNote(id) => write!(f, "there's no note {id} in the clip"),
-            Self::NoteAlreadyExists(id) => write!(f, "note {id} is already in the clip"),
+            Self::NoteAlreadyExists(id) => write!(f, "note {id} is already in the project"),
             Self::NoteListedTwice(id) => write!(f, "note {id} is listed more than once"),
             Self::NoNotes => write!(f, "the command has no notes"),
             Self::PitchOutOfRange { note, pitch } => write!(
@@ -194,13 +336,18 @@ impl std::error::Error for CommandError {}
 /// in-memory type can change while older saved formats still load: a new
 /// format gets its own body type here and a conversion to [`Command`].
 ///
-/// Format 2 only added commands, so one body type reads both formats, and a
-/// format 1 envelope may only hold the commands format 1 had.
+/// Formats 2 and 3 only added commands, so one body type reads every format,
+/// and an envelope may only hold the commands its format had.
 mod wire {
+    use std::collections::HashSet;
+
     use serde::{Deserialize, Serialize};
 
-    use super::{COMMAND_FORMAT, Command};
-    use crate::{ClipId, Note, NoteId, SynthParam, TrackId};
+    use super::{COMMAND_FORMAT, ClipPosition, Command, PlacedClip, PlacedTrack};
+    use crate::time::Ticks;
+    use crate::{
+        Clip, ClipId, MixerStrip, Note, NoteId, Source, SynthParam, SynthSettings, Track, TrackId,
+    };
 
     #[derive(Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -221,6 +368,16 @@ mod wire {
         SetTempo { bpm: f32 },
         SetLoopLength { bars: u32 },
         SetSynthParam { track: TrackId, param: SynthParam },
+        // Format 3.
+        AddTracks { tracks: Vec<TrackAt> },
+        RemoveTracks { tracks: Vec<TrackId> },
+        MoveTrack { track: TrackId, index: usize },
+        SetTrackMixer { track: TrackId, mixer: MixerStrip },
+        AddClips { clips: Vec<ClipOn> },
+        RemoveClips { clips: Vec<ClipId> },
+        SetClips { clips: Vec<ClipPosition> },
+        SetLoop { start_bar: u32, bars: u32 },
+        SetLoopEnabled { enabled: bool },
     }
 
     impl Body {
@@ -228,8 +385,117 @@ mod wire {
         fn since_format(&self) -> u32 {
             match self {
                 Self::SetMasterVolume { .. } => 1,
-                _ => 2,
+                Self::AddNotes { .. }
+                | Self::RemoveNotes { .. }
+                | Self::SetNotes { .. }
+                | Self::SetTempo { .. }
+                | Self::SetLoopLength { .. }
+                | Self::SetSynthParam { .. } => 2,
+                _ => 3,
             }
+        }
+    }
+
+    /// A track with its place in the order, as `add_tracks` carries it.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct TrackAt {
+        index: usize,
+        track: TrackBody,
+    }
+
+    /// A track, with its clips and their notes. It has no effects yet, so
+    /// they aren't saved.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct TrackBody {
+        id: TrackId,
+        name: String,
+        source: SourceBody,
+        mixer: MixerStrip,
+        clips: Vec<ClipBody>,
+    }
+
+    /// Serialises as `{"synth":{...}}`.
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case", deny_unknown_fields)]
+    enum SourceBody {
+        Synth(SynthSettings),
+    }
+
+    /// A clip with the track it goes on, as `add_clips` carries it.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ClipOn {
+        track: TrackId,
+        clip: ClipBody,
+    }
+
+    /// A clip with its notes. Its content offset and length are fixed for
+    /// now, so they aren't saved: a format that lets them change will add
+    /// them.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ClipBody {
+        id: ClipId,
+        start: Ticks,
+        length: Ticks,
+        notes: Vec<Note>,
+    }
+
+    impl From<Track> for TrackBody {
+        fn from(track: Track) -> Self {
+            let Source::Synth(settings) = track.source;
+            Self {
+                id: track.id,
+                name: track.name,
+                source: SourceBody::Synth(settings),
+                mixer: track.mixer,
+                clips: track.clips.into_iter().map(ClipBody::from).collect(),
+            }
+        }
+    }
+
+    impl TryFrom<TrackBody> for Track {
+        type Error = String;
+
+        fn try_from(body: TrackBody) -> Result<Self, Self::Error> {
+            let SourceBody::Synth(settings) = body.source;
+            let clips = body
+                .clips
+                .into_iter()
+                .map(Clip::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Track::new(body.id, body.name, Source::Synth(settings))
+                .with_mixer(body.mixer)
+                .with_clips(clips))
+        }
+    }
+
+    impl From<Clip> for ClipBody {
+        fn from(clip: Clip) -> Self {
+            Self {
+                id: clip.id,
+                start: clip.start,
+                length: clip.length,
+                notes: clip.notes.into_values().collect(),
+            }
+        }
+    }
+
+    impl TryFrom<ClipBody> for Clip {
+        type Error = String;
+
+        /// Fails if a note is listed twice, which a [`Clip`] can't hold.
+        fn try_from(body: ClipBody) -> Result<Self, Self::Error> {
+            let mut seen = HashSet::new();
+            if let Some(note) = body.notes.iter().find(|note| !seen.insert(note.id)) {
+                return Err(format!(
+                    "note {} is listed more than once in clip {}",
+                    note.id, body.id
+                ));
+            }
+            Ok(Clip::new(body.id, body.start, body.length).with_notes(body.notes))
         }
     }
 
@@ -243,6 +509,31 @@ mod wire {
                 Command::SetTempo { bpm } => Body::SetTempo { bpm },
                 Command::SetLoopLength { bars } => Body::SetLoopLength { bars },
                 Command::SetSynthParam { track, param } => Body::SetSynthParam { track, param },
+                Command::AddTracks { tracks } => Body::AddTracks {
+                    tracks: tracks
+                        .into_iter()
+                        .map(|placed| TrackAt {
+                            index: placed.index,
+                            track: placed.track.into(),
+                        })
+                        .collect(),
+                },
+                Command::RemoveTracks { tracks } => Body::RemoveTracks { tracks },
+                Command::MoveTrack { track, index } => Body::MoveTrack { track, index },
+                Command::SetTrackMixer { track, mixer } => Body::SetTrackMixer { track, mixer },
+                Command::AddClips { clips } => Body::AddClips {
+                    clips: clips
+                        .into_iter()
+                        .map(|placed| ClipOn {
+                            track: placed.track,
+                            clip: placed.clip.into(),
+                        })
+                        .collect(),
+                },
+                Command::RemoveClips { clips } => Body::RemoveClips { clips },
+                Command::SetClips { clips } => Body::SetClips { clips },
+                Command::SetLoop { start_bar, bars } => Body::SetLoop { start_bar, bars },
+                Command::SetLoopEnabled { enabled } => Body::SetLoopEnabled { enabled },
             };
             Self {
                 format: COMMAND_FORMAT,
@@ -276,6 +567,35 @@ mod wire {
                 Body::SetTempo { bpm } => Command::SetTempo { bpm },
                 Body::SetLoopLength { bars } => Command::SetLoopLength { bars },
                 Body::SetSynthParam { track, param } => Command::SetSynthParam { track, param },
+                Body::AddTracks { tracks } => Command::AddTracks {
+                    tracks: tracks
+                        .into_iter()
+                        .map(|at| {
+                            Ok(PlacedTrack {
+                                index: at.index,
+                                track: at.track.try_into()?,
+                            })
+                        })
+                        .collect::<Result<_, String>>()?,
+                },
+                Body::RemoveTracks { tracks } => Command::RemoveTracks { tracks },
+                Body::MoveTrack { track, index } => Command::MoveTrack { track, index },
+                Body::SetTrackMixer { track, mixer } => Command::SetTrackMixer { track, mixer },
+                Body::AddClips { clips } => Command::AddClips {
+                    clips: clips
+                        .into_iter()
+                        .map(|on| {
+                            Ok(PlacedClip {
+                                track: on.track,
+                                clip: on.clip.try_into()?,
+                            })
+                        })
+                        .collect::<Result<_, String>>()?,
+                },
+                Body::RemoveClips { clips } => Command::RemoveClips { clips },
+                Body::SetClips { clips } => Command::SetClips { clips },
+                Body::SetLoop { start_bar, bars } => Command::SetLoop { start_bar, bars },
+                Body::SetLoopEnabled { enabled } => Command::SetLoopEnabled { enabled },
             })
         }
     }
@@ -285,7 +605,7 @@ mod wire {
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
-    use crate::{Waveform, time::Ticks};
+    use crate::{Source, SynthSettings, Waveform, time::Ticks};
     use proptest::prelude::*;
 
     fn clip() -> ClipId {
@@ -298,12 +618,21 @@ mod tests {
 
     /// Whether a command holds a NaN or infinity, which JSON can't carry.
     fn has_non_finite(command: &Command) -> bool {
+        let param = |param: &SynthParam| {
+            param
+                .range()
+                .is_some_and(|(value, _, _)| !value.is_finite())
+        };
+        let mixer = |mixer: &MixerStrip| !mixer.volume_db.is_finite() || !mixer.pan.is_finite();
         match command {
             Command::SetMasterVolume { volume_db } => !volume_db.is_finite(),
             Command::SetTempo { bpm } => !bpm.is_finite(),
-            Command::SetSynthParam { param, .. } => param
-                .range()
-                .is_some_and(|(value, _, _)| !value.is_finite()),
+            Command::SetSynthParam { param: p, .. } => param(p),
+            Command::SetTrackMixer { mixer: m, .. } => mixer(m),
+            Command::AddTracks { tracks } => tracks.iter().any(|placed| {
+                let Source::Synth(settings) = placed.track.source();
+                mixer(placed.track.mixer()) || settings.params().iter().any(param)
+            }),
             _ => false,
         }
     }
@@ -313,7 +642,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":2,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":3,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -379,10 +708,169 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":2,"command":{body}}}"#);
+            let json = format!(r#"{{"format":3,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Format 2 lists still load.
+            let json = format!(r#"{{"format":2,"command":{body}}}"#);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
         }
+    }
+
+    #[test]
+    fn the_format_3_commands_serialise_like_this() {
+        let track = track();
+        let clip = clip();
+        let note = note(0, 60, 960);
+        let note_json = format!(
+            r#"{{"id":"{}","pitch":60,"velocity":100,"start":960,"length":480}}"#,
+            note.id
+        );
+        let new_track = testing::track_id(0);
+        let new_clip = testing::clip_id(0);
+        let mixer = MixerStrip {
+            volume_db: -3.5,
+            pan: 0.25,
+            mute: false,
+            solo: true,
+        };
+        let mixer_json = r#"{"volume_db":-3.5,"pan":0.25,"mute":false,"solo":true}"#;
+        let clip_json =
+            format!(r#"{{"id":"{new_clip}","start":7680,"length":3840,"notes":[{note_json}]}}"#);
+        let settings_json = r#"{"waveform":"saw","cutoff_hz":20000.0,"resonance":0.0,"attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2}"#;
+        let cases = [
+            (
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: 1,
+                        track: Track::new(
+                            new_track,
+                            "Synth 2",
+                            Source::Synth(SynthSettings::default()),
+                        )
+                        .with_mixer(mixer)
+                        .with_clips([Clip::new(new_clip, 7680, 3840).with_notes([note])]),
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{settings_json}}},"mixer":{mixer_json},"clips":[{clip_json}]}}}}]}}"#
+                ),
+            ),
+            (
+                Command::RemoveTracks {
+                    tracks: vec![track],
+                },
+                format!(r#"{{"type":"remove_tracks","tracks":["{track}"]}}"#),
+            ),
+            (
+                Command::MoveTrack { track, index: 2 },
+                format!(r#"{{"type":"move_track","track":"{track}","index":2}}"#),
+            ),
+            (
+                Command::SetTrackMixer { track, mixer },
+                format!(r#"{{"type":"set_track_mixer","track":"{track}","mixer":{mixer_json}}}"#),
+            ),
+            (
+                Command::AddClips {
+                    clips: vec![PlacedClip {
+                        track,
+                        clip: Clip::new(new_clip, 7680, 3840).with_notes([note]),
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_clips","clips":[{{"track":"{track}","clip":{clip_json}}}]}}"#
+                ),
+            ),
+            (
+                Command::RemoveClips { clips: vec![clip] },
+                format!(r#"{{"type":"remove_clips","clips":["{clip}"]}}"#),
+            ),
+            (
+                Command::SetClips {
+                    clips: vec![ClipPosition {
+                        id: clip,
+                        track,
+                        start: 3840,
+                        length: 960,
+                    }],
+                },
+                format!(
+                    r#"{{"type":"set_clips","clips":[{{"id":"{clip}","track":"{track}","start":3840,"length":960}}]}}"#
+                ),
+            ),
+            (
+                Command::SetLoop {
+                    start_bar: 2,
+                    bars: 8,
+                },
+                r#"{"type":"set_loop","start_bar":2,"bars":8}"#.to_string(),
+            ),
+            (
+                Command::SetLoopEnabled { enabled: false },
+                r#"{"type":"set_loop_enabled","enabled":false}"#.to_string(),
+            ),
+        ];
+        for (command, body) in cases {
+            let json = format!(r#"{{"format":3,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // They're new in format 3.
+            let json = format!(r#"{{"format":2,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(error.to_string().contains("arrived in format 3"), "{error}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_clip_that_lists_a_note_twice() {
+        let track = track();
+        let clip = testing::clip_id(0);
+        let note_json = format!(
+            r#"{{"id":"{}","pitch":60,"velocity":100,"start":0,"length":480}}"#,
+            note_id(0)
+        );
+        let json = format!(
+            r#"{{"format":3,"command":{{"type":"add_clips","clips":[{{"track":"{track}","clip":{{"id":"{clip}","start":0,"length":3840,"notes":[{note_json},{note_json}]}}}}]}}}}"#
+        );
+        let error = serde_json::from_str::<Command>(&json).unwrap_err();
+        assert!(
+            error.to_string().contains("listed more than once"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn set_clips_and_set_track_mixer_continue_only_with_the_same_things() {
+        let track = track();
+        let position = |id, start| ClipPosition {
+            id,
+            track,
+            start,
+            length: 3840,
+        };
+        let (a, b) = (testing::clip_id(0), testing::clip_id(1));
+        let set = |clips: Vec<ClipPosition>| Command::SetClips { clips };
+        let first = set(vec![position(a, 0), position(b, 0)]);
+        assert!(first.sets_same_as(&set(vec![position(b, 960), position(a, 960)])));
+        assert!(!first.sets_same_as(&set(vec![position(a, 960)])));
+
+        let mixer = |track, volume_db| Command::SetTrackMixer {
+            track,
+            mixer: MixerStrip {
+                volume_db,
+                ..MixerStrip::default()
+            },
+        };
+        assert!(mixer(track, 0.0).sets_same_as(&mixer(track, -6.0)));
+        assert!(!mixer(track, 0.0).sets_same_as(&mixer(TrackId::random(), -6.0)));
+
+        let region = |start_bar| Command::SetLoop { start_bar, bars: 4 };
+        assert!(region(0).sets_same_as(&region(2)));
+        let enabled = Command::SetLoopEnabled { enabled: true };
+        assert!(
+            !enabled.sets_same_as(&enabled.clone()),
+            "a switch isn't a drag"
+        );
     }
 
     #[test]
@@ -401,7 +889,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 3, 99] {
+        for format in [0, 4, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

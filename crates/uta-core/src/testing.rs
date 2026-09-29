@@ -3,7 +3,10 @@
 use proptest::prelude::*;
 use uuid::Uuid;
 
-use crate::{Command, Note, NoteId, Project, ProjectId, SynthParam, Waveform};
+use crate::{
+    Clip, ClipId, ClipPosition, Command, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack,
+    Project, ProjectId, Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
+};
 
 /// A project with a fixed ID, so its track and clip IDs are known.
 pub fn project() -> Project {
@@ -14,6 +17,18 @@ pub fn project() -> Project {
 /// that earlier ones added.
 pub fn note_id(index: u128) -> NoteId {
     NoteId::from_uuid(Uuid::from_u128(1000 + index))
+}
+
+/// One of a small pool of track IDs for tracks commands add. None is in
+/// [`project`] at first.
+pub fn track_id(index: u128) -> TrackId {
+    TrackId::from_uuid(Uuid::from_u128(2000 + index))
+}
+
+/// One of a small pool of clip IDs for clips commands add. None is in
+/// [`project`] at first.
+pub fn clip_id(index: u128) -> ClipId {
+    ClipId::from_uuid(Uuid::from_u128(3000 + index))
 }
 
 pub fn note(index: u128, pitch: u8, start: u64) -> Note {
@@ -27,7 +42,91 @@ pub fn note(index: u128, pitch: u8, start: u64) -> Note {
 }
 
 fn pooled_note_id() -> impl Strategy<Value = NoteId> {
-    (0u128..6).prop_map(note_id)
+    (0u128..10).prop_map(note_id)
+}
+
+/// The first track, or one from the pool.
+fn any_track_id() -> impl Strategy<Value = TrackId> {
+    let first = project().tracks()[0].id();
+    prop_oneof![2 => Just(first), 3 => (0u128..6).prop_map(track_id)]
+}
+
+/// The first clip, or one from the pool.
+fn any_clip_id() -> impl Strategy<Value = ClipId> {
+    let first = project().tracks()[0].clips()[0].id();
+    prop_oneof![2 => Just(first), 3 => (0u128..6).prop_map(clip_id)]
+}
+
+/// A start and length for a clip: mostly valid, some rejected.
+fn any_span() -> impl Strategy<Value = (u64, u64)> {
+    (
+        prop_oneof![30 => 0u64..40_000, 1 => Just(crate::time::MAX_TICKS)],
+        prop_oneof![30 => 1u64..20_000, 1 => Just(0u64)],
+    )
+}
+
+fn any_clip() -> impl Strategy<Value = Clip> {
+    (
+        (0u128..6).prop_map(clip_id),
+        any_span(),
+        prop::collection::vec(any_note(), 0..3),
+    )
+        .prop_map(|(id, (start, length), notes)| Clip::new(id, start, length).with_notes(notes))
+}
+
+/// Mostly valid mixer settings, with some that must be rejected.
+fn any_mixer() -> impl Strategy<Value = MixerStrip> {
+    (
+        prop_oneof![
+            20 => MixerStrip::MIN_VOLUME_DB..=MixerStrip::MAX_VOLUME_DB,
+            1 => prop_oneof![Just(f32::NAN), 6.5f32..100.0, -100.0f32..-60.5],
+        ],
+        prop_oneof![20 => -1.0f32..=1.0, 1 => prop_oneof![Just(f32::NAN), 1.01f32..2.0]],
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(volume_db, pan, mute, solo)| MixerStrip {
+            volume_db,
+            pan,
+            mute,
+            solo,
+        })
+}
+
+/// Valid synth settings: the defaults with a few settings changed.
+fn any_synth_settings() -> impl Strategy<Value = SynthSettings> {
+    prop::collection::vec(any_synth_param(), 0..3).prop_map(|params| {
+        let mut settings = SynthSettings::default();
+        for param in params {
+            let _ = settings.set(param);
+        }
+        settings
+    })
+}
+
+fn any_track() -> impl Strategy<Value = Track> {
+    (
+        (0u128..6).prop_map(track_id),
+        prop_oneof![20 => (1u32..6).prop_map(|n| format!("Synth {n}")), 1 => Just(String::new())],
+        any_synth_settings(),
+        any_mixer(),
+        prop::collection::vec(any_clip(), 0..2),
+    )
+        .prop_map(|(id, name, settings, mixer, clips)| {
+            Track::new(id, name, Source::Synth(settings))
+                .with_mixer(mixer)
+                .with_clips(clips)
+        })
+}
+
+/// Mostly one or two of something, now and then none (which is rejected).
+fn one_or_two<T: std::fmt::Debug + Clone>(
+    item: impl Strategy<Value = T>,
+) -> impl Strategy<Value = Vec<T>> {
+    prop_oneof![
+        1 => Just(Vec::new()),
+        12 => prop::collection::vec(item, 1..3),
+    ]
 }
 
 /// Mostly valid notes, with some that must be rejected.
@@ -69,44 +168,45 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
     ]
 }
 
-/// Any command against [`project`]: mostly valid, some rejected, and now and
-/// then aimed at a clip or track that doesn't exist.
+/// Any command against [`project`], across several tracks and clips:
+/// mostly valid, some rejected, and now and then aimed at a clip or track
+/// that doesn't exist. Tracks and clips come from small pools, so later
+/// commands often find the ones earlier commands added.
 pub fn any_command() -> impl Strategy<Value = Command> {
-    let project = project();
-    let track = project.tracks()[0].id();
-    let clip = project.tracks()[0].clips()[0].id();
-    let clip = prop_oneof![
-        19 => Just(clip),
-        1 => Just(crate::ClipId::from_uuid(Uuid::from_u128(2))),
-    ];
-    let track = prop_oneof![
-        19 => Just(track),
-        1 => Just(crate::TrackId::from_uuid(Uuid::from_u128(3))),
-    ];
-    // Mostly one or two notes, now and then none (which is rejected).
-    let notes = || {
-        prop_oneof![
-            1 => Just(Vec::new()),
-            12 => prop::collection::vec(any_note(), 1..3),
-        ]
-    };
-    let ids = prop_oneof![
-        1 => Just(Vec::new()),
-        12 => prop::collection::vec(pooled_note_id(), 1..3),
-    ];
+    let clip_position =
+        (any_clip_id(), any_track_id(), any_span()).prop_map(|(id, track, (start, length))| {
+            ClipPosition {
+                id,
+                track,
+                start,
+                length,
+            }
+        });
     prop_oneof![
         1 => prop_oneof![
             8 => Project::MIN_VOLUME_DB..=Project::MAX_VOLUME_DB,
             1 => prop_oneof![Just(f32::NAN), 7.0f32..1000.0, -1000.0f32..-121.0],
         ]
         .prop_map(|volume_db| Command::SetMasterVolume { volume_db }),
-        2 => (clip.clone(), notes()).prop_map(|(clip, notes)| Command::AddNotes { clip, notes }),
-        1 => (clip.clone(), ids).prop_map(|(clip, notes)| Command::RemoveNotes { clip, notes }),
-        2 => (clip, notes()).prop_map(|(clip, notes)| Command::SetNotes { clip, notes }),
+        3 => (any_clip_id(), one_or_two(any_note())).prop_map(|(clip, notes)| Command::AddNotes { clip, notes }),
+        1 => (any_clip_id(), one_or_two(pooled_note_id())).prop_map(|(clip, notes)| Command::RemoveNotes { clip, notes }),
+        2 => (any_clip_id(), one_or_two(any_note())).prop_map(|(clip, notes)| Command::SetNotes { clip, notes }),
         1 => prop_oneof![8 => 20.0f32..=300.0, 1 => 0.0f32..20.0, 1 => 300.5f32..1000.0]
             .prop_map(|bpm| Command::SetTempo { bpm }),
         1 => (0u32..=20).prop_map(|bars| Command::SetLoopLength { bars }),
-        1 => (track, any_synth_param()).prop_map(|(track, param)| Command::SetSynthParam { track, param }),
+        1 => (any_track_id(), any_synth_param()).prop_map(|(track, param)| Command::SetSynthParam { track, param }),
+        // Mostly at the top, which is always in range.
+        4 => one_or_two((prop_oneof![3 => Just(0usize), 1 => 0usize..4], any_track()).prop_map(|(index, track)| PlacedTrack { index, track }))
+            .prop_map(|tracks| Command::AddTracks { tracks }),
+        1 => one_or_two(any_track_id()).prop_map(|tracks| Command::RemoveTracks { tracks }),
+        1 => (any_track_id(), 0usize..5).prop_map(|(track, index)| Command::MoveTrack { track, index }),
+        1 => (any_track_id(), any_mixer()).prop_map(|(track, mixer)| Command::SetTrackMixer { track, mixer }),
+        2 => one_or_two((any_track_id(), any_clip()).prop_map(|(track, clip)| PlacedClip { track, clip }))
+            .prop_map(|clips| Command::AddClips { clips }),
+        1 => one_or_two(any_clip_id()).prop_map(|clips| Command::RemoveClips { clips }),
+        2 => one_or_two(clip_position).prop_map(|clips| Command::SetClips { clips }),
+        1 => (0u32..10, 0u32..20).prop_map(|(start_bar, bars)| Command::SetLoop { start_bar, bars }),
+        1 => any::<bool>().prop_map(|enabled| Command::SetLoopEnabled { enabled }),
     ]
 }
 
@@ -114,4 +214,52 @@ pub fn any_command() -> impl Strategy<Value = Command> {
 /// notes in it.
 pub fn any_commands(max: usize) -> impl Strategy<Value = Vec<Command>> {
     prop::collection::vec(any_command(), 0..max)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, TestRunner};
+
+    use super::*;
+
+    /// The random series reach well past the first track and clip: every
+    /// kind of command applies at some point, and some projects end up with
+    /// several tracks, clips on tracks other than the first, and notes in
+    /// clips other than the first.
+    #[test]
+    fn random_commands_reach_many_tracks_and_clips() {
+        let mut runner = TestRunner::new_with_rng(
+            Config::default(),
+            proptest::test_runner::TestRng::deterministic_rng(
+                proptest::test_runner::RngAlgorithm::ChaCha,
+            ),
+        );
+        let first_clip = project().tracks()[0].clips()[0].id();
+        let mut applied = HashSet::new();
+        let (mut most_tracks, mut most_clips, mut notes_elsewhere) = (0, 0, 0);
+        for _ in 0..200 {
+            let commands = any_commands(60).new_tree(&mut runner).unwrap().current();
+            let mut project = project();
+            for command in &commands {
+                if project.apply(command).is_ok() {
+                    applied.insert(std::mem::discriminant(command));
+                }
+            }
+            let clips: Vec<_> = project.tracks().iter().flat_map(|t| t.clips()).collect();
+            most_tracks = most_tracks.max(project.tracks().len());
+            most_clips = most_clips.max(clips.len());
+            notes_elsewhere += clips
+                .iter()
+                .filter(|clip| clip.id() != first_clip)
+                .map(|clip| clip.notes().len())
+                .sum::<usize>();
+        }
+        assert_eq!(applied.len(), 16, "every kind of command applies");
+        assert!(most_tracks >= 5, "at most {most_tracks} tracks");
+        assert!(most_clips >= 5, "at most {most_clips} clips");
+        assert!(notes_elsewhere > 0);
+    }
 }
