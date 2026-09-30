@@ -44,9 +44,9 @@ function readClipTheme(element: Element): ClipTheme {
   const style = getComputedStyle(element);
   const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
   return {
-    fill: read("--clip-fill", "#d6e4f7"),
-    edge: read("--clip-edge", "#7fa6db"),
-    note: read("--clip-note", "#1f5fbf"),
+    fill: read("--clip-fill", "#b9d4f5"),
+    edge: read("--clip-edge", "#6d98d4"),
+    note: read("--clip-note", "#1f4f99"),
     selectedEdge: read("--roll-note-selected", "#1c1c1e"),
     selectedTrack: read("--selected", "rgba(0, 113, 227, 0.08)"),
     belowTracks: read("--roll-ruler", "#efefec"),

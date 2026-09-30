@@ -30,9 +30,9 @@
   --roll-velocity-lane: #f7f7f5;
   --roll-selection-box: rgba(31, 95, 191, 0.12);
   --roll-selection-box-edge: #1f5fbf;
-  --clip-fill: #d6e4f7;
-  --clip-edge: #7fa6db;
-  --clip-note: #1f5fbf;
+  --clip-fill: #b9d4f5;
+  --clip-edge: #6d98d4;
+  --clip-note: #1f4f99;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 14px;
   color-scheme: light dark;
@@ -71,9 +71,9 @@
     --roll-velocity-lane: #1c1c1e;
     --roll-selection-box: rgba(122, 184, 255, 0.15);
     --roll-selection-box-edge: #7ab8ff;
-    --clip-fill: #243a58;
-    --clip-edge: #3f6593;
-    --clip-note: #9ecbff;
+    --clip-fill: #36598a;
+    --clip-edge: #5b83bd;
+    --clip-note: #d4e7ff;
   }
 }
 
