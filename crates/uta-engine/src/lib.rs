@@ -25,8 +25,8 @@ pub use processor::{
     VOLUME_SMOOTHING_SECONDS,
 };
 pub use snapshot::{
-    ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, TrackNotes, TrackSnapshot,
-    db_to_gain,
+    ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, SoundingNotes, TrackNotes,
+    TrackSnapshot, db_to_gain,
 };
 pub use synth::{
     NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
@@ -58,10 +58,14 @@ pub const USED_SNAPSHOT_CAPACITY: usize = 64;
 /// A message from the control side to the audio thread.
 #[derive(Debug)]
 pub enum Command {
-    /// Play the loop from the playhead.
+    /// Play from the play start. Does nothing if already playing.
     Play,
-    /// Stop the loop where it is, and release every note.
+    /// Stop, release every note, and go back to the play start.
     Stop,
+    /// While stopped, move the play start here. While playing, jump here
+    /// instead, and leave the play start where it was. In ticks from the
+    /// start of the song. See RFC-003, "Playing a song".
+    Locate(uta_core::time::Ticks),
     /// Swap in a new "what to play" snapshot at the start of the next block.
     SetSnapshot(Box<Snapshot>),
     /// Start a note on the synth of the track in `slot`, whether or not the
@@ -84,7 +88,7 @@ pub struct Status {
     /// Frames played so far (it doesn't advance while stopped).
     pub position: u64,
     /// The playhead's musical position, in ticks from the start of the song.
-    /// It stays inside the loop.
+    /// While stopped, it's the play start.
     pub playhead: uta_core::time::Ticks,
     /// The master's loudest sample since the last status message, as a
     /// linear level.
@@ -131,7 +135,7 @@ impl Default for EngineConfig {
 
 /// Builds the engine's two halves: a controller and a processor joined by
 /// fresh queues, starting from `snapshot` (retimed to the engine's rate),
-/// stopped at the start of its loop.
+/// stopped at the start of the song.
 pub fn engine(config: EngineConfig, snapshot: Snapshot) -> (Controller, Processor) {
     let snapshot = snapshot.at_sample_rate(config.sample_rate);
     let (command_tx, command_rx) = rtrb::RingBuffer::new(COMMAND_CAPACITY);
