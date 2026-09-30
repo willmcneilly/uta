@@ -191,7 +191,7 @@ fn the_status_reports_the_playhead_in_ticks() {
 }
 
 #[test]
-fn stop_releases_the_notes_and_play_carries_on_from_the_playhead() {
+fn stop_releases_the_notes_and_goes_back_to_the_play_start() {
     let project = project(120.0, 1, &PLAIN_SINE, vec![note(0, 60, 0, BAR)]);
     let mut renderer = Renderer::new(config(48_000), Snapshot::from(&project), 128);
     renderer.controller.play().unwrap();
@@ -200,18 +200,17 @@ fn stop_releases_the_notes_and_play_carries_on_from_the_playhead() {
     renderer.render(24_000);
     let status = renderer.controller.poll();
     assert!(!status.playing);
-    assert_eq!(status.playhead, 960, "the playhead stops where it is");
+    assert_eq!(status.playhead, 0, "back where Play was pressed");
     // Released: silent once the 1 ms release is over.
     assert_eq!(first_sound(&renderer.samples()[24_000 + TAIL..]), None);
 
-    // Play carries on from there. The note started before the playhead, so
-    // it waits for the next pass.
+    // Play starts from there again, and the note with it.
     renderer.controller.play().unwrap();
-    renderer.render(LOOP - 24_000 + 1000);
+    renderer.render(1000);
     let status = renderer.controller.poll();
-    assert_eq!(status.playhead, 40, "1000 samples into the next pass");
+    assert_eq!(status.playhead, 40, "1000 samples in");
     let samples = &renderer.samples()[48_000..];
-    assert_eq!(first_sound(samples), Some(LOOP - 24_000 + 1));
+    assert_eq!(first_sound(samples), Some(1));
 }
 
 #[test]

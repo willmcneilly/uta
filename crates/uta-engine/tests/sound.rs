@@ -149,10 +149,23 @@ fn volume_change_glides() {
 }
 
 /// Play and Stop over and over, big volume jumps, and the loop point, with
-/// the note at full level: nothing may jump more than the note itself does.
+/// the note at full level: nothing may jump more than the note itself does,
+/// with its 5 ms attack and release.
+///
+/// Each Play starts the note again from the top, so Stop lands anywhere in
+/// its waveform, including its peaks. A release starting there falls as fast
+/// as the release time allows, so the limit includes that.
 #[test]
 fn no_clicks_across_play_stop_volume_and_the_loop_point() {
-    let snapshot = Snapshot::from(&held_a4()).with_volume_db(0.0);
+    let mut project = held_a4();
+    let track = project.tracks()[0].id();
+    project
+        .apply(&Command::SetSynthParam {
+            track,
+            param: uta_core::SynthParam::ReleaseSeconds(0.005),
+        })
+        .unwrap();
+    let snapshot = Snapshot::from(&project).with_volume_db(0.0);
     let mut renderer = Renderer::new(config(), snapshot, 128);
 
     // Twenty quick Play/Stop pairs with different spacings, some shorter than
@@ -174,7 +187,10 @@ fn no_clicks_across_play_stop_volume_and_the_loop_point() {
     renderer.controller.stop().unwrap();
     renderer.render_seconds(0.05);
 
-    let limit = click_limit(VOICE_LEVEL);
+    // The release's first step is its steepest: it aims past silence, as in
+    // the processor's sample rate test.
+    let release = VOICE_LEVEL * 7.0 / (0.005 * RATE as f32);
+    let limit = click_limit(VOICE_LEVEL) + release * 1.1;
     let (jump, at) = max_jump(renderer.samples());
     assert!(
         jump <= limit,
@@ -308,7 +324,7 @@ fn golden_seconds(project: &Project) -> f64 {
 /// the file with `UTA_GOLDEN=1`. A human approves every change to a golden
 /// file.
 fn check_golden(name: &str, config: EngineConfig, project: &Project) {
-    let rendered = offline::render_loop(config, Snapshot::from(project), golden_seconds(project));
+    let rendered = offline::render_song(config, Snapshot::from(project), golden_seconds(project));
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/golden/{name}.wav"));
     if std::env::var_os("UTA_GOLDEN").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -352,7 +368,7 @@ fn the_demo_song_matches_its_golden_wav() {
 
 #[test]
 fn a_render_ends_in_silence() {
-    let rendered = offline::render_loop(config(), Snapshot::from(&demo_loop()), 1.0);
+    let rendered = offline::render_song(config(), Snapshot::from(&demo_loop()), 1.0);
     assert!(peak(&rendered[..rendered.len() / 2]) > 0.1, "too quiet");
     assert_eq!(*rendered.last().unwrap(), 0.0);
 }
@@ -360,8 +376,8 @@ fn a_render_ends_in_silence() {
 #[test]
 fn every_channel_carries_the_sound() {
     let snapshot = Snapshot::from(&demo_loop());
-    let samples = offline::render_loop(stereo(), snapshot.clone(), 0.5);
-    let mono = offline::render_loop(config(), snapshot, 0.5);
+    let samples = offline::render_song(stereo(), snapshot.clone(), 0.5);
+    let mono = offline::render_song(config(), snapshot, 0.5);
     assert_eq!(samples.len(), mono.len() * 2);
     assert!(peak(&mono) > 0.0);
     let (frames, rest) = samples.as_chunks::<2>();

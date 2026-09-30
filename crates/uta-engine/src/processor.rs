@@ -7,12 +7,13 @@
 use rtrb::{Consumer, Producer};
 
 use uta_core::TrackId;
+use uta_core::time::Ticks;
 
 use crate::ramp::Ramp;
 use crate::synth::{NoteOn, Synth};
 use crate::{
     COMMAND_CAPACITY, Command, NoteEvent, NoteEventKind, Snapshot, Status, SynthSettings,
-    TRACK_SLOTS, TrackSnapshot,
+    TRACK_SLOTS, TrackNotes, TrackSnapshot,
 };
 
 /// How long the output takes to fade out before a stream is replaced, and
@@ -22,10 +23,10 @@ pub const FADE_SECONDS: f64 = 0.005;
 /// or solo, takes to glide to its new level.
 pub const VOLUME_SMOOTHING_SECONDS: f64 = 0.02;
 /// The most note starts and ends each track handles in one block, so the work
-/// per block stays bounded however dense the notes are. Any more on the same
-/// track in the same block are skipped and counted in
-/// [`Status::dropped_note_events`]. It's far more than music needs: 256 notes
-/// starting and ending within one block.
+/// per block stays bounded however dense the notes are. Chased notes count
+/// too. Any more on the same track in the same block are skipped and counted
+/// in [`Status::dropped_note_events`]. It's far more than music needs: 256
+/// notes starting and ending within one block.
 pub const MAX_NOTE_EVENTS_PER_BLOCK: usize = 512;
 /// The most frames each track renders at a time: the size of its buffer, set
 /// aside when the processor is created. Longer blocks are rendered in parts.
@@ -48,9 +49,16 @@ pub struct Processor {
     mix: Box<[[f32; TRACK_BUFFER_FRAMES]; 2]>,
 
     playing: bool,
-    /// Where the loop is playing, in samples from the start of the song,
-    /// timed at the snapshot's rate.
+    /// Where it's playing, in samples from the start of the song, timed at
+    /// the snapshot's rate. While stopped, the play start.
     playhead: u64,
+    /// Where Play starts and Stop goes back to, in ticks from the start of
+    /// the song. See RFC-003, "Playing a song".
+    play_start: Ticks,
+    /// Whether playback is bound for the loop's end, to go round the loop,
+    /// rather than for the song's end. It is when the loop is on and
+    /// playback started before the loop's end.
+    looping: bool,
     /// The master volume.
     volume: Ramp,
     /// Fades everything out before a stream is replaced, and back in on the
@@ -139,6 +147,25 @@ impl Slot {
         }
     }
 
+    /// Starts every note in `notes` already under way at `playhead`, with an
+    /// ordinary note on, up to the slot's budget. The rest are skipped and
+    /// counted in `dropped`. Each ends at its own end event. See RFC-003,
+    /// "Playing a song" (note chasing).
+    fn chase(&mut self, notes: &TrackNotes, playhead: u64, dropped: &mut u64) {
+        let mut sounding = notes.sounding_at(playhead);
+        // Bounded by the budget.
+        for note in sounding.by_ref().take(self.budget) {
+            self.budget -= 1;
+            self.synth.note_on(NoteOn {
+                key: note.key,
+                pitch: note.pitch,
+                velocity: note.velocity,
+                sequenced: true,
+            });
+        }
+        *dropped += sounding.len() as u64;
+    }
+
     /// Handles every event in `events` due by `playhead`, up to the slot's
     /// budget. The rest are skipped with a search, and counted in `dropped`.
     fn handle_due_events(&mut self, events: &[NoteEvent], playhead: u64, dropped: &mut u64) {
@@ -223,7 +250,9 @@ impl Processor {
                 .collect(),
             mix: Box::new([[0.0; TRACK_BUFFER_FRAMES]; 2]),
             playing: false,
-            playhead: snapshot.sequence.loop_samples().start,
+            playhead: 0,
+            play_start: 0,
+            looping: false,
             volume: Ramp::new(snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS)),
             output_gain: Ramp::new(1.0, samples(FADE_SECONDS)),
             snapshot,
@@ -250,9 +279,13 @@ impl Processor {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
         let retimed = self.snapshot.at_sample_rate(sample_rate);
-        self.playhead = retimed
-            .sequence
-            .playhead_from(&self.snapshot.sequence, self.playhead);
+        self.playhead = if self.playing {
+            retimed
+                .sequence
+                .playhead_from(&self.snapshot.sequence, self.playhead)
+        } else {
+            retimed.sequence.sample_at(self.play_start)
+        };
         *self.snapshot = retimed;
         self.find_bookmarks();
 
@@ -289,37 +322,48 @@ impl Processor {
     ///
     /// Commands are applied at the start of the block, and one status message
     /// is sent at the end. While playing, the block is split at every note
-    /// start and end on any track, and at the loop's end, so each lands on
-    /// its exact sample whatever the block size. `output.len()` must be a
-    /// multiple of the channel count. Any block length works: longer ones
-    /// are rendered [`TRACK_BUFFER_FRAMES`] at a time.
+    /// start and end on any track, at the loop's end and at the song's end,
+    /// so each lands on its exact sample whatever the block size.
+    /// `output.len()` must be a multiple of the channel count. Any block
+    /// length works: longer ones are rendered [`TRACK_BUFFER_FRAMES`] at a
+    /// time.
     #[rtsan_standalone::nonblocking]
     pub fn process(&mut self, output: &mut [f32]) {
-        self.apply_commands();
-
-        let frames = output.len() / self.channels;
-        let sequencing = self.playing && self.is_timed_for_this_rate();
+        // Before the commands, so notes chased on Play or a jump count.
         for slot in self.slots.iter_mut() {
             slot.budget = MAX_NOTE_EVENTS_PER_BLOCK;
         }
+        self.apply_commands();
+
+        let frames = output.len() / self.channels;
+        let timed = self.is_timed_for_this_rate();
         let mut done = 0;
         // Each pass renders at least one frame, so this ends.
         while done < frames {
             let mut run = (frames - done).min(TRACK_BUFFER_FRAMES);
-            if sequencing {
+            if self.playing && timed {
+                // This may reach the song's end and stop.
                 self.handle_due_events();
+            }
+            let sequencing = self.playing && timed;
+            if sequencing {
                 run = run.min(self.frames_to_next_event());
             }
             let channels = self.channels;
             self.render(&mut output[done * channels..(done + run) * channels]);
+            if self.playing {
+                self.position += run as u64;
+            }
             if sequencing {
                 self.playhead += run as u64;
+                // Stop at the song's end now, not at the next block's start,
+                // so this block's status already says it has stopped and
+                // shows the play start.
+                if !self.looping && self.playhead >= self.snapshot.sequence.song_end_sample() {
+                    self.stop();
+                }
             }
             done += run;
-        }
-
-        if self.playing {
-            self.position += frames as u64;
         }
         self.send_status();
     }
@@ -338,14 +382,25 @@ impl Processor {
     }
 
     /// Handles every note event due at the playhead, on every track. At the
-    /// loop's end, goes back to the loop's start and handles the events due
-    /// there too, so both land on the same sample. Each track handles at most
-    /// its budget of events; the rest are skipped and counted.
+    /// loop's end (or past it, if a new snapshot shortened the loop), goes
+    /// back to the loop's start and handles the events due there, so it lands
+    /// on the same sample. At the song's end, stops. Each track handles at
+    /// most its budget of events; the rest are skipped and counted.
     fn handle_due_events(&mut self) {
-        // Two rounds at most: the events due now, then those at the loop's
-        // start after going back to it. Handling both here means the caller
-        // always has at least one frame to render next.
+        // Two rounds at most: going round the loop, then the events at its
+        // start. Either way the caller has at least one frame to render
+        // next, or has stopped.
         for _ in 0..2 {
+            let sequence = &self.snapshot.sequence;
+            let loop_samples = sequence.loop_samples();
+            if self.looping && self.playhead >= loop_samples.end {
+                // The events at the loop's end aren't handled: `start_from`
+                // releases the notes ending there, and a note starting there
+                // is outside the loop, so it would only take a voice and be
+                // released on the same sample.
+                self.start_from(loop_samples.start);
+                continue;
+            }
             let playhead = self.playhead;
             // Bounded by TRACK_SLOTS.
             for track in self.snapshot.tracks() {
@@ -355,20 +410,23 @@ impl Processor {
                     &mut self.dropped_note_events,
                 );
             }
-
-            let loop_samples = self.snapshot.sequence.loop_samples();
-            if playhead < loop_samples.end {
-                return;
+            if !self.looping && playhead >= self.snapshot.sequence.song_end_sample() {
+                self.stop();
             }
-            self.playhead = loop_samples.start;
-            self.find_bookmarks();
+            return;
         }
     }
 
-    /// Frames until the next note event on any track, or the loop's end,
-    /// whichever comes first. At least 1, once the events due now are
-    /// handled.
+    /// Frames until the next note event on any track, or the loop's or
+    /// song's end, whichever comes first. At least 1, once the events due
+    /// now are handled.
     fn frames_to_next_event(&self) -> usize {
+        let sequence = &self.snapshot.sequence;
+        let end = if self.looping {
+            sequence.loop_samples().end
+        } else {
+            sequence.song_end_sample()
+        };
         let next = self
             .snapshot
             .tracks()
@@ -378,8 +436,62 @@ impl Processor {
                 events.get(self.slots[track.slot()].bookmark)
             })
             .map(|event| event.sample)
-            .fold(self.snapshot.sequence.loop_samples().end, u64::min);
+            .fold(end, u64::min);
         usize::try_from(next - self.playhead).unwrap_or(usize::MAX)
+    }
+
+    /// Starts playing from `playhead`: on Play, and on a jump. Playback is
+    /// bound for the loop's end if the loop is on and `playhead` is before
+    /// it, and for the song's end otherwise. See RFC-003, "Playing a song",
+    /// and open question 1.
+    fn play_from(&mut self, playhead: u64) {
+        let sequence = &self.snapshot.sequence;
+        self.looping = sequence.loop_enabled() && playhead < sequence.loop_samples().end;
+        self.start_from(playhead);
+    }
+
+    /// Moves the playhead to `playhead` and carries on from there: releases
+    /// every note the sequencer started, finds each track's next event, and
+    /// chases the notes already under way there. What Play, a jump and
+    /// going round the loop do. Bounded by the number of tracks, and each
+    /// track's budget.
+    fn start_from(&mut self, playhead: u64) {
+        self.playhead = playhead;
+        for slot in self.slots.iter_mut() {
+            slot.synth.release_sequenced_unless(|_, _| false);
+        }
+        self.find_bookmarks();
+        for track in self.snapshot.tracks() {
+            self.slots[track.slot()].chase(track.notes(), playhead, &mut self.dropped_note_events);
+        }
+    }
+
+    /// Stops, releases every note, and goes back to the play start: on Stop,
+    /// and at the song's end.
+    fn stop(&mut self) {
+        self.playing = false;
+        self.looping = false;
+        for slot in self.slots.iter_mut() {
+            slot.synth.release_all();
+        }
+        self.playhead = self.snapshot.sequence.sample_at(self.play_start);
+    }
+
+    /// After a new snapshot while playing, decides where playback is bound:
+    /// - with the loop off, for the song's end;
+    /// - if it wasn't bound for the loop's end (the loop was off, or
+    ///   playback started after it), for the loop's end only if the playhead
+    ///   is before it;
+    /// - if it was, it stays so. If the loop got shorter or moved and the
+    ///   playhead is now past its end, [`Self::handle_due_events`] goes
+    ///   round the loop on this same sample.
+    fn follow_the_loop(&mut self) {
+        let sequence = &self.snapshot.sequence;
+        if !sequence.loop_enabled() {
+            self.looping = false;
+        } else if !self.looping {
+            self.looping = self.playhead < sequence.loop_samples().end;
+        }
     }
 
     /// Points each track's bookmark at its first event at or after the
@@ -396,10 +508,10 @@ impl Processor {
 
     /// After a new snapshot, releases every note the sequencer started that
     /// its track no longer plays at the playhead: deleted, re-pitched, moved
-    /// or shortened away from it, or left behind when the playhead went back
-    /// to the loop's start. Otherwise its end event would never come, and it
-    /// would stick. Bounded by the number of tracks and voices, each a
-    /// binary search.
+    /// or shortened away from it. Otherwise its end event would never come,
+    /// and it would stick. A note moved under the playhead isn't started: it
+    /// waits for its next pass. Bounded by the number of tracks and voices,
+    /// each a binary search.
     fn release_changed_notes(&mut self) {
         let playhead = self.playhead;
         for track in self.snapshot.tracks() {
@@ -481,26 +593,39 @@ impl Processor {
                 break;
             };
             match command {
-                Command::Play => self.playing = true,
-                Command::Stop => {
-                    self.playing = false;
-                    for slot in self.slots.iter_mut() {
-                        slot.synth.release_all();
+                Command::Play if !self.playing => {
+                    self.playing = true;
+                    self.play_from(self.snapshot.sequence.sample_at(self.play_start));
+                }
+                Command::Play => {}
+                Command::Stop => self.stop(),
+                Command::Locate(ticks) => {
+                    let sample = self.snapshot.sequence.sample_at(ticks);
+                    if self.playing {
+                        self.play_from(sample);
+                    } else {
+                        self.play_start = ticks;
+                        self.playhead = sample;
                     }
                 }
                 Command::SetSnapshot(new) => {
                     self.volume.set_target(new.gain);
                     let old = std::mem::replace(&mut self.snapshot, new);
-                    self.playhead = self
-                        .snapshot
-                        .sequence
-                        .playhead_from(&old.sequence, self.playhead);
+                    let sequence = &self.snapshot.sequence;
+                    self.playhead = if self.playing {
+                        sequence.playhead_from(&old.sequence, self.playhead)
+                    } else {
+                        sequence.sample_at(self.play_start)
+                    };
                     let soloing = self.snapshot.soloing();
                     for (index, slot) in self.slots.iter_mut().enumerate() {
                         slot.load(self.snapshot.track_in(index), soloing);
                     }
                     self.find_bookmarks();
                     self.release_changed_notes();
+                    if self.playing {
+                        self.follow_the_loop();
+                    }
                     self.swaps += 1;
                     // Checked above: there is room, so this never drops `old`.
                     let _ = self.used_snapshots.push(old);
@@ -538,7 +663,7 @@ impl Processor {
         let sequence = &self.snapshot.sequence;
         let loop_samples = sequence.loop_samples();
         // At the loop's end, the playhead is already back at its start.
-        let playhead = if self.playhead >= loop_samples.end {
+        let playhead = if self.looping && self.playhead >= loop_samples.end {
             loop_samples.start
         } else {
             self.playhead

@@ -466,6 +466,169 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
     assert!(status.snapshots >= 480, "{} swaps", status.snapshots);
 }
 
+/// A song playing: the demo song with a long pad under it, with the loop
+/// switched on and off and its region moved, so playback goes round it and
+/// on to the song's end, and jumps while playing, so notes are chased on
+/// Play, on every jump and on every wrap. Meanwhile tracks are added,
+/// removed and reordered, and clips added, moved and removed, each sent the
+/// way the app sends it. More notes are under way at one jump than a block
+/// may start, so some are skipped. None of it allocates or frees on the
+/// audio thread. See RFC-003, "Playing a song".
+#[test]
+fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    let mut project = demo_song();
+    let first = project.tracks()[0].id();
+    // A pad under the whole song, on the first track: 8 long chords, each
+    // two bars, overlapping, so every jump and wrap lands in some.
+    let pad = (0..24u64)
+        .map(|i| uta_core::Note {
+            id: NoteId::random(),
+            ..note(0, 48 + (i % 12) as u8, (i / 3) * 1920, 7680)
+        })
+        .collect::<Vec<_>>();
+    let pad_clip = ClipId::random();
+    project
+        .apply(&Command::AddClips {
+            clips: vec![PlacedClip {
+                track: first,
+                clip: Clip::new(pad_clip, 0, 8 * 3840).with_notes(pad),
+            }],
+        })
+        .unwrap();
+    // And a clip of more long notes than a block may start at once.
+    let crowd = (0..MAX_NOTE_EVENTS_PER_BLOCK as u64 + 20)
+        .map(|i| uta_core::Note {
+            id: NoteId::random(),
+            ..note(0, 30 + (i % 60) as u8, i % 7, 3840)
+        })
+        .collect::<Vec<_>>();
+    project
+        .apply(&Command::AddClips {
+            clips: vec![PlacedClip {
+                track: project.tracks()[1].id(),
+                clip: Clip::new(ClipId::random(), 12 * 3840, 3840).with_notes(crowd),
+            }],
+        })
+        .unwrap();
+
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.locate(3000).unwrap();
+    renderer.controller.play().unwrap();
+
+    let mut added_clip: Option<ClipId> = None;
+    for step in 0..400usize {
+        let tracks: Vec<TrackId> = project.tracks().iter().map(|track| track.id()).collect();
+        if added_clip.is_some_and(|id| project.clip(id).is_none()) {
+            added_clip = None;
+        }
+        let command = match step % 8 {
+            0 => Command::SetLoop {
+                start_bar: (step / 8 % 6) as u32,
+                bars: 1 + (step / 16 % 3) as u32,
+            },
+            1 => Command::SetLoopEnabled {
+                enabled: step % 3 != 0,
+            },
+            2 if tracks.len() < 10 => {
+                let source = project.tracks()[step % tracks.len()].clone();
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: step % tracks.len(),
+                        track: source.copy(
+                            TrackId::random(),
+                            project.next_track_name(),
+                            ClipId::random,
+                            NoteId::random,
+                        ),
+                    }],
+                }
+            }
+            2 | 5 if tracks.len() > 3 => Command::RemoveTracks {
+                tracks: vec![*tracks.iter().rev().find(|&&id| id != first).unwrap()],
+            },
+            3 => Command::MoveTrack {
+                track: tracks[step % tracks.len()],
+                index: step % 3,
+            },
+            4 if added_clip.is_none() => {
+                let id = ClipId::random();
+                added_clip = Some(id);
+                let notes = (0..6u64)
+                    .map(|i| uta_core::Note {
+                        id: NoteId::random(),
+                        ..note(0, 60 + i as u8, i * 960, 2000)
+                    })
+                    .collect::<Vec<_>>();
+                Command::AddClips {
+                    clips: vec![PlacedClip {
+                        track: tracks[step % tracks.len()],
+                        clip: Clip::new(id, 3840 * (step as u64 % 10), 3840).with_notes(notes),
+                    }],
+                }
+            }
+            4 | 6 if added_clip.is_some() => Command::SetClips {
+                clips: vec![ClipPosition {
+                    id: added_clip.unwrap(),
+                    track: tracks[step % tracks.len()],
+                    start: 960 * (step as u64 % 40),
+                    length: 3840,
+                }],
+            },
+            7 if added_clip.is_some() => Command::RemoveClips {
+                clips: vec![added_clip.take().unwrap()],
+            },
+            _ => Command::SetSynthParam {
+                track: tracks[step % tracks.len()],
+                param: SynthParam::CutoffHz(400.0 + (step % 30) as f32 * 100.0),
+            },
+        };
+        project.apply(&command).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        match step % 5 {
+            // Jump while playing, mid-pad; into the crowd now and then.
+            0 => {
+                let to = if step % 50 == 0 {
+                    12 * 3840 + 500
+                } else {
+                    (step as u64 * 1237) % (10 * 3840)
+                };
+                renderer.controller.locate(to).unwrap();
+            }
+            // If the song's end stopped it, play again from the play start.
+            1 if !renderer.controller.poll().playing => {
+                renderer.controller.play().unwrap();
+            }
+            2 if step % 20 == 2 => {
+                renderer.controller.stop().unwrap();
+                renderer
+                    .controller
+                    .locate((step as u64 * 311) % (8 * 3840))
+                    .unwrap();
+                renderer.controller.play().unwrap();
+            }
+            _ => {}
+        }
+        for _ in 0..6 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        renderer.controller.poll();
+    }
+    renderer.controller.stop().unwrap();
+    for _ in 0..40 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+    let status = renderer.controller.poll();
+    assert!(!status.playing);
+    assert!(status.snapshots >= 400, "{} swaps", status.snapshots);
+    assert!(
+        status.dropped_note_events >= 20,
+        "the crowd was chased past the limit: {} skipped",
+        status.dropped_note_events
+    );
+}
+
 /// A block with more note events than it may handle skips the rest with a
 /// search, not a loop over each one, and still doesn't allocate.
 #[test]

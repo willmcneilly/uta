@@ -118,10 +118,12 @@ impl Renderer {
     }
 }
 
-/// Plays the loop in `snapshot` from its start for `seconds`, then stops and
-/// renders the notes' release (the longest of any track's), so it ends in
-/// silence. What `uta render` writes.
-pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
+/// Plays `snapshot` from the top of the song for `seconds`, round the loop
+/// if it's on, then stops and renders the notes' release (the longest of any
+/// track's), so it ends in silence. With the loop off it stops by itself at
+/// the song's end, and anything after that is silent. What `uta render`
+/// writes.
+pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
     let release = snapshot
         .tracks()
         .iter()
@@ -136,7 +138,7 @@ pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Ve
     renderer.into_samples()
 }
 
-/// How long [`render_loop`] renders after the release time, so the release
+/// How long [`render_song`] renders after the release time, so the release
 /// has finished.
 const RELEASE_MARGIN_SECONDS: f64 = 0.01;
 

@@ -18,7 +18,7 @@ use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS
 pub struct Snapshot {
     /// The master volume as a linear gain (1.0 is full scale).
     pub gain: f32,
-    /// The tempo and the loop, timed in samples.
+    /// The tempo, the loop and the song's end, timed in samples.
     pub sequence: Sequence,
     /// Every track, in the project's order.
     tracks: Vec<TrackSnapshot>,
@@ -98,8 +98,8 @@ impl Snapshot {
     }
 
     fn build(project: &Project, sample_rate: u32, previous: Option<&Snapshot>, avoid: u32) -> Self {
-        let sequence = Sequence::new(project.transport(), sample_rate);
-        let same_timing = previous.is_some_and(|previous| previous.sequence == sequence);
+        let sequence = Sequence::new(project, sample_rate);
+        let same_timing = previous.is_some_and(|previous| previous.sequence.same_timing(&sequence));
         let previous_clips: HashMap<ClipId, &Arc<ClipNotes>> = previous
             .iter()
             .flat_map(|previous| &previous.tracks)
@@ -276,27 +276,31 @@ impl From<&Project> for Snapshot {
     }
 }
 
-/// The tempo and the loop, as the audio thread plays them: in ticks, and
-/// worked out at one sample rate.
+/// The tempo, the loop and the song's end, as the audio thread plays them:
+/// in ticks, and worked out at one sample rate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sequence {
     tempo_map: TempoMap,
     loop_start: Ticks,
     loop_length: Ticks,
+    loop_enabled: bool,
+    song_end: Ticks,
 
     sample_rate: u32,
     loop_start_sample: u64,
     loop_end_sample: u64,
+    song_end_sample: u64,
 }
 
 /// One track's notes, as the audio thread plays them.
 ///
 /// It keeps the musical version (each clip's notes, in ticks, in an `Arc`)
 /// and, worked out from it at the snapshot's timing, every note start and end
-/// in samples as one list sorted by time. Notes are trimmed to the loop: only
-/// notes that start inside it play, and any that run past its end stop
-/// there. See RFC-002, "The shared model", points 5 and 7, and RFC-003, "The
-/// shared model, extended", point 5.
+/// in samples as one list sorted by time, over the whole song. The loop
+/// doesn't trim them: the processor releases what's sounding when it goes
+/// back to the loop's start. See RFC-002, "The shared model", points 5 and
+/// 7, and RFC-003, "The shared model, extended", point 5, and "Playing a
+/// song".
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrackNotes {
     clips: Vec<Arc<ClipNotes>>,
@@ -304,6 +308,16 @@ pub struct TrackNotes {
     /// The same notes, one entry each, sorted by key, so a sounding note can
     /// be looked up when a new snapshot arrives.
     notes: Vec<NoteSpan>,
+    /// The index for note chasing: indexes into `notes`, sorted by start.
+    by_start: Vec<u32>,
+    /// A max tree over `by_start`'s ends: leaf `i` (at `leaves + i`) is the
+    /// end of note `by_start[i]`, and each node above is the latest end
+    /// below it. With it, finding each note that's sounding at a sample
+    /// takes one walk down the tree, however many notes there are. See
+    /// RFC-003, "Risks & unknowns" (note chasing needs a fast lookup).
+    latest_end: Vec<u64>,
+    /// Every note's end, sorted, to count the notes sounding at a sample.
+    ends: Vec<u64>,
 }
 
 /// One clip's notes, in ticks.
@@ -325,11 +339,12 @@ pub struct NoteEvent {
     pub kind: NoteEventKind,
 }
 
-/// When one note plays, in samples, after trimming to the loop.
+/// When one note plays, in samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteSpan {
     pub key: NoteKey,
     pub pitch: u8,
+    pub velocity: u8,
     /// The sample it starts on, from the start of the song.
     pub start: u64,
     /// The sample it ends on: it sounds up to, not including, this one.
@@ -342,6 +357,40 @@ impl NoteSpan {
         (self.start..self.end).contains(&sample)
     }
 }
+
+/// The notes sounding at a sample that started before it, latest start
+/// first. See [`TrackNotes::sounding_at`].
+#[derive(Debug, Clone)]
+pub struct SoundingNotes<'a> {
+    notes: &'a TrackNotes,
+    sample: u64,
+    /// Every note sounding at `sample` that starts at or after this position
+    /// in `by_start` has been returned.
+    started: usize,
+    /// How many are left to return.
+    remaining: usize,
+}
+
+impl<'a> Iterator for SoundingNotes<'a> {
+    type Item = &'a NoteSpan;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let position = self.notes.last_sounding(self.started, self.sample)?;
+        self.started = position;
+        self.remaining -= 1;
+        let index = self.notes.by_start[position];
+        Some(&self.notes.notes[index as usize])
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for SoundingNotes<'_> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteEventKind {
@@ -368,10 +417,9 @@ impl NoteEventKind {
 
 impl TrackNotes {
     /// The starts and ends of the notes in `clips`, timed by `sequence`.
-    /// Clips may overlap: each one's notes play.
+    /// Clips may overlap: each one's notes play. Only the tempo and sample
+    /// rate matter, not the loop.
     pub fn new(clips: Vec<Arc<ClipNotes>>, sequence: &Sequence) -> Self {
-        let loop_end = sequence.loop_start + sequence.loop_length;
-        let loop_ticks = sequence.loop_start..loop_end;
         let mut events = Vec::new();
         let mut notes = Vec::new();
         for clip in &clips {
@@ -380,10 +428,7 @@ impl TrackNotes {
                     continue;
                 }
                 let start = clip.start + note.start;
-                if !loop_ticks.contains(&start) {
-                    continue;
-                }
-                let end = (clip.start + (note.start + note.length).min(clip.length)).min(loop_end);
+                let end = clip.start + (note.start + note.length).min(clip.length);
                 let (start, end) = (sequence.sample_at(start), sequence.sample_at(end));
                 if end <= start {
                     continue;
@@ -392,6 +437,7 @@ impl TrackNotes {
                 notes.push(NoteSpan {
                     key,
                     pitch: note.pitch,
+                    velocity: note.velocity,
                     start,
                     end,
                 });
@@ -411,10 +457,26 @@ impl TrackNotes {
         }
         events.sort_by_key(|event| (event.sample, event.kind.order()));
         notes.sort_by_key(|note| note.key.0);
+
+        let mut by_start: Vec<u32> = (0..notes.len() as u32).collect();
+        by_start.sort_by_key(|&index| notes[index as usize].start);
+        let leaves = by_start.len().next_power_of_two();
+        let mut latest_end = vec![0; 2 * leaves];
+        for (leaf, &index) in by_start.iter().enumerate() {
+            latest_end[leaves + leaf] = notes[index as usize].end;
+        }
+        for node in (1..leaves).rev() {
+            latest_end[node] = latest_end[2 * node].max(latest_end[2 * node + 1]);
+        }
+        let mut ends: Vec<u64> = notes.iter().map(|note| note.end).collect();
+        ends.sort_unstable();
         Self {
             clips,
             events,
             notes,
+            by_start,
+            latest_end,
+            ends,
         }
     }
 
@@ -430,12 +492,78 @@ impl TrackNotes {
         &self.clips
     }
 
-    /// Every note start and end in the loop, sorted by sample.
+    /// Every note start and end in the song, sorted by sample.
     pub fn events(&self) -> &[NoteEvent] {
         &self.events
     }
 
-    /// The note with this key, if it plays in the loop. A binary search, so
+    /// Every note that's sounding at `sample` but started before it: the
+    /// notes to chase when playback starts, jumps or goes round the loop
+    /// there. A note that starts on `sample` isn't one; its start event
+    /// plays it. Latest start first.
+    ///
+    /// Real-time safe: it doesn't allocate, and each note costs one binary
+    /// search and one walk down the index, however many notes there are.
+    /// The caller bounds how many it takes.
+    pub fn sounding_at(&self, sample: u64) -> SoundingNotes<'_> {
+        let started = self
+            .by_start
+            .partition_point(|&index| self.notes[index as usize].start < sample);
+        // Every note that has ended by `sample` started before it.
+        let ended = self.ends.partition_point(|&end| end <= sample);
+        SoundingNotes {
+            notes: self,
+            sample,
+            started,
+            remaining: started - ended,
+        }
+    }
+
+    /// The position in `by_start` of the latest-starting note before
+    /// position `before` that's still sounding at `sample`. One walk up the
+    /// tree to find the part of `0..before` holding it, then one walk down.
+    fn last_sounding(&self, before: usize, sample: u64) -> Option<usize> {
+        let leaves = self.latest_end.len() / 2;
+        let tree = &self.latest_end;
+        // The nodes covering `0..before`, right to left: the right edge's
+        // come right to left, and the left edge never leaves position 0,
+        // so it adds at most the root, last.
+        let (mut left, mut right) = (leaves, leaves + before);
+        // Bounded by the tree's height.
+        while left < right {
+            if left & 1 == 1 {
+                if tree[left] > sample {
+                    return Some(self.rightmost_below(left, sample, leaves));
+                }
+                left += 1;
+            }
+            if right & 1 == 1 {
+                right -= 1;
+                if tree[right] > sample {
+                    return Some(self.rightmost_below(right, sample, leaves));
+                }
+            }
+            left /= 2;
+            right /= 2;
+        }
+        None
+    }
+
+    /// Walks down from `node`, whose latest end is after `sample`, to the
+    /// rightmost leaf below it whose end is after `sample`, and returns that
+    /// leaf's position. Bounded by the tree's height.
+    fn rightmost_below(&self, mut node: usize, sample: u64, leaves: usize) -> usize {
+        while node < leaves {
+            node = if self.latest_end[2 * node + 1] > sample {
+                2 * node + 1
+            } else {
+                2 * node
+            };
+        }
+        node - leaves
+    }
+
+    /// The note with this key, if it plays in the song. A binary search, so
     /// it's real-time safe.
     pub fn note(&self, key: NoteKey) -> Option<&NoteSpan> {
         self.notes
@@ -446,26 +574,37 @@ impl TrackNotes {
 }
 
 impl Sequence {
-    /// The transport's tempo and loop, at `sample_rate`.
-    fn new(transport: &Transport, sample_rate: u32) -> Self {
+    /// The project's tempo, loop and song end, at `sample_rate`.
+    fn new(project: &Project, sample_rate: u32) -> Self {
+        let transport: &Transport = project.transport();
         Self::build(
             transport.tempo_map().clone(),
-            transport.loop_start(),
-            transport.loop_length(),
+            transport.loop_start()..transport.loop_start() + transport.loop_length(),
+            transport.loop_enabled(),
+            project.song_end(),
             sample_rate,
         )
     }
 
-    fn build(tempo_map: TempoMap, loop_start: Ticks, loop_length: Ticks, sample_rate: u32) -> Self {
+    fn build(
+        tempo_map: TempoMap,
+        loop_ticks: std::ops::Range<Ticks>,
+        loop_enabled: bool,
+        song_end: Ticks,
+        sample_rate: u32,
+    ) -> Self {
         assert!(sample_rate > 0, "sample rate must be positive");
-        assert!(loop_length > 0, "the loop can't be empty");
+        assert!(!loop_ticks.is_empty(), "the loop can't be empty");
         let samples = |ticks| tempo_map.ticks_to_samples(ticks, sample_rate);
         Self {
-            loop_start_sample: samples(loop_start),
-            loop_end_sample: samples(loop_start + loop_length),
+            loop_start_sample: samples(loop_ticks.start),
+            loop_end_sample: samples(loop_ticks.end),
+            song_end_sample: samples(song_end),
             tempo_map,
-            loop_start,
-            loop_length,
+            loop_start: loop_ticks.start,
+            loop_length: loop_ticks.end - loop_ticks.start,
+            loop_enabled,
+            song_end,
             sample_rate,
         }
     }
@@ -474,10 +613,17 @@ impl Sequence {
     pub fn at_sample_rate(&self, sample_rate: u32) -> Self {
         Self::build(
             self.tempo_map.clone(),
-            self.loop_start,
-            self.loop_length,
+            self.loop_start..self.loop_start + self.loop_length,
+            self.loop_enabled,
+            self.song_end,
             sample_rate,
         )
+    }
+
+    /// Whether notes are timed the same in both: the same tempo and sample
+    /// rate. The loop and the song's end don't change when notes play.
+    fn same_timing(&self, other: &Sequence) -> bool {
+        self.sample_rate == other.sample_rate && self.tempo_map == other.tempo_map
     }
 
     /// The sample rate everything is timed at.
@@ -490,32 +636,37 @@ impl Sequence {
         self.loop_start_sample..self.loop_end_sample
     }
 
+    /// Whether playback goes round the loop, rather than on to the end of
+    /// the song.
+    pub fn loop_enabled(&self) -> bool {
+        self.loop_enabled
+    }
+
+    /// Where the song ends, in samples from its start: one bar after the
+    /// last clip ends. See RFC-003, "Playing a song".
+    pub fn song_end_sample(&self) -> u64 {
+        self.song_end_sample
+    }
+
     /// Where a playhead at `playhead` in `old` carries on in this sequence.
     /// Real-time safe.
     ///
     /// If the tempo or sample rate changed, it keeps its bar and beat: it
     /// moves to the first tick `old` hadn't reached yet, so every note event
     /// `old` had already played stays played and none is skipped. Otherwise
-    /// it stays on the same sample. If that's outside the loop (the loop got
-    /// shorter, or the playhead was waiting at the loop's end) it carries on
-    /// from the loop's start.
+    /// it stays on the same sample. Whether that's past the loop or the
+    /// song's end is for the processor to decide.
     pub fn playhead_from(&self, old: &Sequence, playhead: u64) -> u64 {
-        let playhead = if self.sample_rate == old.sample_rate && self.tempo_map == old.tempo_map {
-            playhead
-        } else {
-            let ticks = old.ticks_at(playhead);
-            let ticks = if old.sample_at(ticks) < playhead {
-                ticks + 1
-            } else {
-                ticks
-            };
-            self.sample_at(ticks)
-        };
-        if self.loop_samples().contains(&playhead) {
-            playhead
-        } else {
-            self.loop_start_sample
+        if self.same_timing(old) {
+            return playhead;
         }
+        let ticks = old.ticks_at(playhead);
+        let ticks = if old.sample_at(ticks) < playhead {
+            ticks + 1
+        } else {
+            ticks
+        };
+        self.sample_at(ticks)
     }
 
     /// The musical position of a sample, in ticks from the start of the song.
@@ -737,69 +888,107 @@ mod tests {
         );
     }
 
+    /// Notes play over the whole song: the loop doesn't trim them, and
+    /// changing it shares every track's events. The clip still does.
     #[test]
-    fn notes_are_trimmed_to_the_loop() {
+    fn notes_play_over_the_whole_song_whatever_the_loop() {
         let mut project = with_notes(vec![
-            // Ends exactly at the loop's end (4 bars, 15,360 ticks).
-            note(1, 60, 15_360 - 480, 480),
-            // Crosses the loop's end: it stops there.
-            note(2, 62, 15_360 - 480, 960),
-            // Starts at the loop's end, and past it: neither plays.
-            note(3, 64, 15_360, 480),
-            note(4, 65, 20_000, 480),
+            // Crosses the loop's end (4 bars, 15,360 ticks).
+            note(1, 62, 15_360 - 480, 960),
+            // Starts past the clip's end: it doesn't play.
+            note(2, 65, 20_000, 480),
         ]);
+        project
+            .apply(&Command::SetClips {
+                clips: vec![uta_core::ClipPosition {
+                    id: clip(&project),
+                    track: project.tracks()[0].id(),
+                    start: 0,
+                    length: 5 * 3840,
+                }],
+            })
+            .unwrap();
         let snapshot = Snapshot::new(&project, 48_000);
         let end = 8 * 48_000;
         assert_eq!(
             events(&snapshot),
-            [
-                on(end - 12_000, 1, 60),
-                on(end - 12_000, 2, 62),
-                off(end, 1),
-                off(end, 2),
-            ]
+            [on(end - 12_000, 1, 62), off(end + 12_000, 1)]
         );
+        // One bar after the 5-bar clip.
+        assert_eq!(snapshot.sequence.song_end_sample(), 6 * 2 * 48_000);
 
-        // Shortening the loop to 1 bar trims the same way at the new end.
-        project.apply(&Command::SetLoopLength { bars: 1 }).unwrap();
-        let snapshot = Snapshot::new(&project, 48_000);
-        assert_eq!(snapshot.sequence.loop_samples(), 0..96_000);
-        assert!(events(&snapshot).is_empty());
+        project
+            .apply(&Command::SetLoop {
+                start_bar: 1,
+                bars: 1,
+            })
+            .unwrap();
+        project
+            .apply(&Command::SetLoopEnabled { enabled: false })
+            .unwrap();
+        let moved = Snapshot::sharing(&project, &snapshot);
+        assert_eq!(moved.sequence.loop_samples(), 96_000..192_000);
+        assert!(!moved.sequence.loop_enabled());
+        assert!(Arc::ptr_eq(
+            snapshot.tracks()[0].notes(),
+            moved.tracks()[0].notes()
+        ));
     }
 
-    /// In project 1 the clip is always as long as the loop, so the clip's
-    /// length trims notes before the loop's end can. Here the clip is longer
-    /// than the loop and starts before it, so only the loop checks keep notes
-    /// inside it.
+    /// The notes to chase at a sample are exactly those that started before
+    /// it and end after it, latest start first, and the count is known up
+    /// front. Checked against a plain search over many sets of notes.
     #[test]
-    fn notes_are_trimmed_to_a_loop_shorter_than_the_clip() {
-        // A 4-bar clip; the loop is bar 2 (ticks 3,840 to 7,680).
-        let clip = Arc::new(ClipNotes {
-            id: ClipId::from_uuid(Uuid::from_u128(1)),
-            start: 0,
-            length: 4 * 3840,
-            notes: vec![
-                // Starts before the loop and runs into it: doesn't play.
-                note(1, 60, 3840 - 480, 960),
-                // Starts on the loop's start.
-                note(2, 62, 3840, 480),
-                // Crosses the loop's end: released there.
-                note(3, 64, 7680 - 480, 960),
-                // Starts on the loop's end: doesn't play.
-                note(4, 65, 7680, 480),
-            ],
-        });
-        let sequence = Sequence::build(TempoMap::new(120.0), 3840, 3840, 48_000);
-        assert_eq!(sequence.loop_samples(), 96_000..192_000);
-        assert_eq!(
-            TrackNotes::new(vec![clip], &sequence).events(),
-            [
-                on(96_000, 2, 62),
-                off(108_000, 2),
-                on(180_000, 3, 64),
-                off(192_000, 3),
-            ]
-        );
+    fn the_notes_sounding_at_a_sample_are_found_with_the_index() {
+        let sequence = Snapshot::default().sequence;
+        // A small linear congruential generator, so the notes are the same
+        // every run.
+        let mut seed = 12_345u64;
+        let mut next = move |below: u64| {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (seed >> 33) % below
+        };
+        for count in [0u128, 1, 2, 3, 7, 8, 9, 100, 333] {
+            let notes = (0..count)
+                .map(|i| {
+                    // Mostly short, some long, some starting together.
+                    let length = if next(10) == 0 {
+                        1 + next(8000)
+                    } else {
+                        1 + next(400)
+                    };
+                    note(i, 60, next(60) * 60, length)
+                })
+                .collect();
+            let clip = Arc::new(ClipNotes {
+                id: ClipId::from_uuid(Uuid::from_u128(1)),
+                start: 0,
+                length: 20_000,
+                notes,
+            });
+            let track = TrackNotes::new(vec![clip], &sequence);
+            let mut spans = track.notes.clone();
+            spans.sort_by_key(|note| note.start);
+            for sample in (0..sequence.sample_at(12_000))
+                .step_by(997)
+                .chain([0, 1500])
+            {
+                let found = track.sounding_at(sample);
+                let expected: Vec<NoteKey> = spans
+                    .iter()
+                    .filter(|note| note.start < sample && sample < note.end)
+                    .map(|note| note.key)
+                    .collect();
+                assert_eq!(found.len(), expected.len(), "{count} notes at {sample}");
+                let found: Vec<&NoteSpan> = found.collect();
+                assert!(found.windows(2).all(|pair| pair[0].start >= pair[1].start));
+                let mut found: Vec<NoteKey> = found.iter().map(|note| note.key).collect();
+                let mut expected = expected;
+                found.sort_by_key(|key| key.0);
+                expected.sort_by_key(|key| key.0);
+                assert_eq!(found, expected, "{count} notes at {sample}");
+            }
+        }
     }
 
     #[test]
@@ -810,6 +999,8 @@ mod tests {
         let snapshot = Snapshot::new(&project, 44_100);
         assert_eq!(events(&snapshot), [on(29_400, 1, 60), off(58_800, 1)]);
         assert_eq!(snapshot.sequence.loop_samples(), 0..16 * 29_400);
+        // The 4-bar clip, and a bar after it.
+        assert_eq!(snapshot.sequence.song_end_sample(), 20 * 29_400);
     }
 
     #[test]
@@ -832,7 +1023,7 @@ mod tests {
         let project = with_notes(vec![
             note(3, 67, 1920, 960),
             note(1, 60, 0, 480),
-            // Past the loop's end: it doesn't play, so it isn't there.
+            // Past the clip's end: it doesn't play, so it isn't there.
             note(2, 64, 20_000, 480),
         ]);
         let snapshot = Snapshot::new(&project, 48_000);
@@ -842,6 +1033,7 @@ mod tests {
             Some(&NoteSpan {
                 key: key(3),
                 pitch: 67,
+                velocity: 100,
                 start: 48_000,
                 end: 72_000,
             })
@@ -875,7 +1067,7 @@ mod tests {
         assert_eq!(added, Snapshot::new(&project, 44_100));
     }
 
-    /// The playhead's place in the loop, as a new snapshot takes over.
+    /// The playhead's place in the song, as a new snapshot takes over.
     #[test]
     fn the_playhead_keeps_its_place_in_the_music() {
         let project = project();
@@ -897,15 +1089,12 @@ mod tests {
         assert_eq!(at_96k.playhead_from(&at_120, 24_000), 48_000);
         assert_eq!(at_120.playhead_from(&at_96k, 48_000), 24_000);
 
-        // Past the end of a shorter loop, or waiting at the loop's end, it
-        // carries on from the loop's start.
+        // Past the end of a shorter loop it stays put: the processor decides
+        // what happens there.
         let mut shorter = project.clone();
         shorter.apply(&Command::SetLoopLength { bars: 1 }).unwrap();
         let one_bar = Snapshot::new(&shorter, 48_000).sequence;
-        assert_eq!(one_bar.playhead_from(&at_120, 95_999), 95_999);
-        assert_eq!(one_bar.playhead_from(&at_120, 96_000), 0);
-        assert_eq!(one_bar.playhead_from(&at_120, 300_000), 0);
-        assert_eq!(at_120.playhead_from(&at_120, 8 * 48_000), 0);
+        assert_eq!(one_bar.playhead_from(&at_120, 300_000), 300_000);
     }
 
     #[test]

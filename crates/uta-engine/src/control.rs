@@ -4,6 +4,7 @@
 use rtrb::{Consumer, Producer};
 
 use uta_core::TrackId;
+use uta_core::time::{MAX_TICKS, Ticks};
 
 use crate::{Command, NoteKey, Snapshot, Status, SynthSettings, TRACK_SLOTS};
 
@@ -122,12 +123,25 @@ impl Controller {
         }
     }
 
+    /// Plays from the play start: round the loop if it's on and the play
+    /// start is before its end, or else to the song's end, where it stops
+    /// and goes back to the play start.
     pub fn play(&mut self) -> Result<(), QueueFull> {
         self.send(Command::Play)
     }
 
+    /// Stops, and goes back to where Play was last pressed.
     pub fn stop(&mut self) -> Result<(), QueueFull> {
         self.send(Command::Stop)
+    }
+
+    /// While stopped, sets where Play starts from, in ticks from the start
+    /// of the song. While playing, jumps there instead, landing on its exact
+    /// sample at the start of the next block, and Stop still goes back to
+    /// where Play was pressed. What clicking the ruler does. See RFC-003,
+    /// "Playing a song".
+    pub fn locate(&mut self, ticks: Ticks) -> Result<(), QueueFull> {
+        self.send(Command::Locate(ticks.min(MAX_TICKS)))
     }
 
     /// Sends a whole new snapshot, which the audio thread swaps in at the
