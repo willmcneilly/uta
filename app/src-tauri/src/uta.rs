@@ -11,8 +11,8 @@ use crate::stress;
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, Command, CommandError, MixerStrip, Note, NoteId, PlacedTrack, Project, Session,
-    Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, ClipPosition, Command, CommandError, MixerStrip, Note, NoteId, PlacedClip,
+    PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -478,6 +478,42 @@ impl Uta {
     /// Moves a track to `index` in the order, counting from 0 at the top.
     pub fn move_track(&mut self, track: TrackId, index: usize) -> Result<(), String> {
         self.change(Command::MoveTrack { track, index }, None)
+    }
+
+    /// Adds an empty clip to `track`, from `start` for `length` ticks. The
+    /// caller picks its ID, so it can select it.
+    pub fn add_clip(
+        &mut self,
+        track: TrackId,
+        id: ClipId,
+        start: Ticks,
+        length: Ticks,
+    ) -> Result<(), String> {
+        self.change(
+            Command::AddClips {
+                clips: vec![PlacedClip {
+                    track,
+                    clip: Clip::new(id, start, length),
+                }],
+            },
+            None,
+        )
+    }
+
+    /// Sets clips' track, start and length: a move or a resize. Changes that
+    /// share a `gesture` (one drag) undo as one. It never trims the notes of
+    /// clips it lands on: clips may overlap, and both play.
+    pub fn set_clips(
+        &mut self,
+        clips: Vec<ClipPosition>,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetClips { clips }, gesture)
+    }
+
+    /// Deletes clips, with their notes, as one undo step.
+    pub fn remove_clips(&mut self, clips: Vec<ClipId>) -> Result<(), String> {
+        self.change(Command::RemoveClips { clips }, None)
     }
 
     /// Fills `clip` with [`stress::NOTE_COUNT`] notes, as one undoable
@@ -1822,6 +1858,122 @@ mod tests {
         assert!(uta.move_track(last, 3).is_err());
         uta.undo();
         assert_eq!(names(&uta), ["Synth 1", "Synth 2", "Synth 3"]);
+    }
+
+    fn position(uta: &Uta, clip: ClipId) -> (TrackId, Ticks, Ticks) {
+        let view = uta.project();
+        view.tracks
+            .iter()
+            .find_map(|track| {
+                let found = track.clips.iter().find(|c| c.id == clip)?;
+                Some((track.id, found.start, found.length))
+            })
+            .expect("the clip is in the project")
+    }
+
+    #[test]
+    fn a_drawn_clip_is_added_empty_to_its_track_as_one_undo_step() {
+        let mut uta = with_tracks(2);
+        let second = uta.project().tracks[1].id;
+        let id = ClipId::random();
+        uta.add_clip(second, id, 7_680, 3_840).unwrap();
+        assert_eq!(position(&uta, id), (second, 7_680, 3_840));
+        let clip = &uta.project().tracks[1].clips[0];
+        assert!(clip.notes.is_empty());
+        assert!(
+            uta.add_clip(second, id, 0, 3_840).is_err(),
+            "IDs are unique"
+        );
+        assert!(uta.add_clip(second, ClipId::random(), 0, 0).is_err());
+        uta.undo();
+        assert!(uta.project().tracks[1].clips.is_empty());
+    }
+
+    #[test]
+    fn a_clip_drag_across_tracks_undoes_as_one_step() {
+        let mut uta = with_tracks(2);
+        let [first, second] = [0, 1].map(|i| uta.project().tracks[i].id);
+        let clip = clip_id(&uta);
+        let before = uta.project();
+        for (track, start) in [(first, 960), (second, 1_920), (second, 3_840)] {
+            let moved = ClipPosition {
+                id: clip,
+                track,
+                start,
+                length: 3_840,
+            };
+            uta.set_clips(vec![moved], Some(7)).unwrap();
+        }
+        assert_eq!(position(&uta, clip), (second, 3_840, 3_840));
+        assert!(uta.project().tracks[0].clips.is_empty());
+        uta.undo();
+        assert_eq!(uta.project().tracks, before.tracks);
+    }
+
+    #[test]
+    fn a_clip_moved_over_another_trims_nothing() {
+        let mut uta = offline();
+        let track = first_track(&uta);
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 3_840)], None)
+            .unwrap();
+        let other = ClipId::random();
+        uta.add_clip(track, other, 7_680, 3_840).unwrap();
+        uta.add_notes(other, vec![note(2, 60, 0, 3_840)], None)
+            .unwrap();
+        let over = ClipPosition {
+            id: other,
+            track,
+            start: 0,
+            length: 3_840,
+        };
+        uta.set_clips(vec![over], Some(8)).unwrap();
+        let view = uta.project();
+        let lengths: Vec<_> = view.tracks[0]
+            .clips
+            .iter()
+            .map(|c| (c.start, c.notes[0].length))
+            .collect();
+        assert_eq!(lengths, [(0, 3_840), (0, 3_840)]);
+    }
+
+    #[test]
+    fn cancelling_a_clip_drag_puts_it_back() {
+        let mut uta = offline();
+        let track = first_track(&uta);
+        let clip = clip_id(&uta);
+        let before = uta.project();
+        let resized = ClipPosition {
+            id: clip,
+            track,
+            start: 0,
+            length: 7_680,
+        };
+        uta.set_clips(vec![resized], Some(9)).unwrap();
+        uta.cancel_gesture(9);
+        assert_eq!(uta.project().tracks, before.tracks);
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn deleting_a_clip_takes_its_notes_and_undo_brings_them_back() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 480)], None)
+            .unwrap();
+        let before = uta.project();
+        uta.remove_clips(vec![clip]).unwrap();
+        assert!(uta.project().tracks[0].clips.is_empty());
+        assert!(uta.remove_clips(vec![clip]).is_err());
+        uta.undo();
+        assert_eq!(uta.project().tracks, before.tracks);
+    }
+
+    #[test]
+    fn clip_positions_arrive_from_the_ui_as_json() {
+        let json = r#"{"id":"6f1c1b4e-0b1a-4e0a-9d7e-2f0b8c1a9e11","track":"0c9e7a52-5d0f-4b5e-8d53-1f2c3b4a5d6e","start":3840,"length":1920}"#;
+        let position: ClipPosition = serde_json::from_str(json).unwrap();
+        assert_eq!((position.start, position.length), (3_840, 1_920));
     }
 
     #[test]
