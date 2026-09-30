@@ -150,7 +150,7 @@ body {
 }
 
 .master .volume input {
-  width: 120px;
+  width: 100px;
 }
 
 .master-meter {
@@ -358,10 +358,12 @@ body {
   border-radius: 2px;
 }
 
+/* One row of label and value pairs, so the top stays short. */
 .output {
   display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 8px 16px;
+  grid-template-columns: repeat(3, max-content max-content);
+  align-items: center;
+  gap: 4px 10px;
 }
 
 .output dt {

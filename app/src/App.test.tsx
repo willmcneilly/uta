@@ -975,12 +975,12 @@ describe("App", () => {
     it("has a divider above it to drag or step with the arrow keys", async () => {
       vi.stubGlobal("innerHeight", 1000);
       await renderApp();
-      expect(editorHeight()).toBe("320px");
+      expect(editorHeight()).toBe("280px");
 
       fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
       fireEvent.pointerMove(window, { clientY: 400 });
-      expect(editorHeight()).toBe("420px");
-      fireEvent.pointerMove(window, { clientY: 620 });
+      expect(editorHeight()).toBe("380px");
+      fireEvent.pointerMove(window, { clientY: 580 });
       expect(editorHeight()).toBe("200px");
       // No smaller than the smallest.
       fireEvent.pointerMove(window, { clientY: 900 });

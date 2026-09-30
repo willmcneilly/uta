@@ -77,7 +77,7 @@ function sameStatus(a: Status | null, b: Status): boolean {
 type Tab = "notes" | "sound";
 
 /** The editor's height when the app opens, and its limits, in CSS pixels. */
-const EDITOR_HEIGHT = 320;
+const EDITOR_HEIGHT = 280;
 const MIN_EDITOR_HEIGHT = 160;
 /** What the editor always leaves above it for the transport and the tracks. */
 const ABOVE_EDITOR = 260;
@@ -272,7 +272,7 @@ function App({ createRenderer }: Props) {
         <section className="master" aria-label="Master">
           {project && <Volume project={project} onChange={changeVolume} />}
           <div className="master-meter">
-            <Meter level={level} label="Level meter" width={160} />
+            <Meter level={level} label="Level meter" width={120} />
             <button
               type="button"
               className="clip-light"
