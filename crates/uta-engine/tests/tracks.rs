@@ -476,6 +476,58 @@ fn a_deleted_tracks_notes_release_and_its_slot_waits_for_them() {
     assert!(jump <= limit, "jump of {jump} at {at}, limit {limit}");
 }
 
+/// With all 32 slots taken, a new track added just after another is deleted
+/// has to take the deleted track's slot while its note is still releasing.
+/// That note fades out over the take-over time instead of carrying on in the
+/// new track's slot, and without a click.
+#[test]
+fn a_slot_handed_on_while_it_still_sounds_fades_its_notes_out() {
+    let slow_release = SynthSettings {
+        release_seconds: 0.3,
+        ..sine()
+    };
+    let mut tracks: Vec<Track> = (1..TRACK_SLOTS as u128)
+        .map(|n| track(n, sine(), MixerStrip::default(), &[]))
+        .collect();
+    let last = TRACK_SLOTS as u128;
+    tracks.push(track(last, slow_release, MixerStrip::default(), &held(76)));
+    let mut project = song(tracks);
+    let mut renderer = Renderer::new(config(1), Snapshot::from(&project), 128);
+    renderer.controller.play().unwrap();
+    renderer.render_seconds(0.25);
+    let slot = renderer.controller.slot(track_id(last)).unwrap();
+
+    change(
+        &mut project,
+        &mut renderer,
+        Command::RemoveTracks {
+            tracks: vec![track_id(last)],
+        },
+    );
+    change(
+        &mut project,
+        &mut renderer,
+        Command::AddTracks {
+            tracks: vec![PlacedTrack {
+                index: TRACK_SLOTS - 1,
+                track: track(last + 1, sine(), MixerStrip::default(), &[]),
+            }],
+        },
+    );
+    // No other slot is left, so it gets the one still sounding.
+    assert_eq!(renderer.controller.slot(track_id(last + 1)), Some(slot));
+
+    // Its note fades out within the take-over time (5 ms, 240 samples),
+    // long before its 0.3 s release would end.
+    renderer.take_status();
+    renderer.render(1_280);
+    let status = renderer.take_status();
+    assert_eq!(status.sounding_slots & (1 << slot), 0, "still sounding");
+    let limit = step_limit(76, 1.0);
+    let (jump, at) = max_jump(renderer.samples());
+    assert!(jump <= limit, "jump of {jump} at {at}, limit {limit}");
+}
+
 /// Adding, duplicating, removing and reordering tracks while the loop plays,
 /// each change in the middle of notes: no click, the duplicate plays in its
 /// own slot, and after Stop nothing is left sounding.

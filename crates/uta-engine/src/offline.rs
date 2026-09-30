@@ -120,8 +120,7 @@ impl Renderer {
 
 /// Plays the loop in `snapshot` from its start for `seconds`, then stops and
 /// renders the notes' release (the longest of any track's), so it ends in
-/// silence. What `uta render`
-/// writes.
+/// silence. What `uta render` writes.
 pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
     let release = snapshot
         .tracks()

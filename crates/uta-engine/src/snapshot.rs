@@ -45,8 +45,9 @@ impl TrackSnapshot {
         self.id
     }
 
-    /// The slot it plays in, from 0 to [`TRACK_SLOTS`]. A track keeps its
-    /// slot for as long as it's in the project.
+    /// The slot it plays in, from 0 up to but not including
+    /// [`TRACK_SLOTS`]. A track keeps its slot for as long as it's in the
+    /// project.
     pub fn slot(&self) -> usize {
         self.slot
     }
