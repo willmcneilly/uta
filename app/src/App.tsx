@@ -125,13 +125,19 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   if (project && selectedId !== null && !project.tracks.some((t) => t.id === selectedId)) {
     setSelectedId(null);
   }
+  // The selected clip's track, wherever the clip has been moved to.
+  const clipTrack =
+    project?.tracks.find((t) => t.clips.some((c) => c.id === selectedClipId)) ?? null;
+  // A selected clip that has gone stays unselected too. One moved to
+  // another track takes the selection with it.
+  if (project && selectedClipId !== null && !clipTrack) setSelectedClipId(null);
+  if (clipTrack && clipTrack.id !== selectedId) setSelectedId(clipTrack.id);
   // The selected track, or the top one if none is.
   const track: TrackView | null =
-    project?.tracks.find((t) => t.id === selectedId) ?? project?.tracks[0] ?? null;
-  // The Notes tab shows the selected clip. When it isn't on the selected
-  // track (another track was selected, or the clip has gone), it shows the
-  // track's first clip.
-  const clip = track?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
+    clipTrack ?? project?.tracks.find((t) => t.id === selectedId) ?? project?.tracks[0] ?? null;
+  // The Notes tab shows the selected clip, or the track's first if none is.
+  const clip =
+    clipTrack?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
 
   useEffect(() => {
     let active = true;
@@ -201,10 +207,17 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     soloTrackAlone(id).then(setProject, report);
   };
 
-  /** Selects `id` once Rust has sent the project with it in. */
+  /** Selects a track. The selected clip stays selected if it's on it. */
+  const selectTrack = (id: string | null) => {
+    setSelectedId(id);
+    if (clipTrack === null || clipTrack.id !== id) setSelectedClipId(null);
+  };
+
+  /** Selects track `id` once Rust has sent the project with it in. */
   const showAndSelect = (id: string | null) => (view: ProjectView) => {
     setProject(view);
     setSelectedId(id);
+    setSelectedClipId(null);
   };
 
   const newTrack = () => {
@@ -351,7 +364,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
             project={project}
             selected={track?.id ?? null}
             levels={trackLevels}
-            onSelect={setSelectedId}
+            onSelect={selectTrack}
             onMixer={changeMixer}
             onSoloAlone={soloAlone}
             onAdd={newTrack}
@@ -368,7 +381,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
             clock={clock}
             frames={frames}
             headers={headers}
-            onSelectTrack={setSelectedId}
+            onSelectTrack={selectTrack}
             onSelectClip={selectClip}
             onOpenClip={(trackId, clipId) => {
               selectClip(trackId, clipId);

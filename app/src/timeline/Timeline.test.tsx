@@ -501,6 +501,31 @@ describe("the timeline", () => {
       await waitFor(() => expect(selectedClip()).toBe("clip-2"));
     });
 
+    it("keeps a clip open, and its track selected, when it's moved to another track", async () => {
+      await renderApp();
+      await press(8.5 * BAR, 1);
+      await moveTo(8.5 * BAR, 0);
+      await release();
+      await waitFor(() => expect(drawn()).toContainEqual(["clip-2", 0, 8 * BAR, 2 * BAR]));
+      expect(selectedClip()).toBe("clip-2");
+      expect(screen.getByRole("listitem", { name: "Synth 1" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+      expect(pianoRollClip()).toEqual([8 * BAR, 10 * BAR]);
+    });
+
+    it("keeps the selected clip when its track's header is clicked, and not another's", async () => {
+      await renderApp();
+      await click(8.5 * BAR, 1);
+      fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 2" }));
+      await waitFor(() => expect(selectedClip()).toBe("clip-2"));
+      fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 1" }));
+      // Synth 1's first clip is shown instead.
+      await waitFor(() => expect(selectedClip()).toBe("clip-1"));
+      await waitFor(() => expect(pianoRollClip()).toEqual([0, 4 * BAR]));
+    });
+
     it("deletes the selected clip with Backspace", async () => {
       await renderApp();
       await click(8.5 * BAR, 1);
