@@ -6,6 +6,11 @@
   --border: #d9d9d6;
   --meter-track: #e3e3e0;
   --error: #b42318;
+  --selected: #e8f0fb;
+  --accent: #1f5fbf;
+  --mute-on: #3b82c4;
+  --solo-on: #e0b000;
+  --clip-on: #f85149;
   --roll-background: #ffffff;
   --roll-black-key-row: #f1f1ef;
   --roll-outside-loop: rgba(0, 0, 0, 0.07);
@@ -39,6 +44,11 @@
     --border: #3a3a3c;
     --meter-track: #3a3a3c;
     --error: #ff6b5e;
+    --selected: #243349;
+    --accent: #7ab8ff;
+    --mute-on: #4a90d9;
+    --solo-on: #d4a800;
+    --clip-on: #ff6b5e;
     --roll-background: #232325;
     --roll-black-key-row: #1c1c1e;
     --roll-outside-loop: rgba(0, 0, 0, 0.3);
@@ -70,26 +80,36 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   box-sizing: border-box;
   height: 100vh;
-  padding: 16px;
+  padding: 12px;
 }
 
-.panels {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
-  gap: 12px;
+/* The transport, the master and the output, wrapping on a narrow window. */
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.app > section,
-.panels > section,
-.output {
+.top > section,
+.output,
+.arrangement,
+.editor {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 16px;
   margin: 0;
+}
+
+.top > section,
+.output {
+  padding: 10px 14px;
+}
+
+.top > .transport {
+  flex: 1 1 520px;
 }
 
 .transport {
@@ -123,9 +143,198 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.level {
-  display: grid;
+.master {
+  display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+.master .volume input {
+  width: 120px;
+}
+
+.master-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Lit when the master has clipped, until it's clicked. */
+.clip-light {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--meter-track);
+}
+
+.clip-light[data-lit="true"] {
+  background: var(--clip-on);
+  border-color: var(--clip-on);
+  box-shadow: 0 0 6px var(--clip-on);
+}
+
+/* The track headers, with the timeline beside them. */
+.arrangement {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.track-headers {
+  flex: 0 0 272px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.track-headers ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.track-header {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.track-header.selected {
+  background: var(--selected);
+}
+
+.track-header.dragging {
+  opacity: 0.5;
+}
+
+.track-header.drop-above {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.track-header.drop-below {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.track-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.track-name {
+  flex: 1;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.track-title button {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.track-title .mute[aria-pressed="true"] {
+  background: var(--mute-on);
+  border-color: var(--mute-on);
+  color: #fff;
+}
+
+.track-title .solo[aria-pressed="true"] {
+  background: var(--solo-on);
+  border-color: var(--solo-on);
+  color: #1d1d1f;
+}
+
+.track-setting {
+  display: grid;
+  grid-template-columns: 28px 1fr 56px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.track-setting input {
+  min-width: 0;
+}
+
+.track-setting output {
+  text-align: right;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.add-track {
+  margin: 8px 10px;
+}
+
+.timeline {
+  flex: 1;
+  background: var(--roll-background);
+}
+
+/* Drag it to share the height between the timeline and the editor. */
+.divider {
+  flex: 0 0 6px;
+  margin: -4px 0;
+  border-radius: 3px;
+  cursor: row-resize;
+}
+
+.divider:hover,
+.divider:focus-visible {
+  background: var(--border);
+  outline: none;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs [role="tab"][aria-selected="true"] {
+  font-weight: 600;
+}
+
+.tabs .editing {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.tab-panel > .synth {
+  padding: 12px 16px;
+}
+
+.tab-panel > .empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
 }
 
 .volume {
@@ -224,12 +433,8 @@ body {
 .piano-roll {
   position: relative;
   flex: 1;
-  min-height: 240px;
+  min-height: 0;
   overflow: hidden;
-}
-
-.app > .piano-roll {
-  padding: 0;
 }
 
 .piano-roll-canvas {

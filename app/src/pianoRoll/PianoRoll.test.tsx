@@ -5,7 +5,13 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { EditMenuItem, Frame, NoteView, ProjectView } from "../backend";
-import { type RecordingRenderer, projectView, recordingFactory } from "./testing";
+import {
+  type RecordingRenderer,
+  firstClip,
+  projectView,
+  recordingFactory,
+  withFirstClipNotes,
+} from "./testing";
 import type { RendererFactory } from "./renderer";
 import { pitchToY, tickToX, velocityLane, velocityPerPixel } from "./viewport";
 
@@ -35,9 +41,8 @@ const note = (id: string, pitch: number, start: number, length = 480): NoteView 
 });
 
 const withNotes = (notes: NoteView[]): ProjectView => ({
-  ...project,
+  ...withFirstClipNotes(project, notes),
   canUndo: true,
-  track: { ...project.track, clip: { ...project.track.clip, notes } },
 });
 
 // jsdom doesn't lay anything out, so the piano roll is given a size: 800 px
@@ -63,7 +68,7 @@ beforeEach(() => {
     (cmd, payload) => {
       const args = (payload ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args });
-      const notes = project.track.clip.notes;
+      const notes = firstClip(project).notes;
       const gesture = args.gesture as number | null;
       if (gesture !== null && gesture !== undefined && !beforeGesture.has(gesture)) {
         beforeGesture.set(gesture, project);
@@ -219,7 +224,7 @@ describe("drawing a note", () => {
   it("plays the note as you place it", async () => {
     await renderApp();
     await press(1000, 64);
-    expect(sent("audition_note")).toEqual([{ pitch: 64, velocity: 100 }]);
+    expect(sent("audition_note")).toEqual([{ track: "track-1", pitch: 64, velocity: 100 }]);
   });
 
   it("drags out its length as part of the same gesture", async () => {
@@ -305,8 +310,8 @@ describe("moving and resizing a note", () => {
     await moveTo(240 + 960, 63); // time only
     await moveTo(240 + 960, 58);
     expect(sent("audition_note")).toEqual([
-      { pitch: 63, velocity: 100 },
-      { pitch: 58, velocity: 100 },
+      { track: "track-1", pitch: 63, velocity: 100 },
+      { track: "track-1", pitch: 58, velocity: 100 },
     ]);
   });
 
@@ -527,6 +532,8 @@ describe("copy, paste and duplicate from the Edit menu", () => {
         playing: false,
         playhead: 7680 + 100,
         peak: 0,
+        trackPeaks: {},
+        clips: 0,
         dropouts: 0,
         output: {
           state: "running",

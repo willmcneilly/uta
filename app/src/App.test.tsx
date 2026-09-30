@@ -12,8 +12,21 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { Frame, NoteView, ProjectView, SynthParam, SynthView } from "./backend";
-import { type RecordingRenderer, projectView, recordingFactory } from "./pianoRoll/testing";
+import type {
+  Frame,
+  MixerView,
+  NoteView,
+  ProjectView,
+  SynthParam,
+  SynthView,
+  TrackView,
+} from "./backend";
+import {
+  type RecordingRenderer,
+  projectView,
+  recordingFactory,
+  trackView,
+} from "./pianoRoll/testing";
 import type { RendererFactory } from "./pianoRoll/renderer";
 
 // Tauri's mocked back end stands in for Rust. It keeps its own project so the
@@ -56,6 +69,8 @@ const frame = (overrides: Partial<Frame> = {}): Frame => ({
   playing: false,
   playhead: 0,
   peak: 0,
+  trackPeaks: {},
+  clips: 0,
   dropouts: 0,
   output: {
     state: "running",
@@ -67,6 +82,21 @@ const frame = (overrides: Partial<Frame> = {}): Frame => ({
   },
   ...overrides,
 });
+
+/** `project` with the track `id` changed by `change`, as Rust would send it back. */
+function changeTrack(id: string, change: (track: TrackView) => TrackView): ProjectView {
+  return {
+    ...project,
+    canUndo: true,
+    tracks: project.tracks.map((track) => (track.id === id ? change(track) : track)),
+  };
+}
+
+/** The name Rust gives a new track: one more than the highest number in use. */
+function nextName(): string {
+  const numbers = project.tracks.map((track) => Number(track.name.replace("Synth ", "")));
+  return `Synth ${Math.max(0, ...numbers) + 1}`;
+}
 
 // jsdom doesn't lay anything out, so the piano roll is given a size.
 class FixedSizeObserver {
@@ -105,18 +135,78 @@ beforeEach(() => {
         case "set_loop_length": {
           const bars = args.bars as number;
           const loopLength = bars * 3840;
-          const clip = { ...project.track.clip, length: loopLength };
-          project = { ...project, loopBars: bars, loopLength, track: { ...project.track, clip } };
+          const [first, ...rest] = project.tracks;
+          const [clip, ...clips] = first.clips;
+          const resized = { ...first, clips: [{ ...clip, length: loopLength }, ...clips] };
+          project = { ...project, loopBars: bars, loopLength, tracks: [resized, ...rest] };
           return project;
         }
         case "set_synth_param": {
           const param = args.param as SynthParam;
           // Rust stores f32s, so what comes back isn't quite what was sent.
           const value = param.name === "waveform" ? param.value : Math.fround(param.value);
-          const synth = { ...project.track.synth, [SYNTH_FIELDS[param.name]]: value };
-          project = { ...project, canUndo: true, track: { ...project.track, synth } };
+          project = changeTrack(args.track as string, (track) => ({
+            ...track,
+            synth: { ...track.synth, [SYNTH_FIELDS[param.name]]: value },
+          }));
           return project;
         }
+        case "set_track_mixer": {
+          const mixer = args.mixer as MixerView;
+          // Rust stores f32s, so what comes back isn't quite what was sent.
+          project = changeTrack(args.track as string, (track) => ({
+            ...track,
+            mixer: { ...mixer, volumeDb: Math.fround(mixer.volumeDb), pan: Math.fround(mixer.pan) },
+          }));
+          return project;
+        }
+        case "solo_track_alone":
+          project = {
+            ...project,
+            canUndo: true,
+            tracks: project.tracks.map((track) => ({
+              ...track,
+              mixer: { ...track.mixer, solo: track.id === args.track },
+            })),
+          };
+          return project;
+        case "add_track":
+          project = {
+            ...project,
+            canUndo: true,
+            tracks: [...project.tracks, trackView(args.id as string, nextName())],
+          };
+          return project;
+        case "duplicate_track": {
+          const index = project.tracks.findIndex((track) => track.id === args.track);
+          const copy = {
+            ...project.tracks[index],
+            id: args.id as string,
+            name: nextName(),
+            clips: project.tracks[index].clips.map((clip) => ({ ...clip, id: `${clip.id}-copy` })),
+          };
+          const tracks = [...project.tracks];
+          tracks.splice(index + 1, 0, copy);
+          project = { ...project, canUndo: true, tracks };
+          return project;
+        }
+        case "remove_track":
+          project = {
+            ...project,
+            canUndo: true,
+            tracks: project.tracks.filter((track) => track.id !== args.track),
+          };
+          return project;
+        case "move_track": {
+          const moving = project.tracks.find((track) => track.id === args.track)!;
+          const tracks = project.tracks.filter((track) => track !== moving);
+          tracks.splice(args.index as number, 0, moving);
+          project = { ...project, canUndo: true, tracks };
+          return project;
+        }
+        case "add_stress_notes":
+          // What's added is Rust's business; the tests check where it goes.
+          return project;
         case "subscribe":
           frames = args.onFrame as Channel<Frame>;
           return null;
@@ -320,8 +410,13 @@ describe("App", () => {
       synth().getByRole("slider", { name: new RegExp(`^${name}`) });
     const synthCalls = () => calls.filter((c) => c.cmd === "set_synth_param").map((c) => c.args);
 
-    it("shows the synth settings Rust sends", async () => {
+    async function renderSound() {
       await renderApp();
+      fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+    }
+
+    it("shows the synth settings Rust sends", async () => {
+      await renderSound();
       expect(synth().getByRole("radio", { name: "Saw" })).toBeChecked();
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "20.0 kHz");
       expect(slider("Cutoff")).toHaveValue("1000");
@@ -334,7 +429,7 @@ describe("App", () => {
     });
 
     it("sends each waveform to Rust and shows what comes back", async () => {
-      await renderApp();
+      await renderSound();
       for (const [label, value] of [
         ["Sine", "sine"],
         ["Triangle", "triangle"],
@@ -352,7 +447,7 @@ describe("App", () => {
     });
 
     it("focuses a waveform when it's clicked, and moves with the arrow keys", async () => {
-      await renderApp();
+      await renderSound();
       const radio = (name: string) => synth().getByRole("radio", { name });
       // Only the checked waveform is in the Tab order.
       expect(radio("Saw")).toHaveAttribute("tabindex", "0");
@@ -380,7 +475,7 @@ describe("App", () => {
     });
 
     it("sends each slider's setting to Rust and shows what comes back", async () => {
-      await renderApp();
+      await renderSound();
       // Halfway along each slider: log scales land on the geometric middle.
       const cases: [string, SynthParam["name"], number, string][] = [
         ["Cutoff", "cutoff_hz", 632.456, "632 Hz"],
@@ -404,7 +499,7 @@ describe("App", () => {
     });
 
     it("sends the limits exactly at each end of a slider", async () => {
-      await renderApp();
+      await renderSound();
       fireEvent.change(slider("Cutoff"), { target: { value: "0" } });
       fireEvent.change(slider("Release"), { target: { value: "1000" } });
       await waitFor(() => expect(synthCalls()).toHaveLength(2));
@@ -415,7 +510,7 @@ describe("App", () => {
     });
 
     it("marks every change in one drag with the same gesture", async () => {
-      await renderApp();
+      await renderSound();
       fireEvent.pointerDown(slider("Cutoff"));
       fireEvent.change(slider("Cutoff"), { target: { value: "800" } });
       fireEvent.change(slider("Cutoff"), { target: { value: "600" } });
@@ -435,9 +530,9 @@ describe("App", () => {
     });
 
     it("follows undo and redo, which Rust announces", async () => {
-      await renderApp();
+      await renderSound();
       const undone = projectView();
-      undone.track.synth = {
+      undone.tracks[0].synth = {
         waveform: "square",
         cutoffHz: 200,
         resonance: 0.8,
@@ -513,5 +608,400 @@ describe("App", () => {
     failWith = "the engine's command queue is full";
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("command queue is full");
+  });
+
+  describe("tracks", () => {
+    /** Three tracks: the first as usual, a muted one panned left, and a soloed one with no clips. */
+    function threeTracks() {
+      const [first] = project.tracks;
+      const second: TrackView = {
+        ...trackView("track-2", "Synth 2", [
+          {
+            id: "clip-2",
+            start: 0,
+            length: 3840,
+            notes: [note("bass", 60, 0)],
+          },
+        ]),
+        mixer: { volumeDb: -6, pan: -0.5, mute: true, solo: false },
+        synth: { ...first.synth, waveform: "square" },
+      };
+      const third: TrackView = {
+        ...trackView("track-3", "Synth 3"),
+        mixer: { volumeDb: 3, pan: 1, mute: false, solo: true },
+      };
+      project = { ...project, tracks: [first, second, third] };
+    }
+
+    const headers = () => within(screen.getByRole("region", { name: "Tracks" }));
+    const header = (name: string) => headers().getByRole("listitem", { name });
+    // A header is selected as soon as the pointer goes down on it, so a
+    // drag of its volume selects it too.
+    const select = (name: string) => fireEvent.pointerDown(header(name));
+    const headerNames = () =>
+      headers()
+        .getAllByRole("listitem")
+        .map((item) => item.getAttribute("aria-label"));
+    const sent = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+    const openTab = (name: "Notes" | "Sound") => fireEvent.click(screen.getByRole("tab", { name }));
+    const synthWaveform = () =>
+      within(screen.getByRole("region", { name: "Synth" }))
+        .getAllByRole<HTMLInputElement>("radio")
+        .find((radio) => radio.checked)
+        ?.closest("label")?.textContent;
+
+    it("draws a header for every track Rust sends, in order", async () => {
+      threeTracks();
+      await renderApp();
+      expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]);
+
+      const second = within(header("Synth 2"));
+      expect(second.getByRole("slider", { name: "Synth 2 volume" })).toHaveValue("-6");
+      expect(second.getByText("-6.0 dB")).toBeInTheDocument();
+      expect(second.getByRole("slider", { name: "Synth 2 pan" })).toHaveValue("-0.5");
+      expect(second.getByText("L 50")).toBeInTheDocument();
+      expect(second.getByRole("button", { name: "Mute Synth 2" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(second.getByRole("button", { name: "Solo Synth 2" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(second.getByRole("img", { name: "Synth 2 meter" }).tagName).toBe("CANVAS");
+
+      const third = within(header("Synth 3"));
+      expect(third.getByRole("slider", { name: "Synth 3 volume" })).toHaveValue("3");
+      expect(third.getByText("R 100")).toBeInTheDocument();
+      expect(third.getByRole("button", { name: "Solo Synth 3" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      // Undo, say, sends a new project from Rust.
+      await act(() => emit("project-changed", projectView()));
+      expect(headerNames()).toEqual(["Synth 1"]);
+    });
+
+    it("offers volumes from -60 to +6 dB", async () => {
+      await renderApp();
+      const slider = header("Synth 1").querySelector("input[aria-label='Synth 1 volume']");
+      expect(slider).toHaveAttribute("min", "-60");
+      expect(slider).toHaveAttribute("max", "6");
+    });
+
+    it("sends volume and pan drags to Rust, one gesture per drag, and shows what comes back", async () => {
+      threeTracks();
+      await renderApp();
+      const volume = () => screen.getByRole("slider", { name: "Synth 2 volume" });
+      const pan = () => screen.getByRole("slider", { name: "Synth 2 pan" });
+      fireEvent.pointerDown(volume());
+      fireEvent.change(volume(), { target: { value: "-3" } });
+      fireEvent.change(volume(), { target: { value: "4.5" } });
+      fireEvent.pointerUp(window);
+      await waitFor(() =>
+        expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument(),
+      );
+      fireEvent.pointerDown(pan());
+      fireEvent.change(pan(), { target: { value: "0.25" } });
+      fireEvent.pointerUp(window);
+
+      await waitFor(() => expect(within(header("Synth 2")).getByText("R 25")).toBeInTheDocument());
+      expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument();
+      const mixers = sent("set_track_mixer");
+      expect(mixers.map((args) => args.track)).toEqual(["track-2", "track-2", "track-2"]);
+      expect(mixers.map((args) => args.mixer)).toEqual([
+        { volumeDb: -3, pan: -0.5, mute: true, solo: false },
+        { volumeDb: 4.5, pan: -0.5, mute: true, solo: false },
+        { volumeDb: 4.5, pan: 0.25, mute: true, solo: false },
+      ]);
+      expect(mixers[0].gesture).toEqual(expect.any(Number));
+      expect(mixers[1].gesture).toBe(mixers[0].gesture);
+      expect(mixers[2].gesture).not.toBe(mixers[0].gesture);
+    });
+
+    it("sends mute and solo to Rust", async () => {
+      threeTracks();
+      await renderApp();
+      fireEvent.click(screen.getByRole("button", { name: "Mute Synth 2" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Mute Synth 2" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        ),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Solo Synth 1" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Solo Synth 1" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        ),
+      );
+      expect(sent("set_track_mixer")).toEqual([
+        {
+          track: "track-2",
+          mixer: { volumeDb: -6, pan: -0.5, mute: false, solo: false },
+          gesture: null,
+        },
+        {
+          track: "track-1",
+          mixer: { volumeDb: 0, pan: 0, mute: false, solo: true },
+          gesture: null,
+        },
+      ]);
+      // Additive: the other soloed track stays soloed.
+      expect(screen.getByRole("button", { name: "Solo Synth 3" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("solos a track on its own with ⌥-click", async () => {
+      threeTracks();
+      await renderApp();
+      fireEvent.click(screen.getByRole("button", { name: "Solo Synth 1" }), {
+        altKey: true,
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Solo Synth 3" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        ),
+      );
+      expect(sent("solo_track_alone")).toEqual([{ track: "track-1" }]);
+      expect(sent("set_track_mixer")).toEqual([]);
+      expect(screen.getByRole("button", { name: "Solo Synth 1" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("adds a track below the others, and selects it", async () => {
+      await renderApp();
+      fireEvent.click(screen.getByRole("button", { name: "+ Add track" }));
+      await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2"]));
+      const [added] = sent("add_track");
+      expect(added.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
+      expect(header("Synth 1")).not.toHaveAttribute("aria-current");
+      expect(screen.getByText("Synth 2 has no clips yet.")).toBeInTheDocument();
+    });
+
+    it("can't add more than the most tracks", async () => {
+      project = { ...project, maxTracks: 1 };
+      await renderApp();
+      expect(screen.getByRole("button", { name: "+ Add track" })).toBeDisabled();
+    });
+
+    it("adds, duplicates and deletes tracks from the Track menu", async () => {
+      threeTracks();
+      await renderApp();
+      select("Synth 2");
+
+      await act(() => emit("track-menu", "duplicate-track"));
+      await waitFor(() =>
+        expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 4", "Synth 3"]),
+      );
+      const [duplicated] = sent("duplicate_track");
+      expect(duplicated.track).toBe("track-2");
+      expect(duplicated.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(header("Synth 4")).toHaveAttribute("aria-current", "true");
+
+      await act(() => emit("track-menu", "delete-track"));
+      await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]));
+      expect(sent("remove_track")).toEqual([{ track: duplicated.id }]);
+      // The track below takes the deleted one's place.
+      expect(header("Synth 3")).toHaveAttribute("aria-current", "true");
+
+      await act(() => emit("track-menu", "delete-track"));
+      await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2"]));
+      // The last track's place goes to the one above.
+      expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
+
+      await act(() => emit("track-menu", "add-track"));
+      await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]));
+      expect(sent("add_track")).toHaveLength(1);
+    });
+
+    describe("reordering", () => {
+      /** Lays the headers out 60 px tall, one under the other, as jsdom doesn't. */
+      function layOut() {
+        headers()
+          .getAllByRole("listitem")
+          .forEach((item, index) => {
+            item.getBoundingClientRect = () =>
+              ({ top: index * 60, bottom: index * 60 + 60 }) as DOMRect;
+          });
+      }
+      const grab = (name: string) => within(header(name)).getByText(name);
+
+      it("moves a track to where its header is dropped, as one command", async () => {
+        threeTracks();
+        await renderApp();
+        layOut();
+        fireEvent.pointerDown(grab("Synth 3"), { button: 0, clientY: 150 });
+        fireEvent.pointerMove(window, { clientY: 80 });
+        expect(header("Synth 2")).toHaveClass("drop-above");
+        fireEvent.pointerMove(window, { clientY: 20 });
+        expect(header("Synth 1")).toHaveClass("drop-above");
+        fireEvent.pointerUp(window, { clientY: 20 });
+
+        await waitFor(() => expect(headerNames()).toEqual(["Synth 3", "Synth 1", "Synth 2"]));
+        expect(sent("move_track")).toEqual([{ track: "track-3", index: 0 }]);
+        expect(
+          headers()
+            .getAllByRole("listitem")
+            .some((item) => item.className.includes("drop")),
+        ).toBe(false);
+      });
+
+      it("moves a track down", async () => {
+        threeTracks();
+        await renderApp();
+        layOut();
+        fireEvent.pointerDown(grab("Synth 1"), { button: 0, clientY: 30 });
+        fireEvent.pointerMove(window, { clientY: 100 });
+        expect(header("Synth 2")).toHaveClass("drop-below");
+        fireEvent.pointerUp(window);
+        await waitFor(() => expect(sent("move_track")).toEqual([{ track: "track-1", index: 1 }]));
+      });
+
+      it("sends nothing when a header is dropped where it was, or on Esc", async () => {
+        threeTracks();
+        await renderApp();
+        layOut();
+        fireEvent.pointerDown(grab("Synth 2"), { button: 0, clientY: 90 });
+        fireEvent.pointerMove(window, { clientY: 100 });
+        fireEvent.pointerUp(window);
+        fireEvent.pointerDown(grab("Synth 2"), { button: 0, clientY: 90 });
+        fireEvent.pointerMove(window, { clientY: 10 });
+        fireEvent.keyDown(window, { key: "Escape" });
+        fireEvent.pointerUp(window);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(sent("move_track")).toEqual([]);
+        expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]);
+      });
+    });
+
+    it("shows the selected track's clip in Notes and its synth in Sound", async () => {
+      threeTracks();
+      await renderApp();
+      expect(header("Synth 1")).toHaveAttribute("aria-current", "true");
+      await waitFor(() => expect(drawnNotes().map(([id]) => id)).toEqual(["low", "high"]));
+
+      select("Synth 2");
+      expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
+      await waitFor(() => expect(drawnNotes()).toEqual([["bass", 60, 0, 100]]));
+      openTab("Sound");
+      expect(synthWaveform()).toBe("Square");
+      fireEvent.click(
+        within(screen.getByRole("region", { name: "Synth" })).getByRole("radio", { name: "Sine" }),
+      );
+      await waitFor(() => expect(sent("set_synth_param")).toHaveLength(1));
+      expect(sent("set_synth_param")[0].track).toBe("track-2");
+
+      select("Synth 1");
+      expect(synthWaveform()).toBe("Saw");
+
+      select("Synth 3");
+      openTab("Notes");
+      expect(screen.getByText("Synth 3 has no clips yet.")).toBeInTheDocument();
+      expect(screen.queryByRole("application", { name: "Notes" })).not.toBeInTheDocument();
+    });
+
+    it("sends the stress notes to the clip in the Notes tab", async () => {
+      threeTracks();
+      await renderApp();
+      select("Synth 2");
+      await act(() => emit("develop-menu", "add-stress-notes"));
+      await waitFor(() => expect(sent("add_stress_notes")).toEqual([{ clip: "clip-2" }]));
+
+      // A track with no clips has nowhere to put them.
+      select("Synth 3");
+      await act(() => emit("develop-menu", "add-stress-notes"));
+      expect(sent("add_stress_notes")).toHaveLength(1);
+    });
+
+    it("says so when there are no tracks", async () => {
+      project = { ...project, tracks: [] };
+      await renderApp();
+      expect(screen.getByText(/No track selected/)).toBeInTheDocument();
+      await act(() => emit("track-menu", "delete-track"));
+      await act(() => emit("track-menu", "duplicate-track"));
+      expect(commands()).not.toContain("remove_track");
+      expect(commands()).not.toContain("duplicate_track");
+    });
+  });
+
+  describe("clip light", () => {
+    const light = () => screen.getByRole("button", { name: /Master (clipped|hasn't clipped)/ });
+
+    it("lights when the master clips, and stays lit until it's clicked", async () => {
+      await renderApp();
+      sendFrame();
+      expect(light()).toHaveAttribute("data-lit", "false");
+      sendFrame({ clips: 4 });
+      expect(light()).toHaveAttribute("data-lit", "true");
+      expect(light()).toHaveAccessibleName("Master clipped. Click to reset");
+      // It stays lit with no new clips.
+      sendFrame({ clips: 4 });
+      expect(light()).toHaveAttribute("data-lit", "true");
+
+      fireEvent.click(light());
+      expect(light()).toHaveAttribute("data-lit", "false");
+      sendFrame({ clips: 4 });
+      expect(light()).toHaveAttribute("data-lit", "false");
+      sendFrame({ clips: 9 });
+      expect(light()).toHaveAttribute("data-lit", "true");
+    });
+  });
+
+  describe("editor", () => {
+    const divider = () => screen.getByRole("separator", { name: "Editor height" });
+    const editorHeight = () => screen.getByRole("region", { name: "Editor" }).style.height;
+
+    it("opens on Notes, and switches between Notes and Sound", async () => {
+      await renderApp();
+      expect(screen.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("application", { name: "Notes" })).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Synth" })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+      expect(screen.getByRole("tab", { name: "Sound" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("region", { name: "Synth" })).toBeInTheDocument();
+      expect(screen.queryByRole("application", { name: "Notes" })).not.toBeInTheDocument();
+    });
+
+    it("has a divider above it to drag or step with the arrow keys", async () => {
+      vi.stubGlobal("innerHeight", 1000);
+      await renderApp();
+      expect(editorHeight()).toBe("320px");
+
+      fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
+      fireEvent.pointerMove(window, { clientY: 400 });
+      expect(editorHeight()).toBe("420px");
+      fireEvent.pointerMove(window, { clientY: 620 });
+      expect(editorHeight()).toBe("200px");
+      // No smaller than the smallest.
+      fireEvent.pointerMove(window, { clientY: 900 });
+      expect(editorHeight()).toBe("160px");
+      fireEvent.pointerUp(window);
+      fireEvent.pointerMove(window, { clientY: 100 });
+      expect(editorHeight()).toBe("160px");
+
+      fireEvent.keyDown(divider(), { key: "ArrowUp" });
+      fireEvent.keyDown(divider(), { key: "ArrowUp" });
+      expect(editorHeight()).toBe("192px");
+      fireEvent.keyDown(divider(), { key: "ArrowDown" });
+      fireEvent.keyDown(divider(), { key: "ArrowDown" });
+      fireEvent.keyDown(divider(), { key: "ArrowDown" });
+      expect(editorHeight()).toBe("160px");
+      expect(divider()).toHaveAttribute("aria-valuenow", "160");
+
+      // It leaves room above for the transport and the tracks.
+      fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
+      fireEvent.pointerMove(window, { clientY: -2000 });
+      expect(editorHeight()).toBe("740px");
+    });
   });
 });

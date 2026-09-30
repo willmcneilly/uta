@@ -23,20 +23,47 @@ export interface ProjectView {
   loopStart: number;
   /** How long the loop is, in ticks. */
   loopLength: number;
+  /** Whether the loop is switched on. */
+  loopEnabled: boolean;
+  /** Where the song ends, in ticks: one bar after the last clip ends. */
+  songEnd: number;
   ticksPerQuarter: number;
   /** Always 4 for now (4/4). */
   beatsPerBar: number;
   /** The limits of the synth's settings, the same for every track. */
   synthLimits: SynthLimits;
-  /** The project's one track. */
-  track: TrackView;
+  /** The limits of a track's volume and pan. */
+  mixerLimits: MixerLimits;
+  /** The most tracks a project can have. */
+  maxTracks: number;
+  /** Every track, in order from the top. */
+  tracks: TrackView[];
 }
 
-/** A track: its synth and its one clip. */
+/** A track: its name, mixer strip, synth and clips. */
 export interface TrackView {
   id: string;
+  /** Such as "Synth 2". It stays the same when tracks move or go. */
+  name: string;
+  mixer: MixerView;
   synth: SynthView;
-  clip: ClipView;
+  /** In order of start, then ID. They may overlap. */
+  clips: ClipView[];
+}
+
+/** A track's volume, pan, mute and solo. */
+export interface MixerView {
+  volumeDb: number;
+  /** From -1 (left) through 0 (centre) to 1 (right). */
+  pan: number;
+  mute: boolean;
+  solo: boolean;
+}
+
+/** The limits of a track's volume and pan. */
+export interface MixerLimits {
+  volumeDb: Limits;
+  pan: Limits;
 }
 
 export type Waveform = "sine" | "triangle" | "saw" | "square";
@@ -118,10 +145,14 @@ export interface OutputView {
 /** Everything fast-changing, sent once per screen frame. */
 export interface Frame {
   playing: boolean;
-  /** The playhead, in ticks from the start of the song. It stays inside the loop. */
+  /** The playhead, in ticks from the start of the song. */
   playhead: number;
-  /** The loudest sample since the last frame, as a linear level. */
+  /** The master's loudest sample since the last frame, as a linear level. */
   peak: number;
+  /** Each track's loudest sample since the last frame, by track ID. */
+  trackPeaks: Record<string, number>;
+  /** Samples the master has clipped since the app started. */
+  clips: number;
   dropouts: number;
   output: OutputView;
 }
@@ -133,6 +164,16 @@ export const PROJECT_CHANGED = "project-changed";
 export const EDIT_MENU = "edit-menu";
 
 export type EditMenuItem = "copy" | "paste" | "duplicate";
+
+/** Sent with the item's ID when an item is chosen from the Track menu. */
+export const TRACK_MENU = "track-menu";
+
+export type TrackMenuItem = "add-track" | "delete-track" | "duplicate-track";
+
+/** Sent with the item's ID when an item is chosen from the Develop menu. */
+export const DEVELOP_MENU = "develop-menu";
+
+export type DevelopMenuItem = "add-stress-notes";
 
 export function getProject(): Promise<ProjectView> {
   return invoke<ProjectView>("get_project");
@@ -163,6 +204,47 @@ export function setSynthParam(
   gesture?: number,
 ): Promise<ProjectView> {
   return invoke<ProjectView>("set_synth_param", { track, param, gesture: gesture ?? null });
+}
+
+/**
+ * Sets a track's volume, pan, mute and solo. Changes to the same track with
+ * the same `gesture` (one drag) undo as one step.
+ */
+export function setTrackMixer(
+  track: string,
+  mixer: MixerView,
+  gesture?: number,
+): Promise<ProjectView> {
+  return invoke<ProjectView>("set_track_mixer", { track, mixer, gesture: gesture ?? null });
+}
+
+/** Solos a track on its own, or unsolos it if it already is. One undo step. */
+export function soloTrackAlone(track: string): Promise<ProjectView> {
+  return invoke<ProjectView>("solo_track_alone", { track });
+}
+
+/** Adds a synth track below the others, with the ID picked here. */
+export function addTrack(id: string): Promise<ProjectView> {
+  return invoke<ProjectView>("add_track", { id });
+}
+
+/** Adds a copy of `track` below it, with the ID `id`. Rust picks its clips' and notes' IDs. */
+export function duplicateTrack(track: string, id: string): Promise<ProjectView> {
+  return invoke<ProjectView>("duplicate_track", { track, id });
+}
+
+export function removeTrack(track: string): Promise<ProjectView> {
+  return invoke<ProjectView>("remove_track", { track });
+}
+
+/** Moves a track to `index` in the order, counting from 0 at the top. */
+export function moveTrack(track: string, index: number): Promise<ProjectView> {
+  return invoke<ProjectView>("move_track", { track, index });
+}
+
+/** Fills a clip with a few thousand notes, as one undo step. */
+export function addStressNotes(clip: string): Promise<ProjectView> {
+  return invoke<ProjectView>("add_stress_notes", { clip });
 }
 
 /** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
@@ -196,9 +278,9 @@ export function cancelGesture(gesture: number): Promise<ProjectView> {
   return invoke<ProjectView>("cancel_gesture", { gesture });
 }
 
-/** Plays a note briefly, without changing the project, even while stopped. */
-export function auditionNote(pitch: number, velocity: number): Promise<void> {
-  return invoke<void>("audition_note", { pitch, velocity });
+/** Plays a note briefly on a track, without changing the project, even while stopped. */
+export function auditionNote(track: string, pitch: number, velocity: number): Promise<void> {
+  return invoke<void>("audition_note", { track, pitch, velocity });
 }
 
 export function play(): Promise<void> {
@@ -219,6 +301,14 @@ export function onProjectChanged(handler: (project: ProjectView) => void): Promi
 
 export function onEditMenu(handler: (item: EditMenuItem) => void): Promise<UnlistenFn> {
   return listen<EditMenuItem>(EDIT_MENU, (event) => handler(event.payload));
+}
+
+export function onTrackMenu(handler: (item: TrackMenuItem) => void): Promise<UnlistenFn> {
+  return listen<TrackMenuItem>(TRACK_MENU, (event) => handler(event.payload));
+}
+
+export function onDevelopMenu(handler: (item: DevelopMenuItem) => void): Promise<UnlistenFn> {
+  return listen<DevelopMenuItem>(DEVELOP_MENU, (event) => handler(event.payload));
 }
 
 /** Starts the stream of frames. Rust keeps only the latest subscriber. */
