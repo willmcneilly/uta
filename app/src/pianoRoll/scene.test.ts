@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { NoteView } from "../backend";
+import type { NoteView, ProjectView } from "../backend";
 import { PianoRollScene } from "./scene";
-import { RecordingRenderer, projectView } from "./testing";
+import { RecordingRenderer, firstClip, projectView, trackView } from "./testing";
 import {
   KEYBOARD_WIDTH,
   RULER_HEIGHT,
@@ -21,10 +21,13 @@ const note = (id: string, start: number, pitch = 72): NoteView => ({
 let scene: PianoRollScene;
 let renderer: RecordingRenderer;
 
+/** Shows `project`'s first clip, as the piano roll does in a new project. */
+const show = (project: ProjectView) => scene.setProject(project, firstClip(project));
+
 beforeEach(() => {
   scene = new PianoRollScene();
   renderer = new RecordingRenderer();
-  scene.setProject(projectView({}, [note("a", 0), note("b", 7680)]));
+  show(projectView({}, [note("a", 0), note("b", 7680)]));
   scene.setRenderer(renderer);
   scene.resize(KEYBOARD_WIDTH + 768, RULER_HEIGHT + 480, 2);
 });
@@ -49,7 +52,7 @@ describe("PianoRollScene", () => {
 
   it("redraws the notes, but not the grid, when only the notes change", () => {
     scene.draw(0);
-    scene.setProject(projectView({}, [note("a", 0)]));
+    show(projectView({}, [note("a", 0)]));
     scene.draw(0);
     expect(renderer.grids).toHaveLength(1);
     expect(renderer.notes).toHaveLength(2);
@@ -62,14 +65,28 @@ describe("PianoRollScene", () => {
     const fresh = JSON.parse(
       JSON.stringify(projectView({ volumeDb: -20 }, [note("a", 0), note("b", 7680)])),
     ) as ReturnType<typeof projectView>;
-    scene.setProject(fresh);
+    show(fresh);
     scene.draw(0);
     expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
   });
 
+  it("draws another clip's notes when it's shown instead", () => {
+    scene.draw(0);
+    const project = projectView({}, [note("a", 0)]);
+    const other = { id: "clip-2", start: 0, length: 4 * 3840, notes: [note("c", 960, 60)] };
+    const withTwo = { ...project, tracks: [...project.tracks, trackView("track-2", "Synth 2", [other])] };
+    scene.setProject(withTwo, other);
+    scene.draw(0);
+    expect(renderer.lastNotes().map((n) => [n.id, n.pitch])).toEqual([["c", 60]]);
+    // Back to the first: its notes again.
+    show(withTwo);
+    scene.draw(0);
+    expect(renderer.lastNotes().map((n) => n.id)).toEqual(["a"]);
+  });
+
   it("redraws the notes when a note changes in a new view from Rust", () => {
     scene.draw(0);
-    scene.setProject(projectView({}, [note("a", 0, 73), note("b", 7680)]));
+    show(projectView({}, [note("a", 0, 73), note("b", 7680)]));
     scene.draw(0);
     expect(renderer.notes).toHaveLength(2);
     expect(renderer.lastNotes().map((n) => n.pitch)).toEqual([73, 72]);
@@ -77,7 +94,7 @@ describe("PianoRollScene", () => {
 
   it("redraws the grid when the loop changes", () => {
     scene.draw(0);
-    scene.setProject(projectView({ loopBars: 2, loopLength: 2 * 3840 }));
+    show(projectView({ loopBars: 2, loopLength: 2 * 3840 }));
     scene.draw(0);
     expect(renderer.grids).toHaveLength(2);
     expect(renderer.grids[1].loopEnd).toBe(2 * 3840);
@@ -101,7 +118,7 @@ describe("PianoRollScene", () => {
   });
 
   it("draws only the pitches in view", () => {
-    scene.setProject(projectView({}, [note("high", 0, 80), note("low", 0, 40)]));
+    show(projectView({}, [note("high", 0, 80), note("low", 0, 40)]));
     scene.draw(0);
     // Opens with about C3 to C6 in view: pitch 40 (E2) is below it.
     expect(renderer.lastNotes().map((n) => n.id)).toEqual(["high"]);
@@ -179,7 +196,7 @@ describe("PianoRollScene", () => {
   });
 
   it("draws every note's velocity bar in view, at any pitch", () => {
-    scene.setProject(projectView({}, [note("a", 0), note("low", 960, 5)]));
+    show(projectView({}, [note("a", 0), note("low", 960, 5)]));
     scene.draw(0);
     const drawn = renderer.notes.at(-1)!;
     expect(drawn.notes.map((n) => n.id)).toEqual(["a"]);

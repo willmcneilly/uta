@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useRef } from "react";
-import type { Limits, ProjectView, SynthParam, Waveform } from "./backend";
+import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
 import {
   SLIDER_STEPS,
   type Scale,
@@ -13,7 +13,8 @@ import {
 import { useGesture } from "./useGesture";
 
 interface Props {
-  project: ProjectView;
+  synth: SynthView;
+  limits: SynthLimits;
   /** `gesture` is the same for every change in one drag. */
   onChange: (param: SynthParam, gesture?: number) => void;
 }
@@ -120,10 +121,8 @@ function WaveformPicker({
   );
 }
 
-/** The track's synth: waveform, filter and envelope. */
-export function SynthPanel({ project, onChange }: Props) {
-  const synth = project.track.synth;
-  const limits = project.synthLimits;
+/** A track's synth: waveform, filter and envelope. */
+export function SynthPanel({ synth, limits, onChange }: Props) {
   return (
     <section className="synth" aria-label="Synth">
       <WaveformPicker waveform={synth.waveform} onChange={onChange} />

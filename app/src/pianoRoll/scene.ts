@@ -27,6 +27,7 @@ const INITIAL_KEY_HEIGHT = 12;
 
 export class PianoRollScene {
   private project: ProjectView | null = null;
+  private clip: ClipView | null = null;
   private index: NoteIndex | null = null;
   private view: Viewport | null = null;
   private renderer: PianoRollRenderer | null = null;
@@ -38,18 +39,22 @@ export class PianoRollScene {
   private selected: ReadonlySet<string> = new Set();
   private box: Rect | null = null;
 
-  /** A new project view from Rust: the notes or the loop may have changed. */
-  setProject(project: ProjectView): void {
+  /**
+   * A new project view from Rust, and the clip to show from it: the notes
+   * or the loop may have changed.
+   */
+  setProject(project: ProjectView, clip: ClipView): void {
     const loopChanged =
       this.project?.loopStart !== project.loopStart ||
       this.project.loopLength !== project.loopLength;
     // Every view from Rust is a fresh object, so compare what's in it: a
     // volume or tempo change mustn't re-sort and redraw thousands of notes.
-    if (!this.project || !sameClip(this.project.track.clip, project.track.clip)) {
-      this.index = new NoteIndex(project.track.clip);
+    if (!this.clip || !sameClip(this.clip, clip)) {
+      this.index = new NoteIndex(clip);
       this.notesDirty = true;
     }
     this.project = project;
+    this.clip = clip;
     if (loopChanged) this.gridDirty = true;
     this.clampView();
   }
@@ -189,17 +194,16 @@ export class PianoRollScene {
   }
 
   private clampView(): void {
-    if (!this.view || !this.project || !this.index) return;
-    const clamped = clampViewport(this.view, contentTicks(this.project, this.index));
+    if (!this.view || !this.project || !this.clip || !this.index) return;
+    const clamped = clampViewport(this.view, contentTicks(this.project, this.clip, this.index));
     if (!sameView(clamped, this.view)) this.markAllDirty();
     this.view = clamped;
   }
 }
 
 /** How far right the view can scroll: past the loop and every note, plus a bar. */
-function contentTicks(project: ProjectView, index: NoteIndex): number {
+function contentTicks(project: ProjectView, clip: ClipView, index: NoteIndex): number {
   const bar = project.ticksPerQuarter * project.beatsPerBar;
-  const clip = project.track.clip;
   return Math.max(project.loopStart + project.loopLength, clip.start + clip.length, index.end) + bar;
 }
 

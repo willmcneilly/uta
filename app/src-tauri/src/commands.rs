@@ -11,8 +11,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use uta_core::{ClipId, Note, NoteId, SynthParam, TrackId};
 
-use crate::menu::EditMenu;
-use crate::uta::{Frame, ProjectView, Uta};
+use crate::menu::MenuState;
+use crate::uta::{Frame, MixerView, ProjectView, Uta};
 
 /// The event sent with a [`ProjectView`] after every change to the project,
 /// wherever it came from (a command or the menu).
@@ -23,6 +23,15 @@ pub const PROJECT_CHANGED: &str = "project-changed";
 /// notes and the selection live in the UI, and what they change arrives as
 /// ordinary commands.
 pub const EDIT_MENU: &str = "edit-menu";
+
+/// The event sent when an item is chosen from the Track menu (Add, Delete
+/// or Duplicate), with the item's ID. The UI acts on it, because which track
+/// is selected is the UI's: it sends back an ordinary command.
+pub const TRACK_MENU: &str = "track-menu";
+
+/// The event sent when an item is chosen from the Develop menu, with the
+/// item's ID. The UI sends it back with the clip it's showing.
+pub const DEVELOP_MENU: &str = "develop-menu";
 
 pub struct AppState {
     pub uta: Mutex<Uta>,
@@ -47,7 +56,7 @@ pub fn edit<R: Runtime>(
         change(&mut uta)?;
         uta.project()
     };
-    if let Some(menu) = app.try_state::<EditMenu<R>>() {
+    if let Some(menu) = app.try_state::<MenuState<R>>() {
         menu.update(&project).map_err(|error| error.to_string())?;
     }
     app.emit(PROJECT_CHANGED, &project)
@@ -104,6 +113,62 @@ pub fn set_synth_param<R: Runtime>(
     edit(&app, |uta| uta.set_synth_param(track, param, gesture))
 }
 
+/// Sets a track's volume, pan, mute and solo. Calls to the same track with
+/// the same `gesture` (one drag) undo as one step.
+#[tauri::command]
+pub fn set_track_mixer<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    mixer: MixerView,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| {
+        uta.set_track_mixer(track, mixer.into(), gesture)
+    })
+}
+
+/// Solos a track on its own, or unsolos it if it already is: ⌥-click on
+/// Solo. One undo step.
+#[tauri::command]
+pub fn solo_track_alone<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.solo_alone(track))
+}
+
+/// Adds a synth track below the others. The UI picks its ID.
+#[tauri::command]
+pub fn add_track<R: Runtime>(app: AppHandle<R>, id: TrackId) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.add_track(id))
+}
+
+/// Adds a copy of a track, with its sound, mixer and clips, below it. The UI
+/// picks the copy's ID; Rust picks its clips' and notes'.
+#[tauri::command]
+pub fn duplicate_track<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    id: TrackId,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.duplicate_track(track, id))
+}
+
+#[tauri::command]
+pub fn remove_track<R: Runtime>(app: AppHandle<R>, track: TrackId) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.remove_track(track))
+}
+
+/// Moves a track to `index` in the order, counting from 0 at the top.
+#[tauri::command]
+pub fn move_track<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    index: usize,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.move_track(track, index))
+}
+
 /// Adds notes to a clip. The UI picks each new note's ID. A `set_notes` of
 /// the same notes with the same `gesture` undoes with it as one step.
 #[tauri::command]
@@ -158,21 +223,36 @@ pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<Pro
     })
 }
 
-/// Plays a note briefly, without changing the project, even while stopped.
+/// Plays a note briefly on a track, without changing the project, even
+/// while stopped.
 #[tauri::command]
-pub fn audition_note(state: State<'_, AppState>, pitch: u8, velocity: u8) -> Result<(), String> {
-    lock(&state.uta).audition(pitch, velocity)
+pub fn audition_note(
+    state: State<'_, AppState>,
+    track: TrackId,
+    pitch: u8,
+    velocity: u8,
+) -> Result<(), String> {
+    lock(&state.uta).audition(track, pitch, velocity)
 }
 
-/// Passes an Edit menu item (Copy, Paste or Duplicate) on to the UI.
-pub fn edit_menu<R: Runtime>(app: &AppHandle<R>, item: &str) -> Result<(), String> {
-    app.emit(EDIT_MENU, item).map_err(|error| error.to_string())
+/// Passes a menu item on to the UI as `event`: Copy, Paste and Duplicate
+/// from the Edit menu, the Track menu's items, and the Develop menu's.
+pub fn pass_menu_item<R: Runtime>(
+    app: &AppHandle<R>,
+    event: &str,
+    item: &str,
+) -> Result<(), String> {
+    app.emit(event, item).map_err(|error| error.to_string())
 }
 
-/// Fills the loop with a few thousand notes, as one undo step. The Develop
-/// menu calls it.
-pub fn add_stress_notes<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
-    edit(&app, Uta::add_stress_notes)
+/// Fills a clip with a few thousand notes, as one undo step. The UI calls it
+/// from the Develop menu, with the clip it's showing.
+#[tauri::command]
+pub fn add_stress_notes<R: Runtime>(
+    app: AppHandle<R>,
+    clip: ClipId,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.add_stress_notes(clip))
 }
 
 #[tauri::command]

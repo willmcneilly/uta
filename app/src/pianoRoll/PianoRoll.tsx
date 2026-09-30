@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { NoteView, ProjectView } from "../backend";
+import type { ClipView, NoteView, ProjectView } from "../backend";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
 import { duplicateNotes, pasteNotes } from "./clipboard";
@@ -61,6 +61,8 @@ export interface PianoRollHandle {
 interface Props {
   ref?: Ref<PianoRollHandle>;
   project: ProjectView;
+  /** The clip it shows and edits. */
+  clip: ClipView;
   editor: NoteEditor;
   /** Where the playhead is, between the engine's reports. */
   clock: PlayheadClock;
@@ -108,6 +110,7 @@ interface DragHandlers {
 export function PianoRoll({
   ref,
   project,
+  clip,
   editor,
   clock,
   stats,
@@ -122,7 +125,7 @@ export function PianoRoll({
   const scheme = useColourScheme();
   // The pointer, keyboard and menu handlers read the latest of these,
   // including those added to the window for the length of a drag.
-  const latest = useRef({ project, editor, snap });
+  const latest = useRef({ project, clip, editor, snap });
   // Which notes are selected, and what was copied, are the piano roll's own:
   // neither is part of the project.
   const selected = useRef<ReadonlySet<string>>(new Set());
@@ -130,10 +133,17 @@ export function PianoRoll({
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, editor, snap };
-  }, [project, editor, snap]);
+    latest.current = { project, clip, editor, snap };
+  }, [project, clip, editor, snap]);
 
-  useEffect(() => scene.setProject(project), [scene, project]);
+  useEffect(() => scene.setProject(project, clip), [scene, project, clip]);
+
+  // Another clip's notes aren't selected. What was copied stays, to paste
+  // into this one.
+  useEffect(() => {
+    selected.current = new Set();
+    scene.setSelection(selected.current);
+  }, [scene, clip.id]);
 
   // A drag ends if the piano roll goes away mid-drag.
   useEffect(() => () => dragging.current?.stop(), []);
@@ -226,7 +236,7 @@ export function PianoRoll({
 
   /** The selected notes as they are now. Any that have gone (undone, say) are left out. */
   const selectedNotes = (): NoteView[] =>
-    latest.current.project.track.clip.notes.filter((note) => selected.current.has(note.id));
+    latest.current.clip.notes.filter((note) => selected.current.has(note.id));
 
   /** Where a pointer event is, in CSS pixels from the piano roll's top left. */
   const pointOf = (event: { clientX: number; clientY: number }) => {
@@ -341,8 +351,7 @@ export function PianoRoll({
   const pressNotes = (x: number, y: number, event: PointerEvent<HTMLDivElement>) => {
     const view = scene.getView();
     if (!view) return;
-    const { project, editor, snap } = latest.current;
-    const clip = project.track.clip;
+    const { project, clip, editor, snap } = latest.current;
     const tick = xToTick(view, x);
     const pitch = yToPitch(view, y);
     const hit = scene.hitTest(x, y);
@@ -406,14 +415,14 @@ export function PianoRoll({
       move: (x, y, move) => {
         const view = scene.getView();
         if (!view) return;
-        const { project, editor } = latest.current;
+        const { clip, editor } = latest.current;
         const next = moveNotes(
           group,
           drag,
           xToTick(view, x),
           yToPitch(view, y),
           stepFor(move),
-          project.track.clip.start,
+          clip.start,
         );
         const moved = next[group.findIndex((note) => note.id === from.id)];
         if (moved.pitch !== heard) {
@@ -440,7 +449,7 @@ export function PianoRoll({
       xToTick(view, x),
       yToPitch(view, y),
       stepFor(event),
-      latest.current.project.track.clip.start,
+      latest.current.clip.start,
     );
   };
 
@@ -542,10 +551,10 @@ export function PianoRoll({
     paste() {
       const view = scene.getView();
       if (dragging.current || !view || clipboard.current.length === 0) return;
-      const { project, snap } = latest.current;
+      const { project, clip, snap } = latest.current;
       const step = snapStep(snap, project.ticksPerQuarter);
       const at = snapDown(clock.at(performance.now()), step);
-      const notes = pasteNotes(clipboard.current, at, project.track.clip.start, () =>
+      const notes = pasteNotes(clipboard.current, at, clip.start, () =>
         crypto.randomUUID(),
       );
       land(notes);

@@ -24,17 +24,22 @@ pub fn run() {
                 frames: Mutex::new(None),
             });
 
-            let (menu, edit_menu) = menu::build(app.handle())?;
+            let (menu, menu_state) = menu::build(app.handle())?;
             app.set_menu(menu)?;
-            app.manage(edit_menu);
+            app.manage(menu_state);
             app.on_menu_event(|app, event| {
                 let result = match event.id().as_ref() {
                     menu::UNDO => commands::undo(app.clone()).map(drop),
                     menu::REDO => commands::redo(app.clone()).map(drop),
                     id @ (menu::COPY | menu::PASTE | menu::DUPLICATE) => {
-                        commands::edit_menu(app, id)
+                        commands::pass_menu_item(app, commands::EDIT_MENU, id)
                     }
-                    menu::ADD_STRESS_NOTES => commands::add_stress_notes(app.clone()).map(drop),
+                    id @ (menu::ADD_TRACK | menu::DELETE_TRACK | menu::DUPLICATE_TRACK) => {
+                        commands::pass_menu_item(app, commands::TRACK_MENU, id)
+                    }
+                    id @ menu::ADD_STRESS_NOTES => {
+                        commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
+                    }
                     _ => return,
                 };
                 if let Err(error) = result {
@@ -56,6 +61,13 @@ pub fn run() {
             commands::set_tempo,
             commands::set_loop_length,
             commands::set_synth_param,
+            commands::set_track_mixer,
+            commands::solo_track_alone,
+            commands::add_track,
+            commands::duplicate_track,
+            commands::remove_track,
+            commands::move_track,
+            commands::add_stress_notes,
             commands::add_notes,
             commands::set_notes,
             commands::remove_notes,

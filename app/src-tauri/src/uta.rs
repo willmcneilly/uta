@@ -3,15 +3,16 @@
 //! frame thread reads it once per screen frame. Nothing here runs on the
 //! audio thread.
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use crate::stress;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    ClipId, Command, CommandError, Note, NoteId, Project, Session, Source, SynthParam,
-    SynthSettings, TrackId, Waveform,
+    Clip, ClipId, Command, CommandError, MixerStrip, Note, NoteId, PlacedTrack, Project, Session,
+    Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -39,22 +40,81 @@ pub struct ProjectView {
     pub loop_start: Ticks,
     /// How long the loop is, in ticks.
     pub loop_length: Ticks,
+    /// Whether the loop is switched on.
+    pub loop_enabled: bool,
+    /// Where the song ends, in ticks: one bar after the last clip ends.
+    pub song_end: Ticks,
     pub ticks_per_quarter: Ticks,
     /// Always 4 for now (4/4).
     pub beats_per_bar: u32,
     /// The limits of the synth's settings, the same for every track.
     pub synth_limits: SynthLimits,
-    /// The project's one track.
-    pub track: TrackView,
+    /// The limits of a track's volume and pan.
+    pub mixer_limits: MixerLimits,
+    /// The most tracks a project can have.
+    pub max_tracks: usize,
+    /// Every track, in order from the top.
+    pub tracks: Vec<TrackView>,
 }
 
-/// A track as the UI shows it: its synth and its one clip.
+/// A track as the UI shows it: its name, mixer strip, synth and clips.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackView {
     pub id: TrackId,
+    pub name: String,
+    pub mixer: MixerView,
     pub synth: SynthView,
-    pub clip: ClipView,
+    /// In order of start, then ID.
+    pub clips: Vec<ClipView>,
+}
+
+/// A track's volume, pan, mute and solo, as the UI shows and sends them.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MixerView {
+    pub volume_db: f32,
+    /// From -1 (left) through 0 (centre) to 1 (right).
+    pub pan: f32,
+    pub mute: bool,
+    pub solo: bool,
+}
+
+impl From<&MixerStrip> for MixerView {
+    fn from(mixer: &MixerStrip) -> Self {
+        Self {
+            volume_db: mixer.volume_db,
+            pan: mixer.pan,
+            mute: mixer.mute,
+            solo: mixer.solo,
+        }
+    }
+}
+
+impl From<MixerView> for MixerStrip {
+    fn from(mixer: MixerView) -> Self {
+        Self {
+            volume_db: mixer.volume_db,
+            pan: mixer.pan,
+            mute: mixer.mute,
+            solo: mixer.solo,
+        }
+    }
+}
+
+/// The inclusive `[min, max]` of a track's volume and pan.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MixerLimits {
+    pub volume_db: (f32, f32),
+    pub pan: (f32, f32),
+}
+
+impl MixerLimits {
+    const ALL: Self = Self {
+        volume_db: (MixerStrip::MIN_VOLUME_DB, MixerStrip::MAX_VOLUME_DB),
+        pan: (MixerStrip::MIN_PAN, MixerStrip::MAX_PAN),
+    };
 }
 
 /// The synth's settings, in the units of the "Synth settings" table in
@@ -127,8 +187,13 @@ pub struct Frame {
     /// The playhead, in ticks from the start of the song. It stays inside
     /// the loop.
     pub playhead: Ticks,
-    /// The loudest sample since the last frame, as a linear level.
+    /// The master's loudest sample since the last frame, as a linear level.
     pub peak: f32,
+    /// Each track's loudest sample since the last frame, after its volume,
+    /// pan, mute and solo, by track ID.
+    pub track_peaks: BTreeMap<TrackId, f32>,
+    /// Samples the master has clipped since the app started.
+    pub clips: u64,
     /// Dropouts since the app started, across every output.
     pub dropouts: u64,
     pub output: OutputView,
@@ -195,6 +260,8 @@ pub struct Uta {
     engine_behind: bool,
     /// Dropouts from outputs that have since been replaced.
     earlier_dropouts: u64,
+    /// Master clips from engines that have since been replaced.
+    earlier_clips: u64,
     /// The drag the latest change came from.
     gesture: Option<u32>,
     /// The note being auditioned, if one is still sounding.
@@ -229,6 +296,7 @@ impl Uta {
             wants_playing: false,
             engine_behind: false,
             earlier_dropouts: 0,
+            earlier_clips: 0,
             gesture: None,
             audition: None,
             last_audition_key: 0,
@@ -239,10 +307,6 @@ impl Uta {
         let project = self.session.project();
         let transport = project.transport();
         let bar = transport.time_signature().ticks_per_bar();
-        // Project 1 always has exactly one track with one clip.
-        let track = &project.tracks()[0];
-        let clip = &track.clips()[0];
-        let Source::Synth(synth) = track.source();
         ProjectView {
             volume_db: project.master_volume_db(),
             min_volume_db: VOLUME_RANGE_DB.0,
@@ -257,19 +321,14 @@ impl Uta {
             max_loop_bars: Project::MAX_LOOP_BARS,
             loop_start: transport.loop_start(),
             loop_length: transport.loop_length(),
+            loop_enabled: transport.loop_enabled(),
+            song_end: project.song_end(),
             ticks_per_quarter: TICKS_PER_QUARTER,
             beats_per_bar: transport.time_signature().beats_per_bar,
             synth_limits: SynthLimits::ALL,
-            track: TrackView {
-                id: track.id(),
-                synth: synth.into(),
-                clip: ClipView {
-                    id: clip.id(),
-                    start: clip.start(),
-                    length: clip.length(),
-                    notes: clip.notes().copied().collect(),
-                },
-            },
+            mixer_limits: MixerLimits::ALL,
+            max_tracks: Project::MAX_TRACKS,
+            tracks: project.tracks().iter().map(track_view).collect(),
         }
     }
 
@@ -301,21 +360,138 @@ impl Uta {
         self.change(Command::SetSynthParam { track, param }, gesture)
     }
 
-    /// Fills the loop with [`stress::NOTE_COUNT`] notes, as one undoable
-    /// `AddNotes`, to test how the piano roll copes with many notes.
-    pub fn add_stress_notes(&mut self) -> Result<(), String> {
+    /// Sets a track's volume, pan, mute and solo. Changes to the same track
+    /// that share a `gesture` (one drag of its volume or pan) undo as one.
+    pub fn set_track_mixer(
+        &mut self,
+        track: TrackId,
+        mixer: MixerStrip,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetTrackMixer { track, mixer }, gesture)
+    }
+
+    /// Solos `track` on its own, unsoloing every other track, as one undo
+    /// step: an ⌥-click on its Solo button. If it's already the only track
+    /// soloed, it's unsoloed instead, so a second ⌥-click hears them all.
+    pub fn solo_alone(&mut self, track: TrackId) -> Result<(), String> {
         let project = self.session.project();
-        let clip = &project.tracks()[0].clips()[0];
-        // Seeded by the notes already there, so pressing it again adds a
-        // different pattern.
-        let notes = stress::notes(project.transport().loop_length(), clip.notes().len() as u64);
+        let target = project
+            .track(track)
+            .ok_or_else(|| CommandError::UnknownTrack(track).to_string())?;
+        let alone = target.mixer().solo
+            && project
+                .tracks()
+                .iter()
+                .all(|other| other.id() == track || !other.mixer().solo);
+        let mut commands = vec![Command::SetTrackMixer {
+            track,
+            mixer: MixerStrip {
+                solo: !alone,
+                ..*target.mixer()
+            },
+        }];
+        commands.extend(
+            project
+                .tracks()
+                .iter()
+                .filter(|other| other.id() != track && other.mixer().solo)
+                .map(|other| Command::SetTrackMixer {
+                    track: other.id(),
+                    mixer: MixerStrip {
+                        solo: false,
+                        ..*other.mixer()
+                    },
+                }),
+        );
+        let mut commands = commands.into_iter();
+        let first = commands.next().expect("there's always the track itself");
+        self.session
+            .apply(first)
+            .map_err(|error| error.to_string())?;
+        for command in commands {
+            self.session
+                .join(command)
+                .expect("the other tracks are there, with valid mixers");
+        }
+        self.gesture = None;
+        self.sync_engine();
+        Ok(())
+    }
+
+    /// Adds a synth track with the default sound and mixer, and no clips,
+    /// below the others. The caller picks its ID, so it can select it.
+    pub fn add_track(&mut self, id: TrackId) -> Result<(), String> {
+        let project = self.session.project();
+        let track = Track::new(
+            id,
+            project.next_track_name(),
+            Source::Synth(SynthSettings::default()),
+        );
+        let index = project.tracks().len();
         self.change(
-            Command::AddNotes {
-                clip: clip.id(),
-                notes,
+            Command::AddTracks {
+                tracks: vec![PlacedTrack { index, track }],
             },
             None,
         )
+    }
+
+    /// Adds a copy of `track` straight below it: the same sound, mixer and
+    /// clips, with a new name, and new IDs for it (`id`, picked by the
+    /// caller), its clips and every note.
+    pub fn duplicate_track(&mut self, track: TrackId, id: TrackId) -> Result<(), String> {
+        let project = self.session.project();
+        let index = project
+            .tracks()
+            .iter()
+            .position(|other| other.id() == track)
+            .ok_or_else(|| CommandError::UnknownTrack(track).to_string())?;
+        let copy = project.tracks()[index].copy(
+            id,
+            project.next_track_name(),
+            ClipId::random,
+            NoteId::random,
+        );
+        self.change(
+            Command::AddTracks {
+                tracks: vec![PlacedTrack {
+                    index: index + 1,
+                    track: copy,
+                }],
+            },
+            None,
+        )
+    }
+
+    /// Deletes a track, with its clips. Undo brings it all back, in its
+    /// place.
+    pub fn remove_track(&mut self, track: TrackId) -> Result<(), String> {
+        self.change(
+            Command::RemoveTracks {
+                tracks: vec![track],
+            },
+            None,
+        )
+    }
+
+    /// Moves a track to `index` in the order, counting from 0 at the top.
+    pub fn move_track(&mut self, track: TrackId, index: usize) -> Result<(), String> {
+        self.change(Command::MoveTrack { track, index }, None)
+    }
+
+    /// Fills `clip` with [`stress::NOTE_COUNT`] notes, as one undoable
+    /// `AddNotes`, to test how the piano roll copes with many notes.
+    pub fn add_stress_notes(&mut self, clip: ClipId) -> Result<(), String> {
+        let found = self
+            .session
+            .project()
+            .clip(clip)
+            .ok_or_else(|| CommandError::UnknownClip(clip).to_string())?;
+        // Seeded by the notes already there, so pressing it again adds a
+        // different pattern.
+        let notes = stress::notes(found.length(), found.notes().len() as u64);
+        self.change(Command::AddNotes { clip, notes }, None)
     }
 
     /// Adds `notes` to `clip`. Their IDs were chosen by the caller. A later
@@ -392,15 +568,13 @@ impl Uta {
         }
     }
 
-    /// Plays a note briefly through the live route, on the first track,
-    /// whether or not the loop is playing: for hearing a note as it's placed.
+    /// Plays a note briefly through the live route, on `track`, whether or
+    /// not the song is playing: for hearing a note as it's placed.
     /// It's not a change to the project. Any note still being auditioned is
     /// released first, and the frame thread releases this one after
     /// [`AUDITION_TIME`].
-    pub fn audition(&mut self, pitch: u8, velocity: u8) -> Result<(), String> {
+    pub fn audition(&mut self, track: TrackId, pitch: u8, velocity: u8) -> Result<(), String> {
         self.release_audition();
-        // The app edits only the first track until it shows them all.
-        let track = self.session.project().tracks()[0].id();
         let slot = self
             .controller
             .slot(track)
@@ -496,6 +670,7 @@ impl Uta {
         }
         let live = !matches!(self.playback, Some(Playback::Offline(_)));
         self.close_output();
+        self.earlier_clips += self.controller.poll().clips;
 
         let (controller, processor) = new_engine(&self.session);
         self.controller = controller;
@@ -528,6 +703,17 @@ impl Uta {
             playing: status.playing,
             playhead: status.playhead,
             peak: status.peak,
+            track_peaks: self
+                .session
+                .project()
+                .tracks()
+                .iter()
+                .filter_map(|track| {
+                    let slot = self.controller.slot(track.id())?;
+                    Some((track.id(), status.track_peaks[slot]))
+                })
+                .collect(),
+            clips: self.earlier_clips + status.clips,
             dropouts: self.earlier_dropouts + device.dropouts,
             output: OutputView {
                 state: match device.state {
@@ -597,6 +783,26 @@ impl Uta {
     /// full (no device is taking audio), the next frame tries again.
     fn sync_engine(&mut self) {
         self.engine_behind = self.controller.set_project(self.session.project()).is_err();
+    }
+}
+
+fn track_view(track: &Track) -> TrackView {
+    let Source::Synth(synth) = track.source();
+    TrackView {
+        id: track.id(),
+        name: track.name().to_owned(),
+        mixer: track.mixer().into(),
+        synth: synth.into(),
+        clips: track.clips().iter().map(clip_view).collect(),
+    }
+}
+
+fn clip_view(clip: &Clip) -> ClipView {
+    ClipView {
+        id: clip.id(),
+        start: clip.start(),
+        length: clip.length(),
+        notes: clip.notes().copied().collect(),
     }
 }
 
@@ -746,25 +952,25 @@ mod tests {
         assert_eq!(view.loop_start, 0);
         assert_eq!(view.loop_length, 4 * 4 * TICKS_PER_QUARTER);
         assert_eq!((view.ticks_per_quarter, view.beats_per_bar), (960, 4));
-        assert_eq!(view.track.clip.length, view.loop_length);
-        assert!(view.track.clip.notes.is_empty());
-        assert_eq!(view.track.synth, (&SynthSettings::default()).into());
+        assert_eq!(view.tracks[0].clips[0].length, view.loop_length);
+        assert!(view.tracks[0].clips[0].notes.is_empty());
+        assert_eq!(view.tracks[0].synth, (&SynthSettings::default()).into());
     }
 
     #[test]
     fn the_project_view_serialises_for_the_ui() {
         let mut uta = offline();
-        uta.add_stress_notes().unwrap();
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
         let json = serde_json::to_value(uta.project()).unwrap();
         assert_eq!(json["bpm"], 120.0);
         assert_eq!(json["loopBars"], 4);
-        assert_eq!(json["track"]["synth"]["waveform"], "saw");
-        assert_eq!(json["track"]["synth"]["cutoffHz"], 20_000.0);
-        let note = &json["track"]["clip"]["notes"][0];
+        assert_eq!(json["tracks"][0]["synth"]["waveform"], "saw");
+        assert_eq!(json["tracks"][0]["synth"]["cutoffHz"], 20_000.0);
+        let note = &json["tracks"][0]["clips"][0]["notes"][0];
         for field in ["id", "pitch", "velocity", "start", "length"] {
             assert!(!note[field].is_null(), "{field} missing from {note}");
         }
-        assert!(json["track"]["id"].is_string());
+        assert!(json["tracks"][0]["id"].is_string());
     }
 
     #[test]
@@ -774,7 +980,7 @@ mod tests {
         uta.set_loop_length(2, None).unwrap();
         let view = uta.project();
         assert_eq!((view.bpm, view.loop_bars), (90.0, 2));
-        assert_eq!(view.track.clip.length, 2 * 4 * TICKS_PER_QUARTER);
+        assert_eq!(view.tracks[0].clips[0].length, 2 * 4 * TICKS_PER_QUARTER);
         let rate = uta.controller.snapshot().sequence.sample_rate();
         // Two bars of 4/4 at 90 BPM: 8 beats of 2/3 s.
         let loop_samples = uta.controller.snapshot().sequence.loop_samples();
@@ -836,31 +1042,31 @@ mod tests {
     #[test]
     fn synth_settings_go_through_the_project_to_the_engine() {
         let mut uta = offline();
-        let track = uta.project().track.id;
+        let track = uta.project().tracks[0].id;
         uta.set_synth_param(track, SynthParam::Waveform(Waveform::Square), None)
             .unwrap();
         uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
             .unwrap();
-        let view = uta.project().track.synth;
+        let view = uta.project().tracks[0].synth;
         assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
         let engine = uta.controller.snapshot().tracks()[0].synth;
         assert_eq!(engine.waveform, uta_engine::Waveform::Square);
         assert_eq!(engine.cutoff_hz, 800.0);
 
         uta.undo();
-        assert_eq!(uta.project().track.synth.cutoff_hz, 20_000.0);
+        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 20_000.0);
         assert_eq!(
             uta.controller.snapshot().tracks()[0].synth.cutoff_hz,
             20_000.0
         );
         uta.redo();
-        assert_eq!(uta.project().track.synth.cutoff_hz, 800.0);
+        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 800.0);
     }
 
     #[test]
     fn out_of_range_synth_settings_are_refused() {
         let mut uta = offline();
-        let track = uta.project().track.id;
+        let track = uta.project().tracks[0].id;
         assert!(
             uta.set_synth_param(track, SynthParam::Resonance(1.5), None)
                 .is_err()
@@ -875,7 +1081,7 @@ mod tests {
     #[test]
     fn one_synth_drag_undoes_as_one_step() {
         let mut uta = offline();
-        let track = uta.project().track.id;
+        let track = uta.project().tracks[0].id;
         for hz in [10_000.0, 2_000.0, 500.0] {
             uta.set_synth_param(track, SynthParam::CutoffHz(hz), Some(1))
                 .unwrap();
@@ -886,10 +1092,10 @@ mod tests {
         }
 
         uta.undo();
-        let synth = uta.project().track.synth;
+        let synth = uta.project().tracks[0].synth;
         assert_eq!((synth.cutoff_hz, synth.sustain), (500.0, 0.7));
         uta.undo();
-        assert_eq!(uta.project().track.synth.cutoff_hz, 20_000.0);
+        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 20_000.0);
         assert!(!uta.project().can_undo);
     }
 
@@ -908,8 +1114,11 @@ mod tests {
     #[test]
     fn stress_notes_are_one_undo_step() {
         let mut uta = offline();
-        uta.add_stress_notes().unwrap();
-        assert_eq!(uta.project().track.clip.notes.len(), stress::NOTE_COUNT);
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes.len(),
+            stress::NOTE_COUNT
+        );
         assert!(
             !uta.controller.snapshot().tracks()[0]
                 .notes()
@@ -917,12 +1126,18 @@ mod tests {
                 .is_empty(),
             "the engine plays them"
         );
-        uta.add_stress_notes().unwrap();
-        assert_eq!(uta.project().track.clip.notes.len(), 2 * stress::NOTE_COUNT);
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes.len(),
+            2 * stress::NOTE_COUNT
+        );
         uta.undo();
-        assert_eq!(uta.project().track.clip.notes.len(), stress::NOTE_COUNT);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes.len(),
+            stress::NOTE_COUNT
+        );
         uta.undo();
-        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.project().tracks[0].clips[0].notes.is_empty());
         assert!(!uta.project().can_undo);
     }
 
@@ -941,8 +1156,12 @@ mod tests {
         }
     }
 
+    fn first_track(uta: &Uta) -> TrackId {
+        uta.project().tracks[0].id
+    }
+
     fn clip_id(uta: &Uta) -> ClipId {
-        uta.project().track.clip.id
+        uta.project().tracks[0].clips[0].id
     }
 
     #[test]
@@ -951,7 +1170,10 @@ mod tests {
         let clip = clip_id(&uta);
         uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
             .unwrap();
-        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 240)]);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes,
+            vec![note(1, 60, 0, 240)]
+        );
         assert_eq!(
             uta.controller.snapshot().tracks()[0].notes().events().len(),
             2
@@ -959,10 +1181,13 @@ mod tests {
 
         uta.set_notes(clip, vec![note(1, 64, 960, 480)], None)
             .unwrap();
-        assert_eq!(uta.project().track.clip.notes, vec![note(1, 64, 960, 480)]);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes,
+            vec![note(1, 64, 960, 480)]
+        );
 
         uta.remove_notes(clip, vec![note_id(1)]).unwrap();
-        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.project().tracks[0].clips[0].notes.is_empty());
         assert!(
             uta.controller.snapshot().tracks()[0]
                 .notes()
@@ -982,12 +1207,15 @@ mod tests {
             uta.set_notes(clip, vec![note(1, 60, 0, length)], Some(7))
                 .unwrap();
         }
-        assert_eq!(uta.project().track.clip.notes[0].length, 960);
+        assert_eq!(uta.project().tracks[0].clips[0].notes[0].length, 960);
         uta.undo();
-        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.project().tracks[0].clips[0].notes.is_empty());
         assert!(!uta.project().can_undo);
         uta.redo();
-        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 960)]);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes,
+            vec![note(1, 60, 0, 960)]
+        );
     }
 
     #[test]
@@ -1013,7 +1241,7 @@ mod tests {
             "and the engine plays it where it was"
         );
         uta.undo();
-        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.project().tracks[0].clips[0].notes.is_empty());
     }
 
     #[test]
@@ -1025,7 +1253,7 @@ mod tests {
         uta.set_notes(clip, vec![note(1, 60, 0, 960)], Some(4))
             .unwrap();
         uta.cancel_gesture(4);
-        assert!(uta.project().track.clip.notes.is_empty());
+        assert!(uta.project().tracks[0].clips[0].notes.is_empty());
         assert!(!uta.project().can_undo && !uta.project().can_redo);
     }
 
@@ -1037,10 +1265,10 @@ mod tests {
             .unwrap();
         // A drag that hasn't changed anything, or an older one, cancels nothing.
         uta.cancel_gesture(2);
-        assert_eq!(uta.project().track.clip.notes.len(), 1);
+        assert_eq!(uta.project().tracks[0].clips[0].notes.len(), 1);
         uta.set_volume(-6.0, None).unwrap();
         uta.cancel_gesture(1);
-        assert_eq!(uta.project().track.clip.notes.len(), 1);
+        assert_eq!(uta.project().tracks[0].clips[0].notes.len(), 1);
         assert_eq!(uta.project().volume_db, -6.0);
         // And after an undo, the drag is no longer the latest change.
         uta.set_notes(clip, vec![note(1, 61, 0, 240)], Some(5))
@@ -1069,12 +1297,12 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(
-            uta.project().track.clip.notes.len(),
+            uta.project().tracks[0].clips[0].notes.len(),
             3,
             "nothing is trimmed mid-drag"
         );
         uta.trim_notes(clip, vec![note_id(1)], 8).unwrap();
-        let mut notes = uta.project().track.clip.notes;
+        let mut notes = uta.project().tracks[0].clips[0].notes.clone();
         notes.sort_by_key(|note| note.start);
         assert_eq!(notes, vec![note(1, 60, 0, 1440), note(3, 60, 1440, 240)]);
         assert_eq!(
@@ -1085,12 +1313,12 @@ mod tests {
 
         uta.undo();
         assert_eq!(
-            uta.project().track.clip.notes,
-            before.track.clip.notes,
+            uta.project().tracks[0].clips[0].notes,
+            before.tracks[0].clips[0].notes,
             "one undo brings them back"
         );
         uta.redo();
-        assert_eq!(uta.project().track.clip.notes.len(), 2);
+        assert_eq!(uta.project().tracks[0].clips[0].notes.len(), 2);
     }
 
     #[test]
@@ -1102,11 +1330,14 @@ mod tests {
         uta.add_notes(clip, vec![note(2, 60, 480, 960)], Some(9))
             .unwrap();
         uta.trim_notes(clip, vec![note_id(2)], 9).unwrap();
-        let mut notes = uta.project().track.clip.notes;
+        let mut notes = uta.project().tracks[0].clips[0].notes.clone();
         notes.sort_by_key(|note| note.start);
         assert_eq!(notes, vec![note(1, 60, 0, 480), note(2, 60, 480, 960)]);
         uta.undo();
-        assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 960)]);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes,
+            vec![note(1, 60, 0, 960)]
+        );
     }
 
     #[test]
@@ -1121,7 +1352,7 @@ mod tests {
             .unwrap();
         uta.trim_notes(clip, vec![note_id(2)], 10).unwrap();
 
-        let mut notes = uta.project().track.clip.notes;
+        let mut notes = uta.project().tracks[0].clips[0].notes.clone();
         notes.sort_by_key(|note| note.start);
         let spans: Vec<_> = notes.iter().map(|note| (note.start, note.length)).collect();
         assert_eq!(spans, [(0, 480), (480, 240), (720, 1200)]);
@@ -1132,7 +1363,10 @@ mod tests {
         );
 
         uta.undo();
-        assert_eq!(uta.project().track.clip.notes, before.track.clip.notes);
+        assert_eq!(
+            uta.project().tracks[0].clips[0].notes,
+            before.tracks[0].clips[0].notes
+        );
     }
 
     #[test]
@@ -1143,27 +1377,27 @@ mod tests {
             .unwrap();
         // A drag that changed nothing trims nothing.
         uta.trim_notes(clip, vec![note_id(1)], 6).unwrap();
-        assert_eq!(uta.project().track.clip.notes.len(), 2);
+        assert_eq!(uta.project().tracks[0].clips[0].notes.len(), 2);
 
         uta.set_notes(clip, vec![note(1, 60, 0, 1200)], Some(7))
             .unwrap();
         uta.trim_notes(clip, vec![note_id(1)], 7).unwrap();
         uta.cancel_gesture(7);
         assert_eq!(
-            uta.project().track.clip.notes[0].length,
+            uta.project().tracks[0].clips[0].notes[0].length,
             1200,
             "the drag has ended, so Esc changes nothing"
         );
         uta.trim_notes(clip, vec![note_id(1)], 7).unwrap();
         uta.undo();
-        assert_eq!(uta.project().track.clip.notes[0].length, 960);
-        assert_eq!(uta.project().track.clip.notes[1].start, 480);
+        assert_eq!(uta.project().tracks[0].clips[0].notes[0].length, 960);
+        assert_eq!(uta.project().tracks[0].clips[0].notes[1].start, 480);
     }
 
     #[test]
     fn an_auditioned_note_sounds_while_stopped_then_stops() {
         let mut uta = offline();
-        uta.audition(69, 127).unwrap();
+        uta.audition(first_track(&uta), 69, 127).unwrap();
         uta.render(4_800);
         let frame = uta.frame();
         assert!(!frame.playing);
@@ -1182,15 +1416,15 @@ mod tests {
     #[test]
     fn a_new_audition_releases_the_last_one() {
         let mut uta = offline();
-        uta.audition(60, 100).unwrap();
+        uta.audition(first_track(&uta), 60, 100).unwrap();
         let first = uta.audition.unwrap().key;
-        uta.audition(62, 100).unwrap();
+        uta.audition(first_track(&uta), 62, 100).unwrap();
         let second = uta.audition.unwrap().key;
         assert_ne!(first, second);
         // Not due yet, so still sounding.
         uta.end_audition_by(Instant::now());
         assert!(uta.audition.is_some());
-        assert!(uta.audition(128, 100).is_err());
+        assert!(uta.audition(first_track(&uta), 128, 100).is_err());
     }
 
     #[test]
@@ -1264,5 +1498,385 @@ mod tests {
         uta.frame();
         assert!(!uta.engine_behind);
         assert_eq!(uta.engine_gain(), uta_engine::db_to_gain(-7.0));
+    }
+
+    fn mixer(volume_db: f32, pan: f32, mute: bool, solo: bool) -> MixerStrip {
+        MixerStrip {
+            volume_db,
+            pan,
+            mute,
+            solo,
+        }
+    }
+
+    fn solos(uta: &Uta) -> Vec<bool> {
+        uta.project()
+            .tracks
+            .iter()
+            .map(|track| track.mixer.solo)
+            .collect()
+    }
+
+    fn names(uta: &Uta) -> Vec<String> {
+        uta.project()
+            .tracks
+            .iter()
+            .map(|track| track.name.clone())
+            .collect()
+    }
+
+    /// An offline Uta with `count` tracks: the first, then added ones.
+    fn with_tracks(count: usize) -> Uta {
+        let mut uta = offline();
+        for _ in 1..count {
+            uta.add_track(TrackId::random()).unwrap();
+        }
+        uta
+    }
+
+    #[test]
+    fn the_project_view_carries_every_track_in_order() {
+        let mut uta = offline();
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
+            .unwrap();
+        let second = TrackId::random();
+        uta.add_track(second).unwrap();
+        uta.set_track_mixer(second, mixer(-6.0, -0.5, true, false), None)
+            .unwrap();
+
+        let view = uta.project();
+        assert_eq!(view.tracks.len(), 2);
+        let (first, other) = (&view.tracks[0], &view.tracks[1]);
+        assert_eq!(
+            (first.name.as_str(), other.name.as_str()),
+            ("Synth 1", "Synth 2")
+        );
+        assert_eq!(first.mixer, (&MixerStrip::default()).into());
+        assert_eq!(other.id, second);
+        assert_eq!(other.mixer, (&mixer(-6.0, -0.5, true, false)).into());
+        assert_eq!(other.synth, (&SynthSettings::default()).into());
+        assert_eq!(first.clips.len(), 1);
+        assert_eq!(first.clips[0].notes, vec![note(1, 60, 0, 240)]);
+        assert!(other.clips.is_empty(), "a new track has no clips");
+
+        assert!(view.loop_enabled);
+        let bar = 4 * TICKS_PER_QUARTER;
+        assert_eq!(view.song_end, 5 * bar, "one bar after the 4-bar clip");
+        assert_eq!(view.max_tracks, 32);
+        assert_eq!(view.mixer_limits.volume_db, (-60.0, 6.0));
+        assert_eq!(view.mixer_limits.pan, (-1.0, 1.0));
+    }
+
+    #[test]
+    fn the_track_list_serialises_for_the_ui() {
+        let json = serde_json::to_value(offline().project()).unwrap();
+        let track = &json["tracks"][0];
+        assert_eq!(track["name"], "Synth 1");
+        assert_eq!(
+            track["mixer"],
+            serde_json::json!({"volumeDb": 0.0, "pan": 0.0, "mute": false, "solo": false})
+        );
+        assert_eq!(track["clips"][0]["length"], 4 * 4 * 960);
+        assert_eq!(json["loopEnabled"], true);
+        assert_eq!(json["songEnd"], 5 * 4 * 960);
+        assert_eq!(
+            json["mixerLimits"]["volumeDb"],
+            serde_json::json!([-60.0, 6.0])
+        );
+        assert_eq!(json["maxTracks"], 32);
+    }
+
+    #[test]
+    fn mixer_settings_arrive_from_the_ui_in_camel_case() {
+        let view: MixerView = serde_json::from_value(
+            serde_json::json!({"volumeDb": -3.0, "pan": 0.25, "mute": true, "solo": false}),
+        )
+        .unwrap();
+        assert_eq!(MixerStrip::from(view), mixer(-3.0, 0.25, true, false));
+        assert!(
+            serde_json::from_value::<MixerView>(serde_json::json!({"volume_db": -3.0})).is_err()
+        );
+    }
+
+    #[test]
+    fn mixer_changes_go_through_the_project_to_the_engine() {
+        let mut uta = offline();
+        let track = first_track(&uta);
+        uta.set_track_mixer(track, mixer(3.0, 0.5, false, true), None)
+            .unwrap();
+        assert_eq!(
+            uta.project().tracks[0].mixer,
+            (&mixer(3.0, 0.5, false, true)).into()
+        );
+        let engine = uta.controller.snapshot().tracks()[0].mixer;
+        assert_eq!(
+            (engine.volume_db, engine.pan, engine.solo),
+            (3.0, 0.5, true)
+        );
+
+        uta.undo();
+        assert_eq!(
+            uta.project().tracks[0].mixer,
+            (&MixerStrip::default()).into()
+        );
+        assert!(
+            uta.set_track_mixer(track, mixer(7.0, 0.0, false, false), None)
+                .is_err()
+        );
+        assert!(
+            uta.set_track_mixer(track, mixer(0.0, 1.5, false, false), None)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn one_volume_or_pan_drag_undoes_as_one_step() {
+        let mut uta = with_tracks(2);
+        let first = first_track(&uta);
+        let second = uta.project().tracks[1].id;
+        for volume_db in [-1.0, -5.0, -9.0] {
+            uta.set_track_mixer(first, mixer(volume_db, 0.0, false, false), Some(1))
+                .unwrap();
+        }
+        for pan in [0.1, 0.4] {
+            uta.set_track_mixer(second, mixer(0.0, pan, false, false), Some(2))
+                .unwrap();
+        }
+        uta.undo();
+        assert_eq!(uta.project().tracks[1].mixer.pan, 0.0);
+        assert_eq!(uta.project().tracks[0].mixer.volume_db, -9.0);
+        uta.undo();
+        assert_eq!(uta.project().tracks[0].mixer.volume_db, 0.0);
+        uta.undo();
+        assert_eq!(
+            uta.project().tracks.len(),
+            1,
+            "the next step back is the add"
+        );
+    }
+
+    #[test]
+    fn solo_alone_unsolos_the_others_as_one_undo_step() {
+        let mut uta = with_tracks(3);
+        let ids: Vec<_> = uta.project().tracks.iter().map(|t| t.id).collect();
+        for &id in &ids[..2] {
+            uta.set_track_mixer(id, mixer(0.0, 0.0, false, true), None)
+                .unwrap();
+        }
+        assert_eq!(solos(&uta), [true, true, false]);
+
+        uta.solo_alone(ids[2]).unwrap();
+        assert_eq!(solos(&uta), [false, false, true]);
+        let engine: Vec<_> = uta
+            .controller
+            .snapshot()
+            .tracks()
+            .iter()
+            .map(|track| track.mixer.solo)
+            .collect();
+        assert_eq!(engine, [false, false, true]);
+
+        // Again, on the track that's soloed alone, unsolos it.
+        uta.solo_alone(ids[2]).unwrap();
+        assert_eq!(solos(&uta), [false, false, false]);
+
+        uta.undo();
+        assert_eq!(solos(&uta), [false, false, true]);
+        uta.undo();
+        assert_eq!(
+            solos(&uta),
+            [true, true, false],
+            "one undo puts all three back"
+        );
+        assert!(uta.solo_alone(TrackId::random()).is_err());
+    }
+
+    #[test]
+    fn solo_alone_keeps_the_rest_of_each_mixer() {
+        let mut uta = with_tracks(2);
+        let ids: Vec<_> = uta.project().tracks.iter().map(|t| t.id).collect();
+        uta.set_track_mixer(ids[0], mixer(-3.0, 0.5, true, true), None)
+            .unwrap();
+        uta.set_track_mixer(ids[1], mixer(-9.0, -0.5, false, false), None)
+            .unwrap();
+        uta.solo_alone(ids[1]).unwrap();
+        let view = uta.project();
+        assert_eq!(
+            view.tracks[0].mixer,
+            (&mixer(-3.0, 0.5, true, false)).into()
+        );
+        assert_eq!(
+            view.tracks[1].mixer,
+            (&mixer(-9.0, -0.5, false, true)).into()
+        );
+    }
+
+    #[test]
+    fn tracks_are_added_below_the_others_with_the_next_name() {
+        let mut uta = offline();
+        let id = TrackId::random();
+        uta.add_track(id).unwrap();
+        uta.add_track(TrackId::random()).unwrap();
+        assert_eq!(names(&uta), ["Synth 1", "Synth 2", "Synth 3"]);
+        assert_eq!(uta.project().tracks[1].id, id);
+        assert!(uta.controller.slot(id).is_some(), "the engine has it");
+        assert!(uta.add_track(id).is_err(), "IDs are never reused");
+
+        uta.undo();
+        assert_eq!(names(&uta), ["Synth 1", "Synth 2"]);
+    }
+
+    #[test]
+    fn no_more_than_the_most_tracks_are_added() {
+        let mut uta = with_tracks(Project::MAX_TRACKS);
+        assert!(uta.add_track(TrackId::random()).is_err());
+        let first = first_track(&uta);
+        assert!(uta.duplicate_track(first, TrackId::random()).is_err());
+        assert_eq!(uta.project().tracks.len(), Project::MAX_TRACKS);
+    }
+
+    #[test]
+    fn duplicating_copies_the_sound_mixer_and_clips_with_new_ids() {
+        let mut uta = with_tracks(2);
+        let original = first_track(&uta);
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 240), note(2, 64, 480, 240)], None)
+            .unwrap();
+        uta.set_synth_param(original, SynthParam::CutoffHz(900.0), None)
+            .unwrap();
+        uta.set_track_mixer(original, mixer(-4.0, 0.3, false, true), None)
+            .unwrap();
+
+        let copy_id = TrackId::random();
+        uta.duplicate_track(original, copy_id).unwrap();
+        let view = uta.project();
+        assert_eq!(view.tracks.len(), 3);
+        assert_eq!(names(&uta), ["Synth 1", "Synth 3", "Synth 2"]);
+        let (source, copy) = (&view.tracks[0], &view.tracks[1]);
+        assert_eq!(copy.id, copy_id, "straight below the original");
+        assert_eq!(copy.synth, source.synth);
+        assert_eq!(copy.mixer, source.mixer);
+        assert_eq!(copy.clips.len(), 1);
+        let (from, to) = (&source.clips[0], &copy.clips[0]);
+        assert_ne!(from.id, to.id);
+        assert_eq!((from.start, from.length), (to.start, to.length));
+        let shape = |clip: &ClipView| -> Vec<_> {
+            let mut notes: Vec<_> = clip
+                .notes
+                .iter()
+                .map(|n| (n.pitch, n.velocity, n.start, n.length))
+                .collect();
+            notes.sort_unstable();
+            notes
+        };
+        assert_eq!(shape(from), shape(to));
+        assert!(
+            to.notes
+                .iter()
+                .all(|n| from.notes.iter().all(|m| m.id != n.id)),
+            "every note has a new ID"
+        );
+        assert_eq!(
+            uta.controller.snapshot().tracks()[1].notes().events().len(),
+            4,
+            "the engine plays the copy"
+        );
+
+        uta.undo();
+        assert_eq!(names(&uta), ["Synth 1", "Synth 2"]);
+        assert!(
+            uta.duplicate_track(TrackId::random(), TrackId::random())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn deleting_a_track_undoes_to_exactly_where_it_was() {
+        let mut uta = with_tracks(3);
+        let middle = uta.project().tracks[1].id;
+        uta.set_track_mixer(middle, mixer(-2.0, -1.0, true, false), None)
+            .unwrap();
+        let before = uta.project();
+        uta.remove_track(middle).unwrap();
+        assert_eq!(names(&uta), ["Synth 1", "Synth 3"]);
+        assert!(uta.remove_track(middle).is_err());
+        uta.undo();
+        assert_eq!(uta.project().tracks, before.tracks);
+    }
+
+    #[test]
+    fn moving_a_track_reorders_them_as_one_undo_step() {
+        let mut uta = with_tracks(3);
+        let last = uta.project().tracks[2].id;
+        uta.move_track(last, 0).unwrap();
+        assert_eq!(names(&uta), ["Synth 3", "Synth 1", "Synth 2"]);
+        let engine: Vec<_> = uta
+            .controller
+            .snapshot()
+            .tracks()
+            .iter()
+            .map(|track| track.id())
+            .collect();
+        assert_eq!(engine[0], last);
+        assert!(uta.move_track(last, 3).is_err());
+        uta.undo();
+        assert_eq!(names(&uta), ["Synth 1", "Synth 2", "Synth 3"]);
+    }
+
+    #[test]
+    fn stress_notes_go_to_the_clip_they_are_given() {
+        let mut uta = offline();
+        let original = first_track(&uta);
+        uta.duplicate_track(original, TrackId::random()).unwrap();
+        let copy = uta.project().tracks[1].clips[0].id;
+        uta.add_stress_notes(copy).unwrap();
+        let view = uta.project();
+        assert!(view.tracks[0].clips[0].notes.is_empty());
+        assert_eq!(view.tracks[1].clips[0].notes.len(), stress::NOTE_COUNT);
+        assert!(uta.add_stress_notes(ClipId::random()).is_err());
+    }
+
+    #[test]
+    fn frames_carry_each_tracks_peak_and_the_clip_count() {
+        let mut uta = with_tracks(2);
+        let ids: Vec<_> = uta.project().tracks.iter().map(|t| t.id).collect();
+        // A note auditioned on the second track shows on its meter only.
+        uta.audition(ids[1], 69, 127).unwrap();
+        uta.render(4_800);
+        let frame = uta.frame();
+        assert_eq!(frame.track_peaks.len(), 2);
+        assert_eq!(frame.track_peaks[&ids[0]], 0.0);
+        assert!(frame.track_peaks[&ids[1]] > 0.05, "{frame:?}");
+        assert_eq!(frame.clips, 0);
+
+        let json = serde_json::to_value(&frame).unwrap();
+        assert!(json["trackPeaks"][ids[1].to_string()].is_number());
+        assert_eq!(json["clips"], 0);
+    }
+
+    #[test]
+    fn loud_tracks_light_the_clip_count() {
+        let mut uta = offline();
+        let chord = [48, 52, 55, 60].map(|pitch| note(u64::from(pitch), pitch, 0, 3840));
+        uta.add_notes(clip_id(&uta), chord.to_vec(), None).unwrap();
+        let first = first_track(&uta);
+        for _ in 0..3 {
+            uta.duplicate_track(first, TrackId::random()).unwrap();
+        }
+        uta.set_volume(0.0, None).unwrap();
+        let ids: Vec<_> = uta.project().tracks.iter().map(|t| t.id).collect();
+        for &id in &ids {
+            uta.set_track_mixer(id, mixer(6.0, 0.0, false, false), None)
+                .unwrap();
+        }
+        uta.play().unwrap();
+        uta.render(12_800);
+        let clips = uta.frame().clips;
+        assert!(clips > 0, "the master clipped");
+
+        // The count carries on across a buffer change's new engine.
+        uta.set_buffer_size(64).unwrap();
+        assert!(uta.frame().clips >= clips);
     }
 }
