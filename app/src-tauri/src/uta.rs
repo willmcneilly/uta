@@ -166,6 +166,8 @@ pub const AUDITION_TIME: Duration = Duration::from_millis(200);
 /// A note sounding through the live route, and when to release it.
 #[derive(Debug, Clone, Copy)]
 struct Audition {
+    /// The slot of the track it plays on.
+    slot: usize,
     key: NoteKey,
     ends: Instant,
 }
@@ -390,18 +392,26 @@ impl Uta {
         }
     }
 
-    /// Plays a note briefly through the live route, whether or not the loop
-    /// is playing: for hearing a note as it's placed. It's not a change to
-    /// the project. Any note still being auditioned is released first, and
-    /// the frame thread releases this one after [`AUDITION_TIME`].
+    /// Plays a note briefly through the live route, on the first track,
+    /// whether or not the loop is playing: for hearing a note as it's placed.
+    /// It's not a change to the project. Any note still being auditioned is
+    /// released first, and the frame thread releases this one after
+    /// [`AUDITION_TIME`].
     pub fn audition(&mut self, pitch: u8, velocity: u8) -> Result<(), String> {
         self.release_audition();
+        // The app edits only the first track until it shows them all.
+        let track = self.session.project().tracks()[0].id();
+        let slot = self
+            .controller
+            .slot(track)
+            .ok_or_else(|| format!("track {track} isn't playing yet"))?;
         self.last_audition_key += 1;
         let key = NoteKey(self.last_audition_key);
         self.controller
-            .note_on(key, pitch, velocity)
+            .note_on(slot, key, pitch, velocity)
             .map_err(|error| error.to_string())?;
         self.audition = Some(Audition {
+            slot,
             key,
             ends: Instant::now() + AUDITION_TIME,
         });
@@ -419,7 +429,10 @@ impl Uta {
     /// kept, and the next frame tries again.
     fn release_audition(&mut self) {
         if let Some(audition) = self.audition.take()
-            && self.controller.note_off(audition.key).is_err()
+            && self
+                .controller
+                .note_off(audition.slot, audition.key)
+                .is_err()
         {
             self.audition = Some(audition);
         }
@@ -830,13 +843,16 @@ mod tests {
             .unwrap();
         let view = uta.project().track.synth;
         assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
-        let engine = uta.controller.snapshot().synth;
+        let engine = uta.controller.snapshot().tracks()[0].synth;
         assert_eq!(engine.waveform, uta_engine::Waveform::Square);
         assert_eq!(engine.cutoff_hz, 800.0);
 
         uta.undo();
         assert_eq!(uta.project().track.synth.cutoff_hz, 20_000.0);
-        assert_eq!(uta.controller.snapshot().synth.cutoff_hz, 20_000.0);
+        assert_eq!(
+            uta.controller.snapshot().tracks()[0].synth.cutoff_hz,
+            20_000.0
+        );
         uta.redo();
         assert_eq!(uta.project().track.synth.cutoff_hz, 800.0);
     }
@@ -895,7 +911,10 @@ mod tests {
         uta.add_stress_notes().unwrap();
         assert_eq!(uta.project().track.clip.notes.len(), stress::NOTE_COUNT);
         assert!(
-            !uta.controller.snapshot().sequence.events().is_empty(),
+            !uta.controller.snapshot().tracks()[0]
+                .notes()
+                .events()
+                .is_empty(),
             "the engine plays them"
         );
         uta.add_stress_notes().unwrap();
@@ -933,7 +952,10 @@ mod tests {
         uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
             .unwrap();
         assert_eq!(uta.project().track.clip.notes, vec![note(1, 60, 0, 240)]);
-        assert_eq!(uta.controller.snapshot().sequence.events().len(), 2);
+        assert_eq!(
+            uta.controller.snapshot().tracks()[0].notes().events().len(),
+            2
+        );
 
         uta.set_notes(clip, vec![note(1, 64, 960, 480)], None)
             .unwrap();
@@ -941,7 +963,12 @@ mod tests {
 
         uta.remove_notes(clip, vec![note_id(1)]).unwrap();
         assert!(uta.project().track.clip.notes.is_empty());
-        assert!(uta.controller.snapshot().sequence.events().is_empty());
+        assert!(
+            uta.controller.snapshot().tracks()[0]
+                .notes()
+                .events()
+                .is_empty()
+        );
         assert!(uta.remove_notes(clip, vec![note_id(1)]).is_err());
     }
 
@@ -981,7 +1008,7 @@ mod tests {
             "the note is back, and so is the history"
         );
         assert_eq!(
-            uta.controller.snapshot().sequence.events()[0].sample,
+            uta.controller.snapshot().tracks()[0].notes().events()[0].sample,
             0,
             "and the engine plays it where it was"
         );
@@ -1051,7 +1078,7 @@ mod tests {
         notes.sort_by_key(|note| note.start);
         assert_eq!(notes, vec![note(1, 60, 0, 1440), note(3, 60, 1440, 240)]);
         assert_eq!(
-            uta.controller.snapshot().sequence.events().len(),
+            uta.controller.snapshot().tracks()[0].notes().events().len(),
             4,
             "the engine plays the trimmed notes"
         );

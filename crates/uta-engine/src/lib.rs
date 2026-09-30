@@ -20,8 +20,14 @@ mod synth;
 
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
 pub use mixer::MixerStrip;
-pub use processor::{FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, VOLUME_SMOOTHING_SECONDS};
-pub use snapshot::{ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, db_to_gain};
+pub use processor::{
+    FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, TRACK_BUFFER_FRAMES,
+    VOLUME_SMOOTHING_SECONDS,
+};
+pub use snapshot::{
+    ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, TrackNotes, TrackSnapshot,
+    db_to_gain,
+};
 pub use synth::{
     NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
     Waveform, pitch_to_hz, velocity_to_gain,
@@ -32,6 +38,13 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The sample rate a snapshot is timed at until the engine reports its own.
 pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
+
+/// How many tracks can play at once: each has its own slot on the audio
+/// thread, with its own voices, set aside when the stream starts. See RFC-003,
+/// "Tracks".
+pub const TRACK_SLOTS: usize = uta_core::Project::MAX_TRACKS;
+// Sets of slots are sent as a `u32` bitmask.
+const _: () = assert!(TRACK_SLOTS <= 32);
 
 /// How many commands can wait for the audio thread at once.
 pub const COMMAND_CAPACITY: usize = 256;
@@ -51,16 +64,18 @@ pub enum Command {
     Stop,
     /// Swap in a new "what to play" snapshot at the start of the next block.
     SetSnapshot(Box<Snapshot>),
-    /// Start a note on the synth, whether or not the transport is playing.
+    /// Start a note on the synth of the track in `slot`, whether or not the
+    /// transport is playing.
     NoteOn {
+        slot: usize,
         key: NoteKey,
         /// MIDI note number, 0 to 127.
         pitch: u8,
         /// 1 to 127.
         velocity: u8,
     },
-    /// Release the note started with this key.
-    NoteOff { key: NoteKey },
+    /// Release the note started with this key in `slot`.
+    NoteOff { slot: usize, key: NoteKey },
 }
 
 /// What the audio thread reports after each block.
@@ -71,8 +86,12 @@ pub struct Status {
     /// The playhead's musical position, in ticks from the start of the song.
     /// It stays inside the loop.
     pub playhead: uta_core::time::Ticks,
-    /// The loudest sample since the last status message, as a linear level.
+    /// The master's loudest sample since the last status message, as a
+    /// linear level.
     pub peak: f32,
+    /// Each slot's loudest sample since the last status message, after its
+    /// track's volume, pan, mute and solo, before the master volume.
+    pub track_peaks: [f32; TRACK_SLOTS],
     /// Samples the master has clipped so far, left and right counted
     /// separately: each one was past full scale and was cut off there.
     pub clips: u64,
@@ -85,6 +104,11 @@ pub struct Status {
     pub dropped_note_events: u64,
     /// The rate the engine is running at.
     pub sample_rate: u32,
+    /// How many snapshots have been swapped in so far.
+    pub snapshots: u64,
+    /// The slots with a voice still sounding, as a bitmask (bit `n` is slot
+    /// `n`).
+    pub sounding_slots: u32,
 }
 
 /// Engine setup.

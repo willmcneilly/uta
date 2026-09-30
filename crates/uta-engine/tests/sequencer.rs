@@ -32,10 +32,10 @@ fn reference(project: &Project, sample_rate: u32, pitch: u8, hold: usize, tail: 
     let mut renderer = Renderer::new(config(sample_rate), Snapshot::from(project), 128);
     renderer
         .controller
-        .note_on(NoteKey(u128::MAX), pitch, 100)
+        .note_on(0, NoteKey(u128::MAX), pitch, 100)
         .unwrap();
     renderer.render(hold);
-    renderer.controller.note_off(NoteKey(u128::MAX)).unwrap();
+    renderer.controller.note_off(0, NoteKey(u128::MAX)).unwrap();
     renderer.render(tail);
     renderer.into_samples()
 }

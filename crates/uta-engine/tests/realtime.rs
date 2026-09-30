@@ -13,8 +13,10 @@
 mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
-use common::{demo_loop, note, project};
-use uta_core::{Command, SynthParam};
+use common::{demo_loop, demo_song, note, project, with_mixer};
+use uta_core::{
+    Clip, ClipId, ClipPosition, Command, NoteId, PlacedClip, PlacedTrack, SynthParam, TrackId,
+};
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
@@ -70,10 +72,8 @@ fn snapshot_swap_does_not_allocate_and_returns_the_old_snapshot() {
     let mut buffer = vec![0.0; BLOCK * 2];
     renderer.controller.play().unwrap();
 
-    let new = Snapshot {
-        gain: 0.25,
-        ..Snapshot::from(&demo_loop())
-    };
+    let mut new = Snapshot::from(&demo_loop());
+    new.gain = 0.25;
     renderer.controller.set_snapshot(new.clone()).unwrap();
     process_block(renderer.processor(), &mut buffer);
 
@@ -114,21 +114,24 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
             let key = NoteKey(u128::from(round) * 100 + u128::from(i));
             renderer
                 .controller
-                .note_on(key, 36 + i, 20 + i * 3)
+                .note_on(0, key, 36 + i, 20 + i * 3)
                 .unwrap();
         }
         process_block(renderer.processor(), &mut buffer);
         renderer
             .controller
-            .set_synth_settings(SynthSettings {
-                waveform: waveforms[usize::from(round) % 4],
-                cutoff_hz: 20_000.0 / f32::from(round + 1).powi(3),
-                resonance: f32::from(round % 3) / 2.0,
-                attack_seconds: 0.001 * f32::from(round + 1),
-                decay_seconds: 0.05,
-                sustain: f32::from(round) / 8.0,
-                release_seconds: 0.01,
-            })
+            .set_synth_settings(
+                0,
+                SynthSettings {
+                    waveform: waveforms[usize::from(round) % 4],
+                    cutoff_hz: 20_000.0 / f32::from(round + 1).powi(3),
+                    resonance: f32::from(round % 3) / 2.0,
+                    attack_seconds: 0.001 * f32::from(round + 1),
+                    decay_seconds: 0.05,
+                    sustain: f32::from(round) / 8.0,
+                    release_seconds: 0.01,
+                },
+            )
             .unwrap();
         swaps += 1;
         for _ in 0..4 {
@@ -136,7 +139,7 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
         }
         for i in (0..2 * VOICES as u8).step_by(3) {
             let key = NoteKey(u128::from(round) * 100 + u128::from(i));
-            renderer.controller.note_off(key).unwrap();
+            renderer.controller.note_off(0, key).unwrap();
         }
         for _ in 0..4 {
             process_block(renderer.processor(), &mut buffer);
@@ -252,13 +255,11 @@ fn mixer_changes_and_clipping_do_not_allocate() {
                     volume_db,
                     pan,
                     mute,
+                    solo: false,
                 };
                 renderer
                     .controller
-                    .set_snapshot(Snapshot {
-                        mixer,
-                        ..snapshot.clone()
-                    })
+                    .set_snapshot(with_mixer(snapshot.clone(), mixer))
                     .unwrap();
                 for _ in 0..3 {
                     process_block(renderer.processor(), &mut buffer);
@@ -295,7 +296,8 @@ fn many_swaps_sharing_clip_data_do_not_allocate_or_free() {
 
     let mut shared = 0;
     for step in 0..600u32 {
-        let before = std::sync::Arc::clone(&renderer.controller.snapshot().sequence.clips()[0]);
+        let before =
+            std::sync::Arc::clone(&renderer.controller.snapshot().tracks()[0].notes().clips()[0]);
         let edits = 1 + step as usize % 3;
         for edit in 0..edits {
             let n = step as usize * 3 + edit;
@@ -332,7 +334,7 @@ fn many_swaps_sharing_clip_data_do_not_allocate_or_free() {
             project.apply(&command).unwrap();
             renderer.controller.set_project(&project).unwrap();
         }
-        let after = &renderer.controller.snapshot().sequence.clips()[0];
+        let after = &renderer.controller.snapshot().tracks()[0].notes().clips()[0];
         if std::sync::Arc::ptr_eq(&before, after) {
             shared += 1;
         }
@@ -349,6 +351,119 @@ fn many_swaps_sharing_clip_data_do_not_allocate_or_free() {
     let status = renderer.controller.poll();
     assert!(!status.playing);
     assert_eq!(status.dropped_note_events, 0);
+}
+
+/// The demo song's three tracks playing while tracks are duplicated, added,
+/// removed and reordered, clips are added, moved, moved between tracks and
+/// removed, and mute, solo and the sound change, each sent the way the app
+/// sends it (`set_project`), with live notes on a slot too. A removed track's
+/// notes fade out in its slot, and new tracks take slots, all without the
+/// processor allocating or freeing. See RFC-003, "The shared model,
+/// extended", points 4, 5 and 7.
+#[test]
+fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    let mut project = demo_song();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+
+    let first = project.tracks()[0].id();
+    let mut added_clip: Option<ClipId> = None;
+    for step in 0..480usize {
+        let tracks: Vec<TrackId> = project.tracks().iter().map(|track| track.id()).collect();
+        // Removing a track removes its clips.
+        if added_clip.is_some_and(|id| project.clip(id).is_none()) {
+            added_clip = None;
+        }
+        let command = match step % 9 {
+            // Duplicate a track, up to 12 of them.
+            0 if tracks.len() < 12 => {
+                let source = project.tracks()[step / 9 % tracks.len()].clone();
+                let copy = source.copy(
+                    TrackId::random(),
+                    project.next_track_name(),
+                    ClipId::random,
+                    NoteId::random,
+                );
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: step % tracks.len(),
+                        track: copy,
+                    }],
+                }
+            }
+            // Remove one, never the first.
+            0 | 6 if tracks.len() > 3 => Command::RemoveTracks {
+                tracks: vec![*tracks.iter().rev().find(|&&id| id != first).unwrap()],
+            },
+            1 => Command::MoveTrack {
+                track: tracks[step % tracks.len()],
+                index: 0,
+            },
+            2 if added_clip.is_none() => {
+                let id = ClipId::random();
+                added_clip = Some(id);
+                let notes = (0..8u64)
+                    .map(|i| uta_core::Note {
+                        id: NoteId::random(),
+                        ..note(0, 60 + i as u8, i * 480, 400)
+                    })
+                    .collect::<Vec<_>>();
+                Command::AddClips {
+                    clips: vec![PlacedClip {
+                        track: tracks[1],
+                        clip: Clip::new(id, 960 * (step as u64 % 8), 3840).with_notes(notes),
+                    }],
+                }
+            }
+            // Move the added clip along, and to another track.
+            3 | 4 if added_clip.is_some() => Command::SetClips {
+                clips: vec![ClipPosition {
+                    id: added_clip.unwrap(),
+                    track: tracks[step % tracks.len()],
+                    start: 480 * (step as u64 % 16),
+                    length: 3840,
+                }],
+            },
+            5 if added_clip.is_some() && step % 2 == 1 => Command::RemoveClips {
+                clips: vec![added_clip.take().unwrap()],
+            },
+            7 => Command::SetTrackMixer {
+                track: tracks[step % tracks.len()],
+                mixer: uta_core::MixerStrip {
+                    mute: step % 4 == 3,
+                    solo: step % 5 == 2,
+                    ..uta_core::MixerStrip::default()
+                },
+            },
+            _ => Command::SetSynthParam {
+                track: tracks[step % tracks.len()],
+                param: SynthParam::CutoffHz(300.0 + (step % 40) as f32 * 100.0),
+            },
+        };
+        project.apply(&command).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        if step % 7 == 0 {
+            let slot = renderer.controller.slot(tracks[0]).unwrap();
+            let key = NoteKey(step as u128);
+            renderer.controller.note_on(slot, key, 72, 90).unwrap();
+            process_block(renderer.processor(), &mut buffer);
+            renderer.controller.note_off(slot, key).unwrap();
+        }
+        for _ in 0..3 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        renderer.controller.poll();
+    }
+    renderer.controller.stop().unwrap();
+    for _ in 0..40 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+    let status = renderer.controller.poll();
+    assert!(!status.playing);
+    assert_eq!(status.dropped_note_events, 0);
+    assert!(status.snapshots >= 480, "{} swaps", status.snapshots);
 }
 
 /// A block with more note events than it may handle skips the rest with a

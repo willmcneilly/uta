@@ -6,21 +6,30 @@
 
 use rtrb::{Consumer, Producer};
 
+use uta_core::TrackId;
+
 use crate::ramp::Ramp;
 use crate::synth::{NoteOn, Synth};
-use crate::{COMMAND_CAPACITY, Command, NoteEventKind, Snapshot, Status};
+use crate::{
+    COMMAND_CAPACITY, Command, NoteEvent, NoteEventKind, Snapshot, Status, SynthSettings,
+    TRACK_SLOTS, TrackSnapshot,
+};
 
 /// How long the output takes to fade out before a stream is replaced, and
 /// back in on the next one.
 pub const FADE_SECONDS: f64 = 0.005;
-/// How long a change to the master volume, or to a track's volume, pan or
-/// mute, takes to glide to its new level.
+/// How long a change to the master volume, or to a track's volume, pan, mute
+/// or solo, takes to glide to its new level.
 pub const VOLUME_SMOOTHING_SECONDS: f64 = 0.02;
-/// The most note starts and ends handled in one block, so the work per block
-/// stays bounded however dense the notes are. Any more in the same block are
-/// skipped and counted in [`Status::dropped_note_events`]. It's far more
-/// than music needs: 256 notes starting and ending within one block.
+/// The most note starts and ends each track handles in one block, so the work
+/// per block stays bounded however dense the notes are. Any more on the same
+/// track in the same block are skipped and counted in
+/// [`Status::dropped_note_events`]. It's far more than music needs: 256 notes
+/// starting and ending within one block.
 pub const MAX_NOTE_EVENTS_PER_BLOCK: usize = 512;
+/// The most frames each track renders at a time: the size of its buffer, set
+/// aside when the processor is created. Longer blocks are rendered in parts.
+pub const TRACK_BUFFER_FRAMES: usize = 256;
 
 /// Makes the sound. Owned by the audio thread (or the offline renderer).
 pub struct Processor {
@@ -31,23 +40,17 @@ pub struct Processor {
     snapshot: Box<Snapshot>,
     sample_rate: f64,
     channels: usize,
-    /// Boxed, so the processor stays small to move between streams. It's
-    /// created with the processor, on the control side.
-    synth: Box<Synth>,
+    /// One per track slot, [`TRACK_SLOTS`] of them, all created with the
+    /// processor, on the control side.
+    slots: Box<[Slot]>,
+    /// The left and right of the mix, before the master volume. Boxed, so
+    /// the processor stays small to move between streams.
+    mix: Box<[[f32; TRACK_BUFFER_FRAMES]; 2]>,
 
     playing: bool,
     /// Where the loop is playing, in samples from the start of the song,
     /// timed at the snapshot's rate.
     playhead: u64,
-    /// The next event in the snapshot's sequence: every event before it is
-    /// earlier than the playhead.
-    ///
-    /// Like the voices, it's a plain value, never a reference into the
-    /// snapshot, so nothing on the audio thread shares ownership of snapshot
-    /// data. See RFC-002, "The shared model", point 7.
-    bookmark: usize,
-    /// The track's gain for the left and right, from its mixer strip.
-    track_gains: [Ramp; 2],
     /// The master volume.
     volume: Ramp,
     /// Fades everything out before a stream is replaced, and back in on the
@@ -59,8 +62,140 @@ pub struct Processor {
     dropped_note_events: u64,
     /// Samples the hard clip has cut off so far.
     clips: u64,
-    /// The loudest sample since status was last delivered.
+    /// The master's loudest sample since status was last delivered.
     peak: f32,
+    /// Snapshots swapped in so far.
+    swaps: u64,
+}
+
+/// One track's place on the audio thread: its voices, its place in its
+/// events, its gains and its buffer. See RFC-003, "The shared model,
+/// extended", point 4.
+///
+/// Like the voices, everything here is a plain value, never a reference into
+/// the snapshot, so nothing on the audio thread shares ownership of snapshot
+/// data. See RFC-002, "The shared model", point 7.
+struct Slot {
+    /// The track playing in this slot in the current snapshot, if any. A
+    /// slot whose track is gone keeps playing its last notes' releases.
+    track: Option<TrackId>,
+    synth: Synth,
+    /// The next event in its track's events: every event before it is
+    /// earlier than the playhead.
+    bookmark: usize,
+    /// Note starts and ends it may still handle in this block.
+    budget: usize,
+    /// The track's gain for the left and right, from its mixer strip.
+    gains: [Ramp; 2],
+    /// The synth's output for the part of the block being rendered.
+    buffer: [f32; TRACK_BUFFER_FRAMES],
+    /// The loudest sample since status was last delivered, after the gains.
+    peak: f32,
+}
+
+impl Slot {
+    fn new(track: Option<&TrackSnapshot>, soloing: bool, sample_rate: f64) -> Self {
+        let synth = track.map_or_else(SynthSettings::default, |track| track.synth);
+        Self {
+            track: track.map(TrackSnapshot::id),
+            synth: Synth::new(synth, sample_rate),
+            bookmark: 0,
+            budget: MAX_NOTE_EVENTS_PER_BLOCK,
+            gains: gain_ramps(track, soloing, sample_rate),
+            buffer: [0.0; TRACK_BUFFER_FRAMES],
+            peak: 0.0,
+        }
+    }
+
+    /// Takes on the track this slot has in a new snapshot, or lets it go.
+    fn load(&mut self, track: Option<&TrackSnapshot>, soloing: bool) {
+        let Some(track) = track else {
+            // The track is gone: its notes release and fade out here, and
+            // the control side doesn't hand the slot on until they have.
+            if self.track.take().is_some() {
+                self.synth.release_all();
+            }
+            return;
+        };
+        let gains = track.mixer.gains(soloing);
+        if self.track == Some(track.id()) || self.synth.is_sounding() {
+            if self.track != Some(track.id()) {
+                // A new track while another's notes still sound here: they
+                // fade out quickly, and the sound and gains glide.
+                self.synth.fade_out();
+                self.track = Some(track.id());
+            }
+            self.synth.set_settings(track.synth);
+            for (ramp, gain) in self.gains.iter_mut().zip(gains) {
+                ramp.set_target(gain);
+            }
+        } else {
+            // A new track in a silent slot starts with its own sound.
+            self.track = Some(track.id());
+            self.synth.load(track.synth);
+            for (ramp, gain) in self.gains.iter_mut().zip(gains) {
+                ramp.jump_to(gain);
+            }
+        }
+    }
+
+    /// Handles every event in `events` due by `playhead`, up to the slot's
+    /// budget. The rest are skipped with a search, and counted in `dropped`.
+    fn handle_due_events(&mut self, events: &[NoteEvent], playhead: u64, dropped: &mut u64) {
+        // Bounded by the budget, then one skip.
+        while let Some(event) = events.get(self.bookmark)
+            && event.sample <= playhead
+        {
+            if self.budget == 0 {
+                let due = events.partition_point(|event| event.sample <= playhead);
+                *dropped += (due - self.bookmark) as u64;
+                self.bookmark = due;
+                break;
+            }
+            self.budget -= 1;
+            match event.kind {
+                NoteEventKind::On {
+                    key,
+                    pitch,
+                    velocity,
+                } => self.synth.note_on(NoteOn {
+                    key,
+                    pitch,
+                    velocity,
+                    sequenced: true,
+                }),
+                NoteEventKind::Off { key } => self.synth.note_off(key),
+            }
+            self.bookmark += 1;
+        }
+    }
+
+    /// Renders the synth into the buffer, then adds it to `left` and `right`
+    /// through the track's gains. At most [`TRACK_BUFFER_FRAMES`] frames.
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let buffer = &mut self.buffer[..left.len()];
+        for sample in buffer.iter_mut() {
+            *sample = self.synth.next_sample();
+        }
+        let [left_gain, right_gain] = &mut self.gains;
+        let mut peak = self.peak;
+        for ((&sample, left), right) in buffer.iter().zip(left).zip(right) {
+            let track_left = sample * left_gain.next_value();
+            let track_right = sample * right_gain.next_value();
+            *left += track_left;
+            *right += track_right;
+            peak = peak.max(track_left.abs()).max(track_right.abs());
+        }
+        self.peak = peak;
+    }
+}
+
+/// Gain ramps for a track's left and right, resting at its mixer strip's
+/// gains, or silent for no track.
+fn gain_ramps(track: Option<&TrackSnapshot>, soloing: bool, sample_rate: f64) -> [Ramp; 2] {
+    let gains = track.map_or([0.0; 2], |track| track.mixer.gains(soloing));
+    let length = (VOLUME_SMOOTHING_SECONDS * sample_rate).round() as u32;
+    gains.map(|gain| Ramp::new(gain, length))
 }
 
 impl Processor {
@@ -76,20 +211,19 @@ impl Processor {
         assert!(channels > 0, "need at least one channel");
         let sample_rate = f64::from(sample_rate);
         let samples = |seconds: f64| (seconds * sample_rate).round() as u32;
+        let soloing = snapshot.soloing();
         let mut processor = Self {
             commands,
             status,
             used_snapshots,
             sample_rate,
             channels,
-            synth: Box::new(Synth::new(snapshot.synth, sample_rate)),
+            slots: (0..TRACK_SLOTS)
+                .map(|slot| Slot::new(snapshot.track_in(slot), soloing, sample_rate))
+                .collect(),
+            mix: Box::new([[0.0; TRACK_BUFFER_FRAMES]; 2]),
             playing: false,
             playhead: snapshot.sequence.loop_samples().start,
-            bookmark: 0,
-            track_gains: snapshot
-                .mixer
-                .gains()
-                .map(|gain| Ramp::new(gain, samples(VOLUME_SMOOTHING_SECONDS))),
             volume: Ramp::new(snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS)),
             output_gain: Ramp::new(1.0, samples(FADE_SECONDS)),
             snapshot,
@@ -98,8 +232,9 @@ impl Processor {
             dropped_note_events: 0,
             clips: 0,
             peak: 0.0,
+            swaps: 0,
         };
-        processor.find_bookmark();
+        processor.find_bookmarks();
         processor
     }
 
@@ -119,7 +254,7 @@ impl Processor {
             .sequence
             .playhead_from(&self.snapshot.sequence, self.playhead);
         *self.snapshot = retimed;
-        self.find_bookmark();
+        self.find_bookmarks();
 
         let sample_rate = f64::from(sample_rate);
         self.position = (self.position as f64 * sample_rate / self.sample_rate).round() as u64;
@@ -127,15 +262,15 @@ impl Processor {
         self.channels = channels;
 
         let samples = |seconds: f64| (seconds * sample_rate).round() as u32;
-        self.track_gains = self
-            .snapshot
-            .mixer
-            .gains()
-            .map(|gain| Ramp::new(gain, samples(VOLUME_SMOOTHING_SECONDS)));
+        let soloing = self.snapshot.soloing();
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            let track = self.snapshot.track_in(index);
+            slot.gains = gain_ramps(track, soloing, sample_rate);
+            slot.synth.prepare(sample_rate);
+        }
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
         self.output_gain.set_target(1.0);
-        self.synth.prepare(sample_rate);
     }
 
     #[cfg(test)]
@@ -154,23 +289,25 @@ impl Processor {
     ///
     /// Commands are applied at the start of the block, and one status message
     /// is sent at the end. While playing, the block is split at every note
-    /// start and end, and at the loop's end, so each lands on its exact
-    /// sample whatever the block size. `output.len()` must be a multiple of
-    /// the channel count. Any block length works: nothing here depends on a
-    /// maximum size.
+    /// start and end on any track, and at the loop's end, so each lands on
+    /// its exact sample whatever the block size. `output.len()` must be a
+    /// multiple of the channel count. Any block length works: longer ones
+    /// are rendered [`TRACK_BUFFER_FRAMES`] at a time.
     #[rtsan_standalone::nonblocking]
     pub fn process(&mut self, output: &mut [f32]) {
         self.apply_commands();
 
         let frames = output.len() / self.channels;
         let sequencing = self.playing && self.is_timed_for_this_rate();
-        let mut budget = MAX_NOTE_EVENTS_PER_BLOCK;
+        for slot in self.slots.iter_mut() {
+            slot.budget = MAX_NOTE_EVENTS_PER_BLOCK;
+        }
         let mut done = 0;
         // Each pass renders at least one frame, so this ends.
         while done < frames {
-            let mut run = frames - done;
+            let mut run = (frames - done).min(TRACK_BUFFER_FRAMES);
             if sequencing {
-                self.handle_due_events(&mut budget);
+                self.handle_due_events();
                 run = run.min(self.frames_to_next_event());
             }
             let channels = self.channels;
@@ -200,107 +337,114 @@ impl Processor {
         f64::from(self.snapshot.sequence.sample_rate()) == self.sample_rate
     }
 
-    /// Handles every note event due at the playhead. At the loop's end, goes
-    /// back to the loop's start and handles the events due there too, so both
-    /// land on the same sample. At most `budget` events are handled; the rest
-    /// are skipped and counted.
-    fn handle_due_events(&mut self, budget: &mut usize) {
+    /// Handles every note event due at the playhead, on every track. At the
+    /// loop's end, goes back to the loop's start and handles the events due
+    /// there too, so both land on the same sample. Each track handles at most
+    /// its budget of events; the rest are skipped and counted.
+    fn handle_due_events(&mut self) {
         // Two rounds at most: the events due now, then those at the loop's
         // start after going back to it. Handling both here means the caller
         // always has at least one frame to render next.
         for _ in 0..2 {
-            let sequence = &self.snapshot.sequence;
-            let events = sequence.events();
-            // Bounded by the budget, then one skip.
-            while let Some(event) = events.get(self.bookmark)
-                && event.sample <= self.playhead
-            {
-                if *budget == 0 {
-                    let playhead = self.playhead;
-                    let due = events.partition_point(|event| event.sample <= playhead);
-                    self.dropped_note_events += (due - self.bookmark) as u64;
-                    self.bookmark = due;
-                    break;
-                }
-                *budget -= 1;
-                match event.kind {
-                    NoteEventKind::On {
-                        key,
-                        pitch,
-                        velocity,
-                    } => self.synth.note_on(NoteOn {
-                        key,
-                        pitch,
-                        velocity,
-                        sequenced: true,
-                    }),
-                    NoteEventKind::Off { key } => self.synth.note_off(key),
-                }
-                self.bookmark += 1;
+            let playhead = self.playhead;
+            // Bounded by TRACK_SLOTS.
+            for track in self.snapshot.tracks() {
+                self.slots[track.slot()].handle_due_events(
+                    track.notes().events(),
+                    playhead,
+                    &mut self.dropped_note_events,
+                );
             }
 
-            let loop_samples = sequence.loop_samples();
-            if self.playhead < loop_samples.end {
+            let loop_samples = self.snapshot.sequence.loop_samples();
+            if playhead < loop_samples.end {
                 return;
             }
             self.playhead = loop_samples.start;
-            self.find_bookmark();
+            self.find_bookmarks();
         }
     }
 
-    /// Frames until the next note event or the loop's end, whichever comes
-    /// first. At least 1, once the events due now are handled.
+    /// Frames until the next note event on any track, or the loop's end,
+    /// whichever comes first. At least 1, once the events due now are
+    /// handled.
     fn frames_to_next_event(&self) -> usize {
-        let sequence = &self.snapshot.sequence;
-        let next = sequence
-            .events()
-            .get(self.bookmark)
-            .map_or(u64::MAX, |event| event.sample)
-            .min(sequence.loop_samples().end);
+        let next = self
+            .snapshot
+            .tracks()
+            .iter()
+            .filter_map(|track| {
+                let events = track.notes().events();
+                events.get(self.slots[track.slot()].bookmark)
+            })
+            .map(|event| event.sample)
+            .fold(self.snapshot.sequence.loop_samples().end, u64::min);
         usize::try_from(next - self.playhead).unwrap_or(usize::MAX)
     }
 
-    /// Points the bookmark at the first event at or after the playhead.
-    fn find_bookmark(&mut self) {
+    /// Points each track's bookmark at its first event at or after the
+    /// playhead.
+    fn find_bookmarks(&mut self) {
         let playhead = self.playhead;
-        self.bookmark = self
-            .snapshot
-            .sequence
-            .events()
-            .partition_point(|event| event.sample < playhead);
+        for track in self.snapshot.tracks() {
+            self.slots[track.slot()].bookmark = track
+                .notes()
+                .events()
+                .partition_point(|event| event.sample < playhead);
+        }
     }
 
     /// After a new snapshot, releases every note the sequencer started that
-    /// the snapshot no longer plays at the playhead: deleted, re-pitched,
-    /// moved or shortened away from it, or left behind when the playhead
-    /// went back to the loop's start. Otherwise its end event would never
-    /// come, and it would stick. Bounded by the number of voices, each a
+    /// its track no longer plays at the playhead: deleted, re-pitched, moved
+    /// or shortened away from it, or left behind when the playhead went back
+    /// to the loop's start. Otherwise its end event would never come, and it
+    /// would stick. Bounded by the number of tracks and voices, each a
     /// binary search.
     fn release_changed_notes(&mut self) {
-        let sequence = &self.snapshot.sequence;
         let playhead = self.playhead;
-        self.synth.release_sequenced_unless(|key, pitch| {
-            sequence
-                .note(key)
-                .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
-        });
+        for track in self.snapshot.tracks() {
+            let notes = track.notes();
+            self.slots[track.slot()]
+                .synth
+                .release_sequenced_unless(|key, pitch| {
+                    notes
+                        .note(key)
+                        .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
+                });
+        }
     }
 
-    /// Renders the synth into `output`, which holds whole frames: the
-    /// track's volume, pan and mute make it stereo, then the master volume,
-    /// then a hard clip at full scale. The first two channels get the left
-    /// and right, and any more are silent. A single channel gets their
-    /// average, so a centred track sounds the same in mono. See RFC-003, "The
-    /// master and headroom".
+    /// Renders every slot with a track or a sound into `output`, which holds
+    /// whole frames: each track's volume, pan, mute and solo make it stereo,
+    /// and they're added together, then the master volume, then a hard clip
+    /// at full scale. The first two channels get the left and right, and any
+    /// more are silent. A single channel gets their average, so a centred
+    /// track sounds the same in mono. See RFC-003, "The master and headroom".
+    ///
+    /// Tracks are added in slot order, which reordering them doesn't change,
+    /// so it doesn't change the sound either.
     fn render(&mut self, output: &mut [f32]) {
+        let frames = output.len() / self.channels;
+        let [left, right] = &mut *self.mix;
+        let (left, right) = (&mut left[..frames], &mut right[..frames]);
+        left.fill(0.0);
+        right.fill(0.0);
+        for slot in self.slots.iter_mut() {
+            if slot.track.is_some() || slot.synth.is_sounding() {
+                slot.render(left, right);
+            }
+        }
+
         let mut peak = self.peak;
         let mut clips = self.clips;
-        let [left_gain, right_gain] = &mut self.track_gains;
-        for frame in output.chunks_exact_mut(self.channels) {
-            let sample = self.synth.next_sample();
+        for ((frame, &left), &right) in output
+            .chunks_exact_mut(self.channels)
+            .zip(left.iter())
+            .zip(right.iter())
+        {
             let master = self.volume.next_value() * self.output_gain.next_value();
-            let left = hard_clip(sample * left_gain.next_value() * master, &mut clips);
-            let right = hard_clip(sample * right_gain.next_value() * master, &mut clips);
+            let left = hard_clip(left * master, &mut clips);
+            let right = hard_clip(right * master, &mut clips);
             // The peak is of what the device gets.
             match frame {
                 [mono] => {
@@ -340,41 +484,56 @@ impl Processor {
                 Command::Play => self.playing = true,
                 Command::Stop => {
                     self.playing = false;
-                    self.synth.release_all();
+                    for slot in self.slots.iter_mut() {
+                        slot.synth.release_all();
+                    }
                 }
                 Command::SetSnapshot(new) => {
-                    for (ramp, gain) in self.track_gains.iter_mut().zip(new.mixer.gains()) {
-                        ramp.set_target(gain);
-                    }
                     self.volume.set_target(new.gain);
-                    self.synth.set_settings(new.synth);
                     let old = std::mem::replace(&mut self.snapshot, new);
                     self.playhead = self
                         .snapshot
                         .sequence
                         .playhead_from(&old.sequence, self.playhead);
-                    self.find_bookmark();
+                    let soloing = self.snapshot.soloing();
+                    for (index, slot) in self.slots.iter_mut().enumerate() {
+                        slot.load(self.snapshot.track_in(index), soloing);
+                    }
+                    self.find_bookmarks();
                     self.release_changed_notes();
+                    self.swaps += 1;
                     // Checked above: there is room, so this never drops `old`.
                     let _ = self.used_snapshots.push(old);
                 }
                 Command::NoteOn {
+                    slot,
                     key,
                     pitch,
                     velocity,
-                } => self.synth.note_on(NoteOn {
-                    key,
-                    pitch,
-                    velocity,
-                    sequenced: false,
-                }),
-                Command::NoteOff { key } => self.synth.note_off(key),
+                } => {
+                    // Only a slot with a track plays live notes.
+                    if let Some(slot) = self.slots.get_mut(slot)
+                        && slot.track.is_some()
+                    {
+                        slot.synth.note_on(NoteOn {
+                            key,
+                            pitch,
+                            velocity,
+                            sequenced: false,
+                        });
+                    }
+                }
+                Command::NoteOff { slot, key } => {
+                    if let Some(slot) = self.slots.get_mut(slot) {
+                        slot.synth.note_off(key);
+                    }
+                }
             }
         }
     }
 
     /// Sends this block's status. If the queue is full the message is skipped
-    /// and the peak carries over to the next one.
+    /// and the peaks carry over to the next one.
     fn send_status(&mut self) {
         let sequence = &self.snapshot.sequence;
         let loop_samples = sequence.loop_samples();
@@ -384,18 +543,32 @@ impl Processor {
         } else {
             self.playhead
         };
+        let mut track_peaks = [0.0; TRACK_SLOTS];
+        let mut sounding_slots = 0u32;
+        for (index, slot) in self.slots.iter().enumerate() {
+            track_peaks[index] = slot.peak;
+            if slot.synth.is_sounding() {
+                sounding_slots |= 1 << index;
+            }
+        }
         let status = Status {
             position: self.position,
             playhead: sequence.ticks_at(playhead),
             peak: self.peak,
+            track_peaks,
             clips: self.clips,
             dropouts: self.dropouts,
             playing: self.playing,
             dropped_note_events: self.dropped_note_events,
             sample_rate: self.sample_rate as u32,
+            snapshots: self.swaps,
+            sounding_slots,
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
+            for slot in self.slots.iter_mut() {
+                slot.peak = 0.0;
+            }
         }
     }
 }

@@ -4,8 +4,8 @@
 //! waveform. See RFC-003, "The mixer in the track headers" and "The master
 //! and headroom".
 //!
-//! No command sets a track's mixer strip yet, so these set it in the
-//! snapshot directly.
+//! These set the track's mixer strip in the snapshot directly. Several
+//! tracks, and solo, are in `tracks.rs`.
 
 mod common;
 
@@ -42,10 +42,7 @@ fn held_a4() -> Project {
 /// The held note with the master at 0 dB and the track's strip set to
 /// `mixer`.
 fn held_a4_through(mixer: MixerStrip) -> Snapshot {
-    Snapshot {
-        mixer,
-        ..Snapshot::from(&held_a4()).with_volume_db(0.0)
-    }
+    with_mixer(Snapshot::from(&held_a4()).with_volume_db(0.0), mixer)
 }
 
 fn strip(volume_db: f32, pan: f32) -> MixerStrip {
@@ -53,6 +50,7 @@ fn strip(volume_db: f32, pan: f32) -> MixerStrip {
         volume_db,
         pan,
         mute: false,
+        solo: false,
     }
 }
 
@@ -187,10 +185,7 @@ fn mixer_changes_glide_without_clicks() {
     // Each change lands mid-glide of the one before, then after the glide.
     for gap in [300, 2_000] {
         for mixer in changes {
-            let snapshot = Snapshot {
-                mixer,
-                ..renderer.controller.snapshot().clone()
-            };
+            let snapshot = with_mixer(renderer.controller.snapshot().clone(), mixer);
             renderer.controller.set_snapshot(snapshot).unwrap();
             renderer.render(gap);
         }
@@ -218,10 +213,7 @@ fn a_pan_change_glides_to_its_new_level() {
     let mut renderer = Renderer::new(config(2), held_a4_through(strip(0.0, 0.0)), 128);
     renderer.controller.play().unwrap();
     renderer.render_seconds(0.2);
-    let snapshot = Snapshot {
-        mixer: strip(0.0, 1.0),
-        ..renderer.controller.snapshot().clone()
-    };
+    let snapshot = with_mixer(renderer.controller.snapshot().clone(), strip(0.0, 1.0));
     renderer.controller.set_snapshot(snapshot).unwrap();
     renderer.render_seconds(0.2);
     let change = renderer.frames_for(0.2);
@@ -252,10 +244,7 @@ fn a_pan_change_glides_to_its_new_level() {
 #[test]
 fn a_mono_device_gets_the_average_of_left_and_right() {
     for mixer in [strip(0.0, 0.0), strip(3.0, -0.6), strip(-6.0, 1.0)] {
-        let snapshot = Snapshot {
-            mixer,
-            ..Snapshot::from(&demo_loop())
-        };
+        let snapshot = with_mixer(Snapshot::from(&demo_loop()), mixer);
         let render = |channels| {
             let mut renderer = Renderer::new(config(channels), snapshot.clone(), 128);
             renderer.controller.play().unwrap();
@@ -273,10 +262,7 @@ fn a_mono_device_gets_the_average_of_left_and_right() {
 
 #[test]
 fn channels_past_the_second_are_silent() {
-    let snapshot = Snapshot {
-        mixer: strip(0.0, -0.4),
-        ..Snapshot::from(&demo_loop())
-    };
+    let snapshot = with_mixer(Snapshot::from(&demo_loop()), strip(0.0, -0.4));
     let render = |channels| {
         let mut renderer = Renderer::new(config(channels), snapshot.clone(), 128);
         renderer.controller.play().unwrap();
@@ -315,10 +301,7 @@ fn loud_notes_never_pass_full_scale_and_are_counted() {
         &[SynthParam::Waveform(uta_core::Waveform::Square)],
         chord,
     );
-    let snapshot = Snapshot {
-        mixer: strip(6.0, 0.5),
-        ..Snapshot::from(&loud).with_volume_db(0.0)
-    };
+    let snapshot = with_mixer(Snapshot::from(&loud).with_volume_db(0.0), strip(6.0, 0.5));
     for channels in [1, 2] {
         let mut renderer = Renderer::new(config(channels), snapshot.clone(), 128);
         renderer.controller.play().unwrap();
@@ -369,10 +352,10 @@ fn the_clip_comes_after_the_master_volume() {
         .collect();
     let loud = project(120.0, 1, &PLAIN_SINE, chord);
     let render = |master_db| {
-        let snapshot = Snapshot {
-            mixer: strip(6.0, 0.0),
-            ..Snapshot::from(&loud).with_volume_db(master_db)
-        };
+        let snapshot = with_mixer(
+            Snapshot::from(&loud).with_volume_db(master_db),
+            strip(6.0, 0.0),
+        );
         let mut renderer = Renderer::new(config(2), snapshot, 128);
         renderer.controller.play().unwrap();
         renderer.render(LOOP / 2);

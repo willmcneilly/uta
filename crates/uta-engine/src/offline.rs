@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::{Controller, EngineConfig, Processor, Snapshot};
+use crate::{Controller, EngineConfig, Processor, Snapshot, Status};
 
 /// Renders audio block by block into memory.
 pub struct Renderer {
@@ -17,6 +17,8 @@ pub struct Renderer {
     block: Vec<f32>,
     /// Everything rendered so far, interleaved.
     samples: Vec<f32>,
+    /// The latest status, with the loudest peaks since it was last taken.
+    status: Status,
 }
 
 impl Renderer {
@@ -31,6 +33,7 @@ impl Renderer {
             block_size,
             block: vec![0.0; block_size * config.channels],
             samples: Vec::new(),
+            status: Status::default(),
         }
     }
 
@@ -47,7 +50,7 @@ impl Renderer {
             self.processor.process(block);
             self.samples.extend_from_slice(block);
             remaining -= len;
-            self.controller.poll();
+            self.poll();
         }
     }
 
@@ -60,8 +63,30 @@ impl Renderer {
             let len = remaining.min(self.block_size);
             self.processor.process(&mut self.block[..len * channels]);
             remaining -= len;
-            self.controller.poll();
+            self.poll();
         }
+    }
+
+    /// The latest status, with `peak` and `track_peaks` the loudest since
+    /// the last call (or since the renderer was made).
+    pub fn take_status(&mut self) -> Status {
+        let status = self.status;
+        self.status.peak = 0.0;
+        self.status.track_peaks = [0.0; crate::TRACK_SLOTS];
+        status
+    }
+
+    fn poll(&mut self) {
+        let status = self.controller.poll();
+        let mut peaks = self.status.track_peaks;
+        for (peak, &track_peak) in peaks.iter_mut().zip(&status.track_peaks) {
+            *peak = peak.max(track_peak);
+        }
+        self.status = Status {
+            peak: self.status.peak.max(status.peak),
+            track_peaks: peaks,
+            ..status
+        };
     }
 
     /// Renders `seconds` more seconds, rounded to the nearest frame.
@@ -94,10 +119,15 @@ impl Renderer {
 }
 
 /// Plays the loop in `snapshot` from its start for `seconds`, then stops and
-/// renders the notes' release, so it ends in silence. What `uta render`
-/// writes.
+/// renders the notes' release (the longest of any track's), so it ends in
+/// silence. What `uta render` writes.
 pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
-    let tail = f64::from(snapshot.synth.clamped().release_seconds) + RELEASE_MARGIN_SECONDS;
+    let release = snapshot
+        .tracks()
+        .iter()
+        .map(|track| track.synth.clamped().release_seconds)
+        .fold(0.0, f32::max);
+    let tail = f64::from(release) + RELEASE_MARGIN_SECONDS;
     let mut renderer = Renderer::new(config, snapshot, 128);
     renderer.controller.play().expect("fresh queue has room");
     renderer.render_seconds(seconds);

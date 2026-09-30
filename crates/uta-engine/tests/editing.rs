@@ -312,7 +312,7 @@ fn stop_releases_every_note() {
         let mut renderer = playing(&project, block_size);
         renderer
             .controller
-            .note_on(NoteKey(u128::MAX), 81, 100)
+            .note_on(0, NoteKey(u128::MAX), 81, 100)
             .unwrap();
         let stop_at = block_start(BEAT_SAMPLES, block_size);
         renderer.render(stop_at);
