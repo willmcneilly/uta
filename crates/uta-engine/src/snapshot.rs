@@ -913,4 +913,231 @@ mod tests {
         assert_eq!(sequence.sample_at(960), 24_000);
         assert_eq!(sequence.ticks_at(24_000), 960);
     }
+
+    /// Track `n` with one 1-bar clip holding a note of `pitch`, with IDs
+    /// worked out from `n`.
+    fn track(n: u128, pitch: u8) -> uta_core::Track {
+        let clip = uta_core::Clip::new(ClipId::from_uuid(Uuid::from_u128(200 + n)), 0, 3840)
+            .with_notes([note(300 + n, pitch, 0, 960)]);
+        uta_core::Track::new(
+            TrackId::from_uuid(Uuid::from_u128(100 + n)),
+            format!("Synth {n}"),
+            Source::Synth(uta_core::SynthSettings::default()),
+        )
+        .with_clips([clip])
+    }
+
+    fn track_id(n: u128) -> TrackId {
+        TrackId::from_uuid(Uuid::from_u128(100 + n))
+    }
+
+    fn add(project: &mut Project, n: u128, index: usize) {
+        project
+            .apply(&Command::AddTracks {
+                tracks: vec![uta_core::PlacedTrack {
+                    index,
+                    track: track(n, 30 + (n % 64) as u8),
+                }],
+            })
+            .unwrap();
+    }
+
+    fn remove(project: &mut Project, n: u128) {
+        project
+            .apply(&Command::RemoveTracks {
+                tracks: vec![track_id(n)],
+            })
+            .unwrap();
+    }
+
+    /// The project's first track, then tracks 2 to `count`.
+    fn tracks(count: u128) -> Project {
+        let mut project = project();
+        for n in 2..=count {
+            add(&mut project, n, n as usize - 1);
+        }
+        project
+    }
+
+    fn slots(snapshot: &Snapshot) -> Vec<usize> {
+        snapshot.tracks().iter().map(TrackSnapshot::slot).collect()
+    }
+
+    #[test]
+    fn every_track_plays_in_its_own_slot_with_its_own_notes() {
+        let snapshot = Snapshot::new(&tracks(3), 48_000);
+        assert_eq!(slots(&snapshot), [0, 1, 2]);
+        for (index, track) in snapshot.tracks().iter().enumerate() {
+            assert_eq!(snapshot.track_in(track.slot()), Some(track));
+            assert_eq!(snapshot.slot_of(track.id()), Some(index));
+        }
+        assert_eq!(snapshot.track_in(3), None);
+        assert_eq!(snapshot.track_in(TRACK_SLOTS), None);
+        assert!(events(&snapshot).is_empty());
+        for (track, n) in snapshot.tracks()[1..].iter().zip([2, 3]) {
+            let pitch = 30 + n as u8;
+            assert_eq!(
+                track.notes().events(),
+                [on(0, 300 + n, pitch), off(24_000, 300 + n)]
+            );
+        }
+    }
+
+    /// A track keeps its slot for its life: reordering and removing others
+    /// don't move it, and a new track takes a slot the last snapshot didn't
+    /// use, so it never lands on notes still fading from a removed one.
+    #[test]
+    fn tracks_keep_their_slots_and_new_ones_avoid_the_last_snapshots() {
+        let mut project = tracks(3);
+        let first = Snapshot::new(&project, 48_000);
+
+        project
+            .apply(&Command::MoveTrack {
+                track: track_id(3),
+                index: 0,
+            })
+            .unwrap();
+        let moved = Snapshot::sharing(&project, &first);
+        assert_eq!(slots(&moved), [2, 0, 1]);
+
+        // Track 2 goes and track 4 comes in the same change: track 4 doesn't
+        // take slot 1, which track 2's notes may still be fading in.
+        remove(&mut project, 2);
+        add(&mut project, 4, 1);
+        let swapped = Snapshot::sharing(&project, &moved);
+        assert_eq!(slots(&swapped), [2, 3, 0]);
+        // Slots the controller says are still fading are avoided too.
+        add(&mut project, 5, 0);
+        let avoiding = Snapshot::sharing_avoiding(&project, &swapped, 0b1_0010);
+        assert_eq!(slots(&avoiding), [5, 2, 3, 0]);
+        // Once the last snapshot didn't use it and nothing avoids it, slot 1
+        // is free again.
+        add(&mut project, 6, 0);
+        let reused = Snapshot::sharing(&project, &avoiding);
+        assert_eq!(slots(&reused), [1, 5, 2, 3, 0]);
+    }
+
+    /// With every slot taken or avoided, a new track still gets a slot no
+    /// track in the project uses.
+    #[test]
+    fn with_no_slot_left_a_new_track_takes_an_avoided_one() {
+        let mut project = tracks(TRACK_SLOTS as u128);
+        let full = Snapshot::new(&project, 48_000);
+        assert_eq!(slots(&full), (0..TRACK_SLOTS).collect::<Vec<_>>());
+        remove(&mut project, 7);
+        add(&mut project, 99, 0);
+        let snapshot = Snapshot::sharing_avoiding(&project, &full, u32::MAX);
+        assert_eq!(snapshot.slot_of(track_id(99)), Some(6));
+    }
+
+    /// Clips are found by ID wherever they are, so reordering tracks shares
+    /// every clip's notes and every track's events with the last snapshot.
+    #[test]
+    fn a_reorder_shares_every_clip_and_every_tracks_events() {
+        let mut project = tracks(3);
+        let first = Snapshot::new(&project, 48_000);
+        project
+            .apply(&Command::MoveTrack {
+                track: track_id(2),
+                index: 2,
+            })
+            .unwrap();
+        let moved = Snapshot::sharing(&project, &first);
+        for track in moved.tracks() {
+            let before = first.track(track.id()).unwrap();
+            assert!(Arc::ptr_eq(before.notes(), track.notes()));
+            assert!(Arc::ptr_eq(
+                &before.notes().clips()[0],
+                &track.notes().clips()[0]
+            ));
+        }
+    }
+
+    /// An edit to one track's notes rebuilds only that track's events, and
+    /// only the clip it changed.
+    #[test]
+    fn editing_one_track_rebuilds_only_its_events() {
+        let mut project = tracks(3);
+        let clip = ClipId::from_uuid(Uuid::from_u128(203));
+        project
+            .apply(&Command::AddClips {
+                clips: vec![uta_core::PlacedClip {
+                    track: track_id(2),
+                    clip: uta_core::Clip::new(ClipId::from_uuid(Uuid::from_u128(299)), 3840, 3840),
+                }],
+            })
+            .unwrap();
+        let first = Snapshot::new(&project, 48_000);
+        project
+            .apply(&Command::AddNotes {
+                clip,
+                notes: vec![note(400, 70, 960, 480)],
+            })
+            .unwrap();
+        let edited = Snapshot::sharing(&project, &first);
+        let [one, two, three] = [0, 1, 2].map(|i| (&first.tracks()[i], &edited.tracks()[i]));
+        assert!(Arc::ptr_eq(one.0.notes(), one.1.notes()));
+        assert!(Arc::ptr_eq(two.0.notes(), two.1.notes()));
+        assert!(!Arc::ptr_eq(three.0.notes(), three.1.notes()));
+        assert_eq!(three.1.notes().events().len(), 4);
+        assert_eq!(edited, Snapshot::new(&project, 48_000));
+
+        // A tempo change retimes every track, but still shares every clip.
+        project.apply(&Command::SetTempo { bpm: 90.0 }).unwrap();
+        let slower = Snapshot::sharing(&project, &edited);
+        for (before, after) in edited.tracks().iter().zip(slower.tracks()) {
+            assert!(!Arc::ptr_eq(before.notes(), after.notes()));
+            for (a, b) in before.notes().clips().iter().zip(after.notes().clips()) {
+                assert!(Arc::ptr_eq(a, b));
+            }
+        }
+    }
+
+    /// Moving a clip to another track keeps its notes and rebuilds both
+    /// tracks' events, which then have the clip's notes on the new track.
+    #[test]
+    fn a_clip_moved_to_another_track_keeps_its_notes() {
+        let mut project = tracks(3);
+        let first = Snapshot::new(&project, 48_000);
+        let clip = ClipId::from_uuid(Uuid::from_u128(202));
+        project
+            .apply(&Command::SetClips {
+                clips: vec![uta_core::ClipPosition {
+                    id: clip,
+                    track: track_id(3),
+                    start: 0,
+                    length: 3840,
+                }],
+            })
+            .unwrap();
+        let moved = Snapshot::sharing(&project, &first);
+        let shared = &first.tracks()[1].notes().clips()[0];
+        assert!(moved.tracks()[1].notes().clips().is_empty());
+        assert!(events(&moved).is_empty());
+        let on_three = moved.tracks()[2].notes();
+        assert!(on_three.clips().iter().any(|c| Arc::ptr_eq(c, shared)));
+        assert_eq!(on_three.events().len(), 4);
+        assert!(Arc::ptr_eq(
+            first.tracks()[0].notes(),
+            moved.tracks()[0].notes()
+        ));
+    }
+
+    #[test]
+    fn solo_on_any_track_means_soloing() {
+        let mut project = tracks(2);
+        assert!(!Snapshot::from(&project).soloing());
+        project
+            .apply(&Command::SetTrackMixer {
+                track: track_id(2),
+                mixer: uta_core::MixerStrip {
+                    solo: true,
+                    ..uta_core::MixerStrip::default()
+                },
+            })
+            .unwrap();
+        let snapshot = Snapshot::from(&project);
+        assert!(snapshot.soloing());
+        assert!(snapshot.tracks()[1].mixer.solo);
+    }
 }

@@ -14,6 +14,14 @@ pub fn demo_loop() -> Project {
     list.build().expect("the demo loop builds")
 }
 
+/// The demo song, built from its committed command list: three tracks, each
+/// with its own sound, panned apart.
+pub fn demo_song() -> Project {
+    let json = include_str!("../../../../examples/demo-song.json");
+    let list: CommandList = serde_json::from_str(json).expect("the demo song parses");
+    list.build().expect("the demo song builds")
+}
+
 /// A note for [`project`]: its ID is worked out from `index`.
 pub fn note(index: u128, pitch: u8, start: Ticks, length: Ticks) -> Note {
     Note {

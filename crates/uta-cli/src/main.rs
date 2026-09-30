@@ -24,8 +24,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Render the loop to a WAV file, offline (no sound device needed). It
-    /// plays from the loop's start, then stops and lets the notes ring out.
+    /// Render the loop to a stereo WAV file, offline (no sound device
+    /// needed). It plays from the loop's start, then stops and lets the notes
+    /// ring out.
     Render {
         /// Where to write the WAV.
         file: PathBuf,
@@ -105,7 +106,11 @@ fn loop_seconds(project: &Project) -> f64 {
 }
 
 fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), String> {
-    let config = EngineConfig::default();
+    // Stereo, so tracks panned apart stay apart.
+    let config = EngineConfig {
+        channels: 2,
+        ..EngineConfig::default()
+    };
     let seconds = seconds.unwrap_or_else(|| 2.0 * loop_seconds(project));
     let samples = offline::render_loop(config, Snapshot::from(project), seconds);
     offline::write_wav(file, config, &samples)
@@ -119,8 +124,9 @@ fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), St
     Ok(())
 }
 
-/// A one-line summary: the notes, tempo and loop.
+/// A one-line summary: the tracks, notes, tempo and loop.
 fn describe_project(project: &Project) -> String {
+    let tracks = project.tracks().len();
     let notes: usize = project
         .tracks()
         .iter()
@@ -130,7 +136,8 @@ fn describe_project(project: &Project) -> String {
     let transport = project.transport();
     let bars = transport.loop_length() / transport.time_signature().ticks_per_bar();
     format!(
-        "{notes} notes in a {bars}-bar loop at {} BPM",
+        "{notes} notes on {tracks} track{} in a {bars}-bar loop at {} BPM",
+        if tracks == 1 { "" } else { "s" },
         transport.tempo_map().bpm()
     )
 }
@@ -354,10 +361,20 @@ mod tests {
         let project = build(json).unwrap();
         assert_eq!(
             describe_project(&project),
-            "28 notes in a 2-bar loop at 112 BPM"
+            "28 notes on 1 track in a 2-bar loop at 112 BPM"
         );
         // 2 bars of 4/4 at 112 BPM.
         assert!((loop_seconds(&project) - 8.0 * 60.0 / 112.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_demo_song_builds() {
+        let json = include_str!("../../../examples/demo-song.json");
+        let project = build(json).unwrap();
+        assert_eq!(
+            describe_project(&project),
+            "60 notes on 3 tracks in a 4-bar loop at 112 BPM"
+        );
     }
 
     #[test]

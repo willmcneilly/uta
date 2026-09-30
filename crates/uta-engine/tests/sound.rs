@@ -1,16 +1,17 @@
 //! Sound tests: everything is rendered offline through the real processor and
 //! measured from the waveform. See `CLAUDE.md`, "Proving audio code works".
 //!
-//! These cover the transport and the master volume, with the loop playing.
+//! These cover the transport and the master volume, with the loop playing,
+//! and the demo loop and demo song as a whole.
 //! The synth's own sound is in `synth.rs`, and note timing in `sequencer.rs`.
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::*;
-use uta_core::Project;
 use uta_core::time::Ticks;
+use uta_core::{ClipPosition, Command, Project};
 use uta_engine::offline::{self, Renderer};
 use uta_engine::{
     EngineConfig, Snapshot, VOICE_LEVEL, VOLUME_SMOOTHING_SECONDS, db_to_gain, pitch_to_hz,
@@ -24,6 +25,13 @@ fn config() -> EngineConfig {
     EngineConfig {
         sample_rate: RATE,
         channels: 1,
+    }
+}
+
+fn stereo() -> EngineConfig {
+    EngineConfig {
+        channels: 2,
+        ..config()
     }
 }
 
@@ -219,31 +227,92 @@ fn block_size_does_not_change_the_audio() {
     }
 }
 
-fn golden_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/demo-loop.wav")
+/// Renders the demo song in stereo in blocks of `block_size`, round the
+/// loop and on, while a track is muted, soloed and moved, a clip is moved and
+/// the volume changes. As in [`session`], every change lands on a multiple
+/// of 1024 frames.
+fn song_session(block_size: usize) -> Vec<f32> {
+    let mut project = demo_song();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), block_size);
+    let ids: Vec<_> = project.tracks().iter().map(|track| track.id()).collect();
+    let lead = project.tracks()[2].clips()[1].clone();
+    let mixer = |mute, solo| uta_core::MixerStrip {
+        mute,
+        solo,
+        ..uta_core::MixerStrip::default()
+    };
+    let changes = [
+        Command::SetTrackMixer {
+            track: ids[1],
+            mixer: mixer(true, false),
+        },
+        Command::MoveTrack {
+            track: ids[0],
+            index: 2,
+        },
+        Command::SetTrackMixer {
+            track: ids[2],
+            mixer: mixer(false, true),
+        },
+        Command::SetClips {
+            clips: vec![ClipPosition {
+                id: lead.id(),
+                track: ids[2],
+                start: lead.start() + 960,
+                length: lead.length(),
+            }],
+        },
+        Command::SetTrackMixer {
+            track: ids[2],
+            mixer: mixer(false, false),
+        },
+    ];
+    renderer.controller.play().unwrap();
+    renderer.render(1024 * 100);
+    for command in &changes {
+        project.apply(command).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        renderer.render(1024 * 60);
+    }
+    renderer.controller.set_volume_db(-3.0).unwrap();
+    renderer.render(1024 * 60);
+    renderer.controller.stop().unwrap();
+    renderer.render(1024 * 40);
+    renderer.into_samples()
 }
 
-/// How long the golden render plays: once round the demo loop and a beat
-/// more, so it includes the loop point.
+#[test]
+fn block_size_does_not_change_the_audio_with_several_tracks() {
+    let reference = song_session(1024);
+    // Round the demo song's loop (8.6 s) at least once while playing.
+    assert!(reference.len() > 10 * 48_000 * 2);
+    assert!(peak(&reference) > 0.1);
+    for block_size in [32, 128] {
+        let difference = max_difference(&song_session(block_size), &reference);
+        assert!(
+            difference < 1e-6,
+            "blocks of {block_size} differ from 1024 by {difference}"
+        );
+    }
+}
+
+/// How long a golden render plays: once round the loop and a beat more, so
+/// it includes the loop point.
 fn golden_seconds(project: &Project) -> f64 {
     let transport = project.transport();
     let ticks: Ticks = transport.loop_length() + 960;
     transport.tempo_map().ticks_to_samples(ticks, RATE) as f64 / f64::from(RATE)
 }
 
-/// The demo loop, as `uta render --commands examples/demo-loop.json` writes
-/// it but shorter. Regenerate with
-/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
-/// every change to the file.
-#[test]
-fn matches_the_golden_wav() {
-    let project = demo_loop();
-    let rendered =
-        offline::render_loop(config(), Snapshot::from(&project), golden_seconds(&project));
-    let path = golden_path();
+/// Compares `project`'s render with `tests/golden/<name>.wav`, or writes
+/// the file with `UTA_GOLDEN=1`. A human approves every change to a golden
+/// file.
+fn check_golden(name: &str, config: EngineConfig, project: &Project) {
+    let rendered = offline::render_loop(config, Snapshot::from(project), golden_seconds(project));
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/golden/{name}.wav"));
     if std::env::var_os("UTA_GOLDEN").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        offline::write_wav(&path, config(), &rendered).unwrap();
+        offline::write_wav(&path, config, &rendered).unwrap();
         eprintln!("Wrote {}", path.display());
         return;
     }
@@ -253,13 +322,32 @@ fn matches_the_golden_wav() {
             path.display()
         )
     });
-    assert_eq!(spec.sample_rate, RATE);
-    assert_eq!(spec.channels, 1);
+    assert_eq!(spec.sample_rate, config.sample_rate);
+    assert_eq!(usize::from(spec.channels), config.channels);
     let difference = max_difference(&rendered, &golden);
     assert!(
         difference < 1e-5,
-        "render differs from the golden WAV by {difference} (limit 1e-5)"
+        "{name}: render differs from the golden WAV by {difference} (limit 1e-5)"
     );
+}
+
+/// The demo loop, as `uta render --commands examples/demo-loop.json` writes
+/// it but shorter and in mono. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
+#[test]
+fn matches_the_golden_wav() {
+    check_golden("demo-loop", config(), &demo_loop());
+}
+
+/// The demo song, three tracks with their own sounds panned apart, as
+/// `uta render --commands examples/demo-song.json` writes it but shorter.
+/// Regenerated the same way as the demo loop's, and approved the same way.
+#[test]
+fn the_demo_song_matches_its_golden_wav() {
+    let project = demo_song();
+    assert_eq!(project.tracks().len(), 3);
+    check_golden("demo-song", stereo(), &project);
 }
 
 #[test]
@@ -271,12 +359,8 @@ fn a_render_ends_in_silence() {
 
 #[test]
 fn every_channel_carries_the_sound() {
-    let stereo = EngineConfig {
-        channels: 2,
-        ..config()
-    };
     let snapshot = Snapshot::from(&demo_loop());
-    let samples = offline::render_loop(stereo, snapshot.clone(), 0.5);
+    let samples = offline::render_loop(stereo(), snapshot.clone(), 0.5);
     let mono = offline::render_loop(config(), snapshot, 0.5);
     assert_eq!(samples.len(), mono.len() * 2);
     assert!(peak(&mono) > 0.0);
