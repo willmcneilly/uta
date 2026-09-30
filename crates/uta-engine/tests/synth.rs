@@ -27,10 +27,7 @@ fn config() -> EngineConfig {
 }
 
 fn renderer(settings: SynthSettings, block_size: usize) -> Renderer {
-    let snapshot = Snapshot {
-        synth: settings,
-        ..Snapshot::default().with_volume_db(0.0)
-    };
+    let snapshot = with_synth(Snapshot::default().with_volume_db(0.0), settings);
     Renderer::new(config(), snapshot, block_size)
 }
 
@@ -50,7 +47,7 @@ fn held_note(settings: SynthSettings, pitch: u8, velocity: u8, hold: f64) -> Vec
     let mut renderer = renderer(settings, 128);
     renderer
         .controller
-        .note_on(NoteKey(1), pitch, velocity)
+        .note_on(0, NoteKey(1), pitch, velocity)
         .unwrap();
     renderer.render_seconds(hold);
     renderer.into_samples()
@@ -133,9 +130,9 @@ fn envelope_stages_take_their_set_times() {
     // releases on those exact samples.
     let mut renderer = renderer(settings, 32);
     let hold = seconds(0.8);
-    renderer.controller.note_on(NoteKey(1), 81, 127).unwrap();
+    renderer.controller.note_on(0, NoteKey(1), 81, 127).unwrap();
     renderer.render(hold);
-    renderer.controller.note_off(NoteKey(1)).unwrap();
+    renderer.controller.note_off(0, NoteKey(1)).unwrap();
     renderer.render(seconds(0.6));
     let samples = renderer.samples();
 
@@ -303,17 +300,17 @@ fn no_clicks_when_notes_start_release_and_are_taken_over() {
         // One more note than there are voices, so the last takes one over.
         for i in 0..=VOICES as u128 {
             let key = NoteKey(wave * 100 + i);
-            renderer.controller.note_on(key, pitch, 127).unwrap();
+            renderer.controller.note_on(0, key, pitch, 127).unwrap();
             renderer.render(37 + (i as usize * 53) % 300);
             if i % 3 == 0 {
-                renderer.controller.note_off(key).unwrap();
+                renderer.controller.note_off(0, key).unwrap();
             }
         }
         // More take-overs, some while the last ones are still fading.
         for i in 0..8u128 {
             renderer
                 .controller
-                .note_on(NoteKey(wave * 100 + 50 + i), pitch, 127)
+                .note_on(0, NoteKey(wave * 100 + 50 + i), pitch, 127)
                 .unwrap();
             renderer.render(97 * (i as usize + 1));
         }
@@ -321,7 +318,7 @@ fn no_clicks_when_notes_start_release_and_are_taken_over() {
         for i in 0..60 {
             renderer
                 .controller
-                .note_off(NoteKey(wave * 100 + i))
+                .note_off(0, NoteKey(wave * 100 + i))
                 .unwrap();
         }
         renderer.render(seconds(0.03));
@@ -367,7 +364,10 @@ fn no_clicks_when_settings_change_while_notes_sound() {
     };
     let mut renderer = renderer(base, 128);
     for key in 0..4 {
-        renderer.controller.note_on(NoteKey(key), 45, 127).unwrap();
+        renderer
+            .controller
+            .note_on(0, NoteKey(key), 45, 127)
+            .unwrap();
     }
     renderer.render_seconds(0.1);
     let changes = [
@@ -383,13 +383,16 @@ fn no_clicks_when_settings_change_while_notes_sound() {
         for &(cutoff_hz, resonance, sustain, waveform) in &changes {
             renderer
                 .controller
-                .set_synth_settings(SynthSettings {
-                    waveform,
-                    cutoff_hz,
-                    resonance,
-                    sustain,
-                    ..base
-                })
+                .set_synth_settings(
+                    0,
+                    SynthSettings {
+                        waveform,
+                        cutoff_hz,
+                        resonance,
+                        sustain,
+                        ..base
+                    },
+                )
                 .unwrap();
             renderer.render(300);
         }
@@ -438,13 +441,13 @@ fn session(block_size: usize) -> Vec<f32> {
     for i in 0..VOICES as u8 + 4 {
         renderer
             .controller
-            .note_on(NoteKey(u128::from(i)), 40 + i * 3, 30 + i * 5)
+            .note_on(0, NoteKey(u128::from(i)), 40 + i * 3, 30 + i * 5)
             .unwrap();
         renderer.render(1024);
         if i % 4 == 0 {
             renderer
                 .controller
-                .note_off(NoteKey(u128::from(i)))
+                .note_off(0, NoteKey(u128::from(i)))
                 .unwrap();
         }
     }
@@ -459,18 +462,21 @@ fn session(block_size: usize) -> Vec<f32> {
     {
         renderer
             .controller
-            .set_synth_settings(SynthSettings {
-                waveform,
-                cutoff_hz: 300.0 * (i + 1) as f32,
-                resonance: 0.25 * i as f32,
-                sustain: 0.2 * (i + 1) as f32,
-                ..SynthSettings::default()
-            })
+            .set_synth_settings(
+                0,
+                SynthSettings {
+                    waveform,
+                    cutoff_hz: 300.0 * (i + 1) as f32,
+                    resonance: 0.25 * i as f32,
+                    sustain: 0.2 * (i + 1) as f32,
+                    ..SynthSettings::default()
+                },
+            )
             .unwrap();
         renderer.render(1024 * 2);
     }
     for i in 0..VOICES as u128 + 4 {
-        renderer.controller.note_off(NoteKey(i)).unwrap();
+        renderer.controller.note_off(0, NoteKey(i)).unwrap();
     }
     renderer.render(1024 * 12);
     renderer.into_samples()

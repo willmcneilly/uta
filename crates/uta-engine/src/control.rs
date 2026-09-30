@@ -3,7 +3,9 @@
 
 use rtrb::{Consumer, Producer};
 
-use crate::{Command, NoteKey, Snapshot, Status, SynthSettings};
+use uta_core::TrackId;
+
+use crate::{Command, NoteKey, Snapshot, Status, SynthSettings, TRACK_SLOTS};
 
 /// The command queue was full, so the command wasn't sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +47,8 @@ impl From<QueueFull> for VolumeError {
 /// Why [`Controller::note_on`] didn't start a note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteError {
+    /// The slot was [`TRACK_SLOTS`] or more.
+    Slot(usize),
     /// The pitch was above 127.
     Pitch(u8),
     /// The velocity was 0 or above 127.
@@ -55,6 +59,11 @@ pub enum NoteError {
 impl std::fmt::Display for NoteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Slot(slot) => write!(
+                f,
+                "slot {slot} isn't a track slot (0 to {})",
+                TRACK_SLOTS - 1
+            ),
             Self::Pitch(pitch) => write!(f, "pitch {pitch} isn't a MIDI note (0 to 127)"),
             Self::Velocity(velocity) => write!(f, "velocity {velocity} isn't 1 to 127"),
             Self::QueueFull => QueueFull.fmt(f),
@@ -82,6 +91,14 @@ pub struct Controller {
     /// A snapshot retimed for a new rate couldn't be sent yet.
     retime_pending: bool,
     latest: Status,
+    /// Snapshots sent so far.
+    sent: u64,
+    /// For each slot whose track has gone, the number of the snapshot that
+    /// took it away (counting from 1). The slot isn't given to a new track
+    /// until the audio thread has swapped that snapshot in and the old
+    /// track's notes have faded out. See RFC-003, "The shared model,
+    /// extended", point 4.
+    retiring: [Option<u64>; TRACK_SLOTS],
 }
 
 impl Controller {
@@ -100,6 +117,8 @@ impl Controller {
             sample_rate,
             retime_pending: false,
             latest: Status::default(),
+            sent: 0,
+            retiring: [None; TRACK_SLOTS],
         }
     }
 
@@ -118,16 +137,41 @@ impl Controller {
         self.free_used_snapshots();
         let snapshot = snapshot.at_sample_rate(self.sample_rate);
         self.send(Command::SetSnapshot(Box::new(snapshot.clone())))?;
+        self.sent += 1;
+        for (slot, retiring) in self.retiring.iter_mut().enumerate() {
+            if snapshot.track_in(slot).is_some() {
+                *retiring = None;
+            } else if self.snapshot.track_in(slot).is_some() {
+                *retiring = Some(self.sent);
+            }
+        }
         self.snapshot = snapshot;
         self.retime_pending = false;
         Ok(())
     }
 
-    /// Sends a snapshot of `project`, sharing the notes of every clip that
-    /// hasn't changed since the last one sent. What the app does after each
-    /// change to the project.
+    /// Sends a snapshot of `project`, sharing the notes of every clip and
+    /// track that hasn't changed since the last one sent (see
+    /// [`Snapshot::sharing`]). Every track keeps its slot, and a new track
+    /// gets one whose last track's notes have faded out, if there is one.
+    /// What the app does after each change to the project.
     pub fn set_project(&mut self, project: &uta_core::Project) -> Result<(), QueueFull> {
-        self.set_snapshot(Snapshot::sharing(project, &self.snapshot))
+        let retiring = self
+            .retiring
+            .iter()
+            .enumerate()
+            .filter(|(_, retiring)| retiring.is_some())
+            .fold(0u32, |mask, (slot, _)| mask | 1 << slot);
+        self.set_snapshot(Snapshot::sharing_avoiding(
+            project,
+            &self.snapshot,
+            retiring,
+        ))
+    }
+
+    /// The slot the track with this ID plays in, in the last snapshot sent.
+    pub fn slot(&self, track: TrackId) -> Option<usize> {
+        self.snapshot.slot_of(track)
     }
 
     /// Sets the volume in dB, by sending a new snapshot. NaN and infinite
@@ -141,21 +185,42 @@ impl Controller {
         Ok(())
     }
 
-    /// Sets the synth's settings, by sending a new snapshot. They glide to
-    /// their new values. Out-of-range values are clamped by the synth.
-    pub fn set_synth_settings(&mut self, settings: SynthSettings) -> Result<(), QueueFull> {
-        self.set_snapshot(Snapshot {
-            synth: settings,
-            ..self.snapshot.clone()
-        })
+    /// Sets the synth settings of the track in `slot`, by sending a new
+    /// snapshot. They glide to their new values. Out-of-range values are
+    /// clamped by the synth. With no track in the slot, the snapshot is sent
+    /// unchanged.
+    pub fn set_synth_settings(
+        &mut self,
+        slot: usize,
+        settings: SynthSettings,
+    ) -> Result<(), QueueFull> {
+        let mut snapshot = self.snapshot.clone();
+        if let Some(track) = snapshot
+            .tracks_mut()
+            .iter_mut()
+            .find(|track| track.slot() == slot)
+        {
+            track.synth = settings;
+        }
+        self.set_snapshot(snapshot)
     }
 
-    /// Starts a note on the synth straight away, without going through the
-    /// project: the route for auditioning notes and, later, playing live. It
-    /// sounds whether or not the transport is playing, until
-    /// [`Controller::note_off`] with the same key. A note already sounding
-    /// with that key is released first.
-    pub fn note_on(&mut self, key: NoteKey, pitch: u8, velocity: u8) -> Result<(), NoteError> {
+    /// Starts a note on the synth of the track in `slot` straight away,
+    /// without going through the project: the route for auditioning notes
+    /// and, later, playing live. It sounds whether or not the transport is
+    /// playing, until [`Controller::note_off`] with the same slot and key. A
+    /// note already sounding with that key in that slot is released first.
+    /// If no track has the slot when it arrives, it doesn't sound.
+    pub fn note_on(
+        &mut self,
+        slot: usize,
+        key: NoteKey,
+        pitch: u8,
+        velocity: u8,
+    ) -> Result<(), NoteError> {
+        if slot >= TRACK_SLOTS {
+            return Err(NoteError::Slot(slot));
+        }
         if pitch > 127 {
             return Err(NoteError::Pitch(pitch));
         }
@@ -163,6 +228,7 @@ impl Controller {
             return Err(NoteError::Velocity(velocity));
         }
         self.send(Command::NoteOn {
+            slot,
             key,
             pitch,
             velocity,
@@ -170,10 +236,10 @@ impl Controller {
         Ok(())
     }
 
-    /// Releases the note started with `key`. Does nothing if it isn't
-    /// sounding.
-    pub fn note_off(&mut self, key: NoteKey) -> Result<(), QueueFull> {
-        self.send(Command::NoteOff { key })
+    /// Releases the note started with `key` in `slot`. Does nothing if it
+    /// isn't sounding.
+    pub fn note_off(&mut self, slot: usize, key: NoteKey) -> Result<(), QueueFull> {
+        self.send(Command::NoteOff { slot, key })
     }
 
     /// The last snapshot sent.
@@ -182,17 +248,31 @@ impl Controller {
     }
 
     /// Reads everything the audio thread has reported and frees the snapshots
-    /// it has finished with. Returns the newest status, with `peak` the
-    /// loudest level since the previous call.
+    /// it has finished with. Returns the newest status, with `peak` and
+    /// `track_peaks` the loudest levels since the previous call.
     ///
     /// If the engine has moved to a new sample rate (a device switch), sends
     /// the snapshot again, retimed for it.
     pub fn poll(&mut self) -> Status {
         self.free_used_snapshots();
         let mut peak = 0.0f32;
+        let mut track_peaks = [0.0f32; TRACK_SLOTS];
         while let Ok(status) = self.status.pop() {
             peak = peak.max(status.peak);
+            for (peak, &track_peak) in track_peaks.iter_mut().zip(&status.track_peaks) {
+                *peak = peak.max(track_peak);
+            }
             self.latest = status;
+        }
+        // A slot is free again once the snapshot that took its track away is
+        // playing and the track's notes have faded out.
+        let latest = self.latest;
+        for (slot, retiring) in self.retiring.iter_mut().enumerate() {
+            if retiring.is_some_and(|sent| {
+                latest.snapshots >= sent && latest.sounding_slots & (1 << slot) == 0
+            }) {
+                *retiring = None;
+            }
         }
         let rate = self.latest.sample_rate;
         if rate > 0 && rate != self.sample_rate {
@@ -205,6 +285,7 @@ impl Controller {
         }
         Status {
             peak,
+            track_peaks,
             ..self.latest
         }
     }
@@ -241,13 +322,14 @@ mod tests {
     #[test]
     fn nan_and_infinite_volumes_are_rejected() {
         let mut renderer = playing_renderer();
+        let before = renderer.controller.snapshot().clone();
         for volume_db in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             assert!(matches!(
                 renderer.controller.set_volume_db(volume_db),
                 Err(VolumeError::NotFinite(_))
             ));
         }
-        assert_eq!(renderer.controller.snapshot(), &Snapshot::default());
+        assert_eq!(renderer.controller.snapshot(), &before);
 
         renderer.render_seconds(0.1);
         assert!(renderer.samples().iter().all(|s| s.is_finite()));
@@ -259,16 +341,19 @@ mod tests {
         let key = NoteKey(1);
         let controller = &mut renderer.controller;
         assert_eq!(
-            controller.note_on(key, 128, 100),
+            controller.note_on(0, key, 128, 100),
             Err(NoteError::Pitch(128))
         );
-        assert_eq!(controller.note_on(key, 60, 0), Err(NoteError::Velocity(0)));
         assert_eq!(
-            controller.note_on(key, 60, 128),
+            controller.note_on(0, key, 60, 0),
+            Err(NoteError::Velocity(0))
+        );
+        assert_eq!(
+            controller.note_on(0, key, 60, 128),
             Err(NoteError::Velocity(128))
         );
-        assert_eq!(controller.note_on(key, 0, 1), Ok(()));
-        assert_eq!(controller.note_on(key, 127, 127), Ok(()));
+        assert_eq!(controller.note_on(0, key, 0, 1), Ok(()));
+        assert_eq!(controller.note_on(0, key, 127, 127), Ok(()));
     }
 
     /// From the UTA-2 review: +40 dB made samples at 100x full scale.
@@ -282,7 +367,7 @@ mod tests {
         for pitch in [48, 55, 60, 64] {
             renderer
                 .controller
-                .note_on(NoteKey(u128::from(pitch)), pitch, 127)
+                .note_on(0, NoteKey(u128::from(pitch)), pitch, 127)
                 .unwrap();
         }
         renderer.render_seconds(0.1);

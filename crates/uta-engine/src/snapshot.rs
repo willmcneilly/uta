@@ -1,11 +1,12 @@
 //! The "what to play" snapshot.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use uta_core::time::{TempoMap, Ticks};
-use uta_core::{Note, Project, Source};
+use uta_core::{ClipId, Note, Project, Source, TrackId, Transport};
 
-use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, Waveform};
+use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS, Waveform};
 
 /// Everything the audio thread needs to know about what to play.
 ///
@@ -17,12 +18,44 @@ use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, Waveform};
 pub struct Snapshot {
     /// The master volume as a linear gain (1.0 is full scale).
     pub gain: f32,
-    /// How the synth sounds.
-    pub synth: SynthSettings,
-    /// The first track's volume, pan and mute.
-    pub mixer: MixerStrip,
-    /// The notes and the loop, timed in samples.
+    /// The tempo and the loop, timed in samples.
     pub sequence: Sequence,
+    /// Every track, in the project's order.
+    tracks: Vec<TrackSnapshot>,
+    /// For each slot, the index in `tracks` of the track that uses it.
+    slots: [Option<u8>; TRACK_SLOTS],
+}
+
+/// One track as the engine plays it: its sound, its mixer strip and its
+/// notes, and the slot on the audio thread it plays in. See RFC-003, "The
+/// shared model, extended", points 4 and 5.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrackSnapshot {
+    id: TrackId,
+    slot: usize,
+    /// How the track's synth sounds.
+    pub synth: SynthSettings,
+    /// The track's volume, pan, mute and solo.
+    pub mixer: MixerStrip,
+    notes: Arc<TrackNotes>,
+}
+
+impl TrackSnapshot {
+    pub fn id(&self) -> TrackId {
+        self.id
+    }
+
+    /// The slot it plays in, from 0 to [`TRACK_SLOTS`]. A track keeps its
+    /// slot for as long as it's in the project.
+    pub fn slot(&self) -> usize {
+        self.slot
+    }
+
+    /// Its clips' notes and their starts and ends, shared between snapshots
+    /// until the track's clips or the timing change.
+    pub fn notes(&self) -> &Arc<TrackNotes> {
+        &self.notes
+    }
 }
 
 impl Snapshot {
@@ -33,40 +66,100 @@ impl Snapshot {
     pub const MAX_VOLUME_DB: f32 = 0.0;
 
     /// What the engine plays for `project`, with its notes timed at
-    /// `sample_rate`.
+    /// `sample_rate`. The tracks take the slots from 0 up, in order.
     pub fn new(project: &Project, sample_rate: u32) -> Self {
-        Self::build(project, sample_rate, &[])
+        Self::build(project, sample_rate, None, 0)
     }
 
-    /// What the engine plays for `project`, timed at `previous`'s rate, and
-    /// sharing `previous`'s notes for every clip that hasn't changed, so an
-    /// edit copies only the clips it touches. See RFC-002, "The shared
-    /// model", point 7.
+    /// What the engine plays for `project`, timed at `previous`'s rate. See
+    /// RFC-003, "The shared model, extended", points 4 and 5:
+    /// - every track that was in `previous` keeps its slot, and a new one
+    ///   takes a slot `previous` didn't use, so it doesn't land on a removed
+    ///   track's notes as they fade;
+    /// - every clip whose start, length and notes haven't changed, found by
+    ///   its ID wherever it was, shares its notes with `previous`;
+    /// - every track whose clips all share their notes, at the same timing,
+    ///   shares its events with `previous`, so an edit rebuilds only the
+    ///   tracks it touches.
     pub fn sharing(project: &Project, previous: &Snapshot) -> Self {
+        Self::sharing_avoiding(project, previous, 0)
+    }
+
+    /// [`Snapshot::sharing`], with new tracks also avoiding the slots in the
+    /// `avoid` bitmask, unless there's no other slot left.
+    pub(crate) fn sharing_avoiding(project: &Project, previous: &Snapshot, avoid: u32) -> Self {
         Self::build(
             project,
             previous.sequence.sample_rate,
-            &previous.sequence.clips,
+            Some(previous),
+            avoid,
         )
     }
 
-    fn build(project: &Project, sample_rate: u32, previous: &[Arc<ClipNotes>]) -> Self {
-        let first = project.tracks().first();
-        let synth = first
-            .map(|track| match track.source() {
-                Source::Synth(settings) => synth_settings(settings),
+    fn build(project: &Project, sample_rate: u32, previous: Option<&Snapshot>, avoid: u32) -> Self {
+        let sequence = Sequence::new(project.transport(), sample_rate);
+        let same_timing = previous.is_some_and(|previous| previous.sequence == sequence);
+        let previous_clips: HashMap<ClipId, &Arc<ClipNotes>> = previous
+            .iter()
+            .flat_map(|previous| &previous.tracks)
+            .flat_map(|track| &track.notes.clips)
+            .map(|clip| (clip.id, clip))
+            .collect();
+        let slots = assign_slots(project, previous, avoid);
+
+        let tracks = project
+            .tracks()
+            .iter()
+            .zip(slots)
+            .map(|(track, slot)| {
+                let clips: Vec<Arc<ClipNotes>> = track
+                    .clips()
+                    .iter()
+                    .map(|clip| match previous_clips.get(&clip.id()) {
+                        Some(shared)
+                            if shared.start == clip.start()
+                                && shared.length == clip.length()
+                                && shared.notes.iter().eq(clip.notes()) =>
+                        {
+                            Arc::clone(shared)
+                        }
+                        _ => Arc::new(ClipNotes {
+                            id: clip.id(),
+                            start: clip.start(),
+                            length: clip.length(),
+                            notes: clip.notes().copied().collect(),
+                        }),
+                    })
+                    .collect();
+                let notes = match previous.and_then(|previous| previous.track(track.id())) {
+                    Some(old) if same_timing && old.notes.shares(&clips) => Arc::clone(&old.notes),
+                    _ => Arc::new(TrackNotes::new(clips, &sequence)),
+                };
+                let Source::Synth(settings) = track.source();
+                TrackSnapshot {
+                    id: track.id(),
+                    slot,
+                    synth: synth_settings(settings),
+                    mixer: MixerStrip::from(track.mixer()),
+                    notes,
+                }
             })
-            .unwrap_or_default();
-        let mixer = first
-            .map(|track| MixerStrip::from(track.mixer()))
-            .unwrap_or_default();
-        Self {
-            gain: 1.0,
-            synth,
-            mixer,
-            sequence: Sequence::new(project, sample_rate, previous),
+            .collect();
+        Self::with_tracks(1.0, sequence, tracks).with_volume_db(project.master_volume_db())
+    }
+
+    fn with_tracks(gain: f32, sequence: Sequence, tracks: Vec<TrackSnapshot>) -> Self {
+        let mut slots = [None; TRACK_SLOTS];
+        for (index, track) in tracks.iter().enumerate() {
+            assert!(slots[track.slot].is_none(), "two tracks in one slot");
+            slots[track.slot] = Some(index as u8);
         }
-        .with_volume_db(project.master_volume_db())
+        Self {
+            gain,
+            sequence,
+            tracks,
+            slots,
+        }
     }
 
     /// A snapshot with the given master volume in dB, clamped to
@@ -84,11 +177,85 @@ impl Snapshot {
     /// are shared, not copied. Returns a plain clone if it's already at that
     /// rate.
     pub fn at_sample_rate(&self, sample_rate: u32) -> Self {
-        Self {
-            sequence: self.sequence.at_sample_rate(sample_rate),
-            ..self.clone()
+        if sample_rate == self.sequence.sample_rate {
+            return self.clone();
         }
+        let sequence = self.sequence.at_sample_rate(sample_rate);
+        let tracks = self
+            .tracks
+            .iter()
+            .map(|track| TrackSnapshot {
+                notes: Arc::new(TrackNotes::new(track.notes.clips.clone(), &sequence)),
+                ..track.clone()
+            })
+            .collect();
+        Self::with_tracks(self.gain, sequence, tracks)
     }
+
+    /// Every track, in the project's order.
+    pub fn tracks(&self) -> &[TrackSnapshot] {
+        &self.tracks
+    }
+
+    /// Every track, to change its sound or mixer strip.
+    pub fn tracks_mut(&mut self) -> &mut [TrackSnapshot] {
+        &mut self.tracks
+    }
+
+    /// The track with this ID.
+    pub fn track(&self, id: TrackId) -> Option<&TrackSnapshot> {
+        self.tracks.iter().find(|track| track.id == id)
+    }
+
+    /// The track playing in `slot`, if any. Real-time safe.
+    pub fn track_in(&self, slot: usize) -> Option<&TrackSnapshot> {
+        let index = (*self.slots.get(slot)?)?;
+        self.tracks.get(usize::from(index))
+    }
+
+    /// The slot the track with this ID plays in.
+    pub fn slot_of(&self, id: TrackId) -> Option<usize> {
+        self.track(id).map(TrackSnapshot::slot)
+    }
+
+    /// Whether any track is soloed, so only soloed tracks play. Real-time
+    /// safe.
+    pub fn soloing(&self) -> bool {
+        self.tracks.iter().any(|track| track.mixer.solo)
+    }
+}
+
+/// The slot for each of `project`'s tracks, in order: the one it had in
+/// `previous`, or else the lowest one neither `previous` nor `avoid` uses.
+/// If every slot is taken that way, the lowest one no track in `project`
+/// uses.
+fn assign_slots(project: &Project, previous: Option<&Snapshot>, avoid: u32) -> Vec<usize> {
+    let kept: Vec<Option<usize>> = project
+        .tracks()
+        .iter()
+        .map(|track| previous.and_then(|previous| previous.slot_of(track.id())))
+        .collect();
+    let mask =
+        |slots: &mut dyn Iterator<Item = usize>| slots.fold(0u32, |mask, slot| mask | 1 << slot);
+    let mut used = mask(&mut kept.iter().flatten().copied());
+    let before = previous.map_or(0, |previous| {
+        mask(&mut previous.tracks.iter().map(|t| t.slot))
+    });
+    let lowest_free = |taken: u32| {
+        let slot = (!taken).trailing_zeros() as usize;
+        (slot < TRACK_SLOTS).then_some(slot)
+    };
+    kept.into_iter()
+        .map(|slot| {
+            slot.unwrap_or_else(|| {
+                let slot = lowest_free(used | before | avoid)
+                    .or_else(|| lowest_free(used))
+                    .expect("a project has at most TRACK_SLOTS tracks");
+                used |= 1 << slot;
+                slot
+            })
+        })
+        .collect()
 }
 
 /// A new project's snapshot, at [`DEFAULT_SAMPLE_RATE`]: an empty loop.
@@ -108,33 +275,40 @@ impl From<&Project> for Snapshot {
     }
 }
 
-/// The project's notes and loop, as the audio thread plays them.
-///
-/// It keeps the musical version (each clip's notes, in ticks, in an `Arc`,
-/// with the tempo map and the loop) and, worked out from it at one sample
-/// rate, every note start and end in samples as one list sorted by time.
-/// Notes are trimmed to the loop: only notes that start inside it play, and
-/// any that run past its end stop there. See RFC-002, "The shared model",
-/// points 5 and 7.
+/// The tempo and the loop, as the audio thread plays them: in ticks, and
+/// worked out at one sample rate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sequence {
     tempo_map: TempoMap,
     loop_start: Ticks,
     loop_length: Ticks,
-    clips: Vec<Arc<ClipNotes>>,
 
     sample_rate: u32,
     loop_start_sample: u64,
     loop_end_sample: u64,
-    events: Arc<[NoteEvent]>,
+}
+
+/// One track's notes, as the audio thread plays them.
+///
+/// It keeps the musical version (each clip's notes, in ticks, in an `Arc`)
+/// and, worked out from it at the snapshot's timing, every note start and end
+/// in samples as one list sorted by time. Notes are trimmed to the loop: only
+/// notes that start inside it play, and any that run past its end stop
+/// there. See RFC-002, "The shared model", points 5 and 7, and RFC-003, "The
+/// shared model, extended", point 5.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrackNotes {
+    clips: Vec<Arc<ClipNotes>>,
+    events: Vec<NoteEvent>,
     /// The same notes, one entry each, sorted by key, so a sounding note can
     /// be looked up when a new snapshot arrives.
-    notes: Arc<[NoteSpan]>,
+    notes: Vec<NoteSpan>,
 }
 
 /// One clip's notes, in ticks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipNotes {
+    pub id: ClipId,
     /// Where the clip starts, in ticks from the start of the song.
     pub start: Ticks,
     /// Notes starting at or after this, from the clip's start, don't play.
@@ -191,52 +365,12 @@ impl NoteEventKind {
     }
 }
 
-impl Sequence {
-    /// The project's sequence. A clip whose start, length and notes match
-    /// the clip in the same place in `previous` shares its notes.
-    fn new(project: &Project, sample_rate: u32, previous: &[Arc<ClipNotes>]) -> Self {
-        let transport = project.transport();
-        let clips = project
-            .tracks()
-            .iter()
-            .flat_map(|track| track.clips())
-            .enumerate()
-            .map(|(index, clip)| match previous.get(index) {
-                Some(shared)
-                    if shared.start == clip.start()
-                        && shared.length == clip.length()
-                        && shared.notes.iter().eq(clip.notes()) =>
-                {
-                    Arc::clone(shared)
-                }
-                _ => Arc::new(ClipNotes {
-                    start: clip.start(),
-                    length: clip.length(),
-                    notes: clip.notes().copied().collect(),
-                }),
-            })
-            .collect();
-        Self::build(
-            transport.tempo_map().clone(),
-            transport.loop_start(),
-            transport.loop_length(),
-            clips,
-            sample_rate,
-        )
-    }
-
-    fn build(
-        tempo_map: TempoMap,
-        loop_start: Ticks,
-        loop_length: Ticks,
-        clips: Vec<Arc<ClipNotes>>,
-        sample_rate: u32,
-    ) -> Self {
-        assert!(sample_rate > 0, "sample rate must be positive");
-        assert!(loop_length > 0, "the loop can't be empty");
-        let loop_end = loop_start + loop_length;
-        let samples = |ticks| tempo_map.ticks_to_samples(ticks, sample_rate);
-
+impl TrackNotes {
+    /// The starts and ends of the notes in `clips`, timed by `sequence`.
+    /// Clips may overlap: each one's notes play.
+    pub fn new(clips: Vec<Arc<ClipNotes>>, sequence: &Sequence) -> Self {
+        let loop_end = sequence.loop_start + sequence.loop_length;
+        let loop_ticks = sequence.loop_start..loop_end;
         let mut events = Vec::new();
         let mut notes = Vec::new();
         for clip in &clips {
@@ -245,11 +379,11 @@ impl Sequence {
                     continue;
                 }
                 let start = clip.start + note.start;
-                if !(loop_start..loop_end).contains(&start) {
+                if !loop_ticks.contains(&start) {
                     continue;
                 }
                 let end = (clip.start + (note.start + note.length).min(clip.length)).min(loop_end);
-                let (start, end) = (samples(start), samples(end));
+                let (start, end) = (sequence.sample_at(start), sequence.sample_at(end));
                 if end <= start {
                     continue;
                 }
@@ -276,42 +410,23 @@ impl Sequence {
         }
         events.sort_by_key(|event| (event.sample, event.kind.order()));
         notes.sort_by_key(|note| note.key.0);
-
         Self {
-            loop_start_sample: samples(loop_start),
-            loop_end_sample: samples(loop_end),
-            tempo_map,
-            loop_start,
-            loop_length,
             clips,
-            sample_rate,
-            events: events.into(),
-            notes: notes.into(),
+            events,
+            notes,
         }
     }
 
-    /// This sequence timed at `sample_rate`, sharing the clips' notes.
-    pub fn at_sample_rate(&self, sample_rate: u32) -> Self {
-        if sample_rate == self.sample_rate {
-            return self.clone();
-        }
-        Self::build(
-            self.tempo_map.clone(),
-            self.loop_start,
-            self.loop_length,
-            self.clips.clone(),
-            sample_rate,
-        )
+    /// Whether these are the notes of exactly `clips`, the same `Arc`s in
+    /// the same order.
+    fn shares(&self, clips: &[Arc<ClipNotes>]) -> bool {
+        self.clips.len() == clips.len()
+            && self.clips.iter().zip(clips).all(|(a, b)| Arc::ptr_eq(a, b))
     }
 
-    /// The sample rate the events are timed at.
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    /// Where the loop starts and ends, in samples from the start of the song.
-    pub fn loop_samples(&self) -> std::ops::Range<u64> {
-        self.loop_start_sample..self.loop_end_sample
+    /// Each clip's notes, shared between snapshots.
+    pub fn clips(&self) -> &[Arc<ClipNotes>] {
+        &self.clips
     }
 
     /// Every note start and end in the loop, sorted by sample.
@@ -326,6 +441,52 @@ impl Sequence {
             .binary_search_by_key(&key.0, |note| note.key.0)
             .ok()
             .map(|index| &self.notes[index])
+    }
+}
+
+impl Sequence {
+    /// The transport's tempo and loop, at `sample_rate`.
+    fn new(transport: &Transport, sample_rate: u32) -> Self {
+        Self::build(
+            transport.tempo_map().clone(),
+            transport.loop_start(),
+            transport.loop_length(),
+            sample_rate,
+        )
+    }
+
+    fn build(tempo_map: TempoMap, loop_start: Ticks, loop_length: Ticks, sample_rate: u32) -> Self {
+        assert!(sample_rate > 0, "sample rate must be positive");
+        assert!(loop_length > 0, "the loop can't be empty");
+        let samples = |ticks| tempo_map.ticks_to_samples(ticks, sample_rate);
+        Self {
+            loop_start_sample: samples(loop_start),
+            loop_end_sample: samples(loop_start + loop_length),
+            tempo_map,
+            loop_start,
+            loop_length,
+            sample_rate,
+        }
+    }
+
+    /// This sequence timed at `sample_rate`.
+    pub fn at_sample_rate(&self, sample_rate: u32) -> Self {
+        Self::build(
+            self.tempo_map.clone(),
+            self.loop_start,
+            self.loop_length,
+            sample_rate,
+        )
+    }
+
+    /// The sample rate everything is timed at.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Where the loop starts and ends, in samples from the start of the song.
+    pub fn loop_samples(&self) -> std::ops::Range<u64> {
+        self.loop_start_sample..self.loop_end_sample
     }
 
     /// Where a playhead at `playhead` in `old` carries on in this sequence.
@@ -354,11 +515,6 @@ impl Sequence {
         } else {
             self.loop_start_sample
         }
-    }
-
-    /// Each clip's notes, shared between snapshots.
-    pub fn clips(&self) -> &[Arc<ClipNotes>] {
-        &self.clips
     }
 
     /// The musical position of a sample, in ticks from the start of the song.
@@ -458,6 +614,16 @@ mod tests {
         project
     }
 
+    /// The first track's clips.
+    fn clips(snapshot: &Snapshot) -> &[Arc<ClipNotes>] {
+        snapshot.tracks()[0].notes().clips()
+    }
+
+    /// The first track's events.
+    fn events(snapshot: &Snapshot) -> &[NoteEvent] {
+        snapshot.tracks()[0].notes().events()
+    }
+
     fn key(id: u128) -> NoteKey {
         NoteKey(Uuid::from_u128(id).as_u128())
     }
@@ -493,13 +659,17 @@ mod tests {
     fn a_new_project_is_an_empty_four_bar_loop_at_the_default_volume() {
         let snapshot = Snapshot::default();
         assert_eq!(snapshot.gain, db_to_gain(Snapshot::DEFAULT_VOLUME_DB));
-        assert_eq!(snapshot.synth, SynthSettings::default());
-        assert_eq!(snapshot.mixer, MixerStrip::default());
+        let [track] = snapshot.tracks() else {
+            panic!("one track");
+        };
+        assert_eq!(track.synth, SynthSettings::default());
+        assert_eq!(track.mixer, MixerStrip::default());
+        assert_eq!(track.slot(), 0);
+        assert!(track.notes().events().is_empty());
         let sequence = &snapshot.sequence;
         assert_eq!(sequence.sample_rate(), DEFAULT_SAMPLE_RATE);
         // 4 bars at 120 BPM is 8 s.
         assert_eq!(sequence.loop_samples(), 0..8 * 48_000);
-        assert!(sequence.events().is_empty());
     }
 
     #[test]
@@ -533,8 +703,8 @@ mod tests {
             .unwrap();
         let snapshot = Snapshot::from(&project);
         assert_eq!(snapshot.gain, db_to_gain(-6.0));
-        assert_eq!(snapshot.synth.waveform, Waveform::Square);
-        assert_eq!(snapshot.synth.cutoff_hz, 800.0);
+        assert_eq!(snapshot.tracks()[0].synth.waveform, Waveform::Square);
+        assert_eq!(snapshot.tracks()[0].synth.cutoff_hz, 800.0);
     }
 
     #[test]
@@ -553,7 +723,7 @@ mod tests {
         ]);
         let snapshot = Snapshot::new(&project, 48_000);
         assert_eq!(
-            snapshot.sequence.events(),
+            events(&snapshot),
             [
                 on(0, 1, 60),
                 off(12_000, 1),
@@ -580,7 +750,7 @@ mod tests {
         let snapshot = Snapshot::new(&project, 48_000);
         let end = 8 * 48_000;
         assert_eq!(
-            snapshot.sequence.events(),
+            events(&snapshot),
             [
                 on(end - 12_000, 1, 60),
                 on(end - 12_000, 2, 62),
@@ -593,7 +763,7 @@ mod tests {
         project.apply(&Command::SetLoopLength { bars: 1 }).unwrap();
         let snapshot = Snapshot::new(&project, 48_000);
         assert_eq!(snapshot.sequence.loop_samples(), 0..96_000);
-        assert!(snapshot.sequence.events().is_empty());
+        assert!(events(&snapshot).is_empty());
     }
 
     /// In project 1 the clip is always as long as the loop, so the clip's
@@ -604,6 +774,7 @@ mod tests {
     fn notes_are_trimmed_to_a_loop_shorter_than_the_clip() {
         // A 4-bar clip; the loop is bar 2 (ticks 3,840 to 7,680).
         let clip = Arc::new(ClipNotes {
+            id: ClipId::from_uuid(Uuid::from_u128(1)),
             start: 0,
             length: 4 * 3840,
             notes: vec![
@@ -617,10 +788,10 @@ mod tests {
                 note(4, 65, 7680, 480),
             ],
         });
-        let sequence = Sequence::build(TempoMap::new(120.0), 3840, 3840, vec![clip], 48_000);
+        let sequence = Sequence::build(TempoMap::new(120.0), 3840, 3840, 48_000);
         assert_eq!(sequence.loop_samples(), 96_000..192_000);
         assert_eq!(
-            sequence.events(),
+            TrackNotes::new(vec![clip], &sequence).events(),
             [
                 on(96_000, 2, 62),
                 off(108_000, 2),
@@ -636,10 +807,7 @@ mod tests {
         project.apply(&Command::SetTempo { bpm: 90.0 }).unwrap();
         // At 90 BPM a quarter note is 2/3 s: 29,400 samples at 44.1 kHz.
         let snapshot = Snapshot::new(&project, 44_100);
-        assert_eq!(
-            snapshot.sequence.events(),
-            [on(29_400, 1, 60), off(58_800, 1)]
-        );
+        assert_eq!(events(&snapshot), [on(29_400, 1, 60), off(58_800, 1)]);
         assert_eq!(snapshot.sequence.loop_samples(), 0..16 * 29_400);
     }
 
@@ -649,13 +817,13 @@ mod tests {
         let at_48k = Snapshot::new(&project, 48_000);
         let at_96k = at_48k.at_sample_rate(96_000);
         assert_eq!(at_96k, Snapshot::new(&project, 96_000));
-        assert!(Arc::ptr_eq(
-            &at_48k.sequence.clips()[0],
-            &at_96k.sequence.clips()[0]
-        ));
+        assert!(Arc::ptr_eq(&clips(&at_48k)[0], &clips(&at_96k)[0]));
         // Retiming to the same rate shares the events too.
         let same = at_48k.at_sample_rate(48_000);
-        assert!(Arc::ptr_eq(&at_48k.sequence.events, &same.sequence.events));
+        assert!(Arc::ptr_eq(
+            at_48k.tracks()[0].notes(),
+            same.tracks()[0].notes()
+        ));
     }
 
     #[test]
@@ -666,7 +834,8 @@ mod tests {
             // Past the loop's end: it doesn't play, so it isn't there.
             note(2, 64, 20_000, 480),
         ]);
-        let sequence = Snapshot::new(&project, 48_000).sequence;
+        let snapshot = Snapshot::new(&project, 48_000);
+        let sequence = snapshot.tracks()[0].notes();
         assert_eq!(
             sequence.note(key(3)),
             Some(&NoteSpan {
@@ -690,10 +859,7 @@ mod tests {
 
         project.apply(&Command::SetTempo { bpm: 90.0 }).unwrap();
         let tempo = Snapshot::sharing(&project, &first);
-        assert!(Arc::ptr_eq(
-            &first.sequence.clips()[0],
-            &tempo.sequence.clips()[0]
-        ));
+        assert!(Arc::ptr_eq(&clips(&first)[0], &clips(&tempo)[0]));
         assert_eq!(tempo, Snapshot::new(&project, 44_100), "timed at 44.1 kHz");
 
         let clip = clip(&project);
@@ -704,10 +870,7 @@ mod tests {
             })
             .unwrap();
         let added = Snapshot::sharing(&project, &tempo);
-        assert!(!Arc::ptr_eq(
-            &tempo.sequence.clips()[0],
-            &added.sequence.clips()[0]
-        ));
+        assert!(!Arc::ptr_eq(&clips(&tempo)[0], &clips(&added)[0]));
         assert_eq!(added, Snapshot::new(&project, 44_100));
     }
 

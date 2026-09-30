@@ -175,3 +175,21 @@ pub fn level_at(samples: &[f32], at: usize, window: usize) -> f32 {
     let end = (at + window / 2).min(samples.len());
     peak(&samples[start..end])
 }
+
+/// `snapshot` with its first track's mixer strip set to `mixer`.
+pub fn with_mixer(
+    mut snapshot: uta_engine::Snapshot,
+    mixer: uta_engine::MixerStrip,
+) -> uta_engine::Snapshot {
+    snapshot.tracks_mut()[0].mixer = mixer;
+    snapshot
+}
+
+/// `snapshot` with its first track's synth set to `synth`.
+pub fn with_synth(
+    mut snapshot: uta_engine::Snapshot,
+    synth: uta_engine::SynthSettings,
+) -> uta_engine::Snapshot {
+    snapshot.tracks_mut()[0].synth = synth;
+    snapshot
+}

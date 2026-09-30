@@ -61,7 +61,7 @@ fn measure(load: Load, block_size: usize) -> Report {
         for i in 0..VOICES as u8 {
             renderer
                 .controller
-                .note_on(NoteKey(u128::from(i)), 36 + i * 3, 100)
+                .note_on(0, NoteKey(u128::from(i)), 36 + i * 3, 100)
                 .unwrap();
         }
     }
@@ -76,12 +76,15 @@ fn measure(load: Load, block_size: usize) -> Report {
                 // Sustain 1, so the voices never fade to silence.
                 Load::Voices => renderer
                     .controller
-                    .set_synth_settings(SynthSettings {
-                        cutoff_hz: 200.0 * (1 + (i / 64) % 50) as f32,
-                        resonance: 0.5,
-                        sustain: 1.0,
-                        ..SynthSettings::default()
-                    })
+                    .set_synth_settings(
+                        0,
+                        SynthSettings {
+                            cutoff_hz: 200.0 * (1 + (i / 64) % 50) as f32,
+                            resonance: 0.5,
+                            sustain: 1.0,
+                            ..SynthSettings::default()
+                        },
+                    )
                     .unwrap(),
             }
         }

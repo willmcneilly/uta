@@ -94,10 +94,16 @@ impl Renderer {
 }
 
 /// Plays the loop in `snapshot` from its start for `seconds`, then stops and
-/// renders the notes' release, so it ends in silence. What `uta render`
+/// renders the notes' release (the longest of any track's), so it ends in
+/// silence. What `uta render`
 /// writes.
 pub fn render_loop(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
-    let tail = f64::from(snapshot.synth.clamped().release_seconds) + RELEASE_MARGIN_SECONDS;
+    let release = snapshot
+        .tracks()
+        .iter()
+        .map(|track| track.synth.clamped().release_seconds)
+        .fold(0.0, f32::max);
+    let tail = f64::from(release) + RELEASE_MARGIN_SECONDS;
     let mut renderer = Renderer::new(config, snapshot, 128);
     renderer.controller.play().expect("fresh queue has room");
     renderer.render_seconds(seconds);

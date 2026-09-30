@@ -148,7 +148,21 @@ impl Synth {
     /// was playing on has already faded out or gone.
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
-        let smoothing = samples(SYNTH_SMOOTHING_SECONDS, sample_rate);
+        self.take_over_samples = samples(TAKE_OVER_SECONDS, sample_rate);
+        self.jump_to_settings();
+        self.voices.fill(Voice::default());
+    }
+
+    /// Takes on new settings straight away, with no glide: for a synth that
+    /// isn't sounding, so the first note plays with them from its start.
+    /// Real-time safe.
+    pub(crate) fn load(&mut self, settings: SynthSettings) {
+        self.settings = settings.clamped();
+        self.jump_to_settings();
+    }
+
+    fn jump_to_settings(&mut self) {
+        let smoothing = samples(SYNTH_SMOOTHING_SECONDS, self.sample_rate);
         let settings = self.settings;
         self.cutoff_octaves = Ramp::new(settings.cutoff_hz.log2(), smoothing);
         self.resonance = Ramp::new(settings.resonance, smoothing);
@@ -156,10 +170,13 @@ impl Synth {
         self.waveform_from = settings.waveform;
         self.waveform_to = settings.waveform;
         self.waveform_mix = Ramp::new(0.0, smoothing);
-        self.take_over_samples = samples(TAKE_OVER_SECONDS, sample_rate);
         self.update_coefficients();
         self.update_times();
-        self.voices.fill(Voice::default());
+    }
+
+    /// Whether any voice is making sound, or about to.
+    pub(crate) fn is_sounding(&self) -> bool {
+        self.voices.iter().any(|voice| !voice.is_free())
     }
 
     /// Glides to new settings. Real-time safe.
@@ -245,6 +262,19 @@ impl Synth {
                 self.clock += 1;
                 voice.released = self.clock;
                 voice.envelope.release(&self.times);
+            }
+        }
+    }
+
+    /// Fades every voice out over [`TAKE_OVER_SECONDS`], as when a voice is
+    /// taken over, and cancels any note waiting for a voice. For a slot handed
+    /// to another track while its last track's notes still sound.
+    pub(crate) fn fade_out(&mut self) {
+        let fade = self.take_over_samples;
+        for voice in self.voices.iter_mut() {
+            voice.pending = None;
+            if !voice.is_free() && !voice.is_taken_over() {
+                voice.take_over_remaining = fade;
             }
         }
     }
@@ -592,6 +622,18 @@ mod tests {
         keys.sort_unstable();
         let expected: Vec<u128> = (100 + 2 * VOICES as u128..100 + 3 * VOICES as u128).collect();
         assert_eq!(keys, expected);
+    }
+
+    #[test]
+    fn fade_out_silences_every_voice_in_the_take_over_time() {
+        let mut synth = full_synth();
+        synth.note_on(note(100));
+        assert!(synth.is_sounding());
+        synth.fade_out();
+        let fade = synth.take_over_samples as usize;
+        run(&mut synth, fade);
+        assert!(!synth.is_sounding());
+        assert_eq!(synth.next_sample(), 0.0);
     }
 
     #[test]
