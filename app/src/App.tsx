@@ -98,6 +98,7 @@ function App({ createRenderer }: Props) {
   const [tab, setTab] = useState<Tab>("notes");
   const [editorHeight, setEditorHeight] = useState(EDITOR_HEIGHT);
   const [seenClips, setSeenClips] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(() => window.innerHeight);
   const [level] = useState(() => new MeterLevel());
   const [trackLevels] = useState(() => new TrackLevels());
   const [clock] = useState(() => new PlayheadClock());
@@ -108,7 +109,12 @@ function App({ createRenderer }: Props) {
 
   const report = (reason: unknown) => setError(String(reason));
 
-  // The selected track, or the top one if it has gone (undoing its add, say).
+  // A selected track that has gone (undoing its add, say) stays unselected,
+  // so redoing the add doesn't select it again.
+  if (project && selectedId !== null && !project.tracks.some((t) => t.id === selectedId)) {
+    setSelectedId(null);
+  }
+  // The selected track, or the top one if none is.
   const track: TrackView | null =
     project?.tracks.find((t) => t.id === selectedId) ?? project?.tracks[0] ?? null;
   // The Notes tab shows the track's first clip until the timeline can
@@ -130,6 +136,7 @@ function App({ createRenderer }: Props) {
 
   useEffect(() => {
     projectRef.current = project;
+    if (project) trackLevels.keepOnly(project.tracks.map((t) => t.id));
     if (project) {
       clock.setTiming({
         bpm: project.bpm,
@@ -138,7 +145,13 @@ function App({ createRenderer }: Props) {
         loopLength: project.loopLength,
       });
     }
-  }, [project, clock]);
+  }, [project, clock, trackLevels]);
+
+  useEffect(() => {
+    const resize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -183,6 +196,8 @@ function App({ createRenderer }: Props) {
   };
 
   const newTrack = () => {
+    // The Track menu's Add is disabled then too, but its shortcut may beat the update.
+    if (!project || project.tracks.length >= project.maxTracks) return;
     const id = crypto.randomUUID();
     addTrack(id).then(showAndSelect(id), report);
   };
@@ -254,7 +269,7 @@ function App({ createRenderer }: Props) {
   };
 
   const clipped = clipLit(status?.clips ?? 0, seenClips);
-  const maxEditorHeight = Math.max(MIN_EDITOR_HEIGHT, window.innerHeight - ABOVE_EDITOR);
+  const maxEditorHeight = Math.max(MIN_EDITOR_HEIGHT, windowHeight - ABOVE_EDITOR);
 
   return (
     <main className="app">

@@ -38,6 +38,17 @@ describe("meter level", () => {
     expect(levels.level("a")).toBe(levels.level("a"));
   });
 
+  it("forgets deleted tracks' levels", () => {
+    const levels = new TrackLevels();
+    const kept = levels.level("a");
+    levels.push({ a: 0.5, b: 0.1 });
+    const dropped = levels.level("b");
+    levels.keepOnly(["a"]);
+    expect(levels.level("a")).toBe(kept);
+    expect(levels.level("b")).not.toBe(dropped);
+    expect(levels.level("b").take()).toBe(0);
+  });
+
   it("converts levels to dB", () => {
     expect(toDb(1)).toBe(0);
     expect(toDb(0.5)).toBeCloseTo(-6.02, 2);

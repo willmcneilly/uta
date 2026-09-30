@@ -718,6 +718,12 @@ describe("App", () => {
       expect(mixers[0].gesture).toEqual(expect.any(Number));
       expect(mixers[1].gesture).toBe(mixers[0].gesture);
       expect(mixers[2].gesture).not.toBe(mixers[0].gesture);
+
+      // Once the pointer is up, a change (from the keyboard, say) is its own step.
+      fireEvent.change(volume(), { target: { value: "1" } });
+      fireEvent.change(pan(), { target: { value: "0.5" } });
+      await waitFor(() => expect(sent("set_track_mixer")).toHaveLength(5));
+      expect(sent("set_track_mixer").slice(3).map((args) => args.gesture)).toEqual([null, null]);
     });
 
     it("sends mute and solo to Rust", async () => {
@@ -881,6 +887,64 @@ describe("App", () => {
         expect(sent("move_track")).toEqual([]);
         expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]);
       });
+
+      it("drops nothing when the drag is lost to a pointer cancel or the window losing focus", async () => {
+        threeTracks();
+        await renderApp();
+        layOut();
+        for (const lose of [() => fireEvent.pointerCancel(window), () => fireEvent.blur(window)]) {
+          fireEvent.pointerDown(grab("Synth 3"), { button: 0, clientY: 150 });
+          fireEvent.pointerMove(window, { clientY: 10 });
+          lose();
+          expect(header("Synth 1")).not.toHaveClass("drop-above");
+          // The next click anywhere doesn't finish the lost drag.
+          fireEvent.pointerUp(window);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(sent("move_track")).toEqual([]);
+      });
+
+      it("keeps the index in range when the tracks change mid-drag", async () => {
+        threeTracks();
+        await renderApp();
+        layOut();
+        fireEvent.pointerDown(grab("Synth 1"), { button: 0, clientY: 30 });
+        fireEvent.pointerMove(window, { clientY: 900 });
+        // Undo, say, takes a track away during the drag.
+        const [first, , third] = project.tracks;
+        await act(() => emit("project-changed", { ...project, tracks: [first, third] }));
+        fireEvent.pointerUp(window);
+        await waitFor(() => expect(sent("move_track")).toEqual([{ track: "track-1", index: 1 }]));
+      });
+    });
+
+    it("selects a track when one of its controls gets focus, from the keyboard say", async () => {
+      threeTracks();
+      await renderApp();
+      act(() => screen.getByRole("slider", { name: "Synth 2 volume" }).focus());
+      expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
+      openTab("Sound");
+      expect(synthWaveform()).toBe("Square");
+    });
+
+    it("doesn't select a track again when it comes back after an undo", async () => {
+      await renderApp();
+      fireEvent.click(screen.getByRole("button", { name: "+ Add track" }));
+      await waitFor(() => expect(header("Synth 2")).toHaveAttribute("aria-current", "true"));
+      const withBoth = project;
+      await act(() => emit("project-changed", projectView()));
+      expect(header("Synth 1")).toHaveAttribute("aria-current", "true");
+      // Redo brings it back, but the selection stays where it fell.
+      await act(() => emit("project-changed", withBoth));
+      expect(header("Synth 1")).toHaveAttribute("aria-current", "true");
+      expect(header("Synth 2")).not.toHaveAttribute("aria-current");
+    });
+
+    it("doesn't add a track from the Track menu when the project is full", async () => {
+      project = { ...project, maxTracks: 1 };
+      await renderApp();
+      await act(() => emit("track-menu", "add-track"));
+      expect(commands()).not.toContain("add_track");
     });
 
     it("shows the selected track's clip in Notes and its synth in Sound", async () => {
@@ -998,10 +1062,28 @@ describe("App", () => {
       expect(editorHeight()).toBe("160px");
       expect(divider()).toHaveAttribute("aria-valuenow", "160");
 
+      // A drag the window loses ends where it is.
+      fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
+      fireEvent.pointerMove(window, { clientY: 484 });
+      fireEvent.pointerCancel(window);
+      fireEvent.pointerMove(window, { clientY: 100 });
+      expect(editorHeight()).toBe("176px");
+      fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
+      fireEvent.blur(window);
+      fireEvent.pointerMove(window, { clientY: 100 });
+      expect(editorHeight()).toBe("176px");
+
       // It leaves room above for the transport and the tracks.
       fireEvent.pointerDown(divider(), { button: 0, clientY: 500 });
       fireEvent.pointerMove(window, { clientY: -2000 });
       expect(editorHeight()).toBe("740px");
+      fireEvent.pointerUp(window);
+
+      // And still does when the window gets shorter.
+      vi.stubGlobal("innerHeight", 600);
+      act(() => void window.dispatchEvent(new Event("resize")));
+      expect(editorHeight()).toBe("340px");
+      expect(divider()).toHaveAttribute("aria-valuemax", "340");
     });
   });
 });

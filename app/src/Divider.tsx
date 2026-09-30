@@ -29,9 +29,14 @@ export function Divider({ height, min, max, onChange }: Props) {
     const end = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", end);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
+    // A drag the window loses, to ⌘-Tab say, ends where it is.
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", end);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

@@ -51,6 +51,11 @@ export function TrackHeaders({
   const listRef = useRef<HTMLOListElement>(null);
   const [reorder, setReorder] = useState<Reorder | null>(null);
   const stopReorder = useRef<(() => void) | null>(null);
+  // The drop reads the latest tracks: a project from Rust can arrive mid-drag.
+  const tracks = useRef(project.tracks);
+  useEffect(() => {
+    tracks.current = project.tracks;
+  }, [project.tracks]);
 
   // A drag ends if the headers go away mid-drag.
   useEffect(() => () => stopReorder.current?.(), []);
@@ -74,19 +79,27 @@ export function TrackHeaders({
     const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
       window.removeEventListener("keydown", key);
       stopReorder.current = null;
       setReorder(null);
     };
     const end = () => {
       stop();
-      if (to !== from) onMove(track.id, to);
+      // Where the track is now, in case the tracks changed during the drag.
+      const now = tracks.current.findIndex((other) => other.id === track.id);
+      const index = Math.min(to, tracks.current.length - 1);
+      if (now >= 0 && index !== now) onMove(track.id, index);
     };
     const key = (key: KeyboardEvent) => {
       if (key.key === "Escape") stop();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
+    // A drag the window loses, to ⌘-Tab say, ends without moving anything.
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
     window.addEventListener("keydown", key);
     stopReorder.current = stop;
   };
@@ -168,6 +181,8 @@ function TrackHeader({
       aria-label={name}
       aria-current={selected ? "true" : undefined}
       onPointerDown={onSelect}
+      // Tabbing onto any of its controls selects the track too.
+      onFocus={onSelect}
     >
       <div className="track-title">
         <span className="track-name" title="Drag to reorder" onPointerDown={onStartReorder}>

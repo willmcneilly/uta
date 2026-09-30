@@ -47,6 +47,12 @@ export class TrackLevels {
     return level;
   }
 
+  /** Forgets the levels of tracks that aren't in `tracks`: deleted ones. */
+  keepOnly(tracks: readonly string[]): void {
+    const keep = new Set(tracks);
+    for (const track of this.levels.keys()) if (!keep.has(track)) this.levels.delete(track);
+  }
+
   /** Pushes each track's peak into its level. */
   push(peaks: Record<string, number>): void {
     for (const [track, peak] of Object.entries(peaks)) this.level(track).push(peak);
