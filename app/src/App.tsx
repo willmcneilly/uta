@@ -7,6 +7,7 @@ import {
   type ProjectView,
   type SynthParam,
   type TrackView,
+  addClip,
   addNotes,
   addStressNotes,
   addTrack,
@@ -20,9 +21,11 @@ import {
   onProjectChanged,
   onTrackMenu,
   play,
+  removeClips,
   removeNotes,
   removeTrack,
   setBufferSize,
+  setClips,
   setLoopLength,
   setNotes,
   setSynthParam,
@@ -35,6 +38,7 @@ import {
   trimNotes,
 } from "./backend";
 import { Divider } from "./Divider";
+import { FrameLoop } from "./frameLoop";
 import { Meter } from "./Meter";
 import { MeterLevel, TrackLevels, clipLit } from "./meterLevel";
 import { type BarBeat, barBeat } from "./musicalTime";
@@ -45,6 +49,8 @@ import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/Pi
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { SynthPanel } from "./SynthPanel";
+import type { TimelineRendererFactory } from "./timeline/renderer";
+import { type ClipEditor, Timeline } from "./timeline/Timeline";
 import { TrackHeaders } from "./TrackHeaders";
 import { Transport } from "./Transport";
 import { Volume } from "./Volume";
@@ -85,9 +91,11 @@ const ABOVE_EDITOR = 260;
 interface Props {
   /** Draws the piano roll. Tests pass their own; the app uses Canvas 2D. */
   createRenderer?: RendererFactory;
+  /** Draws the timeline, likewise. */
+  createTimelineRenderer?: TimelineRendererFactory;
 }
 
-function App({ createRenderer }: Props) {
+function App({ createRenderer, createTimelineRenderer }: Props) {
   const [project, setProject] = useState<ProjectView | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +103,7 @@ function App({ createRenderer }: Props) {
   // What's selected, which tab is open, how tall the editor is, and when
   // the clip light was last clicked are the UI's own: none is project data.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("notes");
   const [editorHeight, setEditorHeight] = useState(EDITOR_HEIGHT);
   const [seenClips, setSeenClips] = useState(0);
@@ -103,9 +112,11 @@ function App({ createRenderer }: Props) {
   const [trackLevels] = useState(() => new TrackLevels());
   const [clock] = useState(() => new PlayheadClock());
   const [stats] = useState(() => new FrameStats());
+  const [frames] = useState(() => new FrameLoop(stats));
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
   const pianoRoll = useRef<PianoRollHandle>(null);
+  const headers = useRef<HTMLElement>(null);
 
   const report = (reason: unknown) => setError(String(reason));
 
@@ -117,9 +128,10 @@ function App({ createRenderer }: Props) {
   // The selected track, or the top one if none is.
   const track: TrackView | null =
     project?.tracks.find((t) => t.id === selectedId) ?? project?.tracks[0] ?? null;
-  // The Notes tab shows the track's first clip until the timeline can
-  // select clips.
-  const clip = track?.clips[0] ?? null;
+  // The Notes tab shows the selected clip. When it isn't on the selected
+  // track (another track was selected, or the clip has gone), it shows the
+  // track's first clip.
+  const clip = track?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
 
   useEffect(() => {
     let active = true;
@@ -261,6 +273,24 @@ function App({ createRenderer }: Props) {
     audition: (pitch, velocity) => void auditionNote(trackId, pitch, velocity).catch(report),
   };
 
+  const selectClip = (trackId: string, clipId: string) => {
+    setSelectedId(trackId);
+    setSelectedClipId(clipId);
+  };
+
+  // The timeline draws, moves, resizes and deletes clips. A drawn clip is
+  // selected once Rust has sent it back.
+  const clipEditor: ClipEditor = {
+    add: (trackId, id, start, length) =>
+      void addClip(trackId, id, start, length).then((view) => {
+        setProject(view);
+        selectClip(trackId, id);
+      }, report),
+    set: (clips, gesture) => void setClips(clips, gesture).then(setProject, report),
+    remove: (ids) => void removeClips(ids).then(setProject, report),
+    cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
+  };
+
   const changeBuffer = (size: number) => {
     setChangingBuffer(true);
     setBufferSize(size)
@@ -326,9 +356,27 @@ function App({ createRenderer }: Props) {
             onSoloAlone={soloAlone}
             onAdd={newTrack}
             onMove={moveTrackTo}
+            scrollRef={headers}
           />
         )}
-        <section className="timeline" aria-label="Timeline" />
+        {project && (
+          <Timeline
+            project={project}
+            selectedTrack={track?.id ?? null}
+            selectedClip={clip?.id ?? null}
+            editor={clipEditor}
+            clock={clock}
+            frames={frames}
+            headers={headers}
+            onSelectTrack={setSelectedId}
+            onSelectClip={selectClip}
+            onOpenClip={(trackId, clipId) => {
+              selectClip(trackId, clipId);
+              setTab("notes");
+            }}
+            createRenderer={createTimelineRenderer}
+          />
+        )}
       </div>
 
       <Divider
@@ -378,7 +426,7 @@ function App({ createRenderer }: Props) {
               clip={clip}
               editor={editor}
               clock={clock}
-              stats={stats}
+              frames={frames}
               createRenderer={createRenderer}
             />
           ) : (
