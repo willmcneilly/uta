@@ -1,6 +1,7 @@
-//! The `uta` command. `render` writes a project's loop to a WAV without a
-//! sound device; `play` loops it through the default output until Ctrl-C.
-//! Both build the project from a command list (`--commands`).
+//! The `uta` command. `render` writes a project to a WAV without a sound
+//! device; `play` plays it through the default output, round the loop until
+//! Ctrl-C or to the song's end. Both build the project from a command list
+//! (`--commands`).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use uta_core::time::{TICKS_PER_QUARTER, TimeSignature};
+use uta_core::time::{TICKS_PER_QUARTER, Ticks, TimeSignature};
 use uta_core::{CommandList, Project};
 use uta_engine::live::{self, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{EngineConfig, Snapshot, Status, offline};
@@ -24,9 +25,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Render the loop to a stereo WAV file, offline (no sound device
-    /// needed). It plays from the loop's start, then stops and lets the notes
-    /// ring out.
+    /// Render the song to a stereo WAV file, offline (no sound device
+    /// needed). It plays from the top, round the loop if it's on, then stops
+    /// and lets the notes ring out.
     Render {
         /// Where to write the WAV.
         file: PathBuf,
@@ -35,12 +36,18 @@ enum Command {
         /// the render is silent.
         #[arg(long)]
         commands: Option<PathBuf>,
-        /// How long to play, in seconds. Twice round the loop if not given.
+        /// How long to play, in seconds. If not given: with the loop on,
+        /// into the loop and twice round it; with the loop off, to the end
+        /// of the song.
         #[arg(long, value_parser = positive_seconds)]
         seconds: Option<f64>,
+        /// Switch the loop off, so it plays to the end of the song.
+        #[arg(long)]
+        no_loop: bool,
     },
-    /// Loop the project through the default output until Ctrl-C. Follows the
-    /// output when you switch, unplug or replug it.
+    /// Play the project through the default output: round the loop until
+    /// Ctrl-C, or with the loop off (or starting after it) to the end of the
+    /// song. Follows the output when you switch, unplug or replug it.
     Play {
         /// A JSON command list to build the project from, such as
         /// `examples/demo-loop.json`. Without one, the loop is empty and
@@ -51,6 +58,13 @@ enum Command {
         /// it, it gets the nearest size it can.
         #[arg(long, default_value_t = live::DEFAULT_BUFFER_SIZE, value_parser = buffer_size)]
         buffer: u32,
+        /// Where to start playing: a bar, or a bar and beat such as `3.3`,
+        /// counting from 1. Notes already under way there start at once.
+        #[arg(long, default_value = "1", value_parser = position)]
+        from: Position,
+        /// Switch the loop off, so it plays to the end of the song.
+        #[arg(long)]
+        no_loop: bool,
     },
 }
 
@@ -60,10 +74,16 @@ fn main() -> ExitCode {
             file,
             commands,
             seconds,
-        } => load(commands.as_deref()).and_then(|project| render(&project, &file, seconds)),
-        Command::Play { commands, buffer } => {
-            load(commands.as_deref()).and_then(|project| play(&project, buffer))
+            no_loop,
+        } => {
+            load(commands.as_deref(), no_loop).and_then(|project| render(&project, &file, seconds))
         }
+        Command::Play {
+            commands,
+            buffer,
+            from,
+            no_loop,
+        } => load(commands.as_deref(), no_loop).and_then(|project| play(&project, buffer, from)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -74,14 +94,23 @@ fn main() -> ExitCode {
     }
 }
 
-/// The project a command list builds, or a new, empty one.
-fn load(commands: Option<&Path>) -> Result<Project, String> {
-    let Some(path) = commands else {
-        return Ok(Project::new());
+/// The project a command list builds, or a new, empty one, with the loop
+/// switched off if `no_loop`.
+fn load(commands: Option<&Path>, no_loop: bool) -> Result<Project, String> {
+    let mut project = match commands {
+        None => Project::new(),
+        Some(path) => {
+            let json = std::fs::read_to_string(path)
+                .map_err(|error| format!("couldn't read {}: {error}", path.display()))?;
+            build(&json).map_err(|error| format!("{}: {error}", path.display()))?
+        }
     };
-    let json = std::fs::read_to_string(path)
-        .map_err(|error| format!("couldn't read {}: {error}", path.display()))?;
-    build(&json).map_err(|error| format!("{}: {error}", path.display()))
+    if no_loop {
+        project
+            .apply(&uta_core::Command::SetLoopEnabled { enabled: false })
+            .expect("switching the loop off always works");
+    }
+    Ok(project)
 }
 
 /// Builds the project a JSON command list describes.
@@ -92,17 +121,28 @@ fn build(json: &str) -> Result<Project, String> {
         .map_err(|(index, error)| format!("command {} failed: {error}", index + 1))
 }
 
-/// The loop's length in seconds.
-fn loop_seconds(project: &Project) -> f64 {
-    let transport = project.transport();
+/// Seconds from the start of the song to `ticks`.
+fn seconds_at(project: &Project, ticks: Ticks) -> f64 {
     let rate = EngineConfig::default().sample_rate;
-    let samples = transport
+    let samples = project
+        .transport()
         .tempo_map()
-        .ticks_to_samples(transport.loop_start() + transport.loop_length(), rate)
-        - transport
-            .tempo_map()
-            .ticks_to_samples(transport.loop_start(), rate);
+        .ticks_to_samples(ticks, rate);
     samples as f64 / f64::from(rate)
+}
+
+/// How long `render` plays by default: with the loop on, from the top into
+/// the loop and twice round it; with it off, to the end of the song.
+fn default_seconds(project: &Project) -> f64 {
+    let transport = project.transport();
+    if transport.loop_enabled() {
+        seconds_at(
+            project,
+            transport.loop_start() + 2 * transport.loop_length(),
+        )
+    } else {
+        seconds_at(project, project.song_end())
+    }
 }
 
 fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), String> {
@@ -111,8 +151,8 @@ fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), St
         channels: 2,
         ..EngineConfig::default()
     };
-    let seconds = seconds.unwrap_or_else(|| 2.0 * loop_seconds(project));
-    let samples = offline::render_loop(config, Snapshot::from(project), seconds);
+    let seconds = seconds.unwrap_or_else(|| default_seconds(project));
+    let samples = offline::render_song(config, Snapshot::from(project), seconds);
     offline::write_wav(file, config, &samples)
         .map_err(|error| format!("couldn't write {}: {error}", file.display()))?;
     println!(
@@ -124,7 +164,8 @@ fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), St
     Ok(())
 }
 
-/// A one-line summary: the tracks, notes, tempo and loop.
+/// A one-line summary: the tracks, notes, tempo, and the loop or the song's
+/// length.
 fn describe_project(project: &Project) -> String {
     let tracks = project.tracks().len();
     let notes: usize = project
@@ -134,9 +175,14 @@ fn describe_project(project: &Project) -> String {
         .map(|clip| clip.notes().len())
         .sum();
     let transport = project.transport();
-    let bars = transport.loop_length() / transport.time_signature().ticks_per_bar();
+    let bar = transport.time_signature().ticks_per_bar();
+    let length = if transport.loop_enabled() {
+        format!("a {}-bar loop", transport.loop_length() / bar)
+    } else {
+        format!("a {}-bar song", project.song_end().div_ceil(bar))
+    };
     format!(
-        "{notes} notes on {tracks} track{} in a {bars}-bar loop at {} BPM",
+        "{notes} notes on {tracks} track{} in {length} at {} BPM",
         if tracks == 1 { "" } else { "s" },
         transport.tempo_map().bpm()
     )
@@ -145,7 +191,7 @@ fn describe_project(project: &Project) -> String {
 /// How often the status line updates.
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 
-fn play(project: &Project, buffer: u32) -> Result<(), String> {
+fn play(project: &Project, buffer: u32, from: Position) -> Result<(), String> {
     let interrupted = Arc::new(AtomicBool::new(false));
     ctrlc::set_handler({
         let interrupted = interrupted.clone();
@@ -160,16 +206,33 @@ fn play(project: &Project, buffer: u32) -> Result<(), String> {
         uta_engine::engine(EngineConfig::default(), Snapshot::from(project));
     let output = LiveOutput::start(processor, buffer)
         .map_err(|error| format!("couldn't start playback: {error}"))?;
+    controller
+        .locate(from.ticks())
+        .expect("fresh queue has room");
     controller.play().expect("fresh queue has room");
+    let from = if from.ticks() > 0 {
+        format!(" from {from}")
+    } else {
+        String::new()
+    };
     println!(
-        "Playing {}. Press Ctrl-C to stop.",
+        "Playing {}{from}. Press Ctrl-C to stop.",
         describe_project(project)
     );
 
     let mut last: Option<DeviceStatus> = None;
+    // Whether the engine has reported playing yet, so it stopping means it
+    // reached the end of the song.
+    let mut started = false;
     while !interrupted.load(Ordering::Relaxed) {
         let status = output.status();
         let engine = controller.poll();
+        if engine.playing {
+            started = true;
+        } else if started {
+            println!("\r\x1b[2KReached the end of the song.");
+            break;
+        }
         if last
             .as_ref()
             .is_none_or(|last| describe(last, buffer) != describe(&status, buffer))
@@ -243,6 +306,45 @@ fn progress(status: &DeviceStatus, engine: &Status) -> String {
     line
 }
 
+/// A place in the song, as bars and beats count it: both from 1, in 4/4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Position {
+    bar: u32,
+    beat: u32,
+}
+
+impl Position {
+    fn ticks(self) -> Ticks {
+        let signature = TimeSignature::FOUR_FOUR;
+        Ticks::from(self.bar - 1) * signature.ticks_per_bar()
+            + Ticks::from(self.beat - 1) * TICKS_PER_QUARTER
+    }
+}
+
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "bar {}", self.bar)?;
+        if self.beat > 1 {
+            write!(f, " beat {}", self.beat)?;
+        }
+        Ok(())
+    }
+}
+
+/// Parses a bar (`3`) or a bar and beat (`3.2`), both from 1.
+fn position(value: &str) -> Result<Position, String> {
+    let (bar, beat) = value.split_once('.').unwrap_or((value, "1"));
+    let bar: u32 = bar.parse().map_err(|_| format!("{bar:?} isn't a bar"))?;
+    let beat: u32 = beat.parse().map_err(|_| format!("{beat:?} isn't a beat"))?;
+    if bar == 0 || bar > 10_000 {
+        return Err("the bar must be from 1 to 10000".into());
+    }
+    if !(1..=4).contains(&beat) {
+        return Err("the beat must be from 1 to 4".into());
+    }
+    Ok(Position { bar, beat })
+}
+
 fn buffer_size(value: &str) -> Result<u32, String> {
     let sizes = live::BUFFER_SIZES;
     match value.parse::<u32>() {
@@ -284,6 +386,31 @@ mod tests {
         let version = version();
         assert!(version.contains("core "));
         assert!(version.contains("engine "));
+    }
+
+    #[test]
+    fn from_is_a_bar_or_a_bar_and_beat() {
+        let from = |value: &str| position(value).map(Position::ticks);
+        assert_eq!(from("1"), Ok(0));
+        assert_eq!(from("3"), Ok(2 * 3840));
+        assert_eq!(from("3.1"), Ok(2 * 3840));
+        assert_eq!(from("3.3"), Ok(2 * 3840 + 2 * 960));
+        for bad in ["0", "-1", "3.0", "3.5", "x", "3.x", "", "3."] {
+            assert!(from(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(position("3.3").unwrap().to_string(), "bar 3 beat 3");
+        assert_eq!(position("3").unwrap().to_string(), "bar 3");
+        let Command::Play { from, .. } = Cli::try_parse_from(["uta", "play"]).unwrap().command
+        else {
+            panic!("play");
+        };
+        assert_eq!(from.ticks(), 0);
+    }
+
+    #[test]
+    fn no_loop_switches_the_loop_off() {
+        assert!(load(None, false).unwrap().transport().loop_enabled());
+        assert!(!load(None, true).unwrap().transport().loop_enabled());
     }
 
     #[test]
@@ -363,8 +490,34 @@ mod tests {
             describe_project(&project),
             "28 notes on 1 track in a 2-bar loop at 112 BPM"
         );
-        // 2 bars of 4/4 at 112 BPM.
-        assert!((loop_seconds(&project) - 8.0 * 60.0 / 112.0).abs() < 1e-4);
+        // Twice round the loop, which starts at the top: 4 bars of 4/4 at
+        // 112 BPM.
+        assert!((default_seconds(&project) - 16.0 * 60.0 / 112.0).abs() < 1e-4);
+    }
+
+    /// With the loop on, a render goes from the top into the loop and twice
+    /// round it; with it off, to the end of the song.
+    #[test]
+    fn the_default_render_length_follows_the_loop_switch() {
+        let mut project = Project::new();
+        let seconds_per_bar = 2.0;
+        project
+            .apply(&uta_core::Command::SetLoop {
+                start_bar: 3,
+                bars: 2,
+            })
+            .unwrap();
+        // Bars 1 to 3, then bars 4 and 5 twice.
+        assert!((default_seconds(&project) - 7.0 * seconds_per_bar).abs() < 1e-4);
+        project
+            .apply(&uta_core::Command::SetLoopEnabled { enabled: false })
+            .unwrap();
+        // The 4-bar clip, then a bar.
+        assert!((default_seconds(&project) - 5.0 * seconds_per_bar).abs() < 1e-4);
+        assert_eq!(
+            describe_project(&project),
+            "0 notes on 1 track in a 5-bar song at 120 BPM"
+        );
     }
 
     #[test]

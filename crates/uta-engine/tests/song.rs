@@ -121,7 +121,10 @@ fn with_the_loop_off_playback_stops_at_the_songs_end_and_goes_back_to_the_play_s
         assert_eq!(first_sound(renderer.samples()), Some(note_at + 1), "{what}");
         let expected = reference(&project, 69, samples_at(960), TAIL);
         assert_plays_at(renderer.samples(), note_at, &expected, &what);
-        assert_eq!(first_sound(&renderer.samples()[note_at + expected.len()..]), None);
+        assert_eq!(
+            first_sound(&renderer.samples()[note_at + expected.len()..]),
+            None
+        );
 
         // From a play start at bar 2, it plays the rest, stops at the end
         // and goes back to bar 2.
@@ -202,7 +205,11 @@ fn pad() -> Note {
 /// a note started there directly, held for `hold` samples, at its pitch,
 /// then stops: silent for the half bar after.
 fn assert_chased(samples: &[f32], project: &Project, at: usize, hold: usize, what: &str) {
-    assert_eq!(first_sound(&samples[at..]), Some(1), "{what}: starts at once");
+    assert_eq!(
+        first_sound(&samples[at..]),
+        Some(1),
+        "{what}: starts at once"
+    );
     let expected = reference(project, 57, hold, TAIL);
     assert_plays_at(samples, at, &expected, what);
     let steady = &samples[at + 2400..at + hold - 2400];
@@ -301,7 +308,10 @@ fn a_chased_note_starts_from_its_attack_without_a_click() {
     let attack = level / (0.005 * 48_000.0);
     let limit = (sine_max_step(pitch_to_hz(57), 48_000) * level + attack) * 1.1;
     let (jump, at) = max_jump(samples);
-    assert!(jump <= limit, "jump of {jump} at sample {at}, limit {limit}");
+    assert!(
+        jump <= limit,
+        "jump of {jump} at sample {at}, limit {limit}"
+    );
     // It starts from silence and reaches full level after the attack.
     assert!(samples[1].abs() < attack * 2.0);
     assert!(level_at(samples, 4800, 480) > 0.99 * level);
@@ -359,7 +369,13 @@ fn with_the_loop_on_starting_before_it_plays_into_it_and_goes_round() {
     // Nothing else: silent between them.
     for pair in onsets.windows(2) {
         let quiet = &samples[pair[0] + expected.len()..pair[1]];
-        assert_eq!(first_sound(quiet), None, "between {} and {}", pair[0], pair[1]);
+        assert_eq!(
+            first_sound(quiet),
+            None,
+            "between {} and {}",
+            pair[0],
+            pair[1]
+        );
     }
     assert!(renderer.controller.poll().playing, "round the loop forever");
 }
@@ -467,7 +483,11 @@ fn block_size_does_not_change_song_playback() {
     let project = song(
         4,
         Some((1, 2)),
-        vec![pad(), note(1, 64, BAR + 480, 3000), note(2, 67, 3 * BAR, 960)],
+        vec![
+            pad(),
+            note(1, 64, BAR + 480, 3000),
+            note(2, 67, 3 * BAR, 960),
+        ],
     );
     let session = |block_size| {
         let mut renderer = renderer(&project, block_size);

@@ -324,7 +324,7 @@ fn golden_seconds(project: &Project) -> f64 {
 /// the file with `UTA_GOLDEN=1`. A human approves every change to a golden
 /// file.
 fn check_golden(name: &str, config: EngineConfig, project: &Project) {
-    let rendered = offline::render_loop(config, Snapshot::from(project), golden_seconds(project));
+    let rendered = offline::render_song(config, Snapshot::from(project), golden_seconds(project));
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/golden/{name}.wav"));
     if std::env::var_os("UTA_GOLDEN").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -368,7 +368,7 @@ fn the_demo_song_matches_its_golden_wav() {
 
 #[test]
 fn a_render_ends_in_silence() {
-    let rendered = offline::render_loop(config(), Snapshot::from(&demo_loop()), 1.0);
+    let rendered = offline::render_song(config(), Snapshot::from(&demo_loop()), 1.0);
     assert!(peak(&rendered[..rendered.len() / 2]) > 0.1, "too quiet");
     assert_eq!(*rendered.last().unwrap(), 0.0);
 }
@@ -376,8 +376,8 @@ fn a_render_ends_in_silence() {
 #[test]
 fn every_channel_carries_the_sound() {
     let snapshot = Snapshot::from(&demo_loop());
-    let samples = offline::render_loop(stereo(), snapshot.clone(), 0.5);
-    let mono = offline::render_loop(config(), snapshot, 0.5);
+    let samples = offline::render_song(stereo(), snapshot.clone(), 0.5);
+    let mono = offline::render_song(config(), snapshot, 0.5);
     assert_eq!(samples.len(), mono.len() * 2);
     assert!(peak(&mono) > 0.0);
     let (frames, rest) = samples.as_chunks::<2>();
@@ -386,4 +386,3 @@ fn every_channel_carries_the_sound() {
         assert_eq!(*frame, [expected, expected]);
     }
 }
-

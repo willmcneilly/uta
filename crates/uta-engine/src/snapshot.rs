@@ -952,7 +952,11 @@ mod tests {
             let notes = (0..count)
                 .map(|i| {
                     // Mostly short, some long, some starting together.
-                    let length = if next(10) == 0 { 1 + next(8000) } else { 1 + next(400) };
+                    let length = if next(10) == 0 {
+                        1 + next(8000)
+                    } else {
+                        1 + next(400)
+                    };
                     note(i, 60, next(60) * 60, length)
                 })
                 .collect();
@@ -965,7 +969,10 @@ mod tests {
             let track = TrackNotes::new(vec![clip], &sequence);
             let mut spans = track.notes.clone();
             spans.sort_by_key(|note| note.start);
-            for sample in (0..sequence.sample_at(12_000)).step_by(997).chain([0, 1500]) {
+            for sample in (0..sequence.sample_at(12_000))
+                .step_by(997)
+                .chain([0, 1500])
+            {
                 let found = track.sounding_at(sample);
                 let expected: Vec<NoteKey> = spans
                     .iter()
