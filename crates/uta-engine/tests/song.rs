@@ -475,6 +475,44 @@ fn too_many_chased_notes_are_skipped_and_counted() {
     assert_eq!(renderer.controller.poll().dropped_note_events, extra as u64);
 }
 
+/// Chased notes share the budget with the ordinary events in the same
+/// block: 500 chased, and 20 notes starting where playback starts, is 8 over
+/// the limit.
+#[test]
+fn chased_notes_and_events_in_the_same_block_share_the_budget() {
+    let chased = 500u128;
+    let starting = 20u128;
+    let mut notes: Vec<Note> = (0..chased)
+        .map(|i| note(i, 40 + (i % 60) as u8, 0, 2 * BAR))
+        .collect();
+    notes.extend((0..starting).map(|i| note(chased + i, 40 + (i % 60) as u8, BAR, 480)));
+    let project = song(4, None, notes);
+    let mut renderer = renderer(&project, 128);
+    renderer.controller.locate(BAR).unwrap();
+    renderer.controller.play().unwrap();
+    renderer.render(128);
+    let over = (chased + starting) as u64 - MAX_NOTE_EVENTS_PER_BLOCK as u64;
+    assert_eq!(renderer.controller.poll().dropped_note_events, over);
+}
+
+/// Going round the loop doesn't play the notes that start on the loop's end:
+/// they're outside the loop. So they neither sound nor take from the
+/// budget, however many there are.
+#[test]
+fn notes_starting_on_the_loops_end_do_not_play_at_the_wrap() {
+    // The loop is bar 1; more notes than a block may handle start on bar 2.
+    let count = MAX_NOTE_EVENTS_PER_BLOCK as u128 + 10;
+    let notes = (0..count)
+        .map(|i| note(i, 40 + (i % 60) as u8, BAR, 480))
+        .collect();
+    let project = song(2, Some((0, 1)), notes);
+    let mut renderer = renderer(&project, 128);
+    renderer.controller.play().unwrap();
+    renderer.render(3 * BAR_SAMPLES);
+    assert_eq!(renderer.controller.poll().dropped_note_events, 0);
+    assert_eq!(first_sound(renderer.samples()), None);
+}
+
 /// Where a song with the loop off ends, and where with it on it goes round,
 /// don't depend on the block size: the same audio in blocks of 32, 128 and
 /// 1024, with chasing, a jump and a wrap.

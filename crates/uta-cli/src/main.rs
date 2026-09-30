@@ -192,6 +192,7 @@ fn describe_project(project: &Project) -> String {
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 
 fn play(project: &Project, buffer: u32, from: Position) -> Result<(), String> {
+    check_from(project, from)?;
     let interrupted = Arc::new(AtomicBool::new(false));
     ctrlc::set_handler({
         let interrupted = interrupted.clone();
@@ -251,6 +252,23 @@ fn play(project: &Project, buffer: u32, from: Position) -> Result<(), String> {
     let dropouts = output.status().dropouts;
     output.stop();
     println!("\nStopped. {dropouts} dropouts.");
+    Ok(())
+}
+
+/// Refuses a start past the song's end unless the loop will catch it, since
+/// playback would stop before a single sample.
+fn check_from(project: &Project, from: Position) -> Result<(), String> {
+    let transport = project.transport();
+    let loop_end = transport.loop_start() + transport.loop_length();
+    let into_the_loop = transport.loop_enabled() && from.ticks() < loop_end;
+    if !into_the_loop && from.ticks() >= project.song_end() {
+        let bars = project
+            .song_end()
+            .div_ceil(transport.time_signature().ticks_per_bar());
+        return Err(format!(
+            "--from {from} is past the end of the song, which is {bars} bars long"
+        ));
+    }
     Ok(())
 }
 
@@ -405,6 +423,36 @@ mod tests {
             panic!("play");
         };
         assert_eq!(from.ticks(), 0);
+    }
+
+    /// Past the song's end nothing would play, so it's refused, unless the
+    /// loop is on and the start is before its end.
+    #[test]
+    fn from_past_the_songs_end_is_refused() {
+        // A 4-bar clip and loop: the song is 5 bars.
+        let mut project = Project::new();
+        let at = |value: &str| position(value).unwrap();
+        assert!(check_from(&project, at("5.4")).is_ok());
+        assert!(
+            check_from(&project, at("6")).is_err(),
+            "the loop ends first"
+        );
+        project
+            .apply(&uta_core::Command::SetLoop {
+                start_bar: 8,
+                bars: 2,
+            })
+            .unwrap();
+        assert!(check_from(&project, at("6")).is_ok(), "plays into the loop");
+        assert!(check_from(&project, at("10")).is_ok());
+        assert!(check_from(&project, at("11")).is_err());
+        project
+            .apply(&uta_core::Command::SetLoopEnabled { enabled: false })
+            .unwrap();
+        assert_eq!(
+            check_from(&project, at("50")),
+            Err("--from bar 50 is past the end of the song, which is 5 bars long".into())
+        );
     }
 
     #[test]

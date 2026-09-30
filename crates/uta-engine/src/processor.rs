@@ -356,6 +356,9 @@ impl Processor {
             }
             if sequencing {
                 self.playhead += run as u64;
+                // Stop at the song's end now, not at the next block's start,
+                // so this block's status already says it has stopped and
+                // shows the play start.
                 if !self.looping && self.playhead >= self.snapshot.sequence.song_end_sample() {
                     self.stop();
                 }
@@ -379,15 +382,25 @@ impl Processor {
     }
 
     /// Handles every note event due at the playhead, on every track. At the
-    /// loop's end, goes back to the loop's start and handles the events due
-    /// there too, so both land on the same sample. At the song's end, stops.
-    /// Each track handles at most its budget of events; the rest are skipped
-    /// and counted.
+    /// loop's end (or past it, if a new snapshot shortened the loop), goes
+    /// back to the loop's start and handles the events due there, so it lands
+    /// on the same sample. At the song's end, stops. Each track handles at
+    /// most its budget of events; the rest are skipped and counted.
     fn handle_due_events(&mut self) {
-        // Two rounds at most: the events due now, then those at the loop's
-        // start after going back to it. Handling both here means the caller
-        // always has at least one frame to render next, or has stopped.
+        // Two rounds at most: going round the loop, then the events at its
+        // start. Either way the caller has at least one frame to render
+        // next, or has stopped.
         for _ in 0..2 {
+            let sequence = &self.snapshot.sequence;
+            let loop_samples = sequence.loop_samples();
+            if self.looping && self.playhead >= loop_samples.end {
+                // The events at the loop's end aren't handled: `start_from`
+                // releases the notes ending there, and a note starting there
+                // is outside the loop, so it would only take a voice and be
+                // released on the same sample.
+                self.start_from(loop_samples.start);
+                continue;
+            }
             let playhead = self.playhead;
             // Bounded by TRACK_SLOTS.
             for track in self.snapshot.tracks() {
@@ -397,19 +410,10 @@ impl Processor {
                     &mut self.dropped_note_events,
                 );
             }
-
-            let sequence = &self.snapshot.sequence;
-            if !self.looping {
-                if playhead >= sequence.song_end_sample() {
-                    self.stop();
-                }
-                return;
+            if !self.looping && playhead >= self.snapshot.sequence.song_end_sample() {
+                self.stop();
             }
-            let loop_samples = sequence.loop_samples();
-            if playhead < loop_samples.end {
-                return;
-            }
-            self.start_from(loop_samples.start);
+            return;
         }
     }
 
@@ -475,19 +479,18 @@ impl Processor {
 
     /// After a new snapshot while playing, decides where playback is bound:
     /// - with the loop off, for the song's end;
-    /// - if it was bound for the loop's end and is now at or past it (the
-    ///   loop got shorter or moved), it goes round the loop now;
-    /// - if it wasn't (the loop was off, or playback started after it), for
-    ///   the loop's end only if the playhead is before it.
+    /// - if it wasn't bound for the loop's end (the loop was off, or
+    ///   playback started after it), for the loop's end only if the playhead
+    ///   is before it;
+    /// - if it was, it stays so. If the loop got shorter or moved and the
+    ///   playhead is now past its end, [`Self::handle_due_events`] goes
+    ///   round the loop on this same sample.
     fn follow_the_loop(&mut self) {
         let sequence = &self.snapshot.sequence;
-        let loop_samples = sequence.loop_samples();
         if !sequence.loop_enabled() {
             self.looping = false;
         } else if !self.looping {
-            self.looping = self.playhead < loop_samples.end;
-        } else if self.playhead >= loop_samples.end {
-            self.start_from(loop_samples.start);
+            self.looping = self.playhead < sequence.loop_samples().end;
         }
     }
 
