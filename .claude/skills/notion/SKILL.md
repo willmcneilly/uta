@@ -27,6 +27,7 @@ Uta page: `3e83af96-9b6f-8190-b519-dc8cf3aeab6f` (https://app.notion.com/p/Uta-3
 | Projects | `f11524a3-50c2-4951-895d-ac946a5dbcd2` | `e0dc7875-8865-4bbe-bcff-785efb0cda42` |
 | Tickets | `ad66cdaf-cd4a-4914-b236-2cbc2f66291b` | `444117ac-b9f1-4686-b828-1919e9ba098f` |
 | Research | `aac52824-9d59-4441-bcb6-33e622295ba5` | `b88b291e-91e7-43f8-896f-68e7084eaa6b` |
+| Scratchpad | `057ed2bc-7159-4f9d-ba6d-b034fed1eacc` | `847d5e5a-0916-4048-b2a0-38722bb92e22` |
 
 Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49ac-412c-91f2-650a1edfa069`
 
@@ -35,6 +36,7 @@ Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49
 - **Projects:** `Name`, `Status` (Planned · Active · Done), `RFCs` (relation), `Tickets` (relation), `Progress` (rollup, read-only)
 - **Research:** `Name` (title), `Date` (date gathered), `RFCs` (relation; the back-link on RFCs is `Research`)
 - **Tickets:** `Name`, `ID` (auto, UTA-n), `Status` (Backlog · Ready · In Progress · Blocked · In Review · Done), `Type` (Feature · Bug · Chore · Spike), `Project` (relation), `PR` (url)
+- **Scratchpad:** see the `scratchpad` skill. RFCs and Projects have a `Scratchpad notes` back-link to it.
 
 The Uta page body contains `<database …>` tags. If you ever update that page, keep them exactly as they are, or the databases get removed from the page.
 

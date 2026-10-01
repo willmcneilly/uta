@@ -19,6 +19,8 @@ Workflow: draft locally → review in Crit → publish to Notion on sign-off. Fo
 
 ### 1. Understand the goal. Don't draft yet.
 
+First run the scratchpad review (the `scratchpad` skill), starting with the notes that touch this initiative. Notes Will folds in become part of what you clarify below.
+
 Ask Will questions until you can state, in Will's words:
 - what they want to be able to do, hear or see when this is done
 - why now, and what it unlocks

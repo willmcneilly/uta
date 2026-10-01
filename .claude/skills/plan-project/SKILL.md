@@ -16,6 +16,7 @@ Workflow: read the RFC → draft the plan locally → review in Crit → create 
 - The accepted RFC in `docs/rfcs/`, especially **Proposal**, **How we'll verify it** and any resolved open questions or amendments.
 - Existing projects and open tickets in Notion, so you don't duplicate work and can decide whether this is a new project or belongs in an existing one.
 - The current code, so tickets start from what actually exists.
+- The scratchpad. Run its review (the `scratchpad` skill), starting with the notes that touch this project. Notes Will folds in become ticket scope, or go in "Not in this project" with a reason.
 
 ## 2. Break it down
 
