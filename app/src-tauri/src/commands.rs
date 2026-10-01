@@ -91,15 +91,25 @@ pub fn set_tempo<R: Runtime>(
     edit(&app, |uta| uta.set_tempo(bpm, gesture))
 }
 
-/// Sets the loop's length, in bars. Calls with the same `gesture` undo as
-/// one step.
+/// Sets the loop region, in whole bars. Calls with the same `gesture` (one
+/// drag on the ruler) undo as one step.
 #[tauri::command]
-pub fn set_loop_length<R: Runtime>(
+pub fn set_loop<R: Runtime>(
     app: AppHandle<R>,
+    start_bar: u32,
     bars: u32,
     gesture: Option<u32>,
 ) -> Result<ProjectView, String> {
-    edit(&app, |uta| uta.set_loop_length(bars, gesture))
+    edit(&app, |uta| uta.set_loop(start_bar, bars, gesture))
+}
+
+/// Switches the loop on or off.
+#[tauri::command]
+pub fn set_loop_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_loop_enabled(enabled))
 }
 
 /// Sets one of a track's synth settings. Calls to the same setting with the
@@ -312,6 +322,22 @@ pub fn play(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn stop(state: State<'_, AppState>) -> Result<(), String> {
     lock(&state.uta).stop()
+}
+
+#[tauri::command]
+pub fn pause(state: State<'_, AppState>) -> Result<(), String> {
+    lock(&state.uta).pause()
+}
+
+#[tauri::command]
+pub fn resume(state: State<'_, AppState>) -> Result<(), String> {
+    lock(&state.uta).resume()
+}
+
+/// Moves the play start while stopped, or jumps there while playing.
+#[tauri::command]
+pub fn locate(state: State<'_, AppState>, ticks: Ticks) -> Result<(), String> {
+    lock(&state.uta).locate(ticks)
 }
 
 #[tauri::command]

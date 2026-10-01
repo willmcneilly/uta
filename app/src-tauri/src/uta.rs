@@ -33,9 +33,6 @@ pub struct ProjectView {
     pub bpm: f32,
     pub min_bpm: f32,
     pub max_bpm: f32,
-    pub loop_bars: u32,
-    pub min_loop_bars: u32,
-    pub max_loop_bars: u32,
     /// Where the loop starts, in ticks.
     pub loop_start: Ticks,
     /// How long the loop is, in ticks.
@@ -184,8 +181,8 @@ pub struct ClipView {
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     pub playing: bool,
-    /// The playhead, in ticks from the start of the song. It stays inside
-    /// the loop.
+    /// The playhead, in ticks from the start of the song. While stopped,
+    /// the play start, or where it paused.
     pub playhead: Ticks,
     /// The master's loudest sample since the last frame, as a linear level.
     pub peak: f32,
@@ -252,9 +249,15 @@ pub struct Uta {
     /// `None` only if restarting the output failed.
     playback: Option<Playback>,
     requested_buffer: u32,
-    /// Whether Play was pressed more recently than Stop, so a restarted
-    /// output carries on playing.
+    /// Whether Play was pressed more recently than Stop, and playback hasn't
+    /// stopped at the song's end since, so a restarted output carries on
+    /// playing.
     wants_playing: bool,
+    /// Whether the engine said it was playing, as of the last frame.
+    playing: bool,
+    /// Where Play starts and Stop goes back to, as last set while stopped, so
+    /// a restarted output starts from there too.
+    play_start: Ticks,
     /// Set when the engine's command queue was full, so its snapshot is older
     /// than the project. The next frame tries again.
     engine_behind: bool,
@@ -294,6 +297,8 @@ impl Uta {
             playback: Some(playback),
             requested_buffer: buffer,
             wants_playing: false,
+            playing: false,
+            play_start: 0,
             engine_behind: false,
             earlier_dropouts: 0,
             earlier_clips: 0,
@@ -306,7 +311,6 @@ impl Uta {
     pub fn project(&self) -> ProjectView {
         let project = self.session.project();
         let transport = project.transport();
-        let bar = transport.time_signature().ticks_per_bar();
         ProjectView {
             volume_db: project.master_volume_db(),
             min_volume_db: VOLUME_RANGE_DB.0,
@@ -316,9 +320,6 @@ impl Uta {
             bpm: transport.tempo_map().bpm(),
             min_bpm: Project::MIN_BPM,
             max_bpm: Project::MAX_BPM,
-            loop_bars: u32::try_from(transport.loop_length() / bar).unwrap_or(u32::MAX),
-            min_loop_bars: Project::MIN_LOOP_BARS,
-            max_loop_bars: Project::MAX_LOOP_BARS,
             loop_start: transport.loop_start(),
             loop_length: transport.loop_length(),
             loop_enabled: transport.loop_enabled(),
@@ -343,10 +344,21 @@ impl Uta {
         self.change(Command::SetTempo { bpm }, gesture)
     }
 
-    /// Sets the loop's length, in bars. Changes that share a `gesture` undo
-    /// as one.
-    pub fn set_loop_length(&mut self, bars: u32, gesture: Option<u32>) -> Result<(), String> {
-        self.change(Command::SetLoopLength { bars }, gesture)
+    /// Sets the loop region, in whole bars: where it starts, counting from 0,
+    /// and how long it is. Changes that share a `gesture` (one drag on the
+    /// ruler) undo as one.
+    pub fn set_loop(
+        &mut self,
+        start_bar: u32,
+        bars: u32,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetLoop { start_bar, bars }, gesture)
+    }
+
+    /// Switches the loop on or off.
+    pub fn set_loop_enabled(&mut self, enabled: bool) -> Result<(), String> {
+        self.change(Command::SetLoopEnabled { enabled }, None)
     }
 
     /// Sets one of a track's synth settings. Changes to the same setting
@@ -680,20 +692,52 @@ impl Uta {
         }
     }
 
+    /// Plays from the play start.
     pub fn play(&mut self) -> Result<(), String> {
         self.controller.play().map_err(|error| error.to_string())?;
         self.wants_playing = true;
         Ok(())
     }
 
+    /// Stops, and goes back to the play start.
     pub fn stop(&mut self) -> Result<(), String> {
         self.controller.stop().map_err(|error| error.to_string())?;
         self.wants_playing = false;
         Ok(())
     }
 
+    /// Stops where the playhead is, for [`Self::resume`] to carry on from.
+    pub fn pause(&mut self) -> Result<(), String> {
+        self.controller.pause().map_err(|error| error.to_string())?;
+        self.wants_playing = false;
+        Ok(())
+    }
+
+    /// Plays from where it paused, or from the play start if it didn't.
+    pub fn resume(&mut self) -> Result<(), String> {
+        self.controller
+            .resume()
+            .map_err(|error| error.to_string())?;
+        self.wants_playing = true;
+        Ok(())
+    }
+
+    /// While stopped, moves the play start to `ticks` from the start of the
+    /// song. While playing, jumps there, and the play start stays put. What
+    /// clicking the ruler does.
+    pub fn locate(&mut self, ticks: Ticks) -> Result<(), String> {
+        self.controller
+            .locate(ticks)
+            .map_err(|error| error.to_string())?;
+        if !self.playing {
+            self.play_start = ticks;
+        }
+        Ok(())
+    }
+
     /// Reopens the output at a new buffer size, carrying on playing if it
-    /// was. The sound fades out, and the loop starts again from its start.
+    /// was. The sound fades out, and playback starts again from the play
+    /// start.
     pub fn set_buffer_size(&mut self, size: u32) -> Result<(), String> {
         if !live::BUFFER_SIZES.contains(&size) {
             return Err(format!(
@@ -719,6 +763,9 @@ impl Uta {
         } else {
             Playback::Offline(processor)
         });
+        self.controller
+            .locate(self.play_start)
+            .expect("fresh queue has room");
         if self.wants_playing {
             self.controller.play().expect("fresh queue has room");
         }
@@ -733,6 +780,11 @@ impl Uta {
         }
         self.end_audition_by(Instant::now());
         let status: Status = self.controller.poll();
+        // Playback stopped by itself, at the song's end.
+        if self.playing && !status.playing {
+            self.wants_playing = false;
+        }
+        self.playing = status.playing;
         let device = self.device_status();
         let sample_rate = device.device.as_ref().map(|d| d.sample_rate);
         Frame {
@@ -983,9 +1035,8 @@ mod tests {
         let view = offline().project();
         assert_eq!(view.bpm, Project::DEFAULT_BPM);
         assert_eq!((view.min_bpm, view.max_bpm), (20.0, 300.0));
-        assert_eq!(view.loop_bars, Project::DEFAULT_LOOP_BARS);
-        assert_eq!((view.min_loop_bars, view.max_loop_bars), (1, 16));
         assert_eq!(view.loop_start, 0);
+        assert!(view.loop_enabled);
         assert_eq!(view.loop_length, 4 * 4 * TICKS_PER_QUARTER);
         assert_eq!((view.ticks_per_quarter, view.beats_per_bar), (960, 4));
         assert_eq!(view.tracks[0].clips[0].length, view.loop_length);
@@ -999,7 +1050,8 @@ mod tests {
         uta.add_stress_notes(clip_id(&uta)).unwrap();
         let json = serde_json::to_value(uta.project()).unwrap();
         assert_eq!(json["bpm"], 120.0);
-        assert_eq!(json["loopBars"], 4);
+        assert_eq!(json["loopLength"], 4 * 4 * TICKS_PER_QUARTER);
+        assert_eq!(json["loopEnabled"], true);
         assert_eq!(json["tracks"][0]["synth"]["waveform"], "saw");
         assert_eq!(json["tracks"][0]["synth"]["cutoffHz"], 20_000.0);
         let note = &json["tracks"][0]["clips"][0]["notes"][0];
@@ -1009,35 +1061,46 @@ mod tests {
         assert!(json["tracks"][0]["id"].is_string());
     }
 
+    const BAR: Ticks = 4 * TICKS_PER_QUARTER;
+
     #[test]
-    fn tempo_and_loop_length_go_through_the_project_to_the_engine() {
+    fn tempo_and_the_loop_go_through_the_project_to_the_engine() {
         let mut uta = offline();
         uta.set_tempo(90.0, None).unwrap();
-        uta.set_loop_length(2, None).unwrap();
+        uta.set_loop(1, 2, None).unwrap();
         let view = uta.project();
-        assert_eq!((view.bpm, view.loop_bars), (90.0, 2));
-        assert_eq!(view.tracks[0].clips[0].length, 2 * 4 * TICKS_PER_QUARTER);
-        let rate = uta.controller.snapshot().sequence.sample_rate();
-        // Two bars of 4/4 at 90 BPM: 8 beats of 2/3 s.
-        let loop_samples = uta.controller.snapshot().sequence.loop_samples();
+        assert_eq!(view.bpm, 90.0);
+        assert_eq!((view.loop_start, view.loop_length), (BAR, 2 * BAR));
         assert_eq!(
-            loop_samples.end - loop_samples.start,
-            u64::from(rate) * 16 / 3
+            view.tracks[0].clips[0].length,
+            4 * BAR,
+            "the clip stays as it was"
         );
+        let rate = uta.controller.snapshot().sequence.sample_rate();
+        // Bars 2 and 3 of 4/4 at 90 BPM: 8 beats of 2/3 s, after 4 beats.
+        let loop_samples = uta.controller.snapshot().sequence.loop_samples();
+        let samples = |beats: u64| u64::from(rate) * beats * 2 / 3;
+        assert_eq!(loop_samples, samples(4)..samples(12));
+
+        uta.set_loop_enabled(false).unwrap();
+        assert!(!uta.project().loop_enabled);
+        assert!(!uta.controller.snapshot().sequence.loop_enabled());
 
         uta.undo();
-        assert_eq!(uta.project().loop_bars, 4);
+        assert!(uta.project().loop_enabled);
+        uta.undo();
+        assert_eq!(uta.project().loop_start, 0);
         uta.undo();
         assert_eq!(uta.project().bpm, 120.0);
     }
 
     #[test]
-    fn out_of_range_tempo_and_loop_lengths_are_refused() {
+    fn out_of_range_tempo_and_loops_are_refused() {
         let mut uta = offline();
         assert!(uta.set_tempo(19.0, None).is_err());
         assert!(uta.set_tempo(f32::NAN, None).is_err());
-        assert!(uta.set_loop_length(0, None).is_err());
-        assert!(uta.set_loop_length(17, None).is_err());
+        assert!(uta.set_loop(0, 0, None).is_err());
+        assert!(uta.set_loop(u32::MAX, 1, None).is_err());
         assert!(!uta.project().can_undo);
     }
 
@@ -1047,19 +1110,99 @@ mod tests {
         for bpm in [121.0, 130.0, 140.0] {
             uta.set_tempo(bpm, Some(1)).unwrap();
         }
-        for bars in [5, 6, 8] {
-            uta.set_loop_length(bars, Some(2)).unwrap();
+        for (start_bar, bars) in [(2, 1), (2, 3), (1, 6)] {
+            uta.set_loop(start_bar, bars, Some(2)).unwrap();
         }
         uta.set_tempo(150.0, Some(3)).unwrap();
 
         uta.undo();
         assert_eq!(uta.project().bpm, 140.0);
         uta.undo();
-        assert_eq!(uta.project().loop_bars, 4);
+        assert_eq!(
+            (uta.project().loop_start, uta.project().loop_length),
+            (0, 4 * BAR)
+        );
         assert_eq!(uta.project().bpm, 140.0);
         uta.undo();
         assert_eq!(uta.project().bpm, 120.0);
         assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn locate_moves_the_play_start_while_stopped_and_jumps_while_playing() {
+        let mut uta = offline();
+        uta.locate(2 * BAR).unwrap();
+        uta.render(128);
+        assert_eq!(uta.frame().playhead, 2 * BAR);
+
+        // Bar 3 is inside the 4-bar loop. Play from there, and jump to bar 2.
+        uta.play().unwrap();
+        uta.render(1280);
+        let frame = uta.frame();
+        assert!(frame.playing);
+        assert!(frame.playhead > 2 * BAR);
+        uta.locate(BAR).unwrap();
+        uta.render(128);
+        assert!(uta.frame().playhead.abs_diff(BAR) < TICKS_PER_QUARTER);
+
+        uta.stop().unwrap();
+        uta.render(128);
+        assert_eq!(uta.frame().playhead, 2 * BAR, "back at the play start");
+    }
+
+    #[test]
+    fn pause_and_resume_reach_the_engine() {
+        let mut uta = offline();
+        uta.play().unwrap();
+        uta.render(24_000);
+        uta.pause().unwrap();
+        uta.render(128);
+        let paused = uta.frame();
+        assert!(!paused.playing);
+        // Half a second at 120 BPM is a beat, to within a block.
+        assert!(paused.playhead > TICKS_PER_QUARTER * 9 / 10, "{paused:?}");
+
+        uta.resume().unwrap();
+        uta.render(128);
+        let frame = uta.frame();
+        assert!(frame.playing);
+        assert!(frame.playhead >= paused.playhead);
+    }
+
+    #[test]
+    fn changing_the_buffer_keeps_the_play_start() {
+        let mut uta = offline();
+        uta.locate(3 * BAR).unwrap();
+        uta.render(128);
+        uta.frame();
+        // A jump while playing doesn't move it.
+        uta.play().unwrap();
+        uta.render(128);
+        uta.frame();
+        uta.locate(BAR).unwrap();
+        uta.stop().unwrap();
+        uta.set_buffer_size(64).unwrap();
+        uta.render(128);
+        assert_eq!(uta.frame().playhead, 3 * BAR);
+    }
+
+    #[test]
+    fn a_song_that_ends_by_itself_stays_stopped_after_changing_the_buffer() {
+        let mut uta = offline();
+        uta.set_loop_enabled(false).unwrap();
+        // The new project's song ends at bar 5: a 4-bar clip, and a bar.
+        uta.locate(5 * BAR - 10).unwrap();
+        uta.render(128);
+        uta.frame();
+        uta.play().unwrap();
+        uta.render(128);
+        assert!(uta.frame().playing);
+        uta.render(4_800);
+        assert!(!uta.frame().playing, "stopped at the song's end");
+
+        uta.set_buffer_size(64).unwrap();
+        uta.render(128);
+        assert!(!uta.frame().playing);
     }
 
     #[test]
