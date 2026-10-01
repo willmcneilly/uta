@@ -376,12 +376,18 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
           <Timeline
             project={project}
             selectedTrack={track?.id ?? null}
-            selectedClip={clip?.id ?? null}
+            // Only a clip chosen on the timeline is highlighted there, so
+            // Backspace never deletes the one Notes falls back to.
+            selectedClip={clipTrack ? selectedClipId : null}
             editor={clipEditor}
             clock={clock}
             frames={frames}
             headers={headers}
-            onSelectTrack={selectTrack}
+            onSelectTrack={(id) => {
+              // A click on empty space selects the track and no clip.
+              setSelectedId(id);
+              setSelectedClipId(null);
+            }}
             onSelectClip={selectClip}
             onOpenClip={(trackId, clipId) => {
               selectClip(trackId, clipId);

@@ -540,14 +540,28 @@ describe("the timeline", () => {
       expect(sent("add_clip")).toEqual([]);
     });
 
-    it("selects the track on a click in empty space", async () => {
+    it("selects the track and no clip on a click in empty space", async () => {
       await renderApp();
+      await click(8.5 * BAR, 1);
       await click(3 * BAR, 1);
       expect(screen.getByRole("listitem", { name: "Synth 2" })).toHaveAttribute(
         "aria-current",
         "true",
       );
-      await waitFor(() => expect(selectedClip()).toBe("clip-2"));
+      await waitFor(() => expect(selectedClip()).toBeUndefined());
+      // Notes still shows the track's first clip.
+      await waitFor(() => expect(pianoRollClip()).toEqual([8 * BAR, 10 * BAR]));
+    });
+
+    it("deletes nothing with Backspace when no clip was clicked", async () => {
+      await renderApp();
+      // Synth 2's clip is at bar 9, not under the pointer.
+      await click(3 * BAR, 1);
+      await key(clipsArea(), "Backspace");
+      // Nor after opening the app, before anything is clicked.
+      await key(clipsArea(), "Delete");
+      expect(sent("remove_clips")).toEqual([]);
+      expect(drawn()).toHaveLength(2);
     });
 
     it("keeps a clip open, and its track selected, when it's moved to another track", async () => {
@@ -570,8 +584,8 @@ describe("the timeline", () => {
       fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 2" }));
       await waitFor(() => expect(selectedClip()).toBe("clip-2"));
       fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 1" }));
-      // Synth 1's first clip is shown instead.
-      await waitFor(() => expect(selectedClip()).toBe("clip-1"));
+      // No clip is selected; Notes shows Synth 1's first clip.
+      await waitFor(() => expect(selectedClip()).toBeUndefined());
       await waitFor(() => expect(pianoRollClip()).toEqual([0, 4 * BAR]));
     });
 

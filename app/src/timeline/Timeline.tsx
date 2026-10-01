@@ -41,7 +41,10 @@ export interface ClipEditor {
 
 interface Props {
   project: ProjectView;
-  /** The selected track's and clip's IDs. The clip is the one in the Notes tab. */
+  /**
+   * The selected track's and clip's IDs. The clip is only one picked on the
+   * timeline: it's highlighted, and Backspace deletes it.
+   */
   selectedTrack: string | null;
   selectedClip: string | null;
   editor: ClipEditor;
