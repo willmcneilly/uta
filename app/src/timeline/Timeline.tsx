@@ -15,7 +15,14 @@ import { createTimelineRenderer } from "./canvasRenderer";
 import { type Span, drawnClip, moveClip, oneBarClip, resizeClip, sameSpan } from "./editing";
 import type { TimelineRendererFactory } from "./renderer";
 import { TimelineScene } from "./scene";
-import { CLIP_SNAPS, type ClipSnap, DEFAULT_CLIP_SNAP, clipSnapStep, minClipLength } from "./snap";
+import {
+  CLIP_SNAPS,
+  CLIP_SNAP_NAMES,
+  type ClipSnap,
+  DEFAULT_CLIP_SNAP,
+  clipSnapStep,
+  minClipLength,
+} from "./snap";
 import { type TimelineViewport, inTracks, xToTick, yToTrack, zoomTime } from "./viewport";
 
 /**
@@ -257,10 +264,15 @@ export function Timeline({
     };
   };
 
-  /** The grid step for an edit: 1 tick with snapping off, or while ⌘ is held. */
+  /**
+   * The grid step for an edit: the lines on screen by default, 1 tick with
+   * snapping off, or while ⌘ is held.
+   */
   const stepFor = (event: { metaKey: boolean }) => {
     const { project, snap } = latest.current;
-    return event.metaKey ? 1 : clipSnapStep(snap, project.ticksPerQuarter, project.beatsPerBar);
+    const view = scene.getView();
+    if (event.metaKey || !view) return 1;
+    return clipSnapStep(snap, project.ticksPerQuarter, project.beatsPerBar, view.pixelsPerTick);
   };
 
   /** Where the pointer is: a tick, and a track's index in the order. */
@@ -445,7 +457,7 @@ export function Timeline({
           >
             {CLIP_SNAPS.map((option) => (
               <option key={option} value={option}>
-                {option === "bar" ? "Bar" : option === "beat" ? "Beat" : "Off"}
+                {CLIP_SNAP_NAMES[option]}
               </option>
             ))}
           </select>

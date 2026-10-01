@@ -11,6 +11,7 @@ import {
   recordingFactory,
   trackView,
 } from "../pianoRoll/testing";
+import type { ClipSnap } from "./snap";
 import { type RecordingTimelineRenderer, recordingTimelineFactory } from "./testing";
 import { TRACK_HEIGHT, tickToX, trackToY } from "./viewport";
 
@@ -162,12 +163,25 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function renderApp() {
+/**
+ * Renders the app, with clips snapping to `snap`. Most tests snap to bars,
+ * which don't change with the zoom; `null` leaves the default.
+ */
+async function renderApp(snap: ClipSnap | null = "bar") {
   render(<App createRenderer={() => roll} createTimelineRenderer={() => timeline} />);
   await screen.findByRole("application", { name: "Clips" });
   // The drawing loop runs on animation frames; wait for the first.
   await waitFor(() => expect(timeline.clips.length).toBeGreaterThan(0));
   await waitFor(() => expect(frames).not.toBeNull());
+  if (snap) fireEvent.change(screen.getByLabelText("Clip snap"), { target: { value: snap } });
+}
+
+async function zoom(direction: "in" | "out", times: number) {
+  const button = screen.getByRole("button", { name: `Zoom ${direction} timeline` });
+  for (let i = 0; i < times; i++) fireEvent.click(button);
+  const before = timeline.clips.length;
+  // The new view arrives with the next frame.
+  await waitFor(() => expect(timeline.clips.length).toBeGreaterThan(before));
 }
 
 const clipsArea = () => screen.getByRole("application", { name: "Clips" });
@@ -364,6 +378,41 @@ describe("the timeline", () => {
       await release();
       await doubleClick(5 * BAR, 2);
       expect(sent("add_clip")).toEqual([]);
+    });
+  });
+
+  describe("snapping to the grid on screen", () => {
+    it("starts on Grid, which at 16 bars across snaps to beats", async () => {
+      await renderApp(null);
+      expect(screen.getByLabelText("Clip snap")).toHaveValue("grid");
+      // Pressed at bar 2; moved 1.3 bars lands on beat 2 of bar 2.
+      await press(BAR, 0);
+      await moveTo(2.3 * BAR, 0);
+      await release();
+      const [move] = sent("set_clips");
+      expect((move.clips as ClipPosition[])[0].start).toBe(BAR + BEAT);
+    });
+
+    it("snaps to bars once beats are too close to draw", async () => {
+      await renderApp(null);
+      await zoom("out", 1);
+      await press(BAR, 0);
+      await moveTo(2.3 * BAR, 0);
+      await release();
+      const [move] = sent("set_clips");
+      expect((move.clips as ClipPosition[])[0].start).toBe(BAR);
+    });
+
+    it("snaps to sixteenths zoomed far enough in", async () => {
+      await renderApp(null);
+      await zoom("in", 6);
+      // Around bar 8, after an empty stretch of the first track.
+      await press(7.1 * BAR, 0);
+      await moveTo(7.3 * BAR, 0);
+      await release();
+      const [add] = sent("add_clip");
+      // From the sixteenth before 7.1 bars to the one after 7.3.
+      expect(add).toMatchObject({ start: 7 * BAR + 240, length: 4 * 240 });
     });
   });
 

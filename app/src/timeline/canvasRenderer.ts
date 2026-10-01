@@ -3,8 +3,8 @@
 // song.
 
 import { type Theme, readTheme } from "../pianoRoll/colours";
-import { gridStep } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
+import { timelineGridStep } from "./snap";
 import type {
   DrawnClip,
   TimelineClipsScene,
@@ -122,14 +122,17 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       context.fillRect(0, trackToY(view, selectedTrack), this.width, TRACK_HEIGHT);
     }
 
-    // Columns: bars, and beats when there's room. Never finer than a beat.
-    const step = Math.max(
-      ticksPerQuarter,
-      gridStep(view.pixelsPerTick, ticksPerQuarter, beatsPerBar, 12),
-    );
+    // Columns: bars, beats, and finer lines when there's room. Clips snap
+    // to them by default.
+    const step = timelineGridStep(view.pixelsPerTick, ticksPerQuarter, beatsPerBar);
     const gridBottom = Math.max(RULER_HEIGHT, tracksBottom);
     for (let tick = Math.floor(ticks.start / step) * step; tick < ticks.end; tick += step) {
-      context.fillStyle = tick % bar === 0 ? theme.barLine : theme.beatLine;
+      context.fillStyle =
+        tick % bar === 0
+          ? theme.barLine
+          : tick % ticksPerQuarter === 0
+            ? theme.beatLine
+            : theme.subLine;
       context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT, 1, gridBottom - RULER_HEIGHT);
     }
 
