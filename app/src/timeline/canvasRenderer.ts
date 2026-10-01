@@ -96,6 +96,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     beatsPerBar,
     trackCount,
     selectedTrack,
+    loop,
   }: TimelineGridScene): void {
     const context = this.contexts.grid;
     const theme = this.theme;
@@ -143,15 +144,33 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     }
     context.restore();
 
-    this.drawRuler(view, ticksPerQuarter, bar);
+    this.drawRuler(view, ticksPerQuarter, bar, loop);
   }
 
-  private drawRuler(view: TimelineViewport, ticksPerQuarter: number, bar: number): void {
+  private drawRuler(
+    view: TimelineViewport,
+    ticksPerQuarter: number,
+    bar: number,
+    loop: TimelineGridScene["loop"],
+  ): void {
     const context = this.contexts.grid;
     const theme = this.theme;
     const ticks = visibleTicks(view);
     context.fillStyle = theme.ruler;
     context.fillRect(0, 0, this.width, RULER_HEIGHT);
+
+    // The loop region: shaded, with a band along the bottom, while it's on;
+    // just a grey band while it's off.
+    const loopLeft = Math.max(0, Math.round(tickToX(view, loop.start)));
+    const loopRight = Math.min(this.width, Math.round(tickToX(view, loop.end)));
+    if (loopRight > loopLeft) {
+      if (loop.enabled) {
+        context.fillStyle = theme.loopRegion;
+        context.fillRect(loopLeft, 0, loopRight - loopLeft, RULER_HEIGHT);
+      }
+      context.fillStyle = loop.enabled ? theme.loop : theme.barLine;
+      context.fillRect(loopLeft, RULER_HEIGHT - 4, loopRight - loopLeft, 4);
+    }
     context.fillStyle = theme.barLine;
     context.fillRect(0, RULER_HEIGHT - 1, this.width, 1);
 

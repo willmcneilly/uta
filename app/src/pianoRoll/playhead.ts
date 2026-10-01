@@ -8,6 +8,7 @@ export interface Timing {
   ticksPerQuarter: number;
   loopStart: number;
   loopLength: number;
+  loopEnabled: boolean;
 }
 
 /**
@@ -26,14 +27,31 @@ export const SMOOTHING_WINDOW_MS = 30;
 export const CORRECTION = 0.25;
 
 export class PlayheadClock {
-  private timing: Timing = { bpm: 120, ticksPerQuarter: 960, loopStart: 0, loopLength: 0 };
+  private timing: Timing = {
+    bpm: 120,
+    ticksPerQuarter: 960,
+    loopStart: 0,
+    loopLength: 0,
+    loopEnabled: true,
+  };
   private playing = false;
   /** Where the playhead was at `anchorTime`, in ticks. */
   private anchorTicks = 0;
   private anchorTime = 0;
+  private startCount = 0;
 
   setTiming(timing: Timing): void {
     this.timing = timing;
+  }
+
+  /** Whether the engine last said it was playing. */
+  isPlaying(): boolean {
+    return this.playing;
+  }
+
+  /** How many times playback has started: it goes up on every Play or Continue. */
+  starts(): number {
+    return this.startCount;
   }
 
   /** Takes a report from the engine, received at `now` (in milliseconds). */
@@ -46,6 +64,7 @@ export class PlayheadClock {
         return;
       }
     }
+    if (playing && !this.playing) this.startCount++;
     this.playing = playing;
     this.anchor(ticks, now);
   }
@@ -66,12 +85,23 @@ export class PlayheadClock {
     return (ms / 60_000) * this.timing.bpm * this.timing.ticksPerQuarter;
   }
 
-  /** Brings `ticks` back inside the loop, as the engine does at its end. */
+  /**
+   * Whether playback goes round the loop: it does when the loop is on and
+   * it was before the loop's end, as in the engine.
+   */
+  private looping(): boolean {
+    const { loopStart, loopLength, loopEnabled } = this.timing;
+    return loopEnabled && loopLength > 0 && this.anchorTicks < loopStart + loopLength;
+  }
+
+  /**
+   * Brings `ticks` past the loop's end back round it, as the engine does.
+   * Before the loop, it's on its way in.
+   */
   private wrap(ticks: number): number {
     const { loopStart, loopLength } = this.timing;
-    if (loopLength <= 0 || (ticks >= loopStart && ticks < loopStart + loopLength)) return ticks;
-    const into = (ticks - loopStart) % loopLength;
-    return loopStart + (into < 0 ? into + loopLength : into);
+    if (!this.looping() || ticks < loopStart + loopLength) return ticks;
+    return loopStart + ((ticks - loopStart) % loopLength);
   }
 
   /**
@@ -80,7 +110,7 @@ export class PlayheadClock {
    */
   private wrapDifference(difference: number): number {
     const { loopLength } = this.timing;
-    if (loopLength <= 0) return difference;
+    if (!this.looping()) return difference;
     if (difference > loopLength / 2) return difference - loopLength;
     if (difference < -loopLength / 2) return difference + loopLength;
     return difference;

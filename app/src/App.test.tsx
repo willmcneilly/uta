@@ -132,15 +132,17 @@ beforeEach(() => {
         case "set_tempo":
           project = { ...project, bpm: args.bpm as number, canUndo: true };
           return project;
-        case "set_loop_length": {
-          const bars = args.bars as number;
-          const loopLength = bars * 3840;
-          const [first, ...rest] = project.tracks;
-          const [clip, ...clips] = first.clips;
-          const resized = { ...first, clips: [{ ...clip, length: loopLength }, ...clips] };
-          project = { ...project, loopBars: bars, loopLength, tracks: [resized, ...rest] };
+        case "set_loop":
+          project = {
+            ...project,
+            loopStart: (args.startBar as number) * 3840,
+            loopLength: (args.bars as number) * 3840,
+            canUndo: true,
+          };
           return project;
-        }
+        case "set_loop_enabled":
+          project = { ...project, loopEnabled: args.enabled as boolean, canUndo: true };
+          return project;
         case "set_synth_param": {
           const param = args.param as SynthParam;
           // Rust stores f32s, so what comes back isn't quite what was sent.
@@ -237,7 +239,7 @@ async function renderApp() {
 
 const volume = () => screen.getByRole("slider", { name: /Volume/ });
 const tempo = () => screen.getByRole("slider", { name: /Tempo/ });
-const loopLength = () => screen.getByRole("slider", { name: /Loop/ });
+const loopSwitch = () => screen.getByRole("button", { name: "Loop" });
 const drawnNotes = () => renderer.lastNotes().map((n) => [n.id, n.pitch, n.start, n.velocity]);
 
 function sendFrame(overrides: Partial<Frame> = {}) {
@@ -269,12 +271,12 @@ describe("App", () => {
     expect(screen.getByTestId("position")).toHaveTextContent("3.2");
   });
 
-  it("shows the project's tempo and loop length from Rust", async () => {
+  it("shows the project's tempo and loop switch from Rust, and no loop length control", async () => {
     await renderApp();
     expect(tempo()).toHaveValue("120");
     expect(screen.getByText("120 BPM")).toBeInTheDocument();
-    expect(loopLength()).toHaveValue("4");
-    expect(screen.getByText("4 bars")).toBeInTheDocument();
+    expect(loopSwitch()).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("slider", { name: /Loop/ })).not.toBeInTheDocument();
   });
 
   it("sends tempo changes to Rust, one gesture per drag", async () => {
@@ -294,19 +296,14 @@ describe("App", () => {
     expect(sent[2].gesture).not.toBe(sent[0].gesture);
   });
 
-  it("sends loop length changes to Rust, one gesture per drag", async () => {
+  it("switches the loop off and on, and shows what Rust sends back", async () => {
     await renderApp();
-    fireEvent.pointerDown(loopLength());
-    fireEvent.change(loopLength(), { target: { value: "8" } });
-    fireEvent.change(loopLength(), { target: { value: "1" } });
-    fireEvent.pointerUp(window);
-    fireEvent.change(loopLength(), { target: { value: "2" } });
-
-    await waitFor(() => expect(screen.getByText("2 bars")).toBeInTheDocument());
-    const sent = calls.filter((c) => c.cmd === "set_loop_length").map((c) => c.args);
-    expect(sent.map((args) => args.bars)).toEqual([8, 1, 2]);
-    expect(sent[1].gesture).toBe(sent[0].gesture);
-    expect(sent[2].gesture).toBeNull();
+    fireEvent.click(loopSwitch());
+    await waitFor(() => expect(loopSwitch()).toHaveAttribute("aria-pressed", "false"));
+    fireEvent.click(loopSwitch());
+    await waitFor(() => expect(loopSwitch()).toHaveAttribute("aria-pressed", "true"));
+    const sent = calls.filter((c) => c.cmd === "set_loop_enabled").map((c) => c.args);
+    expect(sent).toEqual([{ enabled: false }, { enabled: true }]);
   });
 
   it("never gives drags of different controls the same gesture", async () => {
@@ -337,8 +334,9 @@ describe("App", () => {
 
   it("draws the loop Rust sends in the piano roll's grid", async () => {
     await renderApp();
-    fireEvent.change(loopLength(), { target: { value: "2" } });
-    await waitFor(() => expect(renderer.grids.at(-1)?.loopEnd).toBe(2 * 3840));
+    await waitFor(() => expect(renderer.grids.at(-1)?.loopEnd).toBe(4 * 3840));
+    fireEvent.click(loopSwitch());
+    await waitFor(() => expect(renderer.grids.at(-1)?.loopEnabled).toBe(false));
   });
 
   it("draws the playhead where the engine reports it", async () => {
@@ -374,6 +372,71 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(commands()).toContain("stop"));
     expect(commands().filter((cmd) => cmd === "play" || cmd === "stop")).toEqual(["play", "stop"]);
+  });
+
+  describe("Space", () => {
+    const transport = () =>
+      commands().filter((cmd) => ["play", "stop", "pause", "resume"].includes(cmd));
+    const press = (target: Element | Window, init: KeyboardEventInit = {}) => {
+      const down = fireEvent.keyDown(target, { key: " ", code: "Space", ...init });
+      const up = fireEvent.keyUp(target, { key: " ", code: "Space", ...init });
+      // `false` when the key's own action was prevented.
+      return { down, up };
+    };
+
+    it("plays while stopped, and stops while playing", async () => {
+      await renderApp();
+      press(document.body);
+      sendFrame({ playing: true });
+      press(document.body);
+      sendFrame({ playing: false });
+      press(document.body);
+      await waitFor(() => expect(transport()).toEqual(["play", "stop", "play"]));
+    });
+
+    it("with Shift, pauses while playing, and carries on while stopped", async () => {
+      await renderApp();
+      sendFrame({ playing: true });
+      press(document.body, { shiftKey: true });
+      sendFrame({ playing: false, playhead: 5000 });
+      press(document.body, { shiftKey: true });
+      await waitFor(() => expect(transport()).toEqual(["pause", "resume"]));
+    });
+
+    it("works with a button focused, without pressing it", async () => {
+      await renderApp();
+      const stopButton = screen.getByRole("button", { name: "Stop" });
+      stopButton.focus();
+      const { down, up } = press(stopButton);
+      expect([down, up]).toEqual([false, false]);
+      await waitFor(() => expect(transport()).toEqual(["play"]));
+    });
+
+    it("works with a slider focused", async () => {
+      await renderApp();
+      press(volume());
+      await waitFor(() => expect(transport()).toEqual(["play"]));
+    });
+
+    it("types a space in a text field instead", async () => {
+      await renderApp();
+      const field = document.createElement("input");
+      document.body.append(field);
+      const { down } = press(field);
+      press(field, { shiftKey: true });
+      field.remove();
+      expect(down).toBe(true);
+      expect(transport()).toEqual([]);
+    });
+
+    it("leaves ⌘, Ctrl and ⌥ with Space alone, and ignores a held key repeating", async () => {
+      await renderApp();
+      press(document.body, { metaKey: true });
+      press(document.body, { ctrlKey: true });
+      press(document.body, { altKey: true });
+      fireEvent.keyDown(document.body, { key: " ", repeat: true });
+      expect(transport()).toEqual([]);
+    });
   });
 
   it("sends volume changes to Rust and shows what comes back", async () => {

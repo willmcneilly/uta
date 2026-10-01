@@ -8,7 +8,10 @@ import type { TimelineViewport } from "./viewport";
 
 /** The three stacked canvases, bottom to top. */
 export interface TimelineLayers {
-  /** The ruler, the track rows and the grid. Redrawn on scroll, zoom or a change of tracks. */
+  /**
+   * The ruler, the loop region, the track rows and the grid. Redrawn on
+   * scroll, zoom, or a change of tracks or the loop.
+   */
   grid: HTMLCanvasElement;
   /** The clips and their notes. Redrawn when the clips, the selection or the view change. */
   clips: HTMLCanvasElement;
@@ -24,6 +27,11 @@ export interface TimelineGridScene {
   trackCount: number;
   /** The selected track's index, if any. Its row is highlighted. */
   selectedTrack: number | null;
+  /**
+   * The loop region, in ticks, drawn on the ruler: shaded while it's on,
+   * greyed out while it's off.
+   */
+  loop: { start: number; end: number; enabled: boolean };
 }
 
 /** A clip, ready to draw. */

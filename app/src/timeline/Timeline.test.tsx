@@ -142,6 +142,17 @@ beforeEach(() => {
           );
           return project;
         }
+        case "set_loop":
+          project = {
+            ...project,
+            canUndo: true,
+            loopStart: (args.startBar as number) * BAR,
+            loopLength: (args.bars as number) * BAR,
+          };
+          return project;
+        case "set_loop_enabled":
+          project = { ...project, canUndo: true, loopEnabled: args.enabled as boolean };
+          return project;
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
           return project;
@@ -235,6 +246,44 @@ async function key(target: Window | HTMLElement, name: string) {
   await act(async () => {
     fireEvent.keyDown(target, { key: name });
   });
+}
+
+/** The pointer at `tick` on the ruler. */
+function onRuler(tick: number, modifiers: Modifiers = {}) {
+  return { clientX: tickToX(timeline.lastView(), tick), clientY: 10, button: 0, ...modifiers };
+}
+
+async function pressRuler(tick: number, modifiers: Modifiers = {}) {
+  await act(async () => {
+    fireEvent.pointerDown(clipsArea(), onRuler(tick, modifiers));
+  });
+}
+
+async function moveOnRuler(tick: number) {
+  await act(async () => {
+    fireEvent.pointerMove(window, onRuler(tick));
+  });
+}
+
+function sendFrame(playing: boolean, playhead: number) {
+  act(() =>
+    frames!.onmessage({
+      playing,
+      playhead,
+      peak: 0,
+      trackPeaks: {},
+      clips: 0,
+      dropouts: 0,
+      output: {
+        state: "running",
+        device: null,
+        sampleRate: 48000,
+        bufferSize: 128,
+        requestedBufferSize: 128,
+        bufferSizes: [128],
+      },
+    }),
+  );
 }
 
 const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd).map((call) => call.args);
@@ -624,6 +673,209 @@ describe("the timeline", () => {
       );
       await waitFor(() => expect(roll.tops.at(-1)).toBe(9 * BAR));
       await waitFor(() => expect(timeline.tops.at(-1)).toBe(9 * BAR));
+    });
+  });
+
+  describe("the ruler", () => {
+    const loop = () => timeline.grids.at(-1)!.loop;
+
+    it("draws the loop region Rust sends, greyed out while the loop is off", async () => {
+      await renderApp();
+      expect(loop()).toEqual({ start: 0, end: 4 * BAR, enabled: true });
+      fireEvent.click(screen.getByRole("button", { name: "Loop" }));
+      await waitFor(() => expect(loop().enabled).toBe(false));
+    });
+
+    it("sets the loop region with a drag, from bar line to bar line, as one gesture", async () => {
+      await renderApp();
+      await pressRuler(2.1 * BAR);
+      await moveOnRuler(4.4 * BAR);
+      await moveOnRuler(4.3 * BAR);
+      await moveOnRuler(5.6 * BAR);
+      await release();
+      const loops = sent("set_loop");
+      expect(loops.map((args) => [args.startBar, args.bars])).toEqual([
+        [2, 2],
+        [2, 4],
+      ]);
+      expect(loops[1].gesture).toBe(loops[0].gesture);
+      expect(sent("locate")).toEqual([]);
+      await waitFor(() => expect(loop()).toEqual({ start: 2 * BAR, end: 6 * BAR, enabled: true }));
+    });
+
+    it("sets the loop region dragging leftwards too", async () => {
+      await renderApp();
+      await pressRuler(6 * BAR);
+      await moveOnRuler(3.2 * BAR);
+      await release();
+      expect(sent("set_loop").map((args) => [args.startBar, args.bars])).toEqual([[3, 3]]);
+    });
+
+    it("puts the loop region back on Esc", async () => {
+      await renderApp();
+      await pressRuler(2 * BAR);
+      await moveOnRuler(5 * BAR);
+      await key(window, "Escape");
+      await release();
+      const gesture = sent("set_loop")[0].gesture;
+      expect(sent("cancel_gesture")).toEqual([{ gesture }]);
+      await waitFor(() => expect(loop()).toEqual({ start: 0, end: 4 * BAR, enabled: true }));
+    });
+
+    it("moves the play start to the nearest grid line with a click, or anywhere with ⌘", async () => {
+      await renderApp();
+      await pressRuler(2.4 * BAR);
+      await release();
+      await pressRuler(6.7 * BAR);
+      await release();
+      await pressRuler(3 * BAR + 123, { metaKey: true });
+      await release();
+      expect(sent("locate")).toEqual([
+        { ticks: 2 * BAR },
+        { ticks: 7 * BAR },
+        { ticks: expect.closeTo(3 * BAR + 123, 0) },
+      ]);
+      // It edits nothing, and leaves the selection alone.
+      expect(edits()).toEqual([]);
+      expect(sent("set_loop")).toEqual([]);
+    });
+
+    it("sends a click while playing too, which jumps there", async () => {
+      await renderApp();
+      sendFrame(true, 0);
+      await pressRuler(5 * BAR);
+      await release();
+      expect(sent("locate")).toEqual([{ ticks: 5 * BAR }]);
+    });
+  });
+
+  describe("following the playhead", () => {
+    const scrollTicks = () => timeline.lastView().scrollTicks;
+
+    /**
+     * About 8 bars across, so a page is less than the song, scrolled to the
+     * start. Scrolling pauses following until the next Play.
+     */
+    async function zoomedIn() {
+      await renderApp();
+      await zoom("in", 3);
+      await act(async () => {
+        fireEvent.wheel(clipsArea(), { deltaX: -100_000 });
+      });
+      await waitFor(() => expect(scrollTicks()).toBe(0));
+    }
+
+    it("turns a page when the playhead reaches the right edge", async () => {
+      await zoomedIn();
+      sendFrame(true, 4 * BAR);
+      // Still in view: it stays put.
+      await waitFor(() => expect(timeline.tops.at(-1)).toBeGreaterThanOrEqual(4 * BAR));
+      expect(scrollTicks()).toBe(0);
+      sendFrame(true, 9 * BAR);
+      // A page on: the playhead at the left edge. The clock guesses ahead a little between reports.
+      await waitFor(() => expect(scrollTicks()).toBeGreaterThanOrEqual(9 * BAR));
+      expect(scrollTicks()).toBeLessThan(9 * BAR + 200);
+    });
+
+    it("goes back with the playhead when it jumps or goes round the loop", async () => {
+      await zoomedIn();
+      sendFrame(true, 9 * BAR);
+      await waitFor(() => expect(scrollTicks()).toBeGreaterThanOrEqual(9 * BAR));
+      sendFrame(true, BAR);
+      await waitFor(() => expect(scrollTicks()).toBeLessThan(BAR + 200));
+    });
+
+    it("doesn't follow while stopped", async () => {
+      await zoomedIn();
+      sendFrame(false, 9 * BAR);
+      await waitFor(() => expect(timeline.tops.at(-1)).toBe(9 * BAR));
+      expect(scrollTicks()).toBe(0);
+    });
+
+    it("pauses when you scroll, and resumes on the next Play", async () => {
+      await zoomedIn();
+      sendFrame(true, BAR);
+      await act(async () => {
+        fireEvent.wheel(clipsArea(), { deltaX: 10 });
+      });
+      sendFrame(true, 9 * BAR);
+      await waitFor(() => expect(timeline.tops.at(-1)).toBeGreaterThanOrEqual(9 * BAR));
+      expect(scrollTicks()).toBeLessThan(BAR);
+
+      sendFrame(false, 0);
+      sendFrame(true, 9 * BAR);
+      await waitFor(() => expect(scrollTicks()).toBeGreaterThanOrEqual(9 * BAR));
+    });
+
+    it("pauses when you edit", async () => {
+      await zoomedIn();
+      sendFrame(true, BAR);
+      await click(6 * BAR, 0);
+      sendFrame(true, 9 * BAR);
+      await waitFor(() => expect(timeline.tops.at(-1)).toBeGreaterThanOrEqual(9 * BAR));
+      expect(scrollTicks()).toBe(0);
+    });
+
+    it("keeps following after a click on the ruler", async () => {
+      await zoomedIn();
+      sendFrame(true, BAR);
+      await pressRuler(2 * BAR);
+      await release();
+      sendFrame(true, 9 * BAR);
+      await waitFor(() => expect(scrollTicks()).toBeGreaterThanOrEqual(9 * BAR));
+    });
+
+    it("turns the piano roll's pages too", async () => {
+      // A clip 12 bars long, so the piano roll can scroll a long way.
+      project = {
+        ...project,
+        tracks: [
+          { ...project.tracks[0], clips: [clip("clip-1", 0, 12 * BAR)] },
+          project.tracks[1],
+        ],
+        songEnd: 13 * BAR,
+      };
+      await renderApp();
+      await waitFor(() => expect(roll.notes.length).toBeGreaterThan(0));
+      const rollView = () => roll.notes.at(-1)!.view;
+      // Zooming pauses following; the next Play starts it again.
+      for (let i = 0; i < 6; i++) {
+        fireEvent.click(screen.getByRole("button", { name: "Zoom in time" }));
+      }
+      await waitFor(() => expect(rollView().scrollTicks).toBeLessThan(5 * BAR));
+      const before = rollView().scrollTicks;
+      sendFrame(true, 8 * BAR);
+      await waitFor(() => expect(rollView().scrollTicks).toBeGreaterThanOrEqual(8 * BAR));
+      expect(before).toBeLessThan(5 * BAR);
+    });
+
+    it("pauses the piano roll's following when you scroll it, until the next Play", async () => {
+      project = {
+        ...project,
+        tracks: [
+          { ...project.tracks[0], clips: [clip("clip-1", 0, 12 * BAR)] },
+          project.tracks[1],
+        ],
+        songEnd: 13 * BAR,
+      };
+      await renderApp();
+      await waitFor(() => expect(roll.notes.length).toBeGreaterThan(0));
+      const rollView = () => roll.notes.at(-1)!.view;
+      for (let i = 0; i < 6; i++) {
+        fireEvent.click(screen.getByRole("button", { name: "Zoom in time" }));
+      }
+      sendFrame(true, 0);
+      await act(async () => {
+        fireEvent.wheel(screen.getByRole("application", { name: "Notes" }), { deltaX: -100_000 });
+      });
+      await waitFor(() => expect(rollView().scrollTicks).toBe(0));
+      sendFrame(true, 8 * BAR);
+      await waitFor(() => expect(roll.tops.at(-1)).toBeGreaterThanOrEqual(8 * BAR));
+      expect(rollView().scrollTicks).toBe(0);
+
+      sendFrame(false, 0);
+      sendFrame(true, 8 * BAR);
+      await waitFor(() => expect(rollView().scrollTicks).toBeGreaterThanOrEqual(8 * BAR));
     });
   });
 });

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
+import { Follow } from "../follow";
 import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
@@ -122,6 +123,8 @@ export function PianoRoll({
   const notesRef = useRef<HTMLCanvasElement>(null);
   const topRef = useRef<HTMLCanvasElement>(null);
   const [scene] = useState(() => new PianoRollScene());
+  // Scrolling or editing stops it following the playhead until the next Play.
+  const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<Snap>(DEFAULT_SNAP);
   const scheme = useColourScheme();
   // The pointer, keyboard and menu handlers read the latest of these,
@@ -175,12 +178,16 @@ export function PianoRoll({
     const top = topRef.current;
     if (!grid || !notes || !top) return;
     scene.setRenderer(createRenderer({ grid, notes, top }));
-    const stop = frames.add((now) => scene.draw(clock.at(now)));
+    const stop = frames.add((now) => {
+      const playhead = clock.at(now);
+      if (follow.following()) scene.follow(playhead);
+      scene.draw(playhead);
+    });
     return () => {
       stop();
       scene.setRenderer(null);
     };
-  }, [scene, clock, frames, createRenderer, scheme]);
+  }, [scene, clock, follow, frames, createRenderer, scheme]);
 
   // Scroll with the wheel or trackpad; zoom time with ⌘ or a pinch, and
   // pitch with ⌥. Not a React handler: it has to be able to preventDefault.
@@ -189,6 +196,7 @@ export function PianoRoll({
     if (!container) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      follow.pause();
       const box = container.getBoundingClientRect();
       const x = event.clientX - box.left;
       const y = event.clientY - box.top;
@@ -209,7 +217,7 @@ export function PianoRoll({
     };
     container.addEventListener("wheel", onWheel, { passive: false });
     return () => container.removeEventListener("wheel", onWheel);
-  }, [scene]);
+  }, [scene, follow]);
 
   const select = (ids: Iterable<string>) => {
     selected.current = new Set(ids);
@@ -326,6 +334,7 @@ export function PianoRoll({
     const bar = !inNotes && scene.inVelocityLane(x, y) ? scene.hitVelocity(x) : null;
     if (!inNotes && !bar) return;
     event.preventDefault();
+    follow.pause();
     containerRef.current?.focus({ preventScroll: true });
     // So the drag still ends if the pointer is released outside the window.
     try {
@@ -503,6 +512,7 @@ export function PianoRoll({
     const { x, y } = pointOf(event);
     const hit = scene.hitTest(x, y);
     if (!hit) return;
+    follow.pause();
     latest.current.editor.remove([hit.note.id]);
     select([...selected.current].filter((id) => id !== hit.note.id));
   };
@@ -517,6 +527,7 @@ export function PianoRoll({
     const notes = selectedNotes();
     if (notes.length === 0) return;
     event.preventDefault();
+    follow.pause();
     // One command, so one undo step.
     latest.current.editor.remove(notes.map((note) => note.id));
     select([]);
@@ -524,6 +535,7 @@ export function PianoRoll({
 
   /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
   const land = (notes: NoteView[]) => {
+    follow.pause();
     const { editor } = latest.current;
     const gesture = nextGesture();
     const ids = notes.map((note) => note.id);
@@ -558,11 +570,13 @@ export function PianoRoll({
     },
   }));
 
-  const zoomTimeBy = (factor: number) =>
+  const zoomTimeBy = (factor: number) => {
+    follow.pause();
     scene.changeView((view) => {
       const area = noteArea(view);
       return zoomTime(view, factor, area.x + area.width / 2);
     });
+  };
   const zoomPitchBy = (factor: number) =>
     scene.changeView((view) => {
       const area = noteArea(view);

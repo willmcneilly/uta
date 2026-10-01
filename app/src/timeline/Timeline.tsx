@@ -7,12 +7,23 @@ import {
   useState,
 } from "react";
 import type { ClipPosition, ProjectView } from "../backend";
+import { Follow } from "../follow";
 import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "../pianoRoll/playhead";
 import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createTimelineRenderer } from "./canvasRenderer";
-import { type Span, drawnClip, moveClip, oneBarClip, resizeClip, sameSpan } from "./editing";
+import {
+  type LoopBars,
+  type Span,
+  drawnClip,
+  moveClip,
+  oneBarClip,
+  resizeClip,
+  rulerClick,
+  rulerLoop,
+  sameSpan,
+} from "./editing";
 import type { TimelineRendererFactory } from "./renderer";
 import { TimelineScene } from "./scene";
 import {
@@ -23,7 +34,14 @@ import {
   clipSnapStep,
   minClipLength,
 } from "./snap";
-import { type TimelineViewport, inTracks, xToTick, yToTrack, zoomTime } from "./viewport";
+import {
+  RULER_HEIGHT,
+  type TimelineViewport,
+  inTracks,
+  xToTick,
+  yToTrack,
+  zoomTime,
+} from "./viewport";
 
 /**
  * What the timeline's edits do. The app sends each to Rust; the timeline
@@ -39,6 +57,14 @@ export interface ClipEditor {
   cancel(gesture: number): void;
 }
 
+/** What the ruler does: set the loop region, and move the play start or jump. */
+export interface RulerActions {
+  /** Sets the loop region in whole bars. One drag's changes share a `gesture`. */
+  loop(startBar: number, bars: number, gesture: number): void;
+  /** Moves the play start while stopped, or jumps there while playing. */
+  locate(ticks: number): void;
+}
+
 interface Props {
   project: ProjectView;
   /**
@@ -48,6 +74,7 @@ interface Props {
   selectedTrack: string | null;
   selectedClip: string | null;
   editor: ClipEditor;
+  ruler: RulerActions;
   /** Where the playhead is, between the engine's reports. */
   clock: PlayheadClock;
   /** Draws it once a screen frame, with the piano roll. */
@@ -105,6 +132,7 @@ export function Timeline({
   selectedTrack,
   selectedClip,
   editor,
+  ruler,
   clock,
   frames,
   headers,
@@ -118,16 +146,18 @@ export function Timeline({
   const clipsRef = useRef<HTMLCanvasElement>(null);
   const topRef = useRef<HTMLCanvasElement>(null);
   const [scene] = useState(() => new TimelineScene());
+  // Scrolling or editing stops it following the playhead until the next Play.
+  const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<ClipSnap>(DEFAULT_CLIP_SNAP);
   const scheme = useColourScheme();
   // The pointer and keyboard handlers read the latest of these, including
   // those added to the window for the length of a drag.
-  const latest = useRef({ project, selectedClip, editor, snap });
+  const latest = useRef({ project, selectedClip, editor, ruler, snap });
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, selectedClip, editor, snap };
-  }, [project, selectedClip, editor, snap]);
+    latest.current = { project, selectedClip, editor, ruler, snap };
+  }, [project, selectedClip, editor, ruler, snap]);
 
   useEffect(() => scene.setProject(project), [scene, project]);
   useEffect(
@@ -166,7 +196,9 @@ export function Timeline({
     if (!grid || !clips || !top) return;
     scene.setRenderer(createRenderer({ grid, clips, top }));
     const stop = frames.add((now) => {
-      scene.draw(clock.at(now));
+      const playhead = clock.at(now);
+      if (follow.following()) scene.follow(playhead);
+      scene.draw(playhead);
       const view = scene.getView();
       const list = headers.current;
       if (view && list && list.scrollTop !== view.scrollY) list.scrollTop = view.scrollY;
@@ -175,7 +207,7 @@ export function Timeline({
       stop();
       scene.setRenderer(null);
     };
-  }, [scene, clock, frames, headers, createRenderer, scheme]);
+  }, [scene, clock, follow, frames, headers, createRenderer, scheme]);
 
   // Scroll with the wheel or trackpad, over the timeline or the headers;
   // zoom time with ⌘ or a pinch. Not React handlers: they have to be able to
@@ -187,6 +219,7 @@ export function Timeline({
     if (!container) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      follow.pause();
       const box = container.getBoundingClientRect();
       const x = Math.max(0, event.clientX - box.left);
       const zoom = Math.exp(-event.deltaY * WHEEL_ZOOM_RATE);
@@ -216,7 +249,7 @@ export function Timeline({
       list?.removeEventListener("wheel", onWheel);
       list?.removeEventListener("scroll", onHeadersScroll);
     };
-  }, [scene, headers]);
+  }, [scene, follow, headers]);
 
   /** Where a pointer event is, in CSS pixels from the timeline's top left. */
   const pointOf = (event: { clientX: number; clientY: number }) => {
@@ -286,17 +319,20 @@ export function Timeline({
 
   // Press on a clip to select it and drag it: its body moves it, along its
   // track or onto another; its right edge resizes it. Press on empty space
-  // on a track to select the track, and drag to draw a clip that long.
+  // on a track to select the track, and drag to draw a clip that long. On
+  // the ruler, click to move the play start (or jump, while playing), and
+  // drag to set the loop region.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const view = scene.getView();
     if (event.button !== 0 || dragging.current || !view) return;
     const { x, y } = pointOf(event);
-    if (!inTracks(view, y)) return;
+    const onRuler = y >= 0 && y < RULER_HEIGHT;
+    if (!onRuler && !inTracks(view, y)) return;
     const { project } = latest.current;
     const press = at(view, x, y);
-    const hit = scene.hitTest(x, y);
+    const hit = onRuler ? null : scene.hitTest(x, y);
     const track = project.tracks[press.track];
-    if (!hit && !track) return;
+    if (!onRuler && !hit && !track) return;
     event.preventDefault();
     containerRef.current?.focus({ preventScroll: true });
     // So the drag still ends if the pointer is released outside the window.
@@ -305,6 +341,11 @@ export function Timeline({
     } catch {
       // No such pointer (a synthetic event): the window's events still arrive.
     }
+    if (onRuler) {
+      pressRuler(press.tick, x, y, event);
+      return;
+    }
+    follow.pause();
     if (hit) {
       const from = { track: hit.track, start: hit.clip.start, length: hit.clip.length };
       pressClip(hit.clip.id, hit.part, from, press, x, y);
@@ -363,6 +404,35 @@ export function Timeline({
     });
   };
 
+  /**
+   * A press on the ruler at `pressTick`. Dragging sets the loop region, from
+   * bar line to bar line, as one undo step, and Esc puts it back. A click
+   * without dragging moves the play start to the nearest grid line, or
+   * jumps there while playing.
+   */
+  const pressRuler = (pressTick: number, x: number, y: number, press: { metaKey: boolean }) => {
+    const gesture = nextGesture();
+    let last: LoopBars | null = null;
+    startDrag(x, y, {
+      move: (x) => {
+        const view = scene.getView();
+        if (!view) return;
+        const { project, ruler } = latest.current;
+        const bar = project.ticksPerQuarter * project.beatsPerBar;
+        const next = rulerLoop(pressTick, xToTick(view, x), bar);
+        if (last && last.startBar === next.startBar && last.bars === next.bars) return;
+        ruler.loop(next.startBar, next.bars, gesture);
+        last = next;
+      },
+      end: (moved) => {
+        if (!moved) latest.current.ruler.locate(rulerClick(pressTick, stepFor(press)));
+      },
+      cancel: () => {
+        if (last) latest.current.editor.cancel(gesture);
+      },
+    });
+  };
+
   /** Drags out a new clip on track `trackId`. It's only added once the drag ends. */
   const drawClip = (
     trackId: string,
@@ -408,6 +478,7 @@ export function Timeline({
     if (!inTracks(view, y)) return;
     const { project, editor } = latest.current;
     const hit = scene.hitTest(x, y);
+    follow.pause();
     if (hit) {
       onOpenClip(project.tracks[hit.track].id, hit.clip.id);
       return;
@@ -427,11 +498,14 @@ export function Timeline({
     const exists = project.tracks.some((track) => track.clips.some((c) => c.id === selectedClip));
     if (!selectedClip || !exists) return;
     event.preventDefault();
+    follow.pause();
     editor.remove([selectedClip]);
   };
 
-  const zoomBy = (factor: number) =>
+  const zoomBy = (factor: number) => {
+    follow.pause();
     scene.changeView((view) => zoomTime(view, factor, view.width / 2));
+  };
 
   return (
     <section className="timeline" aria-label="Timeline">

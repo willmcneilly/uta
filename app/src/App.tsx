@@ -15,18 +15,22 @@ import {
   cancelGesture,
   duplicateTrack,
   getProject,
+  locate,
   moveTrack,
   onDevelopMenu,
   onEditMenu,
   onProjectChanged,
   onTrackMenu,
+  pause,
   play,
   removeClips,
   removeNotes,
   removeTrack,
+  resume,
   setBufferSize,
   setClips,
-  setLoopLength,
+  setLoop,
+  setLoopEnabled,
   setNotes,
   setSynthParam,
   setTempo,
@@ -50,7 +54,7 @@ import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { SynthPanel } from "./SynthPanel";
 import type { TimelineRendererFactory } from "./timeline/renderer";
-import { type ClipEditor, Timeline } from "./timeline/Timeline";
+import { type ClipEditor, type RulerActions, Timeline } from "./timeline/Timeline";
 import { TrackHeaders } from "./TrackHeaders";
 import { Transport } from "./Transport";
 import { Volume } from "./Volume";
@@ -78,6 +82,18 @@ function toStatus(frame: Frame, project: ProjectView | null): Status {
 
 function sameStatus(a: Status | null, b: Status): boolean {
   return a !== null && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Inputs that take typing, where Space types a space rather than playing. */
+const TEXT_INPUTS = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
+
+/** Whether `event` is Space or Shift+Space, pressed anywhere but a text field. */
+function isTransportKey(event: KeyboardEvent): boolean {
+  if (event.key !== " " || event.metaKey || event.ctrlKey || event.altKey) return false;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return true;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return false;
+  return !(target instanceof HTMLInputElement && TEXT_INPUTS.has(target.type));
 }
 
 type Tab = "notes" | "sound";
@@ -161,6 +177,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
         ticksPerQuarter: project.ticksPerQuarter,
         loopStart: project.loopStart,
         loopLength: project.loopLength,
+        loopEnabled: project.loopEnabled,
       });
     }
   }, [project, clock, trackLevels]);
@@ -195,9 +212,41 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     setTempo(bpm, gesture).then(setProject, report);
   };
 
-  const changeLoopLength = (bars: number, gesture?: number) => {
-    setLoopLength(bars, gesture).then(setProject, report);
+  const changeLoopEnabled = (enabled: boolean) => {
+    setLoopEnabled(enabled).then(setProject, report);
   };
+
+  // Space plays, and stops back at the play start; Shift+Space pauses, and
+  // carries on from where it paused. They read the latest status.
+  const transportKey = (shift: boolean) => {
+    const playing = status?.playing ?? false;
+    const action = shift ? (playing ? pause : resume) : playing ? stop : play;
+    action().catch(report);
+  };
+  const spaceBar = useRef(transportKey);
+  useEffect(() => {
+    spaceBar.current = transportKey;
+  });
+
+  // On the window, so it works wherever the focus is, except while typing
+  // in a text field. The key's own action is prevented too, so it never
+  // also presses a focused button or ticks a box (which happens on keyup).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isTransportKey(event)) return;
+      event.preventDefault();
+      if (!event.repeat) spaceBar.current(event.shiftKey);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (isTransportKey(event)) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
 
   const changeMixer = (id: string, mixer: MixerView, gesture?: number) => {
     setTrackMixer(id, mixer, gesture).then(setProject, report);
@@ -304,6 +353,13 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
   };
 
+  // The timeline's ruler sets the loop region and moves the play start.
+  const rulerActions: RulerActions = {
+    loop: (startBar, bars, gesture) =>
+      void setLoop(startBar, bars, gesture).then(setProject, report),
+    locate: (ticks) => void locate(ticks).catch(report),
+  };
+
   const changeBuffer = (size: number) => {
     setChangingBuffer(true);
     setBufferSize(size)
@@ -324,7 +380,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
           onPlay={() => play().catch(report)}
           onStop={() => stop().catch(report)}
           onTempo={changeTempo}
-          onLoopLength={changeLoopLength}
+          onLoopEnabled={changeLoopEnabled}
         />
 
         <section className="master" aria-label="Master">
@@ -380,6 +436,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
             // Backspace never deletes the one Notes falls back to.
             selectedClip={clipTrack ? selectedClipId : null}
             editor={clipEditor}
+            ruler={rulerActions}
             clock={clock}
             frames={frames}
             headers={headers}

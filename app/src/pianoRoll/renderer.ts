@@ -26,6 +26,8 @@ export interface GridScene {
   beatsPerBar: number;
   loopStart: number;
   loopEnd: number;
+  /** Whether the loop is on. While it's off, the loop region is drawn greyed out. */
+  loopEnabled: boolean;
   /** The clip's place in the song. Outside it is shaded. */
   clipStart: number;
   clipEnd: number;

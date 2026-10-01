@@ -94,10 +94,19 @@ describe("PianoRollScene", () => {
 
   it("redraws the grid when the loop changes", () => {
     scene.draw(0);
-    show(projectView({ loopBars: 2, loopLength: 2 * 3840 }));
+    show(projectView({ loopLength: 2 * 3840 }));
     scene.draw(0);
     expect(renderer.grids).toHaveLength(2);
     expect(renderer.grids[1].loopEnd).toBe(2 * 3840);
+  });
+
+  it("redraws the grid when the loop is switched off", () => {
+    scene.draw(0);
+    expect(renderer.grids[0].loopEnabled).toBe(true);
+    show(projectView({ loopEnabled: false }));
+    scene.draw(0);
+    expect(renderer.grids).toHaveLength(2);
+    expect(renderer.grids[1].loopEnabled).toBe(false);
   });
 
   it("shades outside the clip, and redraws the grid when the clip moves or resizes", () => {

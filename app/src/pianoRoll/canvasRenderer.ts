@@ -59,6 +59,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     beatsPerBar,
     loopStart,
     loopEnd,
+    loopEnabled,
     clipStart,
     clipEnd,
   }: GridScene): void {
@@ -112,7 +113,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     }
     context.restore();
 
-    this.drawRuler(view, ticksPerQuarter, bar, loopStart, loopEnd);
+    this.drawRuler(view, ticksPerQuarter, bar, loopStart, loopEnd, loopEnabled);
     this.drawKeyboard(view, low, high);
     this.drawVelocityLane(view, ticksPerQuarter, bar);
   }
@@ -158,6 +159,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     bar: number,
     loopStart: number,
     loopEnd: number,
+    loopEnabled: boolean,
   ): void {
     const context = this.contexts.grid;
     const theme = this.theme;
@@ -171,8 +173,8 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.fillStyle = theme.ruler;
     context.fillRect(area.x, 0, area.width, RULER_HEIGHT);
 
-    // The loop, as a band along the bottom of the ruler.
-    context.fillStyle = theme.barLine;
+    // The loop, as a band along the bottom of the ruler: grey while it's off.
+    context.fillStyle = loopEnabled ? theme.loop : theme.barLine;
     const loopLeft = Math.max(area.x, tickToX(view, loopStart));
     const loopRight = Math.min(area.x + area.width, tickToX(view, loopEnd));
     if (loopRight > loopLeft) context.fillRect(loopLeft, RULER_HEIGHT - 4, loopRight - loopLeft, 4);

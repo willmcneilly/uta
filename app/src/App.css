@@ -24,6 +24,8 @@
   --roll-black-key: #2c2c2e;
   --roll-key-text: #6e6e73;
   --roll-playhead: #e5484d;
+  --roll-loop: #1f5fbf;
+  --roll-loop-region: rgba(31, 95, 191, 0.16);
   --roll-note-soft: #b9d4f5;
   --roll-note-hard: #1f5fbf;
   --roll-note-selected: #1c1c1e;
@@ -65,6 +67,8 @@
     --roll-black-key: #1c1c1e;
     --roll-key-text: #3a3a3c;
     --roll-playhead: #ff6b5e;
+    --roll-loop: #7ab8ff;
+    --roll-loop-region: rgba(122, 184, 255, 0.22);
     --roll-note-soft: #2d4a73;
     --roll-note-hard: #7ab8ff;
     --roll-note-selected: #ffffff;
@@ -122,6 +126,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.transport .loop-switch[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .transport .state {
