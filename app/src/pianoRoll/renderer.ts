@@ -10,7 +10,7 @@ import type { Rect, Viewport } from "./viewport";
 export interface Layers {
   /**
    * The keyboard, the ruler, the grid and the velocity lane's background.
-   * Redrawn on scroll, zoom or a loop change.
+   * Redrawn on scroll, zoom, or a change to the loop or the clip's place.
    */
   grid: HTMLCanvasElement;
   /** The notes and their velocity bars. Redrawn when the notes, the selection or the view change. */
@@ -26,6 +26,9 @@ export interface GridScene {
   beatsPerBar: number;
   loopStart: number;
   loopEnd: number;
+  /** The clip's place in the song. Outside it is shaded. */
+  clipStart: number;
+  clipEnd: number;
 }
 
 /** What the notes layer shows. */

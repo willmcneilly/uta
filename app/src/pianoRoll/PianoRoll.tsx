@@ -8,11 +8,12 @@ import {
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
+import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
 import { duplicateNotes, pasteNotes } from "./clipboard";
 import { type Drag, dragNote, dragVelocities, moveNotes, sameNote } from "./editing";
-import type { FrameStats } from "./frameStats";
+import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "./playhead";
 import type { RendererFactory } from "./renderer";
 import { PianoRollScene } from "./scene";
@@ -66,8 +67,8 @@ interface Props {
   editor: NoteEditor;
   /** Where the playhead is, between the engine's reports. */
   clock: PlayheadClock;
-  /** Where each frame's timing goes. */
-  stats: FrameStats;
+  /** Draws it once a screen frame, with the timeline. */
+  frames: FrameLoop;
   /** Draws the layers. Canvas 2D unless a test or WebGL says otherwise. */
   createRenderer?: RendererFactory;
 }
@@ -113,7 +114,7 @@ export function PianoRoll({
   clip,
   editor,
   clock,
-  stats,
+  frames,
   createRenderer = createCanvas2DRenderer,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,24 +175,12 @@ export function PianoRoll({
     const top = topRef.current;
     if (!grid || !notes || !top) return;
     scene.setRenderer(createRenderer({ grid, notes, top }));
-
-    let request = 0;
-    const frame = (now: number) => {
-      const started = performance.now();
-      scene.draw(clock.at(now));
-      stats.record(now, performance.now() - started);
-      request = requestAnimationFrame(frame);
-    };
-    request = requestAnimationFrame(frame);
-    // Frames stop while the window is hidden; that gap isn't a slow frame.
-    const onVisibility = () => stats.pause();
-    document.addEventListener("visibilitychange", onVisibility);
+    const stop = frames.add((now) => scene.draw(clock.at(now)));
     return () => {
-      cancelAnimationFrame(request);
-      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
       scene.setRenderer(null);
     };
-  }, [scene, clock, stats, createRenderer, scheme]);
+  }, [scene, clock, frames, createRenderer, scheme]);
 
   // Scroll with the wheel or trackpad; zoom time with ⌘ or a pinch, and
   // pitch with ⌥. Not a React handler: it has to be able to preventDefault.
@@ -645,21 +634,4 @@ export function PianoRoll({
 /** A drawn note is one grid step long, or a sixteenth with snapping off. */
 function newNoteLength(snap: Snap, ticksPerQuarter: number): number {
   return snap === "off" ? ticksPerQuarter / 4 : snapStep(snap, ticksPerQuarter);
-}
-
-/** "light" or "dark", following the system, so the canvases redraw in the new colours. */
-function useColourScheme(): "light" | "dark" {
-  const [query] = useState(() =>
-    typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-color-scheme: dark)")
-      : null,
-  );
-  const [dark, setDark] = useState(() => query?.matches ?? false);
-  useEffect(() => {
-    if (!query) return;
-    const onChange = (event: MediaQueryListEvent) => setDark(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, [query]);
-  return dark ? "dark" : "light";
 }

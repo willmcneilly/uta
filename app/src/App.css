@@ -13,7 +13,7 @@
   --clip-on: #f85149;
   --roll-background: #ffffff;
   --roll-black-key-row: #f1f1ef;
-  --roll-outside-loop: rgba(0, 0, 0, 0.07);
+  --roll-outside-clip: rgba(0, 0, 0, 0.07);
   --roll-bar-line: #b8b8b4;
   --roll-beat-line: #d9d9d6;
   --roll-sub-line: #ededea;
@@ -30,6 +30,9 @@
   --roll-velocity-lane: #f7f7f5;
   --roll-selection-box: rgba(31, 95, 191, 0.12);
   --roll-selection-box-edge: #1f5fbf;
+  --clip-fill: #b9d4f5;
+  --clip-edge: #6d98d4;
+  --clip-note: #1f4f99;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 14px;
   color-scheme: light dark;
@@ -51,7 +54,7 @@
     --clip-on: #ff6b5e;
     --roll-background: #232325;
     --roll-black-key-row: #1c1c1e;
-    --roll-outside-loop: rgba(0, 0, 0, 0.3);
+    --roll-outside-clip: rgba(0, 0, 0, 0.3);
     --roll-bar-line: #5a5a5e;
     --roll-beat-line: #3a3a3c;
     --roll-sub-line: #2c2c2e;
@@ -68,6 +71,9 @@
     --roll-velocity-lane: #1c1c1e;
     --roll-selection-box: rgba(122, 184, 255, 0.15);
     --roll-selection-box-edge: #7ab8ff;
+    --clip-fill: #36598a;
+    --clip-edge: #5b83bd;
+    --clip-note: #d4e7ff;
   }
 }
 
@@ -183,10 +189,21 @@ body {
   overflow: hidden;
 }
 
+/* It scrolls with the timeline rather than by itself, so it has no scroll bar. */
 .track-headers {
   flex: 0 0 272px;
-  overflow-y: auto;
+  overflow: hidden;
   border-right: 1px solid var(--border);
+}
+
+/* Level with the timeline's ruler, and stays put while the headers scroll under it. */
+.track-headers-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 .track-headers ol {
@@ -195,9 +212,13 @@ body {
   padding: 0;
 }
 
+/* As tall as its row on the timeline, set from TRACK_HEIGHT. */
 .track-header {
   display: grid;
+  align-content: start;
   gap: 2px;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 6px 10px 8px;
   border-bottom: 1px solid var(--border);
 }
@@ -271,13 +292,42 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.add-track {
-  margin: 8px 10px;
+.add-track-row {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
 }
 
 .timeline {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   background: var(--roll-background);
+}
+
+.timeline-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.timeline-canvas canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.timeline-canvas:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.timeline-tools {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 /* Drag it to share the height between the timeline and the editor. */
@@ -463,7 +513,9 @@ body {
 }
 
 .piano-roll .zoom,
-.piano-roll .snap {
+.piano-roll .snap,
+.timeline .zoom,
+.timeline .snap {
   display: flex;
   align-items: center;
   gap: 4px;

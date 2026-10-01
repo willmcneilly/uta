@@ -9,7 +9,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use uta_core::{ClipId, Note, NoteId, SynthParam, TrackId};
+use uta_core::time::Ticks;
+use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
 use crate::uta::{Frame, MixerView, ProjectView, Uta};
@@ -167,6 +168,38 @@ pub fn move_track<R: Runtime>(
     index: usize,
 ) -> Result<ProjectView, String> {
     edit(&app, |uta| uta.move_track(track, index))
+}
+
+/// Adds an empty clip to a track: drawn on the timeline. The UI picks its
+/// ID.
+#[tauri::command]
+pub fn add_clip<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    id: ClipId,
+    start: Ticks,
+    length: Ticks,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.add_clip(track, id, start, length))
+}
+
+/// Sets clips' track, start and length. Calls with the same `gesture` (one
+/// drag) undo as one step.
+#[tauri::command]
+pub fn set_clips<R: Runtime>(
+    app: AppHandle<R>,
+    clips: Vec<ClipPosition>,
+    gesture: Option<u32>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.set_clips(clips, gesture))
+}
+
+#[tauri::command]
+pub fn remove_clips<R: Runtime>(
+    app: AppHandle<R>,
+    clips: Vec<ClipId>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.remove_clips(clips))
 }
 
 /// Adds notes to a clip. The UI picks each new note's ID. A `set_notes` of

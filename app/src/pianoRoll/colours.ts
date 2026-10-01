@@ -4,7 +4,8 @@
 export interface Theme {
   background: string;
   blackKeyRow: string;
-  outsideLoop: string;
+  /** Over the grid outside the clip. */
+  outsideClip: string;
   barLine: string;
   beatLine: string;
   subLine: string;
@@ -32,7 +33,7 @@ export function readTheme(element: Element): Theme {
   return {
     background: read("--roll-background", "#ffffff"),
     blackKeyRow: read("--roll-black-key-row", "#f1f1ef"),
-    outsideLoop: read("--roll-outside-loop", "rgba(0, 0, 0, 0.06)"),
+    outsideClip: read("--roll-outside-clip", "rgba(0, 0, 0, 0.06)"),
     barLine: read("--roll-bar-line", "#b8b8b4"),
     beatLine: read("--roll-beat-line", "#d9d9d6"),
     subLine: read("--roll-sub-line", "#ebebe8"),

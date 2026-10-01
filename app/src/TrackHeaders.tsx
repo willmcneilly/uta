@@ -1,7 +1,8 @@
-import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
 import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
 import { Meter } from "./Meter";
 import type { TrackLevels } from "./meterLevel";
+import { ADD_TRACK_HEIGHT, RULER_HEIGHT, TRACK_HEIGHT } from "./timeline/viewport";
 import { dropIndex, formatPan } from "./trackOrder";
 import { useGesture } from "./useGesture";
 
@@ -21,6 +22,8 @@ interface Props {
   onAdd: () => void;
   /** Moves a track to `index` in the order, counting from 0 at the top. */
   onMove: (track: string, index: number) => void;
+  /** The scrolling element, which the timeline scrolls in step with its tracks. */
+  scrollRef?: Ref<HTMLElement>;
 }
 
 /** A header being dragged to a new place in the order. */
@@ -36,7 +39,8 @@ function formatDb(db: number): string {
 /**
  * Every track's header, top to bottom, with **+ Add track** below. Each has
  * the track's name, mute, solo, volume, pan and a meter. Drag a header by
- * its name to reorder the tracks.
+ * its name to reorder the tracks. Each is as tall as its row on the
+ * timeline, below a gap as tall as the timeline's ruler, so they line up.
  */
 export function TrackHeaders({
   project,
@@ -47,6 +51,7 @@ export function TrackHeaders({
   onSoloAlone,
   onAdd,
   onMove,
+  scrollRef,
 }: Props) {
   const listRef = useRef<HTMLOListElement>(null);
   const [reorder, setReorder] = useState<Reorder | null>(null);
@@ -113,7 +118,8 @@ export function TrackHeaders({
 
   const full = project.tracks.length >= project.maxTracks;
   return (
-    <section className="track-headers" aria-label="Tracks">
+    <section className="track-headers" aria-label="Tracks" ref={scrollRef}>
+      <div className="track-headers-ruler" style={{ height: RULER_HEIGHT }} />
       <ol ref={listRef}>
         {project.tracks.map((track, index) => (
           <TrackHeader
@@ -131,15 +137,17 @@ export function TrackHeaders({
           />
         ))}
       </ol>
-      <button
-        type="button"
-        className="add-track"
-        disabled={full}
-        title={full ? `A project has at most ${project.maxTracks} tracks` : undefined}
-        onClick={onAdd}
-      >
-        + Add track
-      </button>
+      <div className="add-track-row" style={{ height: ADD_TRACK_HEIGHT }}>
+        <button
+          type="button"
+          className="add-track"
+          disabled={full}
+          title={full ? `A project has at most ${project.maxTracks} tracks` : undefined}
+          onClick={onAdd}
+        >
+          + Add track
+        </button>
+      </div>
     </section>
   );
 }
@@ -180,6 +188,7 @@ function TrackHeader({
       className={`track-header${selected ? " selected" : ""}${dragging ? " dragging" : ""}${className}`}
       aria-label={name}
       aria-current={selected ? "true" : undefined}
+      style={{ height: TRACK_HEIGHT }}
       onPointerDown={onSelect}
       // Tabbing onto any of its controls selects the track too.
       onFocus={onSelect}

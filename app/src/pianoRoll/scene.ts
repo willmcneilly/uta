@@ -40,13 +40,17 @@ export class PianoRollScene {
   private box: Rect | null = null;
 
   /**
-   * A new project view from Rust, and the clip to show from it: the notes
-   * or the loop may have changed.
+   * A new project view from Rust, and the clip to show from it: the notes,
+   * the loop or the clip itself may have changed. Opening another clip
+   * shows the whole of it.
    */
   setProject(project: ProjectView, clip: ClipView): void {
-    const loopChanged =
+    const gridChanged =
       this.project?.loopStart !== project.loopStart ||
-      this.project.loopLength !== project.loopLength;
+      this.project.loopLength !== project.loopLength ||
+      this.clip?.start !== clip.start ||
+      this.clip.length !== clip.length;
+    const opened = this.clip !== null && this.clip.id !== clip.id;
     // Every view from Rust is a fresh object, so compare what's in it: a
     // volume or tempo change mustn't re-sort and redraw thousands of notes.
     if (!this.clip || !sameClip(this.clip, clip)) {
@@ -55,7 +59,11 @@ export class PianoRollScene {
     }
     this.project = project;
     this.clip = clip;
-    if (loopChanged) this.gridDirty = true;
+    if (gridChanged) this.gridDirty = true;
+    if (opened && this.view) {
+      this.view = fitClip(this.view, clip);
+      this.markAllDirty();
+    }
     this.clampView();
   }
 
@@ -64,7 +72,7 @@ export class PianoRollScene {
     this.size = { width, height, pixelRatio };
     this.renderer?.resize(width, height, pixelRatio);
     if (this.view) this.view = { ...this.view, width, height };
-    else if (this.project) this.view = initialView(this.project, width, height);
+    else if (this.clip) this.view = initialView(this.clip, width, height);
     this.clampView();
     this.markAllDirty();
   }
@@ -168,6 +176,8 @@ export class PianoRollScene {
         beatsPerBar: project.beatsPerBar,
         loopStart: project.loopStart,
         loopEnd: project.loopStart + project.loopLength,
+        clipStart: this.clip?.start ?? 0,
+        clipEnd: (this.clip?.start ?? 0) + (this.clip?.length ?? 0),
       });
       this.gridDirty = false;
     }
@@ -207,18 +217,27 @@ function contentTicks(project: ProjectView, clip: ClipView, index: NoteIndex): n
   return Math.max(project.loopStart + project.loopLength, clip.start + clip.length, index.end) + bar;
 }
 
-/** The loop fills the width, with C3 to C6 or so in view. */
-function initialView(project: ProjectView, width: number, height: number): Viewport {
+/** The clip fills the width, with C3 to C6 or so in view. */
+function initialView(clip: ClipView, width: number, height: number): Viewport {
   const view: Viewport = {
     width,
     height,
-    scrollTicks: project.loopStart,
+    scrollTicks: 0,
     scrollY: (PITCH_COUNT - 1 - INITIAL_TOP_PITCH) * INITIAL_KEY_HEIGHT,
     pixelsPerTick: 1,
     keyHeight: INITIAL_KEY_HEIGHT,
   };
+  return fitClip(view, clip);
+}
+
+/** `view` scrolled and zoomed so `clip` fills its width. The pitches stay as they are. */
+function fitClip(view: Viewport, clip: ClipView): Viewport {
   const area = noteArea(view);
-  return { ...view, pixelsPerTick: area.width > 0 ? area.width / project.loopLength : 1 };
+  return {
+    ...view,
+    scrollTicks: clip.start,
+    pixelsPerTick: area.width > 0 && clip.length > 0 ? area.width / clip.length : 1,
+  };
 }
 
 function sameView(a: Viewport, b: Viewport): boolean {

@@ -242,6 +242,38 @@ export function moveTrack(track: string, index: number): Promise<ProjectView> {
   return invoke<ProjectView>("move_track", { track, index });
 }
 
+/** Where a clip is, as `set_clips` takes it. Positions and lengths are in ticks. */
+export interface ClipPosition {
+  id: string;
+  track: string;
+  /** From the start of the song. */
+  start: number;
+  length: number;
+}
+
+/** Adds an empty clip to `track`, with the ID `id` picked here. One undo step. */
+export function addClip(
+  track: string,
+  id: string,
+  start: number,
+  length: number,
+): Promise<ProjectView> {
+  return invoke<ProjectView>("add_clip", { track, id, start, length });
+}
+
+/**
+ * Sets clips' track, start and length: a move or a resize. Changes with the
+ * same `gesture` (one drag) undo as one step.
+ */
+export function setClips(clips: ClipPosition[], gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("set_clips", { clips, gesture: gesture ?? null });
+}
+
+/** Deletes clips, with their notes, as one undo step. */
+export function removeClips(clips: string[]): Promise<ProjectView> {
+  return invoke<ProjectView>("remove_clips", { clips });
+}
+
 /** Fills a clip with a few thousand notes, as one undo step. */
 export function addStressNotes(clip: string): Promise<ProjectView> {
   return invoke<ProjectView>("add_stress_notes", { clip });

@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 describe("PianoRollScene", () => {
-  it("opens with the whole loop in view", () => {
+  it("opens with the whole clip in view", () => {
     const view = scene.getView()!;
     expect(view.pixelsPerTick).toBe(768 / (4 * 3840));
     expect(view.scrollTicks).toBe(0);
@@ -98,6 +98,37 @@ describe("PianoRollScene", () => {
     scene.draw(0);
     expect(renderer.grids).toHaveLength(2);
     expect(renderer.grids[1].loopEnd).toBe(2 * 3840);
+  });
+
+  it("shades outside the clip, and redraws the grid when the clip moves or resizes", () => {
+    scene.draw(0);
+    expect([renderer.grids[0].clipStart, renderer.grids[0].clipEnd]).toEqual([0, 4 * 3840]);
+    const project = projectView({}, [note("a", 0), note("b", 7680)]);
+    const clip = firstClip(project);
+    scene.setProject(project, { ...clip, start: 3840, length: 2 * 3840 });
+    scene.draw(0);
+    expect(renderer.grids).toHaveLength(2);
+    expect([renderer.grids[1].clipStart, renderer.grids[1].clipEnd]).toEqual([3840, 3 * 3840]);
+    // Moving the clip it shows doesn't move the view.
+    expect(scene.getView()!.scrollTicks).toBe(0);
+  });
+
+  it("shows the whole of another clip when it's opened, keeping the pitches in view", () => {
+    scene.changeView((view) => ({ ...view, scrollY: view.scrollY + 48 }));
+    const scrollY = scene.getView()!.scrollY;
+    const other = { id: "clip-2", start: 8 * 3840, length: 2 * 3840, notes: [note("c", 0)] };
+    const project = projectView({
+      songEnd: 11 * 3840,
+      tracks: [trackView("track-1", "Synth 1", [firstClip(projectView()), other])],
+    });
+    scene.setProject(project, other);
+    const view = scene.getView()!;
+    expect(view.scrollTicks).toBe(8 * 3840);
+    expect(view.pixelsPerTick).toBe(768 / (2 * 3840));
+    expect(view.scrollY).toBe(scrollY);
+    scene.draw(0);
+    // In song time.
+    expect(renderer.lastNotes().map((n) => [n.id, n.start])).toEqual([["c", 8 * 3840]]);
   });
 
   it("redraws the grid and notes on scroll", () => {

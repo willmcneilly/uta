@@ -53,7 +53,15 @@ class Canvas2DRenderer implements PianoRollRenderer {
     }
   }
 
-  drawGrid({ view, ticksPerQuarter, beatsPerBar, loopStart, loopEnd }: GridScene): void {
+  drawGrid({
+    view,
+    ticksPerQuarter,
+    beatsPerBar,
+    loopStart,
+    loopEnd,
+    clipStart,
+    clipEnd,
+  }: GridScene): void {
     const context = this.contexts.grid;
     const theme = this.theme;
     const area = noteArea(view);
@@ -94,13 +102,13 @@ class Canvas2DRenderer implements PianoRollRenderer {
       context.fillRect(Math.round(tickToX(view, tick)), area.y, 1, area.height);
     }
 
-    // Outside the loop is shaded.
-    context.fillStyle = theme.outsideLoop;
-    const loopLeft = tickToX(view, loopStart);
-    const loopRight = tickToX(view, loopEnd);
-    if (loopLeft > area.x) context.fillRect(area.x, area.y, loopLeft - area.x, area.height);
-    if (loopRight < area.x + area.width) {
-      context.fillRect(loopRight, area.y, area.x + area.width - loopRight, area.height);
+    // Outside the clip is shaded.
+    context.fillStyle = theme.outsideClip;
+    const clipLeft = tickToX(view, clipStart);
+    const clipRight = tickToX(view, clipEnd);
+    if (clipLeft > area.x) context.fillRect(area.x, area.y, clipLeft - area.x, area.height);
+    if (clipRight < area.x + area.width) {
+      context.fillRect(clipRight, area.y, area.x + area.width - clipRight, area.height);
     }
     context.restore();
 
