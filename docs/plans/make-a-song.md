@@ -167,8 +167,9 @@ Checked against `main` at `46676a2`, after UTA-16:
 **Acceptance criteria**
 - [ ] Drag on the ruler to set the loop region, snapped to bars. A loop button in the transport switches it on or off. Both are undoable, one drag per step. The transport's loop length control goes, since the region replaces it.
 - [ ] Clicking the ruler moves the play start, and clicking it while playing jumps there. Stop returns to the play start. With the loop off, playback stops at the song's end and returns to the play start. The position readout shows the song position.
+- [ ] Space plays, and pressing it again stops and goes back to the play start, like Stop. Shift+Space while playing pauses at the playhead, leaving the play start where it is, and Shift+Space while stopped carries on from where it paused, chasing notes already under way. Neither fires while typing in a text field, and Space never also presses a focused button. In the engine, carrying on from the playhead is a real-time-safe command, tested under `assert_no_alloc` and RealtimeSanitizer with a pause, a carry-on and a chased note. (Added at Will's request when the ticket was picked up.)
 - [ ] When the playhead reaches the right edge of the timeline, the view turns a page. Following pauses when you scroll or edit, and resumes on the next Play. The piano roll follows the same way.
-- [ ] UI tests against the mocked back end: the loop region, the loop button and ruler clicks send the expected commands and engine calls; the views draw the loop region and playhead Rust sends. Unit tests for follow paging.
+- [ ] UI tests against the mocked back end: the loop region, the loop button, ruler clicks, Space and Shift+Space send the expected commands and engine calls; the views draw the loop region and playhead Rust sends. Unit tests for follow paging.
 
 **Out of scope:** The metronome (Play it in). Markers, and showing the song's end on the ruler.
 
