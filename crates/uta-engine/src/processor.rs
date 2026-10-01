@@ -50,8 +50,12 @@ pub struct Processor {
 
     playing: bool,
     /// Where it's playing, in samples from the start of the song, timed at
-    /// the snapshot's rate. While stopped, the play start.
+    /// the snapshot's rate. While stopped, the play start, or where it was
+    /// paused.
     playhead: u64,
+    /// Whether it's stopped by a Pause, with the playhead where it paused,
+    /// for Continue to carry on from.
+    paused: bool,
     /// Where Play starts and Stop goes back to, in ticks from the start of
     /// the song. See RFC-003, "Playing a song".
     play_start: Ticks,
@@ -250,6 +254,7 @@ impl Processor {
                 .collect(),
             mix: Box::new([[0.0; TRACK_BUFFER_FRAMES]; 2]),
             playing: false,
+            paused: false,
             playhead: 0,
             play_start: 0,
             looping: false,
@@ -469,12 +474,25 @@ impl Processor {
     /// Stops, releases every note, and goes back to the play start: on Stop,
     /// and at the song's end.
     fn stop(&mut self) {
+        self.pause();
+        self.paused = false;
+        self.playhead = self.snapshot.sequence.sample_at(self.play_start);
+    }
+
+    /// Stops and releases every note, leaving the playhead where it is, for
+    /// Continue to carry on from. At the loop's end it's already back at the
+    /// loop's start, as the status shows it.
+    fn pause(&mut self) {
+        let loop_samples = self.snapshot.sequence.loop_samples();
+        if self.looping && self.playhead >= loop_samples.end {
+            self.playhead = loop_samples.start;
+        }
         self.playing = false;
         self.looping = false;
+        self.paused = true;
         for slot in self.slots.iter_mut() {
             slot.synth.release_all();
         }
-        self.playhead = self.snapshot.sequence.sample_at(self.play_start);
     }
 
     /// After a new snapshot while playing, decides where playback is bound:
@@ -595,10 +613,21 @@ impl Processor {
             match command {
                 Command::Play if !self.playing => {
                     self.playing = true;
+                    self.paused = false;
                     self.play_from(self.snapshot.sequence.sample_at(self.play_start));
                 }
                 Command::Play => {}
                 Command::Stop => self.stop(),
+                Command::Pause if self.playing => self.pause(),
+                Command::Pause => {}
+                Command::Continue if !self.playing => {
+                    self.playing = true;
+                    // Stopped, the playhead is where it paused or the play
+                    // start.
+                    self.paused = false;
+                    self.play_from(self.playhead);
+                }
+                Command::Continue => {}
                 Command::Locate(ticks) => {
                     let sample = self.snapshot.sequence.sample_at(ticks);
                     if self.playing {
@@ -606,13 +635,14 @@ impl Processor {
                     } else {
                         self.play_start = ticks;
                         self.playhead = sample;
+                        self.paused = false;
                     }
                 }
                 Command::SetSnapshot(new) => {
                     self.volume.set_target(new.gain);
                     let old = std::mem::replace(&mut self.snapshot, new);
                     let sequence = &self.snapshot.sequence;
-                    self.playhead = if self.playing {
+                    self.playhead = if self.playing || self.paused {
                         sequence.playhead_from(&old.sequence, self.playhead)
                     } else {
                         sequence.sample_at(self.play_start)
