@@ -160,6 +160,7 @@ fn stop_goes_back_to_where_play_was_last_pressed() {
     let status = renderer.controller.poll();
     assert!(status.playing);
     assert_eq!(status.playhead, 3 * BAR + 40);
+    assert_eq!(status.play_start, BAR + 960, "reported as it was");
     renderer.controller.stop().unwrap();
     renderer.render(128);
     let status = renderer.controller.poll();
@@ -170,6 +171,143 @@ fn stop_goes_back_to_where_play_was_last_pressed() {
     renderer.controller.play().unwrap();
     renderer.render(PER_TICK * 10);
     assert_eq!(renderer.controller.poll().playhead, BAR + 960 + 10);
+}
+
+/// Pause stops where the playhead is, and Continue carries on from that
+/// exact sample: a note after it starts as long after Continue as it was
+/// after the pause, whatever the block size. The play start doesn't move.
+#[test]
+fn continue_carries_on_from_the_exact_sample_where_it_paused() {
+    // An odd tick, rarely on a block boundary.
+    const TICK: Ticks = 2 * BAR + 1234;
+    let project = song(4, None, vec![note(0, 69, TICK, 480)]);
+    let expected = reference(&project, 69, samples_at(480), TAIL);
+    for block_size in BLOCK_SIZES {
+        let what = format!("blocks of {block_size}");
+        let mut renderer = renderer(&project, block_size);
+        renderer.controller.locate(BAR).unwrap();
+        renderer.controller.play().unwrap();
+        // Some way into the silence before the note, not on a tick.
+        renderer.render(block_size * 7);
+        let paused_at = samples_at(BAR) + renderer.samples().len();
+        renderer.controller.pause().unwrap();
+        renderer.render(BAR_SAMPLES / 4);
+        let status = renderer.controller.poll();
+        assert!(!status.playing, "{what}: paused");
+        // Reported to the nearest tick.
+        let ticks = ((paused_at + PER_TICK / 2) / PER_TICK) as Ticks;
+        assert_eq!(status.playhead, ticks, "{what}: the playhead stays put");
+        assert_eq!(first_sound(renderer.samples()), None, "{what}");
+
+        let resumed = renderer.samples().len();
+        renderer.controller.resume().unwrap();
+        renderer.render(samples_at(TICK) - paused_at + expected.len() + 1000);
+        let at = resumed + samples_at(TICK) - paused_at;
+        let samples = renderer.samples();
+        assert_eq!(first_sound(samples), Some(at + 1), "{what}");
+        assert_plays_at(samples, at, &expected, &what);
+
+        // Stop still goes back to where Play was pressed.
+        renderer.controller.stop().unwrap();
+        renderer.render(block_size);
+        assert_eq!(renderer.controller.poll().playhead, BAR, "{what}");
+    }
+}
+
+/// Pausing, then Play, plays from the play start, not from the pause; and
+/// Continue after Stop does the same. Moving the play start while paused
+/// forgets the pause.
+#[test]
+fn play_and_stop_ignore_where_it_paused() {
+    let project = song(4, None, vec![]);
+    let mut renderer = renderer(&project, 128);
+    renderer.controller.locate(BAR).unwrap();
+    renderer.controller.play().unwrap();
+    renderer.render(PER_TICK * 400);
+    renderer.controller.pause().unwrap();
+    renderer.render(128);
+    assert_eq!(renderer.controller.poll().playhead, BAR + 400);
+
+    renderer.controller.play().unwrap();
+    renderer.render(PER_TICK * 10);
+    assert_eq!(renderer.controller.poll().playhead, BAR + 10, "Play");
+
+    renderer.controller.pause().unwrap();
+    renderer.controller.stop().unwrap();
+    renderer.controller.resume().unwrap();
+    renderer.render(PER_TICK * 10);
+    assert_eq!(
+        renderer.controller.poll().playhead,
+        BAR + 10,
+        "Continue after Stop"
+    );
+
+    renderer.controller.pause().unwrap();
+    renderer.controller.locate(3 * BAR).unwrap();
+    renderer.controller.resume().unwrap();
+    renderer.render(PER_TICK * 10);
+    assert_eq!(
+        renderer.controller.poll().playhead,
+        3 * BAR + 10,
+        "Continue after moving the play start"
+    );
+
+    // Pause while stopped, and Continue while playing, do nothing.
+    renderer.controller.stop().unwrap();
+    renderer.controller.pause().unwrap();
+    renderer.render(128);
+    assert_eq!(renderer.controller.poll().playhead, 3 * BAR);
+    renderer.controller.play().unwrap();
+    renderer.render(PER_TICK * 10);
+    renderer.controller.resume().unwrap();
+    renderer.render(PER_TICK * 10);
+    assert_eq!(renderer.controller.poll().playhead, 3 * BAR + 20);
+}
+
+/// An edit while paused keeps the playhead where it paused, even one that
+/// changes the tempo: it stays on the same tick.
+#[test]
+fn an_edit_while_paused_keeps_the_playhead_where_it_paused() {
+    let mut project = song(4, None, vec![]);
+    let mut renderer = renderer(&project, 128);
+    renderer.controller.play().unwrap();
+    renderer.render(PER_TICK * 1000);
+    renderer.controller.pause().unwrap();
+    renderer.render(128);
+    assert_eq!(renderer.controller.poll().playhead, 1000);
+
+    project
+        .apply(&Command::SetLoopEnabled { enabled: true })
+        .unwrap();
+    renderer.controller.set_project(&project).unwrap();
+    renderer.render(128);
+    assert_eq!(renderer.controller.poll().playhead, 1000);
+
+    project.apply(&Command::SetTempo { bpm: 100.0 }).unwrap();
+    renderer.controller.set_project(&project).unwrap();
+    renderer.render(128);
+    assert_eq!(renderer.controller.poll().playhead, 1000, "a new tempo");
+}
+
+/// Continue in the middle of a note starts it at once, as Play does.
+#[test]
+fn continuing_in_the_middle_of_a_note_starts_it_at_once() {
+    let project = song(4, None, vec![pad()]);
+    for block_size in BLOCK_SIZES {
+        let what = format!("Continue, blocks of {block_size}");
+        let mut renderer = renderer(&project, block_size);
+        renderer.controller.locate(3 * BAR).unwrap();
+        renderer.controller.play().unwrap();
+        renderer.controller.locate(BAR + 1234).unwrap();
+        renderer.controller.pause().unwrap();
+        renderer.render(block_size * 3);
+        assert_eq!(first_sound(renderer.samples()), None, "{what}");
+        let resumed = renderer.samples().len();
+        renderer.controller.resume().unwrap();
+        renderer.render(BAR_SAMPLES * 3 / 2);
+        let hold = samples_at(2 * BAR - (BAR + 1234));
+        assert_chased(renderer.samples(), &project, resumed, hold, &what);
+    }
 }
 
 /// A jump while playing lands on the exact sample: a note starting where it

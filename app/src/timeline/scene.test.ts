@@ -3,7 +3,7 @@ import type { ClipView, NoteView, ProjectView } from "../backend";
 import { projectView, trackView } from "../pianoRoll/testing";
 import { TimelineScene } from "./scene";
 import { recordingTimelineFactory } from "./testing";
-import { TRACK_HEIGHT } from "./viewport";
+import { TRACK_HEIGHT, visibleTicks } from "./viewport";
 
 const BAR = 3840;
 
@@ -99,6 +99,37 @@ describe("TimelineScene", () => {
     timeline.draw(0);
     expect(renderer.lastClips().map((c) => c.id)).toEqual(["long1", "late1", "long2", "late2"]);
     expect(renderer.lastClips()[0].notes[0].id).toBe("n20");
+  });
+
+  it("redraws the grid when the loop region or switch changes", () => {
+    const view = project([trackView("t1", "Synth 1")]);
+    const { timeline, renderer } = scene(view);
+    expect(renderer.grids[0].loop).toEqual({ start: 0, end: 4 * BAR, enabled: true });
+    timeline.setProject({ ...view, loopStart: BAR, loopLength: 2 * BAR });
+    timeline.draw(0);
+    expect(renderer.grids.at(-1)!.loop).toEqual({ start: BAR, end: 3 * BAR, enabled: true });
+    timeline.setProject({ ...view, loopStart: BAR, loopLength: 2 * BAR, loopEnabled: false });
+    timeline.draw(0);
+    expect(renderer.grids).toHaveLength(3);
+    expect(renderer.grids.at(-1)!.loop.enabled).toBe(false);
+  });
+
+  it("turns a page to follow the playhead, and redraws nothing while it's in view", () => {
+    const view = project([trackView("t1", "Synth 1")]);
+    const { timeline, renderer } = scene(view);
+    // A longer song, to scroll a page along.
+    timeline.setProject({ ...view, songEnd: 41 * BAR });
+    timeline.draw(0);
+    const before = [renderer.grids.length, renderer.clips.length];
+    // The whole 17-bar song is in view to start with.
+    const edge = visibleTicks(timeline.getView()!).end;
+    timeline.follow(edge - 1);
+    timeline.draw(edge - 1);
+    expect([renderer.grids.length, renderer.clips.length]).toEqual(before);
+    timeline.follow(edge);
+    timeline.draw(edge);
+    expect(timeline.getView()!.scrollTicks).toBe(edge);
+    expect(renderer.grids.length).toBe(before[0] + 1);
   });
 
   it("redraws the clips only when they or the view change", () => {

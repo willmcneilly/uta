@@ -4,6 +4,7 @@
 // scrolling and the playhead never re-render anything.
 
 import type { ClipView, ProjectView } from "../backend";
+import { followPage } from "../follow";
 import { NoteIndex, type PlacedNote } from "../pianoRoll/notes";
 import { sameClip } from "../pianoRoll/scene";
 import { type ClipHit, type Span, hitClip } from "./editing";
@@ -75,6 +76,9 @@ export class TimelineScene {
       previous.tracks.length !== project.tracks.length ||
       previous.ticksPerQuarter !== project.ticksPerQuarter ||
       previous.beatsPerBar !== project.beatsPerBar ||
+      previous.loopStart !== project.loopStart ||
+      previous.loopLength !== project.loopLength ||
+      previous.loopEnabled !== project.loopEnabled ||
       previous.tracks.some((track, i) => track.id !== project.tracks[i].id)
     ) {
       this.gridDirty = true;
@@ -104,10 +108,23 @@ export class TimelineScene {
 
   /** Scrolls or zooms. The result is kept inside the timeline. */
   changeView(change: (view: TimelineViewport) => TimelineViewport): void {
-    if (!this.view) return;
-    this.view = change(this.view);
+    const before = this.view;
+    if (!before) return;
+    this.view = change(before);
     this.clampView();
-    this.markAllDirty();
+    if (!sameView(before, this.view)) this.markAllDirty();
+  }
+
+  /**
+   * Turns a page if `playhead` has run off the view, so it's at the left
+   * edge. Nothing is redrawn while it stays in view, or the view can't
+   * scroll further.
+   */
+  follow(playhead: number): void {
+    if (!this.view) return;
+    const { start, end } = visibleTicks(this.view);
+    const to = followPage(start, end, playhead);
+    if (to !== null) this.changeView((view) => ({ ...view, scrollTicks: to }));
   }
 
   getView(): TimelineViewport | null {
@@ -147,6 +164,11 @@ export class TimelineScene {
         beatsPerBar: project.beatsPerBar,
         trackCount: project.tracks.length,
         selectedTrack: selected >= 0 ? selected : null,
+        loop: {
+          start: project.loopStart,
+          end: project.loopStart + project.loopLength,
+          enabled: project.loopEnabled,
+        },
       });
       this.gridDirty = false;
     }

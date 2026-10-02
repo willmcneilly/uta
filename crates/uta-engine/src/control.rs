@@ -135,6 +135,18 @@ impl Controller {
         self.send(Command::Stop)
     }
 
+    /// Stops where the playhead is, for [`Self::resume`] to carry on from.
+    /// Stop still goes back to where Play was last pressed.
+    pub fn pause(&mut self) -> Result<(), QueueFull> {
+        self.send(Command::Pause)
+    }
+
+    /// Plays from where [`Self::pause`] stopped, chasing the notes already
+    /// under way there, or from the play start if it wasn't paused.
+    pub fn resume(&mut self) -> Result<(), QueueFull> {
+        self.send(Command::Continue)
+    }
+
     /// While stopped, sets where Play starts from, in ticks from the start
     /// of the song. While playing, jumps there instead, landing on its exact
     /// sample at the start of the next block, and Stop still goes back to

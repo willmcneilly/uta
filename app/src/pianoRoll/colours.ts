@@ -16,6 +16,12 @@ export interface Theme {
   blackKey: string;
   keyText: string;
   playhead: string;
+  /**
+   * The loop region's band along the bottom of the ruler while the loop is
+   * on, and its fill on the timeline's ruler.
+   */
+  loop: string;
+  loopRegion: string;
   /** The outline of a selected note, and its velocity bar. */
   selectedNote: string;
   velocityLane: string;
@@ -44,6 +50,8 @@ export function readTheme(element: Element): Theme {
     blackKey: read("--roll-black-key", "#2c2c2e"),
     keyText: read("--roll-key-text", "#6e6e73"),
     playhead: read("--roll-playhead", "#e5484d"),
+    loop: read("--roll-loop", "#1f5fbf"),
+    loopRegion: read("--roll-loop-region", "rgba(31, 95, 191, 0.16)"),
     selectedNote: read("--roll-note-selected", "#1c1c1e"),
     velocityLane: read("--roll-velocity-lane", "#f7f7f5"),
     selectionBox: read("--roll-selection-box", "rgba(31, 95, 191, 0.12)"),

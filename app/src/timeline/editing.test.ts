@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ClipView } from "../backend";
 import { trackView } from "../pianoRoll/testing";
-import { EDGE_PIXELS, drawnClip, hitClip, moveClip, oneBarClip, resizeClip } from "./editing";
+import {
+  EDGE_PIXELS,
+  drawnClip,
+  hitClip,
+  moveClip,
+  oneBarClip,
+  resizeClip,
+  rulerClick,
+  rulerLoop,
+} from "./editing";
 import { RULER_HEIGHT, TRACK_HEIGHT, type TimelineViewport, tickToX, trackToY } from "./viewport";
 
 const BAR = 3840;
@@ -155,5 +164,31 @@ describe("drawing a clip", () => {
       start: 2 * BAR + 2 * BEAT,
       length: BAR,
     });
+  });
+});
+
+describe("the ruler", () => {
+  it("sets the loop between the nearest bar lines to each end of a drag", () => {
+    expect(rulerLoop(1.1 * BAR, 3.8 * BAR, BAR)).toEqual({ startBar: 1, bars: 3 });
+    // Either way round.
+    expect(rulerLoop(3.8 * BAR, 1.1 * BAR, BAR)).toEqual({ startBar: 1, bars: 3 });
+  });
+
+  it("makes the loop at least a bar, in the direction of the drag", () => {
+    expect(rulerLoop(2 * BAR, 2.3 * BAR, BAR)).toEqual({ startBar: 2, bars: 1 });
+    expect(rulerLoop(2 * BAR, 1.8 * BAR, BAR)).toEqual({ startBar: 1, bars: 1 });
+  });
+
+  it("never sets the loop before the song's start", () => {
+    expect(rulerLoop(0.2 * BAR, -3 * BAR, BAR)).toEqual({ startBar: 0, bars: 1 });
+    expect(rulerLoop(2 * BAR, -3 * BAR, BAR)).toEqual({ startBar: 0, bars: 2 });
+  });
+
+  it("puts the play start on the nearest grid line to a click, never before 0", () => {
+    expect(rulerClick(2.4 * BAR, BAR)).toBe(2 * BAR);
+    expect(rulerClick(2.6 * BAR, BAR)).toBe(3 * BAR);
+    expect(rulerClick(2 * BAR + 500, BEAT)).toBe(2 * BAR + BEAT);
+    expect(rulerClick(1234, 1)).toBe(1234);
+    expect(rulerClick(-50, BEAT)).toBe(0);
   });
 });

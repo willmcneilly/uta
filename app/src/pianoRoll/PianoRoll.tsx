@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
+import { Follow } from "../follow";
 import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
@@ -122,11 +123,34 @@ export function PianoRoll({
   const notesRef = useRef<HTMLCanvasElement>(null);
   const topRef = useRef<HTMLCanvasElement>(null);
   const [scene] = useState(() => new PianoRollScene());
+  // Scrolling or editing stops it following the playhead until the next Play.
+  const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<Snap>(DEFAULT_SNAP);
   const scheme = useColourScheme();
+  // Every edit stops it following the playhead until the next Play.
+  // Auditioning a note isn't an edit.
+  const editing: NoteEditor = {
+    ...editor,
+    add: (...args) => {
+      follow.pause();
+      editor.add(...args);
+    },
+    set: (...args) => {
+      follow.pause();
+      editor.set(...args);
+    },
+    remove: (...args) => {
+      follow.pause();
+      editor.remove(...args);
+    },
+    trim: (...args) => {
+      follow.pause();
+      editor.trim(...args);
+    },
+  };
   // The pointer, keyboard and menu handlers read the latest of these,
   // including those added to the window for the length of a drag.
-  const latest = useRef({ project, clip, editor, snap });
+  const latest = useRef({ project, clip, editor: editing, snap });
   // Which notes are selected, and what was copied, are the piano roll's own:
   // neither is part of the project.
   const selected = useRef<ReadonlySet<string>>(new Set());
@@ -134,8 +158,8 @@ export function PianoRoll({
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, clip, editor, snap };
-  }, [project, clip, editor, snap]);
+    latest.current = { project, clip, editor: editing, snap };
+  });
 
   useEffect(() => scene.setProject(project, clip), [scene, project, clip]);
 
@@ -175,12 +199,16 @@ export function PianoRoll({
     const top = topRef.current;
     if (!grid || !notes || !top) return;
     scene.setRenderer(createRenderer({ grid, notes, top }));
-    const stop = frames.add((now) => scene.draw(clock.at(now)));
+    const stop = frames.add((now) => {
+      const playhead = clock.at(now);
+      if (follow.following()) scene.follow(playhead);
+      scene.draw(playhead);
+    });
     return () => {
       stop();
       scene.setRenderer(null);
     };
-  }, [scene, clock, frames, createRenderer, scheme]);
+  }, [scene, clock, follow, frames, createRenderer, scheme]);
 
   // Scroll with the wheel or trackpad; zoom time with ⌘ or a pinch, and
   // pitch with ⌥. Not a React handler: it has to be able to preventDefault.
@@ -189,6 +217,7 @@ export function PianoRoll({
     if (!container) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      follow.pause();
       const box = container.getBoundingClientRect();
       const x = event.clientX - box.left;
       const y = event.clientY - box.top;
@@ -209,7 +238,7 @@ export function PianoRoll({
     };
     container.addEventListener("wheel", onWheel, { passive: false });
     return () => container.removeEventListener("wheel", onWheel);
-  }, [scene]);
+  }, [scene, follow]);
 
   const select = (ids: Iterable<string>) => {
     selected.current = new Set(ids);
@@ -558,11 +587,13 @@ export function PianoRoll({
     },
   }));
 
-  const zoomTimeBy = (factor: number) =>
+  const zoomTimeBy = (factor: number) => {
+    follow.pause();
     scene.changeView((view) => {
       const area = noteArea(view);
       return zoomTime(view, factor, area.x + area.width / 2);
     });
+  };
   const zoomPitchBy = (factor: number) =>
     scene.changeView((view) => {
       const area = noteArea(view);

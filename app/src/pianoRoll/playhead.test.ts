@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { MAX_GUESS_MS, PlayheadClock } from "./playhead";
+import { MAX_GUESS_MS, PlayheadClock, type Timing } from "./playhead";
 
 // 120 BPM at 960 ticks a quarter: 1920 ticks a second, 1.92 a millisecond.
 const TICKS_PER_MS = 1.92;
 const LOOP = 4 * 3840;
 
+const TIMING: Timing = {
+  bpm: 120,
+  ticksPerQuarter: 960,
+  loopStart: 0,
+  loopLength: LOOP,
+  loopEnabled: true,
+};
+
 function clock(): PlayheadClock {
   const c = new PlayheadClock();
-  c.setTiming({ bpm: 120, ticksPerQuarter: 960, loopStart: 0, loopLength: LOOP });
+  c.setTiming(TIMING);
   return c;
 }
 
@@ -37,6 +45,38 @@ describe("PlayheadClock", () => {
     const c = clock();
     c.report(LOOP - 10, true, 0);
     expect(c.at(10)).toBeCloseTo(10 * TICKS_PER_MS - 10, 9);
+  });
+
+  it("plays on past the loop's end while the loop is off", () => {
+    const c = clock();
+    c.setTiming({ ...TIMING, loopEnabled: false });
+    c.report(LOOP - 10, true, 0);
+    expect(c.at(10)).toBeCloseTo(LOOP - 10 + 10 * TICKS_PER_MS, 9);
+  });
+
+  it("plays into the loop from before it, and on past it from after it", () => {
+    const c = clock();
+    c.setTiming({ ...TIMING, loopStart: 3840, loopLength: 3840 });
+    c.report(100, true, 0);
+    expect(c.at(10)).toBeCloseTo(100 + 10 * TICKS_PER_MS, 9);
+    c.report(2 * 3840 - 10, true, 1000);
+    expect(c.at(1010)).toBeCloseTo(3840 + 10 * TICKS_PER_MS - 10, 9);
+    // Started after the loop, as the engine does, it doesn't go round.
+    c.report(3 * 3840, false, 2000);
+    c.report(3 * 3840, true, 2010);
+    expect(c.at(2020)).toBeCloseTo(3 * 3840 + 10 * TICKS_PER_MS, 9);
+  });
+
+  it("counts each start, but not reports while playing", () => {
+    const c = clock();
+    expect(c.starts()).toBe(0);
+    c.report(0, true, 0);
+    c.report(10, true, 16);
+    expect([c.starts(), c.isPlaying()]).toEqual([1, true]);
+    c.report(10, false, 32);
+    expect([c.starts(), c.isPlaying()]).toEqual([1, false]);
+    c.report(10, true, 48);
+    expect(c.starts()).toBe(2);
   });
 
   it("eases towards reports close to its guess, rather than jumping", () => {
@@ -70,7 +110,7 @@ describe("PlayheadClock", () => {
 
   it("follows a tempo change", () => {
     const c = clock();
-    c.setTiming({ bpm: 60, ticksPerQuarter: 960, loopStart: 0, loopLength: LOOP });
+    c.setTiming({ ...TIMING, bpm: 60 });
     c.report(0, true, 0);
     expect(c.at(50)).toBeCloseTo(50 * 0.96, 9);
   });

@@ -62,6 +62,13 @@ pub enum Command {
     Play,
     /// Stop, release every note, and go back to the play start.
     Stop,
+    /// Stop and release every note, but leave the playhead where it is, for
+    /// [`Command::Continue`] to carry on from. The play start stays where it
+    /// was. Does nothing if stopped.
+    Pause,
+    /// Play from where [`Command::Pause`] left the playhead, or from the play
+    /// start if it wasn't paused there. Does nothing if already playing.
+    Continue,
     /// While stopped, move the play start here. While playing, jump here
     /// instead, and leave the play start where it was. In ticks from the
     /// start of the song. See RFC-003, "Playing a song".
@@ -88,8 +95,11 @@ pub struct Status {
     /// Frames played so far (it doesn't advance while stopped).
     pub position: u64,
     /// The playhead's musical position, in ticks from the start of the song.
-    /// While stopped, it's the play start.
+    /// While stopped, it's the play start, or where it was paused.
     pub playhead: uta_core::time::Ticks,
+    /// Where Play starts and Stop goes back to, in ticks from the start of
+    /// the song.
+    pub play_start: uta_core::time::Ticks,
     /// The master's loudest sample since the last status message, as a
     /// linear level.
     pub peak: f32,

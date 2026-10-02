@@ -4,6 +4,7 @@
 // the playhead never re-render anything.
 
 import type { ClipView, ProjectView } from "../backend";
+import { followPage } from "../follow";
 import { type Hit, VELOCITY_HIT_PIXELS, hitTest, hitVelocity } from "./editing";
 import { NoteIndex, type PlacedNote } from "./notes";
 import type { PianoRollRenderer } from "./renderer";
@@ -48,6 +49,7 @@ export class PianoRollScene {
     const gridChanged =
       this.project?.loopStart !== project.loopStart ||
       this.project.loopLength !== project.loopLength ||
+      this.project.loopEnabled !== project.loopEnabled ||
       this.clip?.start !== clip.start ||
       this.clip.length !== clip.length;
     const opened = this.clip !== null && this.clip.id !== clip.id;
@@ -88,10 +90,23 @@ export class PianoRollScene {
 
   /** Scrolls or zooms. The result is kept inside the piano roll. */
   changeView(change: (view: Viewport) => Viewport): void {
-    if (!this.view) return;
-    this.view = change(this.view);
+    const before = this.view;
+    if (!before) return;
+    this.view = change(before);
     this.clampView();
-    this.markAllDirty();
+    if (!sameView(before, this.view)) this.markAllDirty();
+  }
+
+  /**
+   * Turns a page if `playhead` has run off the view, so it's at the left
+   * edge. Nothing is redrawn while it stays in view, or the view can't
+   * scroll further.
+   */
+  follow(playhead: number): void {
+    if (!this.view) return;
+    const { start, end } = visibleTicks(this.view);
+    const to = followPage(start, end, playhead);
+    if (to !== null) this.changeView((view) => ({ ...view, scrollTicks: to }));
   }
 
   getView(): Viewport | null {
@@ -176,6 +191,7 @@ export class PianoRollScene {
         beatsPerBar: project.beatsPerBar,
         loopStart: project.loopStart,
         loopEnd: project.loopStart + project.loopLength,
+        loopEnabled: project.loopEnabled,
         clipStart: this.clip?.start ?? 0,
         clipEnd: (this.clip?.start ?? 0) + (this.clip?.length ?? 0),
       });

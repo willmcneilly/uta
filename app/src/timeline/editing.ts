@@ -119,3 +119,31 @@ export function sameSpan(a: Span, b: Span): boolean {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/** A loop region in whole bars: the bar it starts at, counting from 0, and how many long. */
+export interface LoopBars {
+  startBar: number;
+  bars: number;
+}
+
+/**
+ * The loop region a drag on the ruler sets, from the tick it was pressed at
+ * to the tick it's at now, either way round. Both ends snap to the nearest
+ * bar line, and it's always at least a bar long, never before the song's
+ * start.
+ */
+export function rulerLoop(pressTick: number, nowTick: number, bar: number): LoopBars {
+  const from = Math.max(0, Math.round(pressTick / bar));
+  const to = Math.max(0, Math.round(nowTick / bar));
+  if (to === from) {
+    // Less than half a bar either way: a bar in the direction of the drag.
+    const back = nowTick < pressTick && from > 0;
+    return { startBar: back ? from - 1 : from, bars: 1 };
+  }
+  return { startBar: Math.min(from, to), bars: Math.abs(to - from) };
+}
+
+/** Where a click on the ruler puts the play start: the nearest step of the grid, never before 0. */
+export function rulerClick(tick: number, step: number): number {
+  return Math.max(0, snapNearest(tick, step));
+}

@@ -16,9 +16,6 @@ export interface ProjectView {
   bpm: number;
   minBpm: number;
   maxBpm: number;
-  loopBars: number;
-  minLoopBars: number;
-  maxLoopBars: number;
   /** Where the loop starts, in ticks. */
   loopStart: number;
   /** How long the loop is, in ticks. */
@@ -145,7 +142,10 @@ export interface OutputView {
 /** Everything fast-changing, sent once per screen frame. */
 export interface Frame {
   playing: boolean;
-  /** The playhead, in ticks from the start of the song. */
+  /**
+   * The playhead, in ticks from the start of the song. While stopped, the
+   * play start, or where it paused.
+   */
   playhead: number;
   /** The master's loudest sample since the last frame, as a linear level. */
   peak: number;
@@ -189,9 +189,18 @@ export function setTempo(bpm: number, gesture?: number): Promise<ProjectView> {
   return invoke<ProjectView>("set_tempo", { bpm, gesture: gesture ?? null });
 }
 
-/** Changes with the same `gesture` (one drag) undo as one step. */
-export function setLoopLength(bars: number, gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_loop_length", { bars, gesture: gesture ?? null });
+/**
+ * Sets the loop region in whole bars: the bar it starts at, counting from 0,
+ * and how many bars long it is. Changes with the same `gesture` (one drag)
+ * undo as one step.
+ */
+export function setLoop(startBar: number, bars: number, gesture?: number): Promise<ProjectView> {
+  return invoke<ProjectView>("set_loop", { startBar, bars, gesture: gesture ?? null });
+}
+
+/** Switches the loop on or off. One undo step. */
+export function setLoopEnabled(enabled: boolean): Promise<ProjectView> {
+  return invoke<ProjectView>("set_loop_enabled", { enabled });
 }
 
 /**
@@ -315,12 +324,32 @@ export function auditionNote(track: string, pitch: number, velocity: number): Pr
   return invoke<void>("audition_note", { track, pitch, velocity });
 }
 
+/** Plays from the play start. */
 export function play(): Promise<void> {
   return invoke<void>("play");
 }
 
+/** Stops, and goes back to the play start. */
 export function stop(): Promise<void> {
   return invoke<void>("stop");
+}
+
+/** Stops where the playhead is, for `resume` to carry on from. */
+export function pause(): Promise<void> {
+  return invoke<void>("pause");
+}
+
+/** Plays from where it paused, or from the play start if it didn't. */
+export function resume(): Promise<void> {
+  return invoke<void>("resume");
+}
+
+/**
+ * While stopped, moves the play start to `ticks` from the start of the song.
+ * While playing, jumps there, and the play start stays where it was.
+ */
+export function locate(ticks: number): Promise<void> {
+  return invoke<void>("locate", { ticks });
 }
 
 export function setBufferSize(size: number): Promise<void> {

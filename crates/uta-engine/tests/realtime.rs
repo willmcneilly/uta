@@ -468,12 +468,13 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
 
 /// A song playing: the demo song with a long pad under it, with the loop
 /// switched on and off and its region moved, so playback goes round it and
-/// on to the song's end, and jumps while playing, so notes are chased on
-/// Play, on every jump and on every wrap. Meanwhile tracks are added,
-/// removed and reordered, and clips added, moved and removed, each sent the
-/// way the app sends it. More notes are under way at one jump than a block
-/// may start, so some are skipped. None of it allocates or frees on the
-/// audio thread. See RFC-003, "Playing a song".
+/// on to the song's end, jumps while playing, and pauses and carries on, so
+/// notes are chased on Play, on every jump, on every wrap and on every
+/// Continue. Meanwhile tracks are added, removed and reordered, and clips
+/// added, moved and removed, each sent the way the app sends it. More notes
+/// are under way at one jump than a block may start, so some are skipped.
+/// None of it allocates or frees on the audio thread. See RFC-003, "Playing
+/// a song".
 #[test]
 fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     rtsan_standalone::ensure_initialized();
@@ -607,6 +608,12 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                     .locate((step as u64 * 311) % (8 * 3840))
                     .unwrap();
                 renderer.controller.play().unwrap();
+            }
+            // Pause now and then, mid-pad, and carry on from there a step
+            // later, chasing what's under way.
+            3 if step % 10 == 3 => renderer.controller.pause().unwrap(),
+            4 if !renderer.controller.poll().playing => {
+                renderer.controller.resume().unwrap();
             }
             _ => {}
         }
