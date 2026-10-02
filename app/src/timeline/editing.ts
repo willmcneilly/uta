@@ -53,12 +53,15 @@ export interface Span {
 }
 
 /**
- * Where a move puts a clip that was at `from` when the pointer went down at
- * `pressTick` on track `pressTrack`, with the pointer now at `tick` on
- * `track`. Its start snaps to multiples of `step` (1 with snapping off), and
- * it stays on one of the `trackCount` tracks, at or after the song's start.
+ * Where a move puts a group of clips: those selected, as they were when the
+ * pointer went down at `pressTick` on track `pressTrack` on the one at
+ * `from`, with the pointer now at `tick` on `track`. That clip's start snaps
+ * to multiples of `step` (1 with snapping off), and the rest keep their
+ * places relative to it. They all stay on one of the `trackCount` tracks, at
+ * or after the song's start.
  */
-export function moveClip(
+export function moveClips<T extends Span>(
+  group: readonly T[],
   from: Span,
   pressTick: number,
   pressTrack: number,
@@ -66,12 +69,14 @@ export function moveClip(
   track: number,
   step: number,
   trackCount: number,
-): Span {
-  return {
-    track: clamp(from.track + track - pressTrack, 0, trackCount - 1),
-    start: Math.max(0, snapNearest(from.start + tick - pressTick, step)),
-    length: from.length,
-  };
+): T[] {
+  if (group.length === 0) return [];
+  const earliest = Math.min(...group.map((clip) => clip.start));
+  const top = Math.min(...group.map((clip) => clip.track));
+  const bottom = Math.max(...group.map((clip) => clip.track));
+  const ticks = Math.max(-earliest, snapNearest(from.start + tick - pressTick, step) - from.start);
+  const tracks = clamp(track - pressTrack, -top, trackCount - 1 - bottom);
+  return group.map((clip) => ({ ...clip, track: clip.track + tracks, start: clip.start + ticks }));
 }
 
 /**

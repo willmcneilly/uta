@@ -3,6 +3,7 @@
 // song.
 
 import { type Theme, readTheme } from "../pianoRoll/colours";
+import type { Rect } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
 import { timelineGridStep } from "./snap";
 import type {
@@ -251,14 +252,12 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     context.strokeRect(x + inset, y + inset, Math.max(0, width - 2 * inset), height - 2 * inset);
   }
 
-  drawTop(view: TimelineViewport, playhead: number, drawing: Span | null): void {
+  drawTop(view: TimelineViewport, playhead: number, drawing: Span | null, box: Rect | null): void {
     const context = this.contexts.top;
     context.clearRect(0, 0, this.width, this.height);
-    if (drawing) {
-      const x = tickToX(view, drawing.start);
-      const y = trackToY(view, drawing.track) + CLIP_INSET;
-      const width = Math.max(1, drawing.length * view.pixelsPerTick);
-      const height = TRACK_HEIGHT - 2 * CLIP_INSET - 1;
+    // The clip being drawn and the selection box look alike, and stay below
+    // the ruler.
+    const shade = (x: number, y: number, width: number, height: number) => {
       context.save();
       context.beginPath();
       context.rect(0, RULER_HEIGHT, this.width, this.height - RULER_HEIGHT);
@@ -269,7 +268,14 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       context.lineWidth = 1;
       context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
       context.restore();
+    };
+    if (drawing) {
+      const x = tickToX(view, drawing.start);
+      const y = trackToY(view, drawing.track) + CLIP_INSET;
+      const width = Math.max(1, drawing.length * view.pixelsPerTick);
+      shade(x, y, width, TRACK_HEIGHT - 2 * CLIP_INSET - 1);
     }
+    if (box) shade(box.x, box.y, box.width, box.height);
     const x = Math.round(tickToX(view, playhead));
     if (x < 0 || x > this.width) return;
     context.fillStyle = this.theme.playhead;

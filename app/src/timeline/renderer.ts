@@ -3,6 +3,7 @@
 // on the timeline").
 
 import type { PlacedNote } from "../pianoRoll/notes";
+import type { Rect } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
 import type { TimelineViewport } from "./viewport";
 
@@ -15,7 +16,10 @@ export interface TimelineLayers {
   grid: HTMLCanvasElement;
   /** The clips and their notes. Redrawn when the clips, the selection or the view change. */
   clips: HTMLCanvasElement;
-  /** The playhead and the clip being drawn. Redrawn when either moves. */
+  /**
+   * The playhead, the clip being drawn and the selection box. Redrawn when
+   * any of them moves.
+   */
   top: HTMLCanvasElement;
 }
 
@@ -68,9 +72,10 @@ export interface TimelineRenderer {
   /**
    * `playhead` is in ticks from the start of the song. `drawing` is the clip
    * being dragged out on empty space, if any: it's only added once the drag
-   * ends.
+   * ends. `box` is the selection box being dragged out, in CSS pixels, if
+   * any.
    */
-  drawTop(view: TimelineViewport, playhead: number, drawing: Span | null): void;
+  drawTop(view: TimelineViewport, playhead: number, drawing: Span | null, box: Rect | null): void;
 }
 
 /** Makes a renderer for `layers`, or `null` if this one can't draw here. */

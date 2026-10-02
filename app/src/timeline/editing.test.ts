@@ -3,9 +3,10 @@ import type { ClipView } from "../backend";
 import { trackView } from "../pianoRoll/testing";
 import {
   EDGE_PIXELS,
+  type Span,
   drawnClip,
   hitClip,
-  moveClip,
+  moveClips,
   oneBarClip,
   resizeClip,
   rulerClick,
@@ -88,29 +89,57 @@ describe("hitting clips", () => {
   });
 });
 
-describe("moving a clip", () => {
+describe("moving clips", () => {
   const from = { track: 0, start: BAR, length: 2 * BAR };
+  const moveOne = (clip: Span, ...rest: [number, number, number, number, number, number]) =>
+    moveClips([clip], clip, ...rest)[0];
 
   it("moves its start by as far as the pointer moves, snapped to the grid", () => {
     // Pressed half a bar in; moved 1.4 bars right snaps to a bar later.
-    expect(moveClip(from, 1.5 * BAR, 0, 2.9 * BAR, 0, BAR, 3)).toEqual({
+    expect(moveOne(from, 1.5 * BAR, 0, 2.9 * BAR, 0, BAR, 3)).toEqual({
       track: 0,
       start: 2 * BAR,
       length: 2 * BAR,
     });
-    expect(moveClip(from, 1.5 * BAR, 0, 2.2 * BAR, 0, BEAT, 3).start).toBe(BAR + 3 * BEAT);
+    expect(moveOne(from, 1.5 * BAR, 0, 2.2 * BAR, 0, BEAT, 3).start).toBe(BAR + 3 * BEAT);
     // Unsnapped: to the tick.
-    expect(moveClip(from, 1.5 * BAR, 0, 1.5 * BAR + 123, 0, 1, 3).start).toBe(BAR + 123);
+    expect(moveOne(from, 1.5 * BAR, 0, 1.5 * BAR + 123, 0, 1, 3).start).toBe(BAR + 123);
   });
 
   it("moves onto another track, keeping to the tracks there are", () => {
-    expect(moveClip(from, BAR, 0, BAR, 2, BAR, 3).track).toBe(2);
-    expect(moveClip(from, BAR, 0, BAR, 7, BAR, 3).track).toBe(2);
-    expect(moveClip({ ...from, track: 1 }, BAR, 1, BAR, -3, BAR, 3).track).toBe(0);
+    expect(moveOne(from, BAR, 0, BAR, 2, BAR, 3).track).toBe(2);
+    expect(moveOne(from, BAR, 0, BAR, 7, BAR, 3).track).toBe(2);
+    expect(moveOne({ ...from, track: 1 }, BAR, 1, BAR, -3, BAR, 3).track).toBe(0);
   });
 
   it("never starts before the song", () => {
-    expect(moveClip(from, BAR, 0, -5 * BAR, 0, BAR, 1).start).toBe(0);
+    expect(moveOne(from, BAR, 0, -5 * BAR, 0, BAR, 1).start).toBe(0);
+  });
+
+  describe("a group", () => {
+    const group = [
+      { id: "a", track: 1, start: 2 * BAR, length: BAR },
+      { id: "b", track: 2, start: 3 * BAR + BEAT, length: BAR },
+    ];
+    const [a] = group;
+
+    it("moves together, the pressed clip snapped and the rest kept where they are from it", () => {
+      expect(moveClips(group, a, 2.5 * BAR, 1, 4.6 * BAR, 0, BAR, 4)).toEqual([
+        { id: "a", track: 0, start: 4 * BAR, length: BAR },
+        { id: "b", track: 1, start: 5 * BAR + BEAT, length: BAR },
+      ]);
+    });
+
+    it("stops where its first clip reaches the song's start, or its clips the first or last track", () => {
+      const left = moveClips(group, a, 2.5 * BAR, 1, -3 * BAR, 1, BAR, 4);
+      expect(left.map((clip) => clip.start)).toEqual([0, BAR + BEAT]);
+      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, 9, BAR, 4).map((c) => c.track)).toEqual([
+        2, 3,
+      ]);
+      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, -4, BAR, 4).map((c) => c.track)).toEqual([
+        0, 1,
+      ]);
+    });
   });
 });
 
