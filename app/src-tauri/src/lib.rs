@@ -70,6 +70,7 @@ pub fn run() {
             commands::move_track,
             commands::add_clip,
             commands::set_clips,
+            commands::paste_clips,
             commands::remove_clips,
             commands::add_stress_notes,
             commands::add_notes,

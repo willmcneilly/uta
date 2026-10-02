@@ -176,6 +176,20 @@ pub struct ClipView {
     pub notes: Vec<Note>,
 }
 
+/// A copy of a clip to add, as the UI sends it for a paste or a duplicate:
+/// the clip as it was copied, with where it goes and the ID picked for it.
+/// Its notes keep the IDs they were copied with until Rust gives them new
+/// ones.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PastedClip {
+    pub id: ClipId,
+    pub track: TrackId,
+    pub start: Ticks,
+    pub length: Ticks,
+    pub notes: Vec<Note>,
+}
+
 /// Everything fast-changing, sent to the UI once per screen frame.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -517,6 +531,23 @@ impl Uta {
         gesture: Option<u32>,
     ) -> Result<(), String> {
         self.change(Command::SetClips { clips }, gesture)
+    }
+
+    /// Adds copies of clips, as one undo step: a paste or a duplicate. Each
+    /// gets the ID the caller picked, so it can select them, and every note
+    /// gets a new one, so the copies are independent of what they were
+    /// copied from.
+    pub fn paste_clips(&mut self, clips: Vec<PastedClip>) -> Result<(), String> {
+        let clips = clips
+            .into_iter()
+            .map(|pasted| PlacedClip {
+                track: pasted.track,
+                clip: Clip::new(pasted.id, pasted.start, pasted.length)
+                    .with_notes(pasted.notes)
+                    .copy(pasted.id, NoteId::random),
+            })
+            .collect();
+        self.change(Command::AddClips { clips }, None)
     }
 
     /// Deletes clips, with their notes, as one undo step.
@@ -2102,6 +2133,96 @@ mod tests {
         assert!(uta.remove_clips(vec![clip]).is_err());
         uta.undo();
         assert_eq!(uta.project().tracks, before.tracks);
+    }
+
+    /// `clip` as the UI copies it: what the project view shows of it.
+    fn copied(uta: &Uta, clip: ClipId) -> ClipView {
+        uta.project()
+            .tracks
+            .into_iter()
+            .flat_map(|track| track.clips)
+            .find(|c| c.id == clip)
+            .expect("the clip is in the project")
+    }
+
+    fn pasted(clip: &ClipView, id: ClipId, track: TrackId, start: Ticks) -> PastedClip {
+        PastedClip {
+            id,
+            track,
+            start,
+            length: clip.length,
+            notes: clip.notes.clone(),
+        }
+    }
+
+    #[test]
+    fn pasted_clips_get_new_note_ids_and_undo_as_one_step() {
+        let mut uta = with_tracks(2);
+        let [first, second] = [0, 1].map(|i| uta.project().tracks[i].id);
+        let clip = clip_id(&uta);
+        uta.add_notes(clip, vec![note(1, 60, 0, 480), note(2, 64, 960, 480)], None)
+            .unwrap();
+        let original = copied(&uta, clip);
+        let before = uta.project();
+        let [a, b] = [ClipId::random(), ClipId::random()];
+        uta.paste_clips(vec![
+            pasted(&original, a, first, 3_840),
+            pasted(&original, b, second, 7_680),
+        ])
+        .unwrap();
+
+        assert_eq!(position(&uta, a), (first, 3_840, original.length));
+        assert_eq!(position(&uta, b), (second, 7_680, original.length));
+        let original_ids: Vec<_> = original.notes.iter().map(|n| n.id).collect();
+        let mut seen = original_ids.clone();
+        for copy in [a, b] {
+            let copy = copied(&uta, copy);
+            let shape = |notes: &[Note]| {
+                let mut shape: Vec<_> = notes
+                    .iter()
+                    .map(|n| (n.pitch, n.velocity, n.start, n.length))
+                    .collect();
+                shape.sort_unstable();
+                shape
+            };
+            assert_eq!(shape(&copy.notes), shape(&original.notes));
+            for note in &copy.notes {
+                assert!(!seen.contains(&note.id), "every note has a new ID");
+                seen.push(note.id);
+            }
+        }
+        // The copies are independent: deleting the original leaves them.
+        assert_eq!(copied(&uta, clip), original);
+        uta.remove_clips(vec![clip]).unwrap();
+        assert_eq!(copied(&uta, a).notes.len(), 2);
+        uta.undo();
+        uta.undo();
+        assert_eq!(uta.project().tracks, before.tracks, "one undo step");
+    }
+
+    #[test]
+    fn pasting_onto_a_missing_track_or_over_an_id_changes_nothing() {
+        let mut uta = offline();
+        let track = first_track(&uta);
+        let clip = clip_id(&uta);
+        let original = copied(&uta, clip);
+        let before = uta.project();
+        let missing = pasted(&original, ClipId::random(), TrackId::random(), 0);
+        assert!(uta.paste_clips(vec![missing]).is_err());
+        let taken = pasted(&original, clip, track, 0);
+        assert!(uta.paste_clips(vec![taken]).is_err());
+        assert!(uta.paste_clips(vec![]).is_err());
+        assert_eq!(uta.project(), before);
+    }
+
+    #[test]
+    fn pasted_clips_arrive_from_the_ui_as_json() {
+        let json = r#"{"id":"6f1c1b4e-0b1a-4e0a-9d7e-2f0b8c1a9e11","track":"0c9e7a52-5d0f-4b5e-8d53-1f2c3b4a5d6e","start":3840,"length":1920,"notes":[{"id":"1d4c8a1e-3b2f-4c5d-9e8f-7a6b5c4d3e2f","pitch":60,"velocity":100,"start":0,"length":480}]}"#;
+        let clip: PastedClip = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            (clip.start, clip.length, clip.notes.len()),
+            (3_840, 1_920, 1)
+        );
     }
 
     #[test]
