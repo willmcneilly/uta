@@ -61,6 +61,7 @@ Write `docs/rfcs/rfc-NNN-short-name.md`. For `NNN`, take the highest RFC number 
 - **Risks & unknowns.** What could go wrong or turn out harder than expected, and what we'd do about it. Mark anything that is a guess as a guess.
 - **How we'll verify it.** Concrete checks, both automated (what is tested, how) and manual (what Will should try). "Add tests" isn't enough.
 - **Open questions.** Only real decisions for Will, each with your recommendation. Once one is settled, mark it `**Resolved: ...**` with the answer. Don't delete it, so the record stays.
+- **New terms.** The concepts this RFC brings into Uta that aren't in the Glossary yet (query it first; see the `notion` skill). One line each: the term and a plain one-sentence definition. Will reads these alongside the proposal, so they're part of the review. Leave the section out if there are none.
 
 Quality bar before sharing:
 - The scope fits one project. If it doesn't, propose splitting it into several RFCs.
@@ -87,6 +88,7 @@ Also:
 
 When the open questions are resolved, ask Will whether they want to accept it. Only Will accepts an RFC.
 - **Accepted:** set `**Status:** Accepted (YYYY-MM-DD)` in the file, then push to Notion with `Status: Accepted` and `Date accepted` set to today.
+  Then add a Glossary entry for each item under **New terms**, with `Introduced in` set to this RFC and the full body the `notion` skill describes, and link it to related terms already in the Glossary.
 - **Rejected:** set it to `Rejected`, add a line at the top saying why, and push.
 
 **Don't** break an accepted RFC into projects or tickets as part of this skill. That's a separate step, and Will starts it.

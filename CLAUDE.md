@@ -101,6 +101,7 @@ Work is planned in Notion (Will's personal workspace, never Stora): RFCs → Pro
 - PR title: `UTA-<n>: <ticket name>`. The body has what changed and why, the acceptance criteria with evidence, "For Will to try" steps, and follow-ups.
 - Stay in scope. Anything else worth doing goes under follow-ups in the PR, not in the diff.
 - Ideas Will has along the way that aren't about the current PR go in the scratchpad (`/note`, the `scratchpad` skill), and they're reviewed between projects.
+- New concepts go in the Notion **Glossary** so Will can follow how Uta is built: an RFC lists its new terms for review, and a ticket adds any that came up during the work (see the `rfc`, `work-ticket` and `notion` skills).
 - Before In Review: tick the met criteria on the ticket and fill in its Verification notes.
 - Comments you post to Notion start with `🤖 Claude:`, because the CLI posts as Will.
 - Never merge your own PR. Merging happens after review and Will's go-ahead.

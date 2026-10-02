@@ -57,6 +57,8 @@ Before opening the PR:
    - check nothing out of scope slipped in;
    - check that names and comments match the surrounding code.
 
+5. **New concepts.** Did this work bring in a concept that isn't in the Glossary, something you had to reach for that the RFC didn't name? Usually the answer is no. If yes, add an entry (see the `notion` skill), with `Introduced in` set to the ticket's RFC, and list the new terms in the PR.
+
 ## 6. Record it on the ticket
 
 - **Tick the checkboxes** of the criteria you met. PATCH each `to_do` block with `{"to_do":{"checked":true}}`, which doesn't touch the text or its comments. Leave unmet ones unticked, and explain why in the notes.
@@ -74,6 +76,7 @@ Before opening the PR:
   - the acceptance criteria as a checklist with evidence;
   - **For Will to try:** the manual checks, as steps with expected results;
   - follow-ups;
+  - new Glossary terms, if any;
   - the PR attribution line.
 - **After opening:** use the `ccd_pr` tools. Call `get_status`, bind the PR if it isn't bound, and read its CI. Don't poll CI yourself. If CI fails, fix it on the branch.
 - **Update the ticket:** set the `PR` URL, and set Status to `In Review`.
