@@ -150,14 +150,30 @@ export function Timeline({
   const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<ClipSnap>(DEFAULT_CLIP_SNAP);
   const scheme = useColourScheme();
+  // Every edit stops it following the playhead until the next Play.
+  const editing: ClipEditor = {
+    add: (...args) => {
+      follow.pause();
+      editor.add(...args);
+    },
+    set: (...args) => {
+      follow.pause();
+      editor.set(...args);
+    },
+    remove: (...args) => {
+      follow.pause();
+      editor.remove(...args);
+    },
+    cancel: (gesture) => editor.cancel(gesture),
+  };
   // The pointer and keyboard handlers read the latest of these, including
   // those added to the window for the length of a drag.
-  const latest = useRef({ project, selectedClip, editor, ruler, snap });
+  const latest = useRef({ project, selectedClip, editor: editing, ruler, snap });
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, selectedClip, editor, ruler, snap };
-  }, [project, selectedClip, editor, ruler, snap]);
+    latest.current = { project, selectedClip, editor: editing, ruler, snap };
+  });
 
   useEffect(() => scene.setProject(project), [scene, project]);
   useEffect(
@@ -345,7 +361,6 @@ export function Timeline({
       pressRuler(press.tick, x, y, event);
       return;
     }
-    follow.pause();
     if (hit) {
       const from = { track: hit.track, start: hit.clip.start, length: hit.clip.length };
       pressClip(hit.clip.id, hit.part, from, press, x, y);
@@ -478,7 +493,6 @@ export function Timeline({
     if (!inTracks(view, y)) return;
     const { project, editor } = latest.current;
     const hit = scene.hitTest(x, y);
-    follow.pause();
     if (hit) {
       onOpenClip(project.tracks[hit.track].id, hit.clip.id);
       return;
@@ -498,7 +512,6 @@ export function Timeline({
     const exists = project.tracks.some((track) => track.clips.some((c) => c.id === selectedClip));
     if (!selectedClip || !exists) return;
     event.preventDefault();
-    follow.pause();
     editor.remove([selectedClip]);
   };
 

@@ -255,9 +255,6 @@ pub struct Uta {
     wants_playing: bool,
     /// Whether the engine said it was playing, as of the last frame.
     playing: bool,
-    /// Where Play starts and Stop goes back to, as last set while stopped, so
-    /// a restarted output starts from there too.
-    play_start: Ticks,
     /// Set when the engine's command queue was full, so its snapshot is older
     /// than the project. The next frame tries again.
     engine_behind: bool,
@@ -298,7 +295,6 @@ impl Uta {
             requested_buffer: buffer,
             wants_playing: false,
             playing: false,
-            play_start: 0,
             engine_behind: false,
             earlier_dropouts: 0,
             earlier_clips: 0,
@@ -728,16 +724,12 @@ impl Uta {
     pub fn locate(&mut self, ticks: Ticks) -> Result<(), String> {
         self.controller
             .locate(ticks)
-            .map_err(|error| error.to_string())?;
-        if !self.playing {
-            self.play_start = ticks;
-        }
-        Ok(())
+            .map_err(|error| error.to_string())
     }
 
     /// Reopens the output at a new buffer size, carrying on playing if it
     /// was. The sound fades out, and playback starts again from the play
-    /// start.
+    /// start. A pause is forgotten: it starts from the play start too.
     pub fn set_buffer_size(&mut self, size: u32) -> Result<(), String> {
         if !live::BUFFER_SIZES.contains(&size) {
             return Err(format!(
@@ -750,7 +742,8 @@ impl Uta {
         }
         let live = !matches!(self.playback, Some(Playback::Offline(_)));
         self.close_output();
-        self.earlier_clips += self.controller.poll().clips;
+        let last = self.controller.poll();
+        self.earlier_clips += last.clips;
 
         let (controller, processor) = new_engine(&self.session);
         self.controller = controller;
@@ -763,8 +756,9 @@ impl Uta {
         } else {
             Playback::Offline(processor)
         });
+        // A pause isn't kept: the new engine starts from the play start.
         self.controller
-            .locate(self.play_start)
+            .locate(last.play_start)
             .expect("fresh queue has room");
         if self.wants_playing {
             self.controller.play().expect("fresh queue has room");
@@ -1173,13 +1167,11 @@ mod tests {
     fn changing_the_buffer_keeps_the_play_start() {
         let mut uta = offline();
         uta.locate(3 * BAR).unwrap();
-        uta.render(128);
-        uta.frame();
-        // A jump while playing doesn't move it.
+        // A jump straight after Play, before any frame has said it's
+        // playing, doesn't move it.
         uta.play().unwrap();
-        uta.render(128);
-        uta.frame();
         uta.locate(BAR).unwrap();
+        uta.render(128);
         uta.stop().unwrap();
         uta.set_buffer_size(64).unwrap();
         uta.render(128);

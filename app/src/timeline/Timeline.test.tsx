@@ -153,6 +153,25 @@ beforeEach(() => {
         case "set_loop_enabled":
           project = { ...project, canUndo: true, loopEnabled: args.enabled as boolean };
           return project;
+        case "trim_notes":
+          // Nothing to trim in these tests.
+          return project;
+        case "add_notes":
+        case "remove_notes": {
+          const changeNotes = (notes: NoteView[]) =>
+            cmd === "add_notes"
+              ? [...notes, ...(args.notes as NoteView[])]
+              : notes.filter((n) => !(args.notes as string[]).includes(n.id));
+          project = withTracks(
+            project.tracks.map((t) => ({
+              ...t,
+              clips: t.clips.map((c) =>
+                c.id === args.clip ? { ...c, notes: changeNotes(c.notes) } : c,
+              ),
+            })),
+          );
+          return project;
+        }
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
           return project;
@@ -807,13 +826,57 @@ describe("the timeline", () => {
       await waitFor(() => expect(scrollTicks()).toBeGreaterThanOrEqual(9 * BAR));
     });
 
-    it("pauses when you edit", async () => {
+    /** Plays from bar 1, does `edit`, then plays on past the page: does it follow? */
+    async function followsAfter(edit: () => Promise<void>): Promise<boolean> {
       await zoomedIn();
       sendFrame(true, BAR);
-      await click(6 * BAR, 0);
+      await edit();
       sendFrame(true, 9 * BAR);
       await waitFor(() => expect(timeline.tops.at(-1)).toBeGreaterThanOrEqual(9 * BAR));
-      expect(scrollTicks()).toBe(0);
+      return scrollTicks() > 0;
+    }
+
+    it("pauses when you draw a clip", async () => {
+      const follows = await followsAfter(async () => {
+        await press(6 * BAR, 0);
+        await moveTo(7 * BAR, 0);
+        await release();
+      });
+      expect(sent("add_clip")).toHaveLength(1);
+      expect(follows).toBe(false);
+    });
+
+    it("pauses when you add a clip with a double-click", async () => {
+      expect(await followsAfter(() => doubleClick(6 * BAR, 0))).toBe(false);
+      expect(sent("add_clip")).toHaveLength(1);
+    });
+
+    it("pauses when you move a clip", async () => {
+      const follows = await followsAfter(async () => {
+        await press(BAR, 0);
+        await moveTo(2 * BAR, 0);
+        await release();
+      });
+      expect(sent("set_clips")).toHaveLength(1);
+      expect(follows).toBe(false);
+    });
+
+    it("pauses when you delete a clip", async () => {
+      const follows = await followsAfter(async () => {
+        await click(BAR, 0);
+        await key(clipsArea(), "Backspace");
+      });
+      expect(sent("remove_clips")).toHaveLength(1);
+      expect(follows).toBe(false);
+    });
+
+    it("keeps following after a click that only selects a track or a clip", async () => {
+      const follows = await followsAfter(async () => {
+        await click(6 * BAR, 0);
+        await click(BAR, 0);
+      });
+      expect(edits()).toEqual([]);
+      expect(follows).toBe(true);
     });
 
     it("keeps following after a click on the ruler", async () => {
@@ -847,6 +910,81 @@ describe("the timeline", () => {
       sendFrame(true, 8 * BAR);
       await waitFor(() => expect(rollView().scrollTicks).toBeGreaterThanOrEqual(8 * BAR));
       expect(before).toBeLessThan(5 * BAR);
+    });
+
+    describe("in the piano roll", () => {
+      const rollView = () => roll.notes.at(-1)!.view;
+      const notesArea = () => screen.getByRole("application", { name: "Notes" });
+
+      /**
+       * A 12-bar clip zoomed in to about 3 bars a page, playing at bar 1.
+       * Does `edit`, then plays on to bar 9: does the piano roll follow?
+       */
+      async function rollFollowsAfter(edit: () => Promise<void>): Promise<boolean> {
+        project = {
+          ...project,
+          tracks: [
+            { ...project.tracks[0], clips: [clip("clip-1", 0, 12 * BAR, [note("n1", 60, 0)])] },
+            project.tracks[1],
+          ],
+          songEnd: 13 * BAR,
+        };
+        await renderApp();
+        await waitFor(() => expect(roll.notes.length).toBeGreaterThan(0));
+        for (let i = 0; i < 6; i++) {
+          fireEvent.click(screen.getByRole("button", { name: "Zoom in time" }));
+        }
+        sendFrame(true, 0);
+        // Scroll to the start, then Play again, so it's following from there.
+        await act(async () => {
+          fireEvent.wheel(notesArea(), { deltaX: -100_000 });
+        });
+        await waitFor(() => expect(rollView().scrollTicks).toBe(0));
+        sendFrame(false, 0);
+        sendFrame(true, BAR / 2);
+        await edit();
+        sendFrame(true, 8 * BAR);
+        await waitFor(() => expect(roll.tops.at(-1)).toBeGreaterThanOrEqual(8 * BAR));
+        return rollView().scrollTicks > 0;
+      }
+
+      /** The pointer at `tick` and `pitch` in the piano roll. */
+      const atNote = (tick: number, pitch: number) => {
+        const view = rollView();
+        const keyHeight = view.keyHeight;
+        return {
+          clientX: 56 + (tick - view.scrollTicks) * view.pixelsPerTick + 2,
+          clientY: 24 + (127 - pitch) * keyHeight - view.scrollY + keyHeight / 2,
+          button: 0,
+        };
+      };
+
+      it("keeps following with no edits", async () => {
+        expect(await rollFollowsAfter(async () => {})).toBe(true);
+      });
+
+      it("pauses when you draw a note", async () => {
+        const follows = await rollFollowsAfter(async () => {
+          await act(async () => {
+            fireEvent.pointerDown(notesArea(), atNote(BAR, 64));
+            fireEvent.pointerUp(window);
+          });
+        });
+        expect(sent("add_notes")).toHaveLength(1);
+        expect(follows).toBe(false);
+      });
+
+      it("pauses when you delete a note", async () => {
+        const follows = await rollFollowsAfter(async () => {
+          await act(async () => {
+            fireEvent.pointerDown(notesArea(), atNote(0, 60));
+            fireEvent.pointerUp(window);
+          });
+          await key(notesArea(), "Backspace");
+        });
+        expect(sent("remove_notes")).toHaveLength(1);
+        expect(follows).toBe(false);
+      });
     });
 
     it("pauses the piano roll's following when you scroll it, until the next Play", async () => {

@@ -127,9 +127,30 @@ export function PianoRoll({
   const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<Snap>(DEFAULT_SNAP);
   const scheme = useColourScheme();
+  // Every edit stops it following the playhead until the next Play.
+  // Auditioning a note isn't an edit.
+  const editing: NoteEditor = {
+    ...editor,
+    add: (...args) => {
+      follow.pause();
+      editor.add(...args);
+    },
+    set: (...args) => {
+      follow.pause();
+      editor.set(...args);
+    },
+    remove: (...args) => {
+      follow.pause();
+      editor.remove(...args);
+    },
+    trim: (...args) => {
+      follow.pause();
+      editor.trim(...args);
+    },
+  };
   // The pointer, keyboard and menu handlers read the latest of these,
   // including those added to the window for the length of a drag.
-  const latest = useRef({ project, clip, editor, snap });
+  const latest = useRef({ project, clip, editor: editing, snap });
   // Which notes are selected, and what was copied, are the piano roll's own:
   // neither is part of the project.
   const selected = useRef<ReadonlySet<string>>(new Set());
@@ -137,8 +158,8 @@ export function PianoRoll({
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, clip, editor, snap };
-  }, [project, clip, editor, snap]);
+    latest.current = { project, clip, editor: editing, snap };
+  });
 
   useEffect(() => scene.setProject(project, clip), [scene, project, clip]);
 
@@ -334,7 +355,6 @@ export function PianoRoll({
     const bar = !inNotes && scene.inVelocityLane(x, y) ? scene.hitVelocity(x) : null;
     if (!inNotes && !bar) return;
     event.preventDefault();
-    follow.pause();
     containerRef.current?.focus({ preventScroll: true });
     // So the drag still ends if the pointer is released outside the window.
     try {
@@ -512,7 +532,6 @@ export function PianoRoll({
     const { x, y } = pointOf(event);
     const hit = scene.hitTest(x, y);
     if (!hit) return;
-    follow.pause();
     latest.current.editor.remove([hit.note.id]);
     select([...selected.current].filter((id) => id !== hit.note.id));
   };
@@ -527,7 +546,6 @@ export function PianoRoll({
     const notes = selectedNotes();
     if (notes.length === 0) return;
     event.preventDefault();
-    follow.pause();
     // One command, so one undo step.
     latest.current.editor.remove(notes.map((note) => note.id));
     select([]);
@@ -535,7 +553,6 @@ export function PianoRoll({
 
   /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
   const land = (notes: NoteView[]) => {
-    follow.pause();
     const { editor } = latest.current;
     const gesture = nextGesture();
     const ids = notes.map((note) => note.id);

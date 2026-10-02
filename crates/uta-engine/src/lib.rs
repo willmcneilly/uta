@@ -97,6 +97,9 @@ pub struct Status {
     /// The playhead's musical position, in ticks from the start of the song.
     /// While stopped, it's the play start, or where it was paused.
     pub playhead: uta_core::time::Ticks,
+    /// Where Play starts and Stop goes back to, in ticks from the start of
+    /// the song.
+    pub play_start: uta_core::time::Ticks,
     /// The master's loudest sample since the last status message, as a
     /// linear level.
     pub peak: f32,

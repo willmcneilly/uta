@@ -284,7 +284,8 @@ impl Processor {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
         let retimed = self.snapshot.at_sample_rate(sample_rate);
-        self.playhead = if self.playing {
+        // Paused, it stays where it paused, for Continue.
+        self.playhead = if self.playing || self.paused {
             retimed
                 .sequence
                 .playhead_from(&self.snapshot.sequence, self.playhead)
@@ -709,6 +710,7 @@ impl Processor {
         let status = Status {
             position: self.position,
             playhead: sequence.ticks_at(playhead),
+            play_start: self.play_start,
             peak: self.peak,
             track_peaks,
             clips: self.clips,
@@ -850,6 +852,69 @@ mod tests {
     /// the supervisor does it: fade out, move the processor to the new rate,
     /// carry on. The loop keeps its bar and beat, and every note after the
     /// switch lands on its exact sample at the new rate, for ten passes.
+    /// A device switch while paused keeps the playhead where it paused, on
+    /// the same tick at the new rate, so Continue carries on from there.
+    #[test]
+    fn a_new_sample_rate_keeps_the_playhead_where_it_paused() {
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&beats()), 128);
+        renderer.controller.play().unwrap();
+        // 512 ticks at 120 BPM and 48 kHz: 12,800 samples, 100 blocks.
+        renderer.render(12_800);
+        renderer.controller.pause().unwrap();
+        renderer.render(128);
+        assert_eq!(renderer.controller.poll().playhead, 512);
+
+        renderer.processor().prepare(44_100, 1);
+        renderer.render(1280);
+        let status = renderer.controller.poll();
+        assert!(!status.playing);
+        assert_eq!(status.playhead, 512, "still where it paused");
+
+        renderer.controller.resume().unwrap();
+        renderer.render(128);
+        let status = renderer.controller.poll();
+        assert!(status.playing);
+        assert!(
+            (512..520).contains(&status.playhead),
+            "carries on from there: {}",
+            status.playhead
+        );
+    }
+
+    /// Pausing exactly on the loop's end pauses at its start, where playback
+    /// was about to go, so Continue goes round the loop rather than on past
+    /// it to the song's end.
+    #[test]
+    fn pausing_on_the_loops_end_carries_on_round_the_loop() {
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&beats()), 128);
+        renderer.controller.play().unwrap();
+        // The 1-bar loop is 96,000 samples: 750 blocks, so the pause lands on
+        // its end exactly.
+        renderer.render(96_000);
+        renderer.controller.pause().unwrap();
+        renderer.render(128);
+        assert_eq!(
+            renderer.controller.poll().playhead,
+            0,
+            "paused at the loop's start"
+        );
+
+        renderer.controller.resume().unwrap();
+        // Half a bar on.
+        renderer.render(48_000);
+        let status = renderer.controller.poll();
+        assert!(status.playing);
+        assert_eq!(status.playhead, 2 * BEAT, "round the loop, half a bar in");
+    }
+
     #[test]
     fn a_new_sample_rate_keeps_the_loop_in_time() {
         for (from, to) in [(48_000, 44_100), (44_100, 96_000)] {

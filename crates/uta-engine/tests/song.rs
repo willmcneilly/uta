@@ -160,6 +160,7 @@ fn stop_goes_back_to_where_play_was_last_pressed() {
     let status = renderer.controller.poll();
     assert!(status.playing);
     assert_eq!(status.playhead, 3 * BAR + 40);
+    assert_eq!(status.play_start, BAR + 960, "reported as it was");
     renderer.controller.stop().unwrap();
     renderer.render(128);
     let status = renderer.controller.poll();
