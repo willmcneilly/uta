@@ -207,6 +207,9 @@ pub struct Frame {
     pub clips: u64,
     /// Dropouts since the app started, across every output.
     pub dropouts: u64,
+    /// The audio thread's slowest block since the last frame, as a share of
+    /// its deadline. 1.0 or more is late.
+    pub slowest_block: f32,
     pub output: OutputView,
 }
 
@@ -871,6 +874,7 @@ impl Uta {
                 .collect(),
             clips: self.earlier_clips + status.clips,
             dropouts: self.earlier_dropouts + device.dropouts,
+            slowest_block: status.slowest_block,
             output: OutputView {
                 state: match device.state {
                     DeviceState::Running => OutputState::Running,
@@ -1089,6 +1093,20 @@ mod tests {
         );
         // A new project's loop has no notes, so it plays silence.
         assert_eq!(frame.peak, 0.0);
+    }
+
+    #[test]
+    fn frames_report_the_slowest_block_since_the_last_one() {
+        let mut uta = offline();
+        uta.play().unwrap();
+        uta.render(24_000);
+        let frame = uta.frame();
+        assert!(
+            frame.slowest_block > 0.0 && frame.slowest_block.is_finite(),
+            "{frame:?}"
+        );
+        // Nothing has played since, so there's no block to report.
+        assert_eq!(uta.frame().slowest_block, 0.0);
     }
 
     #[test]

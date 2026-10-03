@@ -106,6 +106,10 @@ pub struct Status {
     /// Each slot's loudest sample since the last status message, after its
     /// track's volume, pan, mute and solo, before the master volume.
     pub track_peaks: [f32; TRACK_SLOTS],
+    /// The slowest block since the last status message, as a share of its
+    /// deadline: the time it took over the time the device takes to play
+    /// it (its frames at the sample rate). 1.0 or more is late.
+    pub slowest_block: f32,
     /// Samples the master has clipped so far, left and right counted
     /// separately: each one was past full scale and was cut off there.
     pub clips: u64,

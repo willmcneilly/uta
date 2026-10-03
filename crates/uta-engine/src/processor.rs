@@ -4,6 +4,8 @@
 //! rules in `CLAUDE.md`: no waiting, no allocating or freeing, no I/O and no
 //! unbounded loops.
 
+use std::time::Instant;
+
 use rtrb::{Consumer, Producer};
 
 use uta_core::TrackId;
@@ -76,6 +78,9 @@ pub struct Processor {
     clips: u64,
     /// The master's loudest sample since status was last delivered.
     peak: f32,
+    /// The slowest block since status was last delivered, as a share of its
+    /// deadline. See [`Status::slowest_block`].
+    slowest_block: f32,
     /// Snapshots swapped in so far.
     swaps: u64,
 }
@@ -266,6 +271,7 @@ impl Processor {
             dropped_note_events: 0,
             clips: 0,
             peak: 0.0,
+            slowest_block: 0.0,
             swaps: 0,
         };
         processor.find_bookmarks();
@@ -333,8 +339,12 @@ impl Processor {
     /// `output.len()` must be a multiple of the channel count. Any block
     /// length works: longer ones are rendered [`TRACK_BUFFER_FRAMES`] at a
     /// time.
+    ///
+    /// The block is timed from here to just before its status is sent, and
+    /// the time is reported as a share of its deadline.
     #[rtsan_standalone::nonblocking]
     pub fn process(&mut self, output: &mut [f32]) {
+        let started = Instant::now();
         // Before the commands, so notes chased on Play or a jump count.
         for slot in self.slots.iter_mut() {
             slot.budget = MAX_NOTE_EVENTS_PER_BLOCK;
@@ -371,7 +381,20 @@ impl Processor {
             }
             done += run;
         }
+        self.time_block(started, frames);
         self.send_status();
+    }
+
+    /// Records how long a block of `frames` took since `started`, as a share
+    /// of its deadline: the time the device takes to play it. Reading the
+    /// clock neither waits nor allocates.
+    fn time_block(&mut self, started: Instant, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let deadline = frames as f64 / self.sample_rate;
+        let load = (started.elapsed().as_secs_f64() / deadline) as f32;
+        self.slowest_block = self.slowest_block.max(load);
     }
 
     /// Records a dropout reported by the device driver. Real-time safe.
@@ -689,7 +712,7 @@ impl Processor {
     }
 
     /// Sends this block's status. If the queue is full the message is skipped
-    /// and the peaks carry over to the next one.
+    /// and the peaks and the slowest block carry over to the next one.
     fn send_status(&mut self) {
         let sequence = &self.snapshot.sequence;
         let loop_samples = sequence.loop_samples();
@@ -713,6 +736,7 @@ impl Processor {
             play_start: self.play_start,
             peak: self.peak,
             track_peaks,
+            slowest_block: self.slowest_block,
             clips: self.clips,
             dropouts: self.dropouts,
             playing: self.playing,
@@ -723,6 +747,7 @@ impl Processor {
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
+            self.slowest_block = 0.0;
             for slot in self.slots.iter_mut() {
                 slot.peak = 0.0;
             }
@@ -846,6 +871,32 @@ mod tests {
             .collect();
         assert_eq!(cut, [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 0.0, 0.0]);
         assert_eq!(clips, past.len() as u64);
+    }
+
+    /// A block that took twice its deadline reads as 2.0, a quick one after
+    /// it doesn't lower it, and the slowest is reset once status gets out.
+    #[test]
+    fn the_slowest_block_is_kept_until_status_is_sent() {
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&beats()), 48);
+        let processor = renderer.processor();
+        // 48 frames at 48 kHz have a 1 ms deadline.
+        let two_deadlines_ago = Instant::now() - std::time::Duration::from_millis(2);
+        processor.time_block(two_deadlines_ago, 48);
+        processor.time_block(Instant::now(), 48);
+        // How long the test took to get here only adds to it.
+        assert!(
+            (2.0..3.0).contains(&processor.slowest_block),
+            "{}",
+            processor.slowest_block
+        );
+        processor.send_status();
+        assert_eq!(processor.slowest_block, 0.0);
+        let status = renderer.controller.poll();
+        assert!((2.0..3.0).contains(&status.slowest_block), "{status:?}");
     }
 
     /// A device switch mid-note, from 48 kHz to 44.1 kHz and back, the way
