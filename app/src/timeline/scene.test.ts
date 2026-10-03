@@ -3,7 +3,7 @@ import type { ClipView, NoteView, ProjectView } from "../backend";
 import { projectView, trackView } from "../pianoRoll/testing";
 import { TimelineScene } from "./scene";
 import { recordingTimelineFactory } from "./testing";
-import { TRACK_HEIGHT, visibleTicks } from "./viewport";
+import { RULER_HEIGHT, TRACK_HEIGHT, visibleTicks } from "./viewport";
 
 const BAR = 3840;
 
@@ -159,20 +159,56 @@ describe("TimelineScene", () => {
     expect([renderer.grids.length, renderer.clips.length, renderer.tops.length]).toEqual([2, 3, 2]);
   });
 
-  it("highlights the selected track and clip", () => {
+  it("highlights the selected track and clips", () => {
     const view = project([
-      trackView("t1", "Synth 1", [clip("a", 0, BAR)]),
+      trackView("t1", "Synth 1", [clip("a", 0, BAR), clip("c", BAR, BAR)]),
       trackView("t2", "Synth 2", [clip("b", 0, BAR)]),
     ]);
     const { timeline, renderer } = scene(view);
     expect(renderer.grids.at(-1)!.selectedTrack).toBeNull();
-    timeline.setSelection("t2", "b");
+    timeline.setSelection("t2", new Set(["b", "c"]));
     timeline.draw(0);
     expect(renderer.grids.at(-1)!.selectedTrack).toBe(1);
     expect(renderer.lastClips().map((c) => [c.id, c.selected])).toEqual([
       ["a", false],
+      ["c", true],
       ["b", true],
     ]);
+    // The same selection again redraws nothing.
+    const drawn = renderer.clips.length;
+    timeline.setSelection("t2", new Set(["c", "b"]));
+    timeline.draw(0);
+    expect(renderer.clips.length).toBe(drawn);
+  });
+
+  it("finds the clips a selection box touches, and shows the box on the top layer", () => {
+    const view = project([
+      trackView("t1", "Synth 1", [clip("a", 0, BAR), clip("b", 4 * BAR, BAR)]),
+      trackView("t2", "Synth 2", [clip("c", 2 * BAR, BAR)]),
+      trackView("t3", "Synth 3", [clip("d", BAR, BAR)]),
+    ]);
+    const { timeline, renderer } = scene(view);
+    // From the middle of bar 1 on the first track to bar 3 on the second:
+    // 100 px a bar.
+    const box = {
+      x: 50,
+      y: RULER_HEIGHT + 10,
+      width: 200,
+      height: TRACK_HEIGHT + 10,
+    };
+    expect(timeline.clipsIn(box)).toEqual(["a", "c"]);
+    // Touching a clip's edge is enough.
+    expect(timeline.clipsIn({ ...box, x: 399, width: 2 })).toEqual(["b"]);
+    expect(timeline.clipsIn({ ...box, x: 600, width: 50 })).toEqual([]);
+    // Above the tracks, the box only counts from the ruler down.
+    expect(timeline.clipsIn({ x: 0, y: 0, width: 50, height: RULER_HEIGHT })).toEqual([]);
+
+    timeline.setBox(box);
+    timeline.draw(0);
+    expect(renderer.lastBox()).toEqual(box);
+    timeline.setBox(null);
+    timeline.draw(0);
+    expect(renderer.lastBox()).toBeNull();
   });
 
   it("shows the clip being drawn on the top layer", () => {

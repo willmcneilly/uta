@@ -21,6 +21,7 @@ import {
   onEditMenu,
   onProjectChanged,
   onTrackMenu,
+  pasteClips,
   pause,
   play,
   removeClips,
@@ -54,7 +55,12 @@ import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { SynthPanel } from "./SynthPanel";
 import type { TimelineRendererFactory } from "./timeline/renderer";
-import { type ClipEditor, type RulerActions, Timeline } from "./timeline/Timeline";
+import {
+  type ClipEditor,
+  type RulerActions,
+  Timeline,
+  type TimelineHandle,
+} from "./timeline/Timeline";
 import { TrackHeaders } from "./TrackHeaders";
 import { Transport } from "./Transport";
 import { Volume } from "./Volume";
@@ -98,6 +104,9 @@ function isTransportKey(event: KeyboardEvent): boolean {
 
 type Tab = "notes" | "sound";
 
+/** The views the Edit menu's Copy, Paste and Duplicate can act on. */
+type EditView = "timeline" | "pianoRoll";
+
 /** The editor's height when the app opens, and its limits, in CSS pixels. */
 const EDITOR_HEIGHT = 280;
 const MIN_EDITOR_HEIGHT = 160;
@@ -119,7 +128,8 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   // What's selected, which tab is open, how tall the editor is, and when
   // the clip light was last clicked are the UI's own: none is project data.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  // The clips picked on the timeline, in the order they were picked.
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("notes");
   const [editorHeight, setEditorHeight] = useState(EDITOR_HEIGHT);
   const [seenClips, setSeenClips] = useState(0);
@@ -132,6 +142,9 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
   const pianoRoll = useRef<PianoRollHandle>(null);
+  const timeline = useRef<TimelineHandle>(null);
+  // Which view the Edit menu acts on: the one last clicked in.
+  const editView = useRef<EditView>("pianoRoll");
   const headers = useRef<HTMLElement>(null);
 
   const report = (reason: unknown) => setError(String(reason));
@@ -141,12 +154,16 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   if (project && selectedId !== null && !project.tracks.some((t) => t.id === selectedId)) {
     setSelectedId(null);
   }
-  // The selected clip's track, wherever the clip has been moved to.
+  // Selected clips that have gone stay unselected too.
+  const clipIds = project
+    ? selectedClipIds.filter((id) => project.tracks.some((t) => t.clips.some((c) => c.id === id)))
+    : selectedClipIds;
+  if (clipIds.length !== selectedClipIds.length) setSelectedClipIds(clipIds);
+  // The last clip picked is the one the Notes tab shows. Its track is
+  // selected, wherever the clip has been moved to.
+  const selectedClipId = clipIds.at(-1) ?? null;
   const clipTrack =
     project?.tracks.find((t) => t.clips.some((c) => c.id === selectedClipId)) ?? null;
-  // A selected clip that has gone stays unselected too. One moved to
-  // another track takes the selection with it.
-  if (project && selectedClipId !== null && !clipTrack) setSelectedClipId(null);
   if (clipTrack && clipTrack.id !== selectedId) setSelectedId(clipTrack.id);
   // The selected track, or the top one if none is.
   const track: TrackView | null =
@@ -259,14 +276,14 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   /** Selects a track. The selected clip stays selected if it's on it. */
   const selectTrack = (id: string | null) => {
     setSelectedId(id);
-    if (clipTrack === null || clipTrack.id !== id) setSelectedClipId(null);
+    if (clipTrack === null || clipTrack.id !== id) setSelectedClipIds([]);
   };
 
   /** Selects track `id` once Rust has sent the project with it in. */
   const showAndSelect = (id: string | null) => (view: ProjectView) => {
     setProject(view);
     setSelectedId(id);
-    setSelectedClipId(null);
+    setSelectedClipIds([]);
   };
 
   const newTrack = () => {
@@ -305,10 +322,13 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     menus.current = menuActions;
   });
 
-  // Copy, Paste and Duplicate from the Edit menu act on the piano roll.
+  // Copy, Paste and Duplicate from the Edit menu act on the timeline or the
+  // piano roll, whichever was last clicked in.
   useEffect(() => {
     const listeners = [
-      onEditMenu((item) => pianoRoll.current?.[item]()),
+      onEditMenu((item) =>
+        (editView.current === "timeline" ? timeline.current : pianoRoll.current)?.[item](),
+      ),
       onTrackMenu((item) => menus.current[item]()),
       onDevelopMenu((item) => menus.current[item]()),
     ];
@@ -335,21 +355,21 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     audition: (pitch, velocity) => void auditionNote(trackId, pitch, velocity).catch(report),
   };
 
-  const selectClip = (trackId: string, clipId: string) => {
-    setSelectedId(trackId);
-    setSelectedClipId(clipId);
-  };
-
-  // The timeline draws, moves, resizes and deletes clips. A drawn clip is
-  // selected once Rust has sent it back.
+  // The timeline draws, moves, resizes, deletes, pastes and duplicates
+  // clips. New clips are selected once Rust has sent them back.
   const clipEditor: ClipEditor = {
     add: (trackId, id, start, length) =>
       void addClip(trackId, id, start, length).then((view) => {
         setProject(view);
-        selectClip(trackId, id);
+        setSelectedClipIds([id]);
       }, report),
     set: (clips, gesture) => void setClips(clips, gesture).then(setProject, report),
     remove: (ids) => void removeClips(ids).then(setProject, report),
+    paste: (clips) =>
+      void pasteClips(clips).then((view) => {
+        setProject(view);
+        setSelectedClipIds(clips.map((clip) => clip.id));
+      }, report),
     cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
   };
 
@@ -414,7 +434,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
         </p>
       )}
 
-      <div className="arrangement">
+      <div className="arrangement" onPointerDownCapture={() => (editView.current = "timeline")}>
         {project && (
           <TrackHeaders
             project={project}
@@ -430,11 +450,12 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
         )}
         {project && (
           <Timeline
+            ref={timeline}
             project={project}
             selectedTrack={track?.id ?? null}
-            // Only a clip chosen on the timeline is highlighted there, so
+            // Only clips chosen on the timeline are highlighted there, so
             // Backspace never deletes the one Notes falls back to.
-            selectedClip={clipTrack ? selectedClipId : null}
+            selectedClips={clipIds}
             editor={clipEditor}
             ruler={rulerActions}
             clock={clock}
@@ -443,11 +464,11 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
             onSelectTrack={(id) => {
               // A click on empty space selects the track and no clip.
               setSelectedId(id);
-              setSelectedClipId(null);
+              setSelectedClipIds([]);
             }}
-            onSelectClip={selectClip}
-            onOpenClip={(trackId, clipId) => {
-              selectClip(trackId, clipId);
+            onSelectClips={setSelectedClipIds}
+            onOpenClip={(_track, clipId) => {
+              setSelectedClipIds([clipId]);
               setTab("notes");
             }}
             createRenderer={createTimelineRenderer}
@@ -465,6 +486,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
       <section
         className="editor"
         aria-label="Editor"
+        onPointerDownCapture={() => (editView.current = "pianoRoll")}
         style={{ height: Math.min(editorHeight, maxEditorHeight) }}
       >
         <div className="tabs" role="tablist" aria-label="Editor">

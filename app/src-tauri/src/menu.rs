@@ -1,7 +1,7 @@
 //! The native menu bar. Undo, Redo, Copy, Paste and Duplicate are our own
 //! items, not the system's, so ⌘Z, ⇧⌘Z, ⌘C, ⌘V and ⌘D reach the project
-//! core and the piano roll instead of the web view's text editing. The Track
-//! menu adds, deletes and duplicates tracks.
+//! core, the timeline and the piano roll instead of the web view's text
+//! editing. The Track menu adds, deletes and duplicates tracks.
 
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};

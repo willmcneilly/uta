@@ -4,13 +4,23 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import type { ClipPosition, ClipView, Frame, NoteView, ProjectView, TrackView } from "../backend";
+import type {
+  ClipPosition,
+  ClipView,
+  EditMenuItem,
+  Frame,
+  NoteView,
+  PastedClip,
+  ProjectView,
+  TrackView,
+} from "../backend";
 import {
   type RecordingRenderer,
   projectView,
   recordingFactory,
   trackView,
 } from "../pianoRoll/testing";
+import { pitchToY, tickToX as rollTickToX } from "../pianoRoll/viewport";
 import type { ClipSnap } from "./snap";
 import { type RecordingTimelineRenderer, recordingTimelineFactory } from "./testing";
 import { TRACK_HEIGHT, tickToX, trackToY } from "./viewport";
@@ -142,6 +152,23 @@ beforeEach(() => {
           );
           return project;
         }
+        case "paste_clips": {
+          // Rust gives every note a new ID; here, the clip's ID and the note's.
+          const pasted = (args.clips as PastedClip[]).map(({ track, ...rest }) => ({
+            track,
+            clip: { ...rest, notes: rest.notes.map((n) => ({ ...n, id: `${rest.id}:${n.id}` })) },
+          }));
+          project = withTracks(
+            project.tracks.map((t) => ({
+              ...t,
+              clips: byStart([
+                ...t.clips,
+                ...pasted.filter((p) => p.track === t.id).map((p) => p.clip),
+              ]),
+            })),
+          );
+          return project;
+        }
         case "set_loop":
           project = {
             ...project,
@@ -218,6 +245,7 @@ const clipsArea = () => screen.getByRole("application", { name: "Clips" });
 
 interface Modifiers {
   metaKey?: boolean;
+  shiftKey?: boolean;
 }
 
 /** The pointer at `tick` (from the song's start) in the middle of track `track`'s row. */
@@ -249,8 +277,8 @@ async function release() {
   });
 }
 
-async function click(tick: number, track: number) {
-  await press(tick, track);
+async function click(tick: number, track: number, modifiers: Modifiers = {}) {
+  await press(tick, track, modifiers);
   await release();
 }
 
@@ -310,6 +338,21 @@ const edits = () =>
   calls.filter((call) => /clip|notes|gesture/.test(call.cmd)).map((call) => call.cmd);
 const drawn = () => timeline.lastClips().map((c) => [c.id, c.track, c.start, c.length]);
 const selectedClip = () => timeline.lastClips().find((c) => c.selected)?.id;
+const selectedClips = () =>
+  timeline
+    .lastClips()
+    .filter((c) => c.selected)
+    .map((c) => c.id);
+
+/** Chooses Copy, Paste or Duplicate from the Edit menu. */
+async function menu(item: EditMenuItem) {
+  await act(() => emit("edit-menu", item));
+}
+
+/** Adds a third track, with no clips, below the other two. */
+function withThirdTrack() {
+  project = withTracks([...project.tracks, trackView("track-3", "Synth 3")]);
+}
 /** Where the piano roll last shaded outside its clip: the clip it shows. */
 const pianoRollClip = () => {
   const grid = roll.grids.at(-1)!;
@@ -692,6 +735,333 @@ describe("the timeline", () => {
       );
       await waitFor(() => expect(roll.tops.at(-1)).toBe(9 * BAR));
       await waitFor(() => expect(timeline.tops.at(-1)).toBe(9 * BAR));
+    });
+  });
+
+  describe("selecting several clips", () => {
+    it("adds a clip to the selection with Shift-click, or takes it out", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await waitFor(() => expect(selectedClips()).toEqual(["clip-1", "clip-2"]));
+      // The last clip picked is open in Notes, with its track selected.
+      await waitFor(() => expect(pianoRollClip()).toEqual([8 * BAR, 10 * BAR]));
+      expect(screen.getByRole("listitem", { name: "Synth 2" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+      await click(BAR, 0, { shiftKey: true });
+      await waitFor(() => expect(selectedClips()).toEqual(["clip-2"]));
+      // Shift-click only selects: nothing moves.
+      expect(edits()).toEqual([]);
+    });
+
+    it("box-selects the clips a Shift-drag on empty space touches, adding to the selection", async () => {
+      withThirdTrack();
+      project = withTracks(
+        project.tracks.map((t) =>
+          t.id === "track-3" ? { ...t, clips: [clip("clip-3", 12 * BAR, BAR)] } : t,
+        ),
+      );
+      await renderApp();
+      await click(12.5 * BAR, 2);
+      // From bar 12 on Synth 1 to bar 4 on Synth 2: clip-1 ends in bar 4.
+      await press(11 * BAR, 0, { shiftKey: true });
+      await moveTo(3 * BAR, 1);
+      await waitFor(() => expect(timeline.lastBox()).not.toBeNull());
+      await waitFor(() => expect(selectedClips().sort()).toEqual(["clip-1", "clip-2", "clip-3"]));
+      await release();
+      await waitFor(() => expect(timeline.lastBox()).toBeNull());
+      expect(selectedClips().sort()).toEqual(["clip-1", "clip-2", "clip-3"]);
+      // It only selects: nothing is drawn or sent.
+      expect(edits()).toEqual([]);
+    });
+
+    it("puts the selection back when a box is cancelled with Esc", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await press(11 * BAR, 0, { shiftKey: true });
+      await moveTo(3 * BAR, 1);
+      await waitFor(() => expect(selectedClips()).toEqual(["clip-1", "clip-2"]));
+      await key(window, "Escape");
+      await waitFor(() => expect(selectedClips()).toEqual(["clip-1"]));
+      expect(timeline.lastBox()).toBeNull();
+    });
+
+    it("deletes the whole selection with Backspace, as one command", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await key(clipsArea(), "Backspace");
+      expect(sent("remove_clips")).toEqual([{ clips: ["clip-1", "clip-2"] }]);
+      await waitFor(() => expect(drawn()).toEqual([]));
+    });
+
+    it("clears the selection with Esc", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await key(clipsArea(), "Escape");
+      await waitFor(() => expect(selectedClips()).toEqual([]));
+      await key(clipsArea(), "Backspace");
+      expect(sent("remove_clips")).toEqual([]);
+    });
+
+    it("moves the selection together, across tracks too, as one gesture", async () => {
+      withThirdTrack();
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      // Dragging clip-1 a bar right and a track down takes clip-2 with it.
+      await press(BAR, 0);
+      await moveTo(2.2 * BAR, 1);
+      await release();
+      const moves = sent("set_clips");
+      expect(moves).toEqual([
+        {
+          clips: [
+            { id: "clip-1", track: "track-2", start: BAR, length: 4 * BAR },
+            { id: "clip-2", track: "track-3", start: 9 * BAR, length: 2 * BAR },
+          ],
+          gesture: expect.any(Number),
+        },
+      ]);
+      await waitFor(() =>
+        expect(drawn()).toEqual([
+          ["clip-1", 1, BAR, 4 * BAR],
+          ["clip-2", 2, 9 * BAR, 2 * BAR],
+        ]),
+      );
+      expect(selectedClips()).toEqual(["clip-1", "clip-2"]);
+    });
+
+    it("keeps the whole selection on the tracks there are", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      // clip-2 is on the last track already, so the selection can't go down.
+      await press(BAR, 0);
+      await moveTo(2 * BAR, 1);
+      await release();
+      expect(sent("set_clips")).toEqual([
+        {
+          clips: [
+            { id: "clip-1", track: "track-1", start: BAR, length: 4 * BAR },
+            { id: "clip-2", track: "track-2", start: 9 * BAR, length: 2 * BAR },
+          ],
+          gesture: expect.any(Number),
+        },
+      ]);
+    });
+
+    it("puts the whole selection back on Esc", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await press(BAR, 0);
+      await moveTo(3 * BAR, 0);
+      await key(window, "Escape");
+      await release();
+      expect(sent("cancel_gesture")).toEqual([{ gesture: sent("set_clips")[0].gesture }]);
+      await waitFor(() =>
+        expect(drawn()).toEqual([
+          ["clip-1", 0, 0, 4 * BAR],
+          ["clip-2", 1, 8 * BAR, 2 * BAR],
+        ]),
+      );
+    });
+
+    it("selects just the clip clicked of a larger selection", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await click(BAR, 0);
+      await waitFor(() => expect(selectedClips()).toEqual(["clip-1"]));
+      expect(sent("set_clips")).toEqual([]);
+    });
+  });
+
+  describe("copying, pasting and duplicating clips", () => {
+    it("pastes on the selected track at the playhead, snapped, with new IDs, and selects it", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await menu("copy");
+      // Select Synth 2, and stop with the playhead in bar 6.
+      await click(3 * BAR, 1);
+      sendFrame(false, 5.3 * BAR);
+      await menu("paste");
+      const [paste] = sent("paste_clips");
+      expect(paste).toEqual({
+        clips: [
+          {
+            id: expect.any(String),
+            track: "track-2",
+            start: 5 * BAR,
+            length: 4 * BAR,
+            notes: [note("n1", 60, 0), note("n2", 67, BAR)],
+          },
+        ],
+      });
+      const id = (paste.clips as PastedClip[])[0].id;
+      expect(id).not.toBe("clip-1");
+      // One command, so one undo step.
+      expect(edits()).toEqual(["paste_clips"]);
+      await waitFor(() => expect(drawn()).toContainEqual([id, 1, 5 * BAR, 4 * BAR]));
+      await waitFor(() => expect(selectedClips()).toEqual([id]));
+      // Synth 2 stays selected.
+      expect(screen.getByRole("listitem", { name: "Synth 2" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+    });
+
+    it("gives every paste of the same copy its own IDs", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await menu("copy");
+      await menu("paste");
+      await menu("paste");
+      const ids = sent("paste_clips").map((p) => (p.clips as PastedClip[])[0].id);
+      expect(new Set([...ids, "clip-1"]).size).toBe(3);
+      // The copies' notes are their own too: Rust gives each a new ID.
+      await waitFor(() => expect(drawn()).toHaveLength(4));
+      const noteIds = project.tracks.flatMap((t) =>
+        t.clips.flatMap((c) => c.notes.map((n) => n.id)),
+      );
+      expect(new Set(noteIds).size).toBe(6);
+    });
+
+    it("pastes what was copied, even after the original is deleted", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await menu("copy");
+      await key(clipsArea(), "Backspace");
+      await waitFor(() => expect(drawn()).toEqual([["clip-2", 1, 8 * BAR, 2 * BAR]]));
+      await click(3 * BAR, 0);
+      await menu("paste");
+      expect(sent("paste_clips")[0].clips).toEqual([
+        expect.objectContaining({ track: "track-1", start: 0, length: 4 * BAR }),
+      ]);
+    });
+
+    it("keeps the layout of clips copied from several tracks", async () => {
+      withThirdTrack();
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await menu("copy");
+      // On Synth 2, Synth 1's clip lands on Synth 2 and Synth 2's below it.
+      await click(3 * BAR, 1);
+      sendFrame(false, 16 * BAR);
+      await menu("paste");
+      const where = (n: number) =>
+        (sent("paste_clips")[n].clips as PastedClip[]).map((c) => [c.track, c.start]);
+      expect(where(0).sort()).toEqual([
+        ["track-2", 16 * BAR],
+        ["track-3", 24 * BAR],
+      ]);
+      // On the last track, the one that would fall past it goes on it too.
+      await click(3 * BAR, 2);
+      await menu("paste");
+      expect(where(1).sort()).toEqual([
+        ["track-3", 16 * BAR],
+        ["track-3", 24 * BAR],
+      ]);
+      // Pasting never adds tracks, and the selected track stays selected.
+      await waitFor(() => expect(project.tracks.flatMap((t) => t.clips)).toHaveLength(6));
+      expect(sent("add_track")).toEqual([]);
+      expect(screen.getByRole("listitem", { name: "Synth 3" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+    });
+
+    it("duplicates the selection straight after it, and selects the copy", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await click(8.5 * BAR, 1, { shiftKey: true });
+      await menu("duplicate");
+      const [duplicate] = sent("paste_clips");
+      // From the start of bar 1 to the end of bar 10: ten bars on.
+      expect(
+        (duplicate.clips as PastedClip[]).map((c) => [c.track, c.start, c.length, c.notes.length]),
+      ).toEqual([
+        ["track-1", 10 * BAR, 4 * BAR, 2],
+        ["track-2", 18 * BAR, 2 * BAR, 0],
+      ]);
+      const ids = (duplicate.clips as PastedClip[]).map((c) => c.id);
+      expect(ids).not.toContain("clip-1");
+      expect(ids).not.toContain("clip-2");
+      // The copies are selected: the one in view is highlighted, and the
+      // last is open in Notes.
+      await waitFor(() => expect(selectedClips()).toEqual([ids[0]]));
+      await waitFor(() => expect(pianoRollClip()).toEqual([18 * BAR, 20 * BAR]));
+    });
+
+    it("duplicates one clip right after itself", async () => {
+      await renderApp();
+      await click(8.5 * BAR, 1);
+      await menu("duplicate");
+      expect(sent("paste_clips")[0].clips).toEqual([
+        expect.objectContaining({ track: "track-2", start: 10 * BAR, length: 2 * BAR }),
+      ]);
+    });
+
+    it("does nothing with nothing selected or copied", async () => {
+      await renderApp();
+      await click(3 * BAR, 1);
+      await menu("copy");
+      await menu("paste");
+      await menu("duplicate");
+      expect(sent("paste_clips")).toEqual([]);
+    });
+  });
+
+  describe("the Edit menu", () => {
+    /** Clicks note n1 (pitch 60, the clip's first beat) in the piano roll. */
+    async function clickNoteInPianoRoll() {
+      const view = roll.lastView();
+      const point = {
+        clientX: rollTickToX(view, 240),
+        clientY: pitchToY(view, 60) + view.keyHeight / 2,
+        button: 0,
+      };
+      const notes = screen.getByRole("application", { name: "Notes" });
+      await act(async () => {
+        fireEvent.pointerDown(notes, point);
+      });
+      await release();
+    }
+
+    it("goes to whichever of the timeline and the piano roll was last clicked in", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await waitFor(() => expect(pianoRollClip()).toEqual([0, 4 * BAR]));
+      await clickNoteInPianoRoll();
+      await menu("duplicate");
+      expect(sent("add_notes")).toHaveLength(1);
+      expect(sent("paste_clips")).toEqual([]);
+
+      // The clip is still selected on the timeline; a click there makes the
+      // menu act on it again.
+      await click(BAR, 0);
+      await menu("duplicate");
+      expect(sent("paste_clips")).toHaveLength(1);
+      expect(sent("add_notes")).toHaveLength(1);
+    });
+
+    it("counts a click on a track's header as the timeline", async () => {
+      await renderApp();
+      await click(BAR, 0);
+      await waitFor(() => expect(pianoRollClip()).toEqual([0, 4 * BAR]));
+      await clickNoteInPianoRoll();
+      // Synth 1 is the selected clip's track, so the clip stays selected.
+      await act(async () => {
+        fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 1" }));
+      });
+      await menu("duplicate");
+      expect(sent("paste_clips")).toHaveLength(1);
+      expect(sent("add_notes")).toEqual([]);
     });
   });
 

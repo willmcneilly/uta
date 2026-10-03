@@ -1,23 +1,34 @@
 import {
   type KeyboardEvent,
   type PointerEvent,
+  type Ref,
   type RefObject,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
 } from "react";
-import type { ClipPosition, ProjectView } from "../backend";
+import type { ClipPosition, PastedClip, ProjectView } from "../backend";
 import { Follow } from "../follow";
 import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "../pianoRoll/playhead";
+import { snapDown } from "../pianoRoll/snap";
 import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createTimelineRenderer } from "./canvasRenderer";
 import {
+  type ClipOnTrack,
+  type CopiedClip,
+  copyClips,
+  duplicateClips,
+  pasteClips,
+} from "./clipboard";
+import {
+  type ClipHit,
   type LoopBars,
   type Span,
   drawnClip,
-  moveClip,
+  moveClips,
   oneBarClip,
   resizeClip,
   rulerClick,
@@ -53,8 +64,23 @@ export interface ClipEditor {
   /** Sets clips' track, start and length. One drag's changes share a `gesture`. */
   set(clips: ClipPosition[], gesture: number): void;
   remove(ids: string[]): void;
+  /** Adds copies of clips, a paste or a duplicate, and selects them once they're in. */
+  paste(clips: PastedClip[]): void;
   /** Puts back everything `gesture` changed. */
   cancel(gesture: number): void;
+}
+
+/** What the Edit menu does on the timeline. */
+export interface TimelineHandle {
+  /** Copies the selected clips. */
+  copy(): void;
+  /**
+   * Pastes the copied clips on the selected track at the playhead, snapped
+   * to the grid, and selects them.
+   */
+  paste(): void;
+  /** Puts a copy of the selected clips straight after them, and selects it. */
+  duplicate(): void;
 }
 
 /** What the ruler does: set the loop region, and move the play start or jump. */
@@ -66,13 +92,15 @@ export interface RulerActions {
 }
 
 interface Props {
+  ref?: Ref<TimelineHandle>;
   project: ProjectView;
   /**
-   * The selected track's and clip's IDs. The clip is only one picked on the
-   * timeline: it's highlighted, and Backspace deletes it.
+   * The selected track's ID, and the clips picked on the timeline, in the
+   * order they were picked. They're highlighted, and Backspace, Copy and
+   * Duplicate act on them.
    */
   selectedTrack: string | null;
-  selectedClip: string | null;
+  selectedClips: readonly string[];
   editor: ClipEditor;
   ruler: RulerActions;
   /** Where the playhead is, between the engine's reports. */
@@ -86,8 +114,8 @@ interface Props {
    */
   headers: RefObject<HTMLElement | null>;
   onSelectTrack: (track: string) => void;
-  /** Selects a clip, and its track. */
-  onSelectClip: (track: string, clip: string) => void;
+  /** Selects these clips, and the last one's track. */
+  onSelectClips: (clips: string[]) => void;
   /** Selects a clip and opens it in the Notes tab: a double-click. */
   onOpenClip: (track: string, clip: string) => void;
   /** Draws the layers. Canvas 2D unless a test says otherwise. */
@@ -128,16 +156,17 @@ interface DragHandlers {
  * the timeline").
  */
 export function Timeline({
+  ref,
   project,
   selectedTrack,
-  selectedClip,
+  selectedClips,
   editor,
   ruler,
   clock,
   frames,
   headers,
   onSelectTrack,
-  onSelectClip,
+  onSelectClips,
   onOpenClip,
   createRenderer = createTimelineRenderer,
 }: Props) {
@@ -164,21 +193,28 @@ export function Timeline({
       follow.pause();
       editor.remove(...args);
     },
+    paste: (...args) => {
+      follow.pause();
+      editor.paste(...args);
+    },
     cancel: (gesture) => editor.cancel(gesture),
   };
   // The pointer and keyboard handlers read the latest of these, including
   // those added to the window for the length of a drag.
-  const latest = useRef({ project, selectedClip, editor: editing, ruler, snap });
+  const latest = useRef({ project, selectedTrack, selectedClips, editor: editing, ruler, snap });
+  // What was copied is the timeline's own, like the piano roll's notes: it
+  // isn't part of the project.
+  const clipboard = useRef<CopiedClip[]>([]);
   const dragging = useRef<DragState | null>(null);
 
   useEffect(() => {
-    latest.current = { project, selectedClip, editor: editing, ruler, snap };
+    latest.current = { project, selectedTrack, selectedClips, editor: editing, ruler, snap };
   });
 
   useEffect(() => scene.setProject(project), [scene, project]);
   useEffect(
-    () => scene.setSelection(selectedTrack, selectedClip),
-    [scene, selectedTrack, selectedClip],
+    () => scene.setSelection(selectedTrack, new Set(selectedClips)),
+    [scene, selectedTrack, selectedClips],
   );
 
   // A drag ends if the timeline goes away mid-drag.
@@ -327,17 +363,44 @@ export function Timeline({
     return clipSnapStep(snap, project.ticksPerQuarter, project.beatsPerBar, view.pixelsPerTick);
   };
 
+  /**
+   * The selected clips as they are now, with their tracks' indices, in the
+   * order they were picked. Any that have gone are left out.
+   */
+  const selection = (): ClipOnTrack[] => {
+    const { project, selectedClips } = latest.current;
+    return selectedClips.flatMap((id) => {
+      for (const [track, view] of project.tracks.entries()) {
+        const clip = view.clips.find((c) => c.id === id);
+        if (clip) return [{ track, clip }];
+      }
+      return [];
+    });
+  };
+
+  /** Adds clip `id` to the selection, or takes it out if it's there. */
+  const toggle = (id: string) => {
+    const { selectedClips } = latest.current;
+    onSelectClips(
+      selectedClips.includes(id)
+        ? selectedClips.filter((other) => other !== id)
+        : [...selectedClips, id],
+    );
+  };
+
   /** Where the pointer is: a tick, and a track's index in the order. */
   const at = (view: TimelineViewport, x: number, y: number) => ({
     tick: xToTick(view, x),
     track: yToTrack(view, y),
   });
 
-  // Press on a clip to select it and drag it: its body moves it, along its
-  // track or onto another; its right edge resizes it. Press on empty space
-  // on a track to select the track, and drag to draw a clip that long. On
-  // the ruler, click to move the play start (or jump, while playing), and
-  // drag to set the loop region.
+  // Press on a clip to select it and drag it: its body moves the selection,
+  // along its tracks or onto others; its right edge resizes it. Press on
+  // empty space on a track to select the track, and drag to draw a clip that
+  // long. Shift-click a clip to add it to the selection or take it out, or
+  // Shift-drag on empty space to box-select more. On the ruler, click to
+  // move the play start (or jump, while playing), and drag to set the loop
+  // region.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const view = scene.getView();
     if (event.button !== 0 || dragging.current || !view) return;
@@ -361,24 +424,35 @@ export function Timeline({
       pressRuler(press.tick, x, y, event);
       return;
     }
-    if (hit) {
-      const from = { track: hit.track, start: hit.clip.start, length: hit.clip.length };
-      pressClip(hit.clip.id, hit.part, from, press, x, y);
-    } else if (track) drawClip(track.id, press, x, y);
+    if (hit && event.shiftKey) toggle(hit.clip.id);
+    else if (hit) pressClip(hit, press, x, y);
+    else if (event.shiftKey) boxSelect(x, y);
+    else if (track) drawClip(track.id, press, x, y);
   };
 
   const pressClip = (
-    id: string,
-    part: "body" | "end",
-    from: Span,
+    hit: ClipHit,
     press: { tick: number; track: number },
     x: number,
     y: number,
   ) => {
-    const { project } = latest.current;
-    onSelectClip(project.tracks[from.track].id, id);
+    const { id } = hit.clip;
+    const wasSelected = latest.current.selectedClips.includes(id);
+    if (!wasSelected) onSelectClips([id]);
+    const from: Span = { track: hit.track, start: hit.clip.start, length: hit.clip.length };
+    // The body moves every selected clip together; the right edge resizes
+    // just this one.
+    const group =
+      hit.part === "body" && wasSelected
+        ? selection().map(({ track, clip }) => ({
+            id: clip.id,
+            track,
+            start: clip.start,
+            length: clip.length,
+          }))
+        : [{ id, ...from }];
     const gesture = nextGesture();
-    let last = from;
+    let last = group;
     let sent = false;
     // One drag's changes go as `SetClips` under one gesture, so it's one
     // undo step. It never trims the clips it lands on: clips may overlap.
@@ -389,16 +463,12 @@ export function Timeline({
         const { project, editor } = latest.current;
         const now = at(view, x, y);
         const step = stepFor(move);
+        const minLength = minClipLength(step, project.ticksPerQuarter);
         const next =
-          part === "end"
-            ? resizeClip(
-                from,
-                press.tick,
-                now.tick,
-                step,
-                minClipLength(step, project.ticksPerQuarter),
-              )
-            : moveClip(
+          hit.part === "end"
+            ? [{ id, ...resizeClip(from, press.tick, now.tick, step, minLength) }]
+            : moveClips(
+                group,
                 from,
                 press.tick,
                 press.track,
@@ -407,14 +477,51 @@ export function Timeline({
                 step,
                 project.tracks.length,
               );
-        const track = project.tracks[next.track];
-        if (sameSpan(next, last) || !track) return;
-        editor.set([{ id, track: track.id, start: next.start, length: next.length }], gesture);
+        if (next.every((span, i) => sameSpan(span, last[i]))) return;
+        if (next.some((span) => !project.tracks[span.track])) return;
+        const clips = next.map(({ id, track, start, length }) => ({
+          id,
+          track: project.tracks[track].id,
+          start,
+          length,
+        }));
+        editor.set(clips, gesture);
         last = next;
         sent = true;
       },
+      // A click on a clip of a larger selection selects just that clip.
+      end: (moved) => {
+        if (!moved && wasSelected && hit.part === "body") onSelectClips([id]);
+      },
       cancel: () => {
         if (sent) latest.current.editor.cancel(gesture);
+      },
+    });
+  };
+
+  /** Drags out a box from `x`, `y`, adding the clips it touches to the selection. */
+  const boxSelect = (x: number, y: number) => {
+    const before = latest.current.selectedClips;
+    let last = before;
+    startDrag(x, y, {
+      move: (toX, toY) => {
+        const box = {
+          x: Math.min(x, toX),
+          y: Math.min(y, toY),
+          width: Math.abs(toX - x),
+          height: Math.abs(toY - y),
+        };
+        scene.setBox(box);
+        const added = scene.clipsIn(box).filter((id) => !before.includes(id));
+        const next = [...before, ...added];
+        if (next.length === last.length && next.every((id, i) => id === last[i])) return;
+        onSelectClips(next);
+        last = next;
+      },
+      end: () => scene.setBox(null),
+      cancel: () => {
+        scene.setBox(null);
+        onSelectClips([...before]);
       },
     });
   };
@@ -507,13 +614,52 @@ export function Timeline({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (dragging.current) return;
+    if (event.key === "Escape") {
+      if (latest.current.selectedClips.length > 0) onSelectClips([]);
+      return;
+    }
     if (event.key !== "Backspace" && event.key !== "Delete") return;
-    const { project, selectedClip, editor } = latest.current;
-    const exists = project.tracks.some((track) => track.clips.some((c) => c.id === selectedClip));
-    if (!selectedClip || !exists) return;
+    const ids = selection().map(({ clip }) => clip.id);
+    if (ids.length === 0) return;
     event.preventDefault();
-    editor.remove([selectedClip]);
+    // One command, so one undo step.
+    latest.current.editor.remove(ids);
   };
+
+  /** Adds pasted or duplicated clips. The app selects them once they're in. */
+  const land = (copies: ClipOnTrack[]) => {
+    const { project, editor } = latest.current;
+    editor.paste(
+      copies.map(({ track, clip }) => ({
+        id: clip.id,
+        track: project.tracks[track].id,
+        start: clip.start,
+        length: clip.length,
+        notes: clip.notes,
+      })),
+    );
+  };
+
+  useImperativeHandle(ref, () => ({
+    copy() {
+      const clips = selection();
+      if (clips.length > 0) clipboard.current = copyClips(clips);
+    },
+    paste() {
+      const { project, selectedTrack } = latest.current;
+      const track = project.tracks.findIndex((t) => t.id === selectedTrack);
+      if (dragging.current || track < 0 || clipboard.current.length === 0) return;
+      const at = Math.max(0, snapDown(clock.at(performance.now()), stepFor({ metaKey: false })));
+      land(
+        pasteClips(clipboard.current, at, track, project.tracks.length, () => crypto.randomUUID()),
+      );
+    },
+    duplicate() {
+      if (dragging.current) return;
+      const copies = duplicateClips(selection(), () => crypto.randomUUID());
+      if (copies.length > 0) land(copies);
+    },
+  }));
 
   const zoomBy = (factor: number) => {
     follow.pause();

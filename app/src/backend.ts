@@ -278,6 +278,28 @@ export function setClips(clips: ClipPosition[], gesture?: number): Promise<Proje
   return invoke<ProjectView>("set_clips", { clips, gesture: gesture ?? null });
 }
 
+/**
+ * A copy of a clip to add, for `pasteClips`: the clip as it was copied, with
+ * where it goes and the ID picked for it. Its notes keep the IDs they were
+ * copied with; Rust gives them new ones.
+ */
+export interface PastedClip {
+  id: string;
+  track: string;
+  /** From the start of the song. */
+  start: number;
+  length: number;
+  notes: NoteView[];
+}
+
+/**
+ * Adds copies of clips, as one undo step: a paste or a duplicate. Each
+ * copy's ID is picked here; Rust picks its notes'.
+ */
+export function pasteClips(clips: PastedClip[]): Promise<ProjectView> {
+  return invoke<ProjectView>("paste_clips", { clips });
+}
+
 /** Deletes clips, with their notes, as one undo step. */
 export function removeClips(clips: string[]): Promise<ProjectView> {
   return invoke<ProjectView>("remove_clips", { clips });

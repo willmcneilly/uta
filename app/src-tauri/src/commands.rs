@@ -13,16 +13,16 @@ use uta_core::time::Ticks;
 use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
-use crate::uta::{Frame, MixerView, ProjectView, Uta};
+use crate::uta::{Frame, MixerView, PastedClip, ProjectView, Uta};
 
 /// The event sent with a [`ProjectView`] after every change to the project,
 /// wherever it came from (a command or the menu).
 pub const PROJECT_CHANGED: &str = "project-changed";
 
 /// The event sent when Copy, Paste or Duplicate is chosen from the Edit
-/// menu, with the item's ID. The piano roll acts on it: the clipboard of
-/// notes and the selection live in the UI, and what they change arrives as
-/// ordinary commands.
+/// menu, with the item's ID. The timeline or the piano roll acts on it,
+/// whichever was last clicked in: the clipboards and the selections live in
+/// the UI, and what they change arrives as ordinary commands.
 pub const EDIT_MENU: &str = "edit-menu";
 
 /// The event sent when an item is chosen from the Track menu (Add, Delete
@@ -202,6 +202,16 @@ pub fn set_clips<R: Runtime>(
     gesture: Option<u32>,
 ) -> Result<ProjectView, String> {
     edit(&app, |uta| uta.set_clips(clips, gesture))
+}
+
+/// Adds copies of clips: a paste or a duplicate. The UI picks each copy's
+/// ID; Rust picks its notes'. One undo step.
+#[tauri::command]
+pub fn paste_clips<R: Runtime>(
+    app: AppHandle<R>,
+    clips: Vec<PastedClip>,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.paste_clips(clips))
 }
 
 #[tauri::command]

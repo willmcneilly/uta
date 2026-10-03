@@ -7,12 +7,17 @@ import type { ClipView, ProjectView } from "../backend";
 import { followPage } from "../follow";
 import { NoteIndex, type PlacedNote } from "../pianoRoll/notes";
 import { sameClip } from "../pianoRoll/scene";
+import type { Rect } from "../pianoRoll/viewport";
 import { type ClipHit, type Span, hitClip } from "./editing";
 import type { DrawnClip, TimelineRenderer } from "./renderer";
 import {
+  RULER_HEIGHT,
+  TRACK_HEIGHT,
   type TimelineViewport,
   clampViewport,
   inTracks,
+  tickToX,
+  trackToY,
   visibleTicks,
   visibleTracks,
 } from "./viewport";
@@ -38,8 +43,9 @@ export class TimelineScene {
   /** Each clip's notes by clip ID, rebuilt only when that clip changes. */
   private notes = new Map<string, ClipNotes>();
   private selectedTrack: string | null = null;
-  private selectedClip: string | null = null;
+  private selectedClips: ReadonlySet<string> = new Set();
   private drawing: Span | null = null;
+  private box: Rect | null = null;
   private gridDirty = true;
   private clipsDirty = true;
   private topDirty = true;
@@ -131,18 +137,44 @@ export class TimelineScene {
     return this.view;
   }
 
-  /** Highlights the track and the clip with these IDs. */
-  setSelection(track: string | null, clip: string | null): void {
+  /** Highlights the track and the clips with these IDs. */
+  setSelection(track: string | null, clips: ReadonlySet<string>): void {
     if (track !== this.selectedTrack) this.gridDirty = true;
-    if (track !== this.selectedTrack || clip !== this.selectedClip) this.clipsDirty = true;
+    if (!sameSet(clips, this.selectedClips)) this.clipsDirty = true;
     this.selectedTrack = track;
-    this.selectedClip = clip;
+    this.selectedClips = clips;
   }
 
   /** Shows the clip being drawn, or hides it with `null`. */
   setDrawing(drawing: Span | null): void {
     this.drawing = drawing;
     this.topDirty = true;
+  }
+
+  /** Shows the selection box being dragged out, in CSS pixels, or hides it with `null`. */
+  setBox(box: Rect | null): void {
+    this.box = box;
+    this.topDirty = true;
+  }
+
+  /** The IDs of the clips with any part inside `box` (CSS pixels), in the tracks' rows. */
+  clipsIn(box: Rect): string[] {
+    const { view, project } = this;
+    if (!view || !project) return [];
+    const top = Math.max(RULER_HEIGHT, box.y);
+    const bottom = box.y + box.height;
+    const ids: string[] = [];
+    project.tracks.forEach((track, index) => {
+      const y = trackToY(view, index);
+      if (y + TRACK_HEIGHT <= top || y >= bottom) return;
+      for (const clip of track.clips) {
+        const left = tickToX(view, clip.start);
+        // As drawn: never narrower than a pixel.
+        const right = left + Math.max(1, clip.length * view.pixelsPerTick);
+        if (right > box.x && left < box.x + box.width) ids.push(clip.id);
+      }
+    });
+    return ids;
   }
 
   /** The clip under `x`, `y` (CSS pixels from the top left), and which part of it. */
@@ -177,7 +209,7 @@ export class TimelineScene {
       this.clipsDirty = false;
     }
     if (this.topDirty || playhead !== this.lastPlayhead) {
-      renderer.drawTop(view, playhead, this.drawing);
+      renderer.drawTop(view, playhead, this.drawing, this.box);
       this.lastPlayhead = playhead;
       this.topDirty = false;
     }
@@ -198,7 +230,7 @@ export class TimelineScene {
           track,
           start: clip.start,
           length: clip.length,
-          selected: clip.id === this.selectedClip,
+          selected: this.selectedClips.has(clip.id),
           notes: notes
             ? notesInside(notes, Math.max(ticks.start, clip.start), Math.min(ticks.end, end))
             : [],
@@ -256,6 +288,10 @@ function indexNotes(clip: ClipView): ClipNotes {
 /** A clip's notes with any part from `start` to `end`, leaving out those past its end. */
 function notesInside(notes: ClipNotes, start: number, end: number): PlacedNote[] {
   return notes.index.visible(start, end, 0, 127).filter((note) => !note.outside);
+}
+
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((id) => b.has(id));
 }
 
 function sameView(a: TimelineViewport, b: TimelineViewport): boolean {
