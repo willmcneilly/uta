@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import "./App.css";
 import {
   type Frame,
@@ -42,6 +43,15 @@ import {
   subscribe,
   trimNotes,
 } from "./backend";
+import { Benchmark } from "./benchmark/Benchmark";
+import {
+  type BenchmarkHost,
+  type BenchmarkOptions,
+  type Clock,
+  DEFAULT_OPTIONS,
+  browserClock,
+  runBenchmark,
+} from "./benchmark/run";
 import { Divider } from "./Divider";
 import { FrameLoop } from "./frameLoop";
 import { Meter } from "./Meter";
@@ -118,13 +128,16 @@ interface Props {
   createRenderer?: RendererFactory;
   /** Draws the timeline, likewise. */
   createTimelineRenderer?: TimelineRendererFactory;
+  /** How Develop → Run Benchmark runs, and its clock. Tests make it quick. */
+  benchmark?: { options?: BenchmarkOptions; clock?: Clock };
 }
 
-function App({ createRenderer, createTimelineRenderer }: Props) {
+function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [project, setProject] = useState<ProjectView | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changingBuffer, setChangingBuffer] = useState(false);
+  const [benchmarking, setBenchmarking] = useState(false);
   // What's selected, which tab is open, how tall the editor is, and when
   // the clip light was last clicked are the UI's own: none is project data.
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -146,6 +159,8 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
   // Which view the Edit menu acts on: the one last clicked in.
   const editView = useRef<EditView>("pianoRoll");
   const headers = useRef<HTMLElement>(null);
+  // How many project-changed events have arrived, for the benchmark to wait on.
+  const changeEvents = useRef(0);
 
   const report = (reason: unknown) => setError(String(reason));
 
@@ -178,7 +193,10 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
       .then((view) => active && setProject(view))
       .catch((reason: unknown) => active && setError(String(reason)));
     // Undo, Redo and the Develop menu's changes arrive this way.
-    const unlisten = onProjectChanged((view) => active && setProject(view));
+    const unlisten = onProjectChanged((view) => {
+      changeEvents.current += 1;
+      if (active) setProject(view);
+    });
     return () => {
       active = false;
       void unlisten.then((stopListening) => stopListening());
@@ -316,6 +334,7 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
     "add-stress-notes": () => {
       if (clip) addStressNotes(clip.id).then(setProject, report);
     },
+    "run-benchmark": () => setBenchmarking(true),
   };
   const menus = useRef(menuActions);
   useEffect(() => {
@@ -386,6 +405,24 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
       .catch(report)
       .finally(() => setChangingBuffer(false));
   };
+
+  // The benchmark shows each reply at once, so the frame after it is the
+  // one that draws it.
+  const benchmarkHost: BenchmarkHost = {
+    apply: (view) => flushSync(() => setProject(view)),
+    events: () => changeEvents.current,
+    showClip: (id) => {
+      setSelectedClipIds([id]);
+      setTab("notes");
+    },
+  };
+  const startBenchmark = (onProgress: Parameters<typeof runBenchmark>[1]) =>
+    runBenchmark(
+      benchmarkHost,
+      onProgress,
+      benchmark?.options ?? DEFAULT_OPTIONS,
+      benchmark?.clock ?? browserClock,
+    );
 
   const clipped = clipLit(status?.clips ?? 0, seenClips);
   const maxEditorHeight = Math.max(MIN_EDITOR_HEIGHT, windowHeight - ABOVE_EDITOR);
@@ -534,6 +571,10 @@ function App({ createRenderer, createTimelineRenderer }: Props) {
       </section>
 
       <FrameTime stats={stats} />
+
+      {benchmarking && (
+        <Benchmark run={startBenchmark} onClose={() => setBenchmarking(false)} />
+      )}
     </main>
   );
 }
