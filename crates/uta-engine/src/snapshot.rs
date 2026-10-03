@@ -1384,7 +1384,7 @@ mod tests {
         assert_shares_notes_with(&next, &project);
         let (before, after) = (clip_notes(&first), clip_notes(&next));
         for (id, clip) in &after {
-            assert_eq!(Arc::ptr_eq(&before[id], clip), *id != edited, "{id}");
+            assert_eq!(Arc::ptr_eq(before[id], clip), *id != edited, "{id}");
         }
         assert_eq!(next, Snapshot::new(&project, 48_000));
     }

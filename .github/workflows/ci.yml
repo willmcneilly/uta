@@ -33,6 +33,8 @@ jobs:
       # Reported in the job summary, never gating (RFC-001).
       - name: Block timing report
         run: cargo test -p uta-engine --release --test timing -- --ignored --nocapture
+      - name: Copy-on-write timing report
+        run: cargo test -p uta-core --release --test timing -- --ignored --nocapture
 
   # The engine's tests again, built with RealtimeSanitizer: any allocation,
   # lock or system call inside a #[nonblocking] function aborts the run.
