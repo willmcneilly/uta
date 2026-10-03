@@ -161,6 +161,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const headers = useRef<HTMLElement>(null);
   // How many project-changed events have arrived, for the benchmark to wait on.
   const changeEvents = useRef(0);
+  const benchmarkRunning = useRef(false);
 
   const report = (reason: unknown) => setError(String(reason));
 
@@ -195,7 +196,12 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     // Undo, Redo and the Develop menu's changes arrive this way.
     const unlisten = onProjectChanged((view) => {
       changeEvents.current += 1;
-      if (active) setProject(view);
+      if (!active) return;
+      // While the benchmark runs, an event is drawn as soon as it arrives,
+      // as its replies are, so the step it belongs to counts drawing it
+      // even when it beats the reply.
+      if (benchmarkRunning.current) flushSync(() => setProject(view));
+      else setProject(view);
     });
     return () => {
       active = false;
@@ -416,13 +422,17 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       setTab("notes");
     },
   };
-  const startBenchmark = (onProgress: Parameters<typeof runBenchmark>[1]) =>
-    runBenchmark(
+  const startBenchmark = (onProgress: Parameters<typeof runBenchmark>[1]) => {
+    benchmarkRunning.current = true;
+    return runBenchmark(
       benchmarkHost,
       onProgress,
       benchmark?.options ?? DEFAULT_OPTIONS,
       benchmark?.clock ?? browserClock,
-    );
+    ).finally(() => {
+      benchmarkRunning.current = false;
+    });
+  };
 
   const clipped = clipLit(status?.clips ?? 0, seenClips);
   const maxEditorHeight = Math.max(MIN_EDITOR_HEIGHT, windowHeight - ABOVE_EDITOR);

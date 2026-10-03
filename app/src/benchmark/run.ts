@@ -165,6 +165,8 @@ async function runLoad(
     if (clip.id !== clipId) {
       clipId = clip.id;
       host.showClip(clipId);
+      // Opening it is drawn before the next delete is timed.
+      await clock.frame();
     }
     const [clipNow, note] = [clipId, clip.notes[0]];
     noteDeletes.push(await step(() => removeNotes(clipNow, [note.id])));
@@ -202,13 +204,14 @@ async function runDrag(
   const gesture = nextGesture();
   const before = host.events();
   const dragSteps: number[] = [];
-  const dragFrames: number[] = [];
+  // Each frame's time and the time since the one before it.
+  const frames: { at: number; gap: number }[] = [];
   let recording = true;
   let lastFrame: number | null = null;
   const record = async () => {
     while (recording) {
       const time = await clock.frame();
-      if (lastFrame !== null && recording) dragFrames.push(time - lastFrame);
+      if (lastFrame !== null && recording) frames.push({ at: time, gap: time - lastFrame });
       lastFrame = time;
     }
   };
@@ -229,8 +232,12 @@ async function runDrag(
     );
   }
   await Promise.all(replies);
-  const end = (await eventDrawn(before, options.dragSteps)) ?? clock.now();
+  // If no events come, the drag ended when its last reply was drawn: the
+  // wait for them, and the idle frames during it, aren't counted.
+  const drawn = clock.now();
+  const end = (await eventDrawn(before, options.dragSteps)) ?? drawn;
   recording = false;
   await recorder;
+  const dragFrames = frames.filter((frame) => frame.at <= end).map((frame) => frame.gap);
   return { dragSteps, dragFrames, dragMs: end - start };
 }
