@@ -478,7 +478,7 @@ mod wire {
                 id: clip.id,
                 start: clip.start,
                 length: clip.length,
-                notes: clip.notes.into_values().collect(),
+                notes: clip.notes.values().copied().collect(),
             }
         }
     }

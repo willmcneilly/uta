@@ -2,6 +2,7 @@
 //! RFC-003, "The shared model, extended".
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -198,8 +199,17 @@ pub struct Clip {
     pub(crate) content_length: Ticks,
     /// Keyed by ID, so the order notes were added in doesn't matter: removing
     /// a note and adding it back gives exactly the same clip.
-    pub(crate) notes: BTreeMap<NoteId, Note>,
+    ///
+    /// Behind an `Arc`, so copies of a project share each clip's notes, and
+    /// the engine's snapshot shares them too. Changing them copies this
+    /// clip's notes only, if anything else still shares them
+    /// (copy-on-write): see [`Self::notes_mut`]. See RFC-004, "How changes
+    /// are spotted".
+    pub(crate) notes: Arc<Notes>,
 }
+
+/// A clip's notes, keyed by ID.
+pub type Notes = BTreeMap<NoteId, Note>;
 
 impl Clip {
     /// An empty clip.
@@ -210,14 +220,14 @@ impl Clip {
             length,
             content_offset: 0,
             content_length: length,
-            notes: BTreeMap::new(),
+            notes: Arc::default(),
         }
     }
 
     /// This clip with `notes` added to it. A note with the same ID as one
     /// already in it replaces it.
     pub fn with_notes(mut self, notes: impl IntoIterator<Item = Note>) -> Self {
-        self.notes
+        self.notes_mut()
             .extend(notes.into_iter().map(|note| (note.id, note)));
         self
     }
@@ -261,6 +271,28 @@ impl Clip {
         self.notes.get(&id)
     }
 
+    /// The clip's notes, as the `Arc` the project holds them in. Anything
+    /// that keeps a clone of it, such as the engine's snapshot, shares them
+    /// instead of copying them.
+    pub fn shared_notes(&self) -> &Arc<Notes> {
+        &self.notes
+    }
+
+    /// Whether this clip and `other` share their notes: the same `Arc`, not
+    /// just equal notes. A clip in a copy of a project shares its notes
+    /// with the original until a command changes them, so this says whether
+    /// they've changed without comparing them.
+    pub fn shares_notes(&self, other: &Clip) -> bool {
+        Arc::ptr_eq(&self.notes, &other.notes)
+    }
+
+    /// The notes, to change them. If anything else shares them, this clip
+    /// gets its own copy first, so a change never reaches another project
+    /// or a snapshot.
+    pub(crate) fn notes_mut(&mut self) -> &mut Notes {
+        Arc::make_mut(&mut self.notes)
+    }
+
     /// A copy of this clip with new IDs for it and every note, for pasting
     /// or duplicating it. `new_note_id` gives each note its ID.
     pub fn copy(&self, id: ClipId, mut new_note_id: impl FnMut() -> NoteId) -> Self {
@@ -270,7 +302,7 @@ impl Clip {
             length: self.length,
             content_offset: self.content_offset,
             content_length: self.content_length,
-            notes: BTreeMap::new(),
+            notes: Arc::default(),
         }
         .with_notes(self.notes.values().map(|note| Note {
             id: new_note_id(),
