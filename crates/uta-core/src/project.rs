@@ -200,7 +200,8 @@ impl Project {
                     }
                 }
                 let clip = self.clip_mut(clip)?;
-                clip.notes.extend(notes.iter().map(|note| (note.id, *note)));
+                clip.notes_mut()
+                    .extend(notes.iter().map(|note| (note.id, *note)));
                 Ok(Command::RemoveNotes {
                     clip: clip.id,
                     notes: notes.iter().map(|note| note.id).collect(),
@@ -210,9 +211,10 @@ impl Project {
                 let clip = self.clip_mut(*clip)?;
                 check_listed_once(notes.iter().copied())?;
                 check_in_clip(clip, notes.iter().copied())?;
+                let clip_notes = clip.notes_mut();
                 let removed = notes
                     .iter()
-                    .map(|id| clip.notes.remove(id).expect("checked above"))
+                    .map(|id| clip_notes.remove(id).expect("checked above"))
                     .collect();
                 Ok(Command::AddNotes {
                     clip: clip.id,
@@ -226,9 +228,10 @@ impl Project {
                 for note in notes {
                     note.validate()?;
                 }
+                let clip_notes = clip.notes_mut();
                 let previous = notes
                     .iter()
-                    .map(|note| clip.notes.insert(note.id, *note).expect("checked above"))
+                    .map(|note| clip_notes.insert(note.id, *note).expect("checked above"))
                     .collect();
                 Ok(Command::SetNotes {
                     clip: clip.id,
@@ -2085,6 +2088,131 @@ mod tests {
         assert_eq!(transport.loop_length(), 2 * BAR);
         assert_eq!(project.tracks()[0].clips()[0].length(), 2 * BAR);
         assert!(project.tracks()[0].clips()[0].notes().len() > 0);
+    }
+
+    /// [`with_two_notes`], with a second clip that has a note of its own.
+    fn with_two_clips() -> Project {
+        let mut project = with_two_notes();
+        let track = track_id(&project);
+        project
+            .apply(&Command::AddClips {
+                clips: vec![PlacedClip {
+                    track,
+                    clip: Clip::new(testing::clip_id(1), 2 * BAR, BAR).with_notes([note(5, 50, 0)]),
+                }],
+            })
+            .unwrap();
+        project
+    }
+
+    /// A notes command copies the notes of the clip it changes, and only
+    /// that clip's: the other clip still shares its notes with the project
+    /// before, and the project before keeps its own notes. See RFC-004,
+    /// "How changes are spotted".
+    #[test]
+    fn a_notes_command_copies_only_its_own_clips_notes() {
+        let project = with_two_clips();
+        let (clip, other) = (clip_id(&project), testing::clip_id(1));
+        let commands = [
+            Command::AddNotes {
+                clip,
+                notes: vec![note(6, 62, 0)],
+            },
+            Command::RemoveNotes {
+                clip,
+                notes: vec![note_id(0)],
+            },
+            Command::SetNotes {
+                clip,
+                notes: vec![note(0, 61, 0)],
+            },
+        ];
+        for command in commands {
+            let changed = apply_and_check_undo(&project, command.clone());
+            let shares = |id| {
+                changed
+                    .clip(id)
+                    .unwrap()
+                    .shares_notes(project.clip(id).unwrap())
+            };
+            assert!(!shares(clip), "{command:?} copied its clip's notes");
+            assert!(
+                shares(other),
+                "{command:?} left the other clip's notes shared"
+            );
+            assert_eq!(
+                project,
+                with_two_clips(),
+                "{command:?} changed only its copy"
+            );
+        }
+
+        // A rejected one copies nothing.
+        let mut attempt = project.clone();
+        attempt
+            .apply(&Command::RemoveNotes {
+                clip,
+                notes: vec![note_id(9)],
+            })
+            .unwrap_err();
+        for id in [clip, other] {
+            assert!(
+                attempt
+                    .clip(id)
+                    .unwrap()
+                    .shares_notes(project.clip(id).unwrap())
+            );
+        }
+    }
+
+    /// Moving a clip, to another place or track, and resizing it, keeps
+    /// the same notes, by pointer, and so does undoing it.
+    #[test]
+    fn moving_or_resizing_a_clip_shares_its_notes() {
+        let project = with_three_tracks();
+        let clip = testing::clip_id(0);
+        let moves = [
+            (track_id(&project), BAR, BAR),
+            (testing::track_id(0), 3 * BAR, BAR),
+            (testing::track_id(0), BAR, 4 * BAR),
+            (testing::track_id(1), 0, BAR / 2),
+        ];
+        for (track, start, length) in moves {
+            let command = Command::SetClips {
+                clips: vec![ClipPosition {
+                    id: clip,
+                    track,
+                    start,
+                    length,
+                }],
+            };
+            let mut moved = project.clone();
+            let inverse = moved.apply(&command).unwrap();
+            let after = moved.clip(clip).unwrap();
+            assert_eq!((after.start(), after.length()), (start, length));
+            assert!(
+                after.shares_notes(project.clip(clip).unwrap()),
+                "{command:?}"
+            );
+            moved.apply(&inverse).unwrap();
+            assert!(
+                moved
+                    .clip(clip)
+                    .unwrap()
+                    .shares_notes(project.clip(clip).unwrap())
+            );
+        }
+
+        // Setting the loop's length resizes the first clip too.
+        let project = with_two_notes();
+        let mut resized = project.clone();
+        resized.apply(&Command::SetLoopLength { bars: 3 }).unwrap();
+        let (before, after) = (
+            project.clip(clip_id(&project)).unwrap(),
+            resized.clip(clip_id(&project)).unwrap(),
+        );
+        assert_ne!(before.length(), after.length());
+        assert!(after.shares_notes(before));
     }
 
     proptest! {

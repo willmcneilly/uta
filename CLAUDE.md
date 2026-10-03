@@ -39,6 +39,7 @@ cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # th
 cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report
+cargo test -p uta-core --release --test timing -- --ignored --nocapture     # copy-on-write timing report
 UTA_GOLDEN=1 cargo test -p uta-engine --test sound  # regenerate golden WAVs
 
 # Frontend (in app/)
