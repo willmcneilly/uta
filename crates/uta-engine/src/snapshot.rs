@@ -80,7 +80,9 @@ impl Snapshot {
     /// - every clip whose start, length and notes haven't changed, found by
     ///   its ID wherever it was, shares its notes with `previous`. Its notes
     ///   haven't changed if it still has the same `Arc` of them as the
-    ///   project `previous` was built from, so no note is compared;
+    ///   project `previous` was built from, so no note is compared.
+    ///   `previous` holds on to that `Arc`, so its memory can't have been
+    ///   freed and reused for other notes;
     /// - every track whose clips all share their notes, at the same timing,
     ///   shares its events with `previous`, so an edit rebuilds only the
     ///   tracks it touches.
