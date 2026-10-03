@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use uta_core::time::{TempoMap, Ticks};
-use uta_core::{ClipId, Note, Project, Source, TrackId, Transport};
+use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS, Waveform};
 
@@ -78,7 +78,9 @@ impl Snapshot {
     ///   takes a slot `previous` didn't use, so it doesn't land on a removed
     ///   track's notes as they fade;
     /// - every clip whose start, length and notes haven't changed, found by
-    ///   its ID wherever it was, shares its notes with `previous`;
+    ///   its ID wherever it was, shares its notes with `previous`. Its notes
+    ///   haven't changed if it still has the same `Arc` of them as the
+    ///   project `previous` was built from, so no note is compared;
     /// - every track whose clips all share their notes, at the same timing,
     ///   shares its events with `previous`, so an edit rebuilds only the
     ///   tracks it touches.
@@ -120,7 +122,7 @@ impl Snapshot {
                         Some(shared)
                             if shared.start == clip.start()
                                 && shared.length == clip.length()
-                                && shared.notes.iter().eq(clip.notes()) =>
+                                && Arc::ptr_eq(&shared.notes, clip.shared_notes()) =>
                         {
                             Arc::clone(shared)
                         }
@@ -128,7 +130,7 @@ impl Snapshot {
                             id: clip.id(),
                             start: clip.start(),
                             length: clip.length(),
-                            notes: clip.notes().copied().collect(),
+                            notes: Arc::clone(clip.shared_notes()),
                         }),
                     })
                     .collect();
@@ -321,6 +323,11 @@ pub struct TrackNotes {
 }
 
 /// One clip's notes, in ticks.
+///
+/// The notes are the project's own `Arc` of them, shared with the core
+/// rather than copied (RFC-004, "How changes are spotted"). Only the control
+/// side reads them, to build [`TrackNotes`]: the audio thread plays the
+/// events worked out from them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipNotes {
     pub id: ClipId,
@@ -328,7 +335,7 @@ pub struct ClipNotes {
     pub start: Ticks,
     /// Notes starting at or after this, from the clip's start, don't play.
     pub length: Ticks,
-    pub notes: Vec<Note>,
+    pub notes: Arc<Notes>,
 }
 
 /// A note starting or ending, on an exact sample.
@@ -423,7 +430,7 @@ impl TrackNotes {
         let mut events = Vec::new();
         let mut notes = Vec::new();
         for clip in &clips {
-            for note in &clip.notes {
+            for note in clip.notes.values() {
                 if note.start >= clip.length {
                     continue;
                 }
@@ -692,7 +699,7 @@ pub(crate) fn busy_loop() -> Snapshot {
         .unwrap();
     let clip = project.tracks()[0].clips()[0].id();
     let notes = (0..32u8)
-        .map(|i| Note {
+        .map(|i| uta_core::Note {
             id: uta_core::NoteId::from_uuid(id(100 + u128::from(i))),
             pitch: 60 + i % 12,
             velocity: 100,
@@ -738,7 +745,7 @@ pub fn db_to_gain(db: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uta_core::{ClipId, Command, NoteId, ProjectId, SynthParam};
+    use uta_core::{ClipId, Command, Note, NoteId, ProjectId, SynthParam};
     use uuid::Uuid;
 
     fn project() -> Project {
@@ -957,14 +964,15 @@ mod tests {
                     } else {
                         1 + next(400)
                     };
-                    note(i, 60, next(60) * 60, length)
+                    let note = note(i, 60, next(60) * 60, length);
+                    (note.id, note)
                 })
                 .collect();
             let clip = Arc::new(ClipNotes {
                 id: ClipId::from_uuid(Uuid::from_u128(1)),
                 start: 0,
                 length: 20_000,
-                notes,
+                notes: Arc::new(notes),
             });
             let track = TrackNotes::new(vec![clip], &sequence);
             let mut spans = track.notes.clone();
@@ -1329,5 +1337,55 @@ mod tests {
         let snapshot = Snapshot::from(&project);
         assert!(snapshot.soloing());
         assert!(snapshot.tracks()[1].mixer.solo);
+    }
+
+    /// Each clip's notes in `snapshot`, by clip ID.
+    fn clip_notes(snapshot: &Snapshot) -> HashMap<ClipId, &Arc<ClipNotes>> {
+        snapshot
+            .tracks()
+            .iter()
+            .flat_map(|track| track.notes().clips())
+            .map(|clip| (clip.id, clip))
+            .collect()
+    }
+
+    /// Checks every clip's notes in `snapshot` are `project`'s own `Arc` of
+    /// them, not a copy.
+    fn assert_shares_notes_with(snapshot: &Snapshot, project: &Project) {
+        let clips = clip_notes(snapshot);
+        let in_project: Vec<_> = project.tracks().iter().flat_map(|t| t.clips()).collect();
+        assert_eq!(clips.len(), in_project.len());
+        for clip in in_project {
+            assert!(Arc::ptr_eq(&clips[&clip.id()].notes, clip.shared_notes()));
+        }
+    }
+
+    /// A snapshot shares the project's notes rather than copying them, and
+    /// the next one keeps every clip whose notes the project still shares.
+    /// Unchanged is decided by pointer, not by comparing notes: setting a
+    /// note to the values it already has gives the clip new notes in the
+    /// project, so the snapshot takes them too. See RFC-004, "How changes
+    /// are spotted".
+    #[test]
+    fn snapshots_share_the_projects_notes_and_spot_changes_by_pointer() {
+        let mut project = tracks(3);
+        let first = Snapshot::new(&project, 48_000);
+        assert_shares_notes_with(&first, &project);
+
+        let edited = ClipId::from_uuid(Uuid::from_u128(203));
+        let same = *project.clip(edited).unwrap().notes().next().unwrap();
+        project
+            .apply(&Command::SetNotes {
+                clip: edited,
+                notes: vec![same],
+            })
+            .unwrap();
+        let next = Snapshot::sharing(&project, &first);
+        assert_shares_notes_with(&next, &project);
+        let (before, after) = (clip_notes(&first), clip_notes(&next));
+        for (id, clip) in &after {
+            assert_eq!(Arc::ptr_eq(&before[id], clip), *id != edited, "{id}");
+        }
+        assert_eq!(next, Snapshot::new(&project, 48_000));
     }
 }
