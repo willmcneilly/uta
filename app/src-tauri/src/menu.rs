@@ -17,6 +17,7 @@ pub const ADD_TRACK: &str = "add-track";
 pub const DELETE_TRACK: &str = "delete-track";
 pub const DUPLICATE_TRACK: &str = "duplicate-track";
 pub const ADD_STRESS_NOTES: &str = "add-stress-notes";
+pub const RUN_BENCHMARK: &str = "run-benchmark";
 
 /// The menu items that are enabled or not by the project's state, kept to
 /// update them as it changes.
@@ -98,6 +99,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, MenuStat
         .build()?;
     let develop = SubmenuBuilder::new(app, "Develop")
         .item(&MenuItemBuilder::with_id(ADD_STRESS_NOTES, "Add Stress Notes").build(app)?)
+        .item(&MenuItemBuilder::with_id(RUN_BENCHMARK, "Run Benchmark…").build(app)?)
         .build()?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()

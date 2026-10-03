@@ -13,6 +13,7 @@ use uta_core::time::Ticks;
 use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
+use crate::stress::TestSong;
 use crate::uta::{Frame, MixerView, PastedClip, ProjectView, Uta};
 
 /// The event sent with a [`ProjectView`] after every change to the project,
@@ -306,6 +307,16 @@ pub fn add_stress_notes<R: Runtime>(
     clip: ClipId,
 ) -> Result<ProjectView, String> {
     edit(&app, |uta| uta.add_stress_notes(clip))
+}
+
+/// Replaces the song with one of the benchmark's test songs, as one undo
+/// step. The UI calls it from Develop → Run Benchmark.
+#[tauri::command]
+pub fn build_test_song<R: Runtime>(
+    app: AppHandle<R>,
+    song: TestSong,
+) -> Result<ProjectView, String> {
+    edit(&app, |uta| uta.build_test_song(song))
 }
 
 #[tauri::command]

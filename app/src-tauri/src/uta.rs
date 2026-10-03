@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use crate::stress;
+use crate::stress::{self, TestSong};
 
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
@@ -567,6 +567,35 @@ impl Uta {
         // different pattern.
         let notes = stress::notes(found.length(), found.notes().len() as u64);
         self.change(Command::AddNotes { clip, notes }, None)
+    }
+
+    /// Replaces every track with `song`'s, as one undo step: the
+    /// benchmark's test songs. It's an ordinary `RemoveTracks` of the old
+    /// tracks joined by an `AddTracks` of the new, so it undoes and replays
+    /// like any other change.
+    pub fn build_test_song(&mut self, song: TestSong) -> Result<(), String> {
+        let project = self.session.project();
+        let old: Vec<TrackId> = project.tracks().iter().map(Track::id).collect();
+        let bar = project.transport().time_signature().ticks_per_bar();
+        let tracks = song
+            .recipe()
+            .tracks(bar)
+            .into_iter()
+            .enumerate()
+            .map(|(index, track)| PlacedTrack { index, track })
+            .collect();
+        let add = Command::AddTracks { tracks };
+        if old.is_empty() {
+            self.session.apply(add)
+        } else {
+            self.session
+                .apply(Command::RemoveTracks { tracks: old })
+                .and_then(|_| self.session.join(add))
+        }
+        .map_err(|error| error.to_string())?;
+        self.gesture = None;
+        self.sync_engine();
+        Ok(())
     }
 
     /// Adds `notes` to `clip`. Their IDs were chosen by the caller. A later
@@ -1311,6 +1340,75 @@ mod tests {
             serde_json::from_value(serde_json::json!({"name": "waveform", "value": "triangle"}))
                 .unwrap();
         assert_eq!(param, SynthParam::Waveform(Waveform::Triangle));
+    }
+
+    fn shape(view: &ProjectView) -> Vec<(usize, Vec<usize>)> {
+        view.tracks
+            .iter()
+            .map(|track| {
+                let notes = track.clips.iter().map(|clip| clip.notes.len()).collect();
+                (track.clips.len(), notes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_test_song_builds_its_recipe() {
+        for song in [TestSong::Heavy, TestSong::Wide, TestSong::Check7] {
+            let recipe = song.recipe();
+            let mut uta = offline();
+            uta.build_test_song(song).unwrap();
+            let view = uta.project();
+            let clip = vec![recipe.notes_per_clip; recipe.bars as usize];
+            assert_eq!(
+                shape(&view),
+                vec![(recipe.bars as usize, clip); recipe.tracks],
+                "{song:?}"
+            );
+            let bar = TICKS_PER_QUARTER * 4;
+            assert_eq!(view.tracks[0].clips[1].start, bar);
+            assert_eq!(view.song_end, (recipe.bars + 1) * bar);
+            assert_eq!(uta.controller.snapshot().tracks().len(), recipe.tracks);
+        }
+    }
+
+    #[test]
+    fn a_test_song_replaces_the_song_as_one_undo_step() {
+        let mut uta = offline();
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
+        let before = uta.project();
+        uta.build_test_song(TestSong::Heavy).unwrap();
+        assert_eq!(uta.project().tracks.len(), 12);
+        assert!(
+            uta.project()
+                .tracks
+                .iter()
+                .all(|t| t.id != before.tracks[0].id)
+        );
+        uta.undo();
+        assert_eq!(uta.project().tracks, before.tracks);
+        assert_eq!(uta.controller.snapshot().tracks().len(), 1);
+        uta.redo();
+        assert_eq!(shape(&uta.project()), vec![(64, vec![64; 64]); 12]);
+    }
+
+    #[test]
+    fn a_test_song_builds_over_an_empty_song() {
+        let mut uta = offline();
+        uta.remove_track(uta.project().tracks[0].id).unwrap();
+        uta.build_test_song(TestSong::Wide).unwrap();
+        assert_eq!(uta.project().tracks.len(), 32);
+        uta.undo();
+        assert!(uta.project().tracks.is_empty());
+    }
+
+    #[test]
+    fn test_songs_are_named_as_the_ui_names_them() {
+        let song =
+            |name: &str| serde_json::from_value::<TestSong>(serde_json::json!(name)).unwrap();
+        assert_eq!(song("heavy"), TestSong::Heavy);
+        assert_eq!(song("wide"), TestSong::Wide);
+        assert_eq!(song("check-7"), TestSong::Check7);
     }
 
     #[test]
