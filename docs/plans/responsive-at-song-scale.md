@@ -39,14 +39,14 @@ Checked against `main` at `1b20af4`, after UTA-23 and UTA-24:
 
 ### 2. [UTA-27] Send each change once, the fast way (Bug)
 
-**Goal:** A change the UI asks for comes back only as the command's reply. Changes the UI didn't ask for (the menu bar's Undo and Redo) send a `project-changed` event with no payload, and the UI fetches the project the fast way. The heavy and wide songs become smooth.
+**Goal:** A change the UI asks for comes back only as the command's reply. Changes the UI didn't ask for (the menu bar's Undo and Redo) send a `project-changed` event with no payload, and the UI fetches the project the fast way. Every step gets much faster, though each reply still carries every note until ticket 5.
 
 **Acceptance criteria**
 - [ ] Commands the UI calls return the new project view and no longer emit `project-changed`. The UI draws each change once.
 - [ ] Undo and Redo from the menu bar, including ⌘Z and ⇧⌘Z, emit `project-changed` with no payload. The UI answers with `get_project` and draws the result. The menu's enabled states still follow every change, wherever it came from.
 - [ ] The rule is written down where the next person will see it: no large data in an event, in a comment by `edit` and in `CLAUDE.md`'s "How the pieces talk".
 - [ ] Tests: Rust tests that a command's change emits no event and a menu change emits one without a payload; UI tests against the mocked back end that a `project-changed` with no payload calls `get_project` and draws it, and a command's reply is applied once.
-- [ ] The benchmark report in the PR shows slider steps and note deletes under one frame at the heavy and wide loads, and their 30-step drags with frames under 20 ms at p99.
+- [ ] The benchmark report in the PR shows no `project-changed` events for the benchmark's changes, and every step at every load faster than ticket 1's baseline. (Re-scoped after UTA-27's run: it was "under one frame at heavy and wide". Each reply still carries every note, about 5 MB at heavy and wide, so those targets move to ticket 5.)
 
 **Out of scope:** Sending only changed notes, and the sequence number that guards against out-of-order replies (ticket 5). The check-7 load: it still takes about 130 ms a step until ticket 5.
 
@@ -160,7 +160,7 @@ UTA-25 already exists as a Ready chore outside any project. It joins this projec
 
 - Tickets 1, 3 and 4 start together. 2 and 6 follow 1. 5 needs 2 and 4. 7 comes last, after 5 and 6. 3 can land any time before the end-of-project checks.
 - **Checkpoint after 1:** Develop → Run Benchmark on today's `main`. The numbers should look like the RFC's table. That's the baseline.
-- **Checkpoint after 2:** the benchmark again. The heavy and wide songs are smooth to drag and edit (manual check 1 for those loads). The check-7 song is faster but still lags.
+- **Checkpoint after 2:** the benchmark again. Steps are about 2.5 times faster at heavy and wide and 5 times at check 7, and no change sends an event, but no target is met yet: each reply still carries every note (about 5 MB at heavy and wide, 57 MB at check 7). The targets wait for 5.
 - **Checkpoint after 3:** play the check-7 song at a 64-sample buffer and watch the slowest-block readout while you work the controls.
 - **Checkpoint after 6:** drag a volume on the check-7 song. Each step is still slow, but the drag never freezes for seconds.
 - **Checkpoint after 5:** delete notes in the piano roll on the check-7 song. They go at once. The benchmark meets every target (manual check 1). Undo and redo from the keyboard and the menu bar show the right notes (manual check 3).
@@ -184,7 +184,7 @@ UTA-25 already exists as a Ready chore outside any project. It joins this projec
 | UI: one step in flight, final value sent, one undo step | 6 (and 7 for the slider) |
 | Real-time safety: slowest-block measurement under `assert_no_alloc` and RealtimeSanitizer | 3 |
 | Timing report: check-7 load and first block after Play mid-song | 3 |
-| Manual 1: benchmark targets at heavy, wide and check 7 | 1 (the tool), 2 (heavy and wide), 5 (check 7) |
+| Manual 1: benchmark targets at heavy, wide and check 7 | 1 (the tool), 5 (all three loads; 2 measured a part of the way there) |
 | Manual 2: drag sliders at check 7, slider stays under the mouse | 7 |
 | Manual 3: delete notes, drag clips and notes, undo and redo at check 7 | 5 and 6 |
 | Manual 4: check 8, 10 minutes at buffer 64, slowest block under 50% | end of project (needs 3) |
