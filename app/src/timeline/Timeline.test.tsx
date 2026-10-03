@@ -1052,12 +1052,15 @@ describe("the timeline", () => {
 
     it("counts a click on a track's header as the timeline", async () => {
       await renderApp();
+      await click(BAR, 0);
+      await waitFor(() => expect(pianoRollClip()).toEqual([0, 4 * BAR]));
       await clickNoteInPianoRoll();
+      // Synth 1 is the selected clip's track, so the clip stays selected.
       await act(async () => {
         fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 1" }));
       });
-      await menu("copy");
       await menu("duplicate");
+      expect(sent("paste_clips")).toHaveLength(1);
       expect(sent("add_notes")).toEqual([]);
     });
   });
