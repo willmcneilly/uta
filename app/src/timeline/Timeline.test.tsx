@@ -322,6 +322,7 @@ function sendFrame(playing: boolean, playhead: number) {
       trackPeaks: {},
       clips: 0,
       dropouts: 0,
+      slowestBlock: 0,
       output: {
         state: "running",
         device: null,
@@ -723,6 +724,7 @@ describe("the timeline", () => {
           trackPeaks: {},
           clips: 0,
           dropouts: 0,
+          slowestBlock: 0,
           output: {
             state: "running",
             device: null,

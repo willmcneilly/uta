@@ -148,6 +148,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [seenClips, setSeenClips] = useState(0);
   const [windowHeight, setWindowHeight] = useState(() => window.innerHeight);
   const [level] = useState(() => new MeterLevel());
+  // Held like a peak: the slowest block since the readout last showed one.
+  const [slowestBlock] = useState(() => new MeterLevel());
   const [trackLevels] = useState(() => new TrackLevels());
   const [clock] = useState(() => new PlayheadClock());
   const [stats] = useState(() => new FrameStats());
@@ -231,6 +233,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     const channel = subscribe((frame) => {
       if (!active) return;
       level.push(frame.peak);
+      slowestBlock.push(frame.slowestBlock);
       trackLevels.push(frame.trackPeaks);
       clock.report(frame.playhead, frame.playing, performance.now());
       const next = toStatus(frame, projectRef.current);
@@ -240,7 +243,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     return () => {
       active = false;
     };
-  }, [level, trackLevels, clock]);
+  }, [level, slowestBlock, trackLevels, clock]);
 
   const changeVolume = (volumeDb: number, gesture?: number) => {
     setVolume(volumeDb, gesture).then(setProject, report);
@@ -462,6 +465,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           <Output
             output={status.output}
             dropouts={status.dropouts}
+            slowestBlock={slowestBlock}
             busy={changingBuffer}
             onBufferSize={changeBuffer}
           />

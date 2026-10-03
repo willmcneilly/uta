@@ -687,7 +687,8 @@ fn full_used_snapshot_queue_defers_swaps_without_freeing() {
 }
 
 /// When nobody reads status, the processor drops status messages rather than
-/// waiting, and the peak carries over to the next message that gets through.
+/// waiting, and the peak and the slowest block carry over to the next message
+/// that gets through.
 #[test]
 fn full_status_queue_does_not_block_or_allocate() {
     let mut renderer = renderer();
@@ -708,6 +709,7 @@ fn full_status_queue_does_not_block_or_allocate() {
         (STATUS_CAPACITY * 2 * BLOCK + BLOCK) as u64
     );
     assert!(status.peak > 0.0);
+    assert!(status.slowest_block > 0.0);
 }
 
 #[test]
@@ -720,6 +722,36 @@ fn dropouts_are_reported_in_status() {
     });
     process_block(renderer.processor(), &mut buffer);
     assert_eq!(renderer.controller.poll().dropouts, 2);
+}
+
+/// Timing each block reads the clock on the audio thread, which must neither
+/// wait nor allocate: through a snapshot swap, and a dropout reported the way
+/// a device error reports it.
+#[test]
+fn the_slowest_block_is_measured_without_allocating() {
+    let mut renderer = renderer();
+    let (mut errors, mut codes) = ErrorCallback::new();
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+    process_block(renderer.processor(), &mut buffer);
+    let status = renderer.controller.poll();
+    assert!(
+        status.slowest_block > 0.0 && status.slowest_block.is_finite(),
+        "{status:?}"
+    );
+
+    renderer.controller.set_volume_db(-6.0).unwrap();
+    let error = device_error(cpal::ErrorKind::Xrun);
+    assert_no_alloc(|| errors.report(error));
+    assert_eq!(codes.pop(), Ok(DeviceError::Xrun));
+    assert_no_alloc(|| renderer.processor().note_dropout());
+    process_block(renderer.processor(), &mut buffer);
+    let status = renderer.controller.poll();
+    assert_eq!((status.snapshots, status.dropouts), (1, 1));
+    assert!(status.slowest_block > 0.0, "{status:?}");
+
+    // With no block since, there's nothing to report.
+    assert_eq!(renderer.controller.poll().slowest_block, 0.0);
 }
 
 #[test]

@@ -154,6 +154,11 @@ export interface Frame {
   /** Samples the master has clipped since the app started. */
   clips: number;
   dropouts: number;
+  /**
+   * The audio thread's slowest block since the last frame, as a share of its
+   * deadline. 1 or more is late.
+   */
+  slowestBlock: number;
   output: OutputView;
 }
 
