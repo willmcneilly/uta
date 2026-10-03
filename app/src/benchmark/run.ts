@@ -46,9 +46,9 @@ export interface BenchmarkOptions {
   dragSteps: number;
   /**
    * How long to wait for a `project-changed` event once a reply is drawn.
-   * Rust sends one after every change today, and drawing it is most of the
-   * cost (RFC-004, "What we measured"), so a step isn't done until it's
-   * drawn too. Once changes stop sending one, the wait isn't counted.
+   * Changes the UI asks for send none (RFC-004, part 1), so the wait isn't
+   * counted and the report shows 0 events. If one ever comes back, the step
+   * isn't done until it's drawn too, as before UTA-27.
    */
   eventWaitMs: number;
   /** A pause after building each song, so the build doesn't spill into the steps. */

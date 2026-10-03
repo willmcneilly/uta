@@ -7,6 +7,7 @@ import App from "../App";
 import type { EditMenuItem, Frame, NoteView, ProjectView } from "../backend";
 import {
   type RecordingRenderer,
+  announceChange,
   firstClip,
   projectView,
   recordingFactory,
@@ -398,7 +399,8 @@ describe("deleting a note", () => {
     // Or when the selected note has gone, undone from the menu, say.
     await press(240, 60);
     await release();
-    await act(() => emit("project-changed", withNotes([note("high", 72, 3840)])));
+    project = withNotes([note("high", 72, 3840)]);
+    await announceChange();
     await key(roll(), "Delete");
     expect(sent("remove_notes")).toEqual([]);
   });
@@ -728,7 +730,7 @@ describe("the velocity lane", () => {
   it("changes every selected note together", async () => {
     await renderApp();
     project = withNotes([note("low", 60, 0), { ...note("high", 72, 3840), velocity: 40 }]);
-    await act(() => emit("project-changed", project));
+    await announceChange();
     await click(240, 60);
     await click(3840 + 240, 72, { shiftKey: true });
     await pressLane(3840, 40);

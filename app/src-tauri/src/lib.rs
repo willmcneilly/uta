@@ -8,7 +8,7 @@ mod uta;
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent, Runtime};
 use uta_engine::live;
 
 use crate::commands::{AppState, lock};
@@ -28,21 +28,7 @@ pub fn run() {
             app.set_menu(menu)?;
             app.manage(menu_state);
             app.on_menu_event(|app, event| {
-                let result = match event.id().as_ref() {
-                    menu::UNDO => commands::undo(app.clone()).map(drop),
-                    menu::REDO => commands::redo(app.clone()).map(drop),
-                    id @ (menu::COPY | menu::PASTE | menu::DUPLICATE) => {
-                        commands::pass_menu_item(app, commands::EDIT_MENU, id)
-                    }
-                    id @ (menu::ADD_TRACK | menu::DELETE_TRACK | menu::DUPLICATE_TRACK) => {
-                        commands::pass_menu_item(app, commands::TRACK_MENU, id)
-                    }
-                    id @ (menu::ADD_STRESS_NOTES | menu::RUN_BENCHMARK) => {
-                        commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
-                    }
-                    _ => return,
-                };
-                if let Err(error) = result {
+                if let Err(error) = menu_item(app, event.id().as_ref()) {
                     eprintln!("uta: {error}");
                 }
             });
@@ -99,6 +85,26 @@ pub fn run() {
         });
 }
 
+/// Acts on the menu item `id`. Undo and Redo change the project here; the
+/// UI didn't ask for them, so it's told they happened. The rest are passed
+/// on to the UI, which sends back an ordinary command.
+fn menu_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> Result<(), String> {
+    match id {
+        menu::UNDO => commands::undo(app.clone()).and_then(|_| commands::announce_change(app)),
+        menu::REDO => commands::redo(app.clone()).and_then(|_| commands::announce_change(app)),
+        menu::COPY | menu::PASTE | menu::DUPLICATE => {
+            commands::pass_menu_item(app, commands::EDIT_MENU, id)
+        }
+        menu::ADD_TRACK | menu::DELETE_TRACK | menu::DUPLICATE_TRACK => {
+            commands::pass_menu_item(app, commands::TRACK_MENU, id)
+        }
+        menu::ADD_STRESS_NOTES | menu::RUN_BENCHMARK => {
+            commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Sends the UI one [`uta::Frame`] per screen frame: the level, playhead,
 /// dropouts and output, batched since the last one. Runs for the life of the
 /// app. It polls the engine even with no subscriber, so used snapshots are
@@ -115,5 +121,60 @@ fn send_frames(app: &AppHandle) {
             // The page went away. It subscribes again when it loads.
             *frames = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
+    use tauri::{App, Listener};
+
+    use super::*;
+    use crate::uta::Uta;
+
+    /// The app on Tauri's mock runtime, with no sound device, recording
+    /// every `project-changed` payload it emits. It has no menu bar: macOS
+    /// only builds menus on the main thread, and tests run on others.
+    fn app() -> (App<MockRuntime>, Arc<Mutex<Vec<String>>>) {
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("the mock app builds");
+        app.manage(AppState {
+            uta: Mutex::new(Uta::offline()),
+            frames: Mutex::new(None),
+        });
+        let events = Arc::new(Mutex::new(Vec::new()));
+        app.listen_any(commands::PROJECT_CHANGED, {
+            let events = events.clone();
+            move |event| lock(&events).push(event.payload().to_owned())
+        });
+        (app, events)
+    }
+
+    #[test]
+    fn a_command_replies_with_the_change_and_emits_no_event() {
+        let (app, events) = app();
+        let view = commands::set_volume(app.handle().clone(), -6.0, None).unwrap();
+        assert_eq!(view.volume_db, -6.0);
+        let id = uta_core::TrackId::random();
+        let view = commands::add_track(app.handle().clone(), id).unwrap();
+        assert!(view.tracks.iter().any(|track| track.id == id));
+        assert!(lock(&events).is_empty());
+    }
+
+    #[test]
+    fn undo_and_redo_from_the_menu_emit_project_changed_with_no_payload() {
+        let (app, events) = app();
+        commands::set_volume(app.handle().clone(), -6.0, None).unwrap();
+
+        menu_item(app.handle(), menu::UNDO).unwrap();
+        assert_eq!(*lock(&events), ["null"]);
+        assert_ne!(commands::get_project(app.state()).volume_db, -6.0);
+
+        menu_item(app.handle(), menu::REDO).unwrap();
+        assert_eq!(*lock(&events), ["null", "null"]);
+        assert_eq!(commands::get_project(app.state()).volume_db, -6.0);
     }
 }

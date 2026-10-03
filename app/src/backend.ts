@@ -157,7 +157,11 @@ export interface Frame {
   output: OutputView;
 }
 
-/** Sent with a ProjectView after every change, including undo and redo from the menu. */
+/**
+ * Sent, with no payload, after a change the UI didn't ask for: Undo and Redo
+ * from the menu bar. The UI fetches the project with `getProject`. A change
+ * the UI asked for comes back only as its command's reply.
+ */
 export const PROJECT_CHANGED = "project-changed";
 
 /** Sent with the item's ID when Copy, Paste or Duplicate is chosen from the Edit menu. */
@@ -390,8 +394,8 @@ export function setBufferSize(size: number): Promise<void> {
   return invoke<void>("set_buffer_size", { size });
 }
 
-export function onProjectChanged(handler: (project: ProjectView) => void): Promise<UnlistenFn> {
-  return listen<ProjectView>(PROJECT_CHANGED, (event) => handler(event.payload));
+export function onProjectChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen<null>(PROJECT_CHANGED, () => handler());
 }
 
 export function onEditMenu(handler: (item: EditMenuItem) => void): Promise<UnlistenFn> {

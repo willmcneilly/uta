@@ -301,6 +301,20 @@ impl Uta {
         ))
     }
 
+    /// Starts with a new project and no device: tests drive the audio
+    /// thread's side themselves.
+    #[cfg(test)]
+    pub(crate) fn offline() -> Self {
+        let session = Session::new(Project::new());
+        let (controller, processor) = new_engine(&session);
+        Self::new(
+            session,
+            controller,
+            Playback::Offline(processor),
+            live::DEFAULT_BUFFER_SIZE,
+        )
+    }
+
     fn new(session: Session, controller: Controller, playback: Playback, buffer: u32) -> Self {
         Self {
             session,
@@ -973,14 +987,7 @@ mod tests {
     use super::*;
 
     fn offline() -> Uta {
-        let session = Session::new(Project::new());
-        let (controller, processor) = new_engine(&session);
-        Uta::new(
-            session,
-            controller,
-            Playback::Offline(processor),
-            live::DEFAULT_BUFFER_SIZE,
-        )
+        Uta::offline()
     }
 
     impl Uta {

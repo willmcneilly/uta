@@ -16,6 +16,7 @@ import type {
 } from "../backend";
 import {
   type RecordingRenderer,
+  announceChange,
   projectView,
   recordingFactory,
   trackView,
@@ -369,12 +370,11 @@ describe("the timeline", () => {
     expect(timeline.lastClips()[0].notes.map((n) => n.id)).toEqual(["n1", "n2"]);
 
     // Undo, say: whatever Rust announces is drawn.
-    await act(() =>
-      emit("project-changed", {
-        ...project,
-        tracks: [project.tracks[0], { ...project.tracks[1], clips: [] }],
-      }),
-    );
+    project = {
+      ...project,
+      tracks: [project.tracks[0], { ...project.tracks[1], clips: [] }],
+    };
+    await announceChange();
     await waitFor(() => expect(drawn()).toEqual([["clip-1", 0, 0, 4 * BAR]]));
   });
 

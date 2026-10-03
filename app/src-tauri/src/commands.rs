@@ -16,8 +16,10 @@ use crate::menu::MenuState;
 use crate::stress::TestSong;
 use crate::uta::{Frame, MixerView, PastedClip, ProjectView, Uta};
 
-/// The event sent with a [`ProjectView`] after every change to the project,
-/// wherever it came from (a command or the menu).
+/// The event sent, with no payload, after a change the UI didn't ask for:
+/// Undo and Redo from the menu bar, ⌘Z and ⇧⌘Z included. The UI answers with
+/// [`get_project`]. A change the UI asked for comes back as the command's
+/// reply instead, so it's sent once.
 pub const PROJECT_CHANGED: &str = "project-changed";
 
 /// The event sent when Copy, Paste or Duplicate is chosen from the Edit
@@ -47,7 +49,15 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Changes the project with `change`, then tells the menu and the UI.
+/// Changes the project with `change`, updates the menu, and returns the new
+/// [`ProjectView`] as the command's reply.
+///
+/// It emits no event: the UI asked for the change, and the reply already
+/// carries it. Never put large data in an event. Rust can only push into the
+/// web view by having it run JavaScript, which is fine for a small message
+/// and slow for a big one (RFC-004, part 1). A change the UI didn't ask for
+/// emits [`PROJECT_CHANGED`] with no payload, through [`announce_change`],
+/// and the UI fetches the project with an ordinary call.
 pub fn edit<R: Runtime>(
     app: &AppHandle<R>,
     change: impl FnOnce(&mut Uta) -> Result<(), String>,
@@ -61,9 +71,14 @@ pub fn edit<R: Runtime>(
     if let Some(menu) = app.try_state::<MenuState<R>>() {
         menu.update(&project).map_err(|error| error.to_string())?;
     }
-    app.emit(PROJECT_CHANGED, &project)
-        .map_err(|error| error.to_string())?;
     Ok(project)
+}
+
+/// Tells the UI the project changed without it asking (Undo or Redo from the
+/// menu bar), with no payload: it fetches the project with [`get_project`].
+pub fn announce_change<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    app.emit(PROJECT_CHANGED, ())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
