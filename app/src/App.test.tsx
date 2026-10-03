@@ -24,6 +24,7 @@ import type {
 } from "./backend";
 import {
   type RecordingRenderer,
+  announceChange,
   projectView,
   recordingFactory,
   trackView,
@@ -363,7 +364,8 @@ describe("App", () => {
       ]),
     );
     // Undo, say, sends a new project from Rust.
-    await act(() => emit("project-changed", view(-12, [note("other", 64, 960, 90)])));
+    project = view(-12, [note("other", 64, 960, 90)]);
+    await announceChange();
     await waitFor(() => expect(drawnNotes()).toEqual([["other", 64, 960, 90]]));
   });
 
@@ -639,7 +641,8 @@ describe("App", () => {
         sustain: 0.25,
         releaseSeconds: 2.5,
       };
-      await act(() => emit("project-changed", undone));
+      project = undone;
+      await announceChange();
       expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
       expect(slider("Cutoff")).toHaveValue("333");
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
@@ -652,10 +655,25 @@ describe("App", () => {
     });
   });
 
-  it("shows undo and redo from the menu, which Rust announces", async () => {
+  it("fetches and shows undo and redo from the menu, which Rust announces with no payload", async () => {
     await renderApp();
-    await act(() => emit("project-changed", view(-3)));
-    expect(volume()).toHaveValue("-3");
+    const fetches = () => commands().filter((cmd) => cmd === "get_project").length;
+    const before = fetches();
+    project = view(-3);
+    await act(() => emit("project-changed"));
+    await waitFor(() => expect(volume()).toHaveValue("-3"));
+    expect(fetches()).toBe(before + 1);
+  });
+
+  it("applies a command's reply once, without fetching it again", async () => {
+    await renderApp();
+    const before = calls.length;
+    fireEvent.change(volume(), { target: { value: "-6" } });
+    await waitFor(() => expect(volume()).toHaveValue("-6"));
+    // Settle, in case anything else were coming.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(commands().slice(before)).toEqual(["set_volume"]);
+    expect(volume()).toHaveValue("-6");
   });
 
   it("offers only the buffer sizes the device supports", async () => {
@@ -777,7 +795,8 @@ describe("App", () => {
       );
 
       // Undo, say, sends a new project from Rust.
-      await act(() => emit("project-changed", projectView()));
+      project = projectView();
+      await announceChange();
       expect(headerNames()).toEqual(["Synth 1"]);
     });
 
@@ -1010,7 +1029,8 @@ describe("App", () => {
         fireEvent.pointerMove(window, { clientY: 900 });
         // Undo, say, takes a track away during the drag.
         const [first, , third] = project.tracks;
-        await act(() => emit("project-changed", { ...project, tracks: [first, third] }));
+        project = { ...project, tracks: [first, third] };
+        await announceChange();
         fireEvent.pointerUp(window);
         await waitFor(() => expect(sent("move_track")).toEqual([{ track: "track-1", index: 1 }]));
       });
@@ -1030,10 +1050,12 @@ describe("App", () => {
       fireEvent.click(screen.getByRole("button", { name: "+ Add track" }));
       await waitFor(() => expect(header("Synth 2")).toHaveAttribute("aria-current", "true"));
       const withBoth = project;
-      await act(() => emit("project-changed", projectView()));
+      project = projectView();
+      await announceChange();
       expect(header("Synth 1")).toHaveAttribute("aria-current", "true");
       // Redo brings it back, but the selection stays where it fell.
-      await act(() => emit("project-changed", withBoth));
+      project = withBoth;
+      await announceChange();
       expect(header("Synth 1")).toHaveAttribute("aria-current", "true");
       expect(header("Synth 2")).not.toHaveAttribute("aria-current");
     });

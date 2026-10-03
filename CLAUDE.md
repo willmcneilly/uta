@@ -19,6 +19,8 @@ examples              command lists for `uta render/play --commands`
 
 How the pieces talk:
 - The UI never changes project data. It sends **commands** to Rust as Tauri calls. The project core applies them, records the inverse for undo, and returns the new state.
+- Each change reaches the UI once. A command's reply carries it, and nothing else does. A change the UI didn't ask for (Undo and Redo from the menu bar) emits `project-changed` with **no payload**, and the UI fetches the project with `get_project`.
+- **No large data in an event.** Rust pushes an event by having the web view run JavaScript: fine for a small message, slow for a big one. Send an ID or nothing, and let the UI fetch the rest with an ordinary call.
 - Commands are serde-serialisable, versioned, and refer to things by permanent IDs, so replaying them always rebuilds the same project.
 - The engine builds a complete "what to play" snapshot from the core's project (`Snapshot::from(&Project)`). The audio thread swaps it in at the start of a block and sends the old one back to be freed.
 - Fast data (meters, playhead, dropouts) streams to the UI through a Tauri channel, batched once per frame. Busy views draw on a canvas.

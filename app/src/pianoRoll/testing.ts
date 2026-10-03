@@ -1,10 +1,24 @@
 // Test helpers: a project view and a renderer that records what it's asked
 // to draw instead of drawing.
 
+import { act } from "@testing-library/react";
+import { emit } from "@tauri-apps/api/event";
 import type { ClipView, NoteView, ProjectView, TrackView } from "../backend";
 import type { PlacedNote } from "./notes";
 import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory } from "./renderer";
 import type { Rect, Viewport } from "./viewport";
+
+/**
+ * Emits `project-changed` as Rust does after Undo or Redo from the menu bar,
+ * with no payload, and waits for the UI to fetch the project and draw it.
+ * Set the mocked back end's project first.
+ */
+export async function announceChange(): Promise<void> {
+  await act(async () => {
+    await emit("project-changed");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
 
 /** A track with the default sound and mixer, and `clips`. */
 export function trackView(id: string, name: string, clips: ClipView[] = []): TrackView {
