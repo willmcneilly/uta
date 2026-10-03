@@ -136,7 +136,7 @@ async function runLoad(
     notes: clips.reduce((sum, clip) => sum + clip.notes.length, 0),
   };
   const trackId = built.tracks[0].id;
-  const clipId = built.tracks[0].clips[0].id;
+  let clipId = built.tracks[0].clips[0].id;
   host.showClip(clipId);
   await clock.sleep(options.settleMs);
 
@@ -156,10 +156,18 @@ async function runLoad(
   say("note deletes");
   const noteDeletes: number[] = [];
   for (let i = 0; i < options.noteDeletes; i++) {
-    const clip = project?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
-    const note = clip?.notes[0];
-    if (!note) break;
-    noteDeletes.push(await step(() => removeNotes(clipId, [note.id])));
+    // A clip that runs out of notes (the wide song's hold 8) hands over to
+    // the next one on the track, shown in the piano roll in its turn.
+    const clip = project?.tracks
+      .find((t) => t.id === trackId)
+      ?.clips.find((c) => c.notes.length > 0);
+    if (!clip) break;
+    if (clip.id !== clipId) {
+      clipId = clip.id;
+      host.showClip(clipId);
+    }
+    const [clipNow, note] = [clipId, clip.notes[0]];
+    noteDeletes.push(await step(() => removeNotes(clipNow, [note.id])));
   }
 
   say("a drag");

@@ -1190,6 +1190,31 @@ describe("App", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
+    it("moves on to the next clip when one runs out of notes", async () => {
+      render(
+        <App
+          createRenderer={factory}
+          benchmark={{ options: { ...options, songs: ["wide"], noteDeletes: 5 }, clock }}
+        />,
+      );
+      await screen.findByRole("slider", { name: /Volume/ });
+      await act(() => emit("develop-menu", "run-benchmark"));
+      fireEvent.click(screen.getByRole("button", { name: "Replace and Run" }));
+      await screen.findByLabelText("Benchmark report");
+      // Each clip holds three notes, so the fourth delete is in the next clip.
+      const deletes = calls.filter((c) => c.cmd === "remove_notes").map((c) => c.args);
+      expect(deletes).toEqual([
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-0"] },
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-1"] },
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-2"] },
+        { clip: "wide-clip-1-1", notes: ["wide-note-1-1-0"] },
+        { clip: "wide-clip-1-1", notes: ["wide-note-1-1-1"] },
+      ]);
+      await waitFor(() =>
+        expect(renderer.lastNotes().map((n) => n.id)).toEqual(["wide-note-1-1-2"]),
+      );
+    });
+
     it("says why it stopped if a command fails", async () => {
       const dialog = await openBenchmark();
       failWith = "no room";
