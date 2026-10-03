@@ -37,7 +37,7 @@ pub fn run() {
                     id @ (menu::ADD_TRACK | menu::DELETE_TRACK | menu::DUPLICATE_TRACK) => {
                         commands::pass_menu_item(app, commands::TRACK_MENU, id)
                     }
-                    id @ menu::ADD_STRESS_NOTES => {
+                    id @ (menu::ADD_STRESS_NOTES | menu::RUN_BENCHMARK) => {
                         commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
                     }
                     _ => return,
@@ -73,6 +73,7 @@ pub fn run() {
             commands::paste_clips,
             commands::remove_clips,
             commands::add_stress_notes,
+            commands::build_test_song,
             commands::add_notes,
             commands::set_notes,
             commands::remove_notes,

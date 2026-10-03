@@ -12,6 +12,7 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
   Frame,
   MixerView,
@@ -209,6 +210,40 @@ beforeEach(() => {
         case "add_stress_notes":
           // What's added is Rust's business; the tests check where it goes.
           return project;
+        case "build_test_song": {
+          // Two tracks of two clips of three notes, named after the song.
+          const song = args.song as string;
+          const clip = (t: number, c: number) => ({
+            id: `${song}-clip-${t}-${c}`,
+            start: c * 3840,
+            length: 3840,
+            notes: [0, 1, 2].map((n) => note(`${song}-note-${t}-${c}-${n}`, 60 + n, n * 480)),
+          });
+          project = {
+            ...project,
+            canUndo: true,
+            tracks: [1, 2].map((t) =>
+              trackView(`${song}-track-${t}`, `Synth ${t}`, [clip(t, 0), clip(t, 1)]),
+            ),
+          };
+          return project;
+        }
+        case "remove_notes": {
+          const gone = new Set(args.notes as string[]);
+          project = {
+            ...project,
+            canUndo: true,
+            tracks: project.tracks.map((track) => ({
+              ...track,
+              clips: track.clips.map((clip) =>
+                clip.id === args.clip
+                  ? { ...clip, notes: clip.notes.filter((n) => !gone.has(n.id)) }
+                  : clip,
+              ),
+            })),
+          };
+          return project;
+        }
         case "subscribe":
           frames = args.onFrame as Channel<Frame>;
           return null;
@@ -1057,6 +1092,136 @@ describe("App", () => {
       await act(() => emit("track-menu", "duplicate-track"));
       expect(commands()).not.toContain("remove_track");
       expect(commands()).not.toContain("duplicate_track");
+    });
+  });
+
+  describe("benchmark", () => {
+    // Frames and pauses come at once, so the run takes no time at all.
+    let time = 0;
+    const clock: Clock = {
+      now: () => (time += 1),
+      frame: () => new Promise((resolve) => setTimeout(() => resolve((time += 16)), 0)),
+      sleep: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    };
+    const options: BenchmarkOptions = {
+      ...DEFAULT_OPTIONS,
+      sliderSteps: 2,
+      noteDeletes: 2,
+      dragSteps: 3,
+      eventWaitMs: 0,
+      settleMs: 0,
+    };
+    const writeText = vi.fn<(text: string) => Promise<void>>();
+
+    beforeEach(() => {
+      writeText.mockReset().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      });
+    });
+
+    async function openBenchmark() {
+      render(<App createRenderer={factory} benchmark={{ options, clock }} />);
+      await screen.findByRole("slider", { name: /Volume/ });
+      await act(() => emit("develop-menu", "run-benchmark"));
+      return screen.getByRole("dialog", { name: "Benchmark" });
+    }
+
+    const benchmarkCalls = () =>
+      calls.filter((c) => ["build_test_song", "set_track_mixer", "remove_notes"].includes(c.cmd));
+
+    it("asks first, and sends nothing if cancelled", async () => {
+      const dialog = await openBenchmark();
+      expect(dialog).toHaveTextContent(/replaces the current song/);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(benchmarkCalls()).toEqual([]);
+    });
+
+    it("builds each song in turn and works its controls, then shows the report", async () => {
+      const dialog = await openBenchmark();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Replace and Run" }));
+      const report = await screen.findByLabelText("Benchmark report");
+
+      const songs = ["heavy", "wide", "check-7"];
+      const sentCalls = benchmarkCalls();
+      expect(sentCalls).toHaveLength(songs.length * 8);
+      songs.forEach((song, index) => {
+        const [build, slider1, slider2, delete1, delete2, ...drag] = sentCalls.slice(
+          index * 8,
+          index * 8 + 8,
+        );
+        // Rust builds the song; the UI only says which.
+        expect(build).toEqual({ cmd: "build_test_song", args: { song } });
+        const track = `${song}-track-1`;
+        // Slider steps on the top track's volume, each its own change.
+        for (const step of [slider1, slider2]) {
+          expect(step.cmd).toBe("set_track_mixer");
+          expect(step.args).toMatchObject({ track, gesture: null });
+        }
+        // Note deletes in the clip the piano roll shows, one note at a time.
+        const clip = `${song}-clip-1-0`;
+        expect([delete1, delete2]).toEqual([
+          { cmd: "remove_notes", args: { clip, notes: [`${song}-note-1-0-0`] } },
+          { cmd: "remove_notes", args: { clip, notes: [`${song}-note-1-0-1`] } },
+        ]);
+        // A drag: one gesture, a step a frame, the volume moving each time.
+        expect(drag.map((step) => step.cmd)).toEqual(Array(3).fill("set_track_mixer"));
+        const gestures = new Set(drag.map((step) => step.args.gesture));
+        expect(gestures.size).toBe(1);
+        expect([...gestures][0]).toEqual(expect.any(Number));
+        const volumes = drag.map((step) => (step.args.mixer as MixerView).volumeDb);
+        expect(new Set(volumes).size).toBe(3);
+      });
+
+      expect(report).toHaveTextContent(/heavy: 2 tracks, 4 clips, 12 notes/);
+      expect(report).toHaveTextContent(/check 7: 2 tracks, 4 clips, 12 notes/);
+      expect(report).toHaveTextContent(/max ≤ 50/);
+      // The piano roll shows the clip the notes were deleted from.
+      await waitFor(() =>
+        expect(renderer.lastNotes().map((n) => n.id)).toEqual(["check-7-note-1-0-2"]),
+      );
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Copy as Text" }));
+      await within(dialog).findByRole("button", { name: "Copied" });
+      expect(writeText).toHaveBeenCalledWith(report.textContent);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("moves on to the next clip when one runs out of notes", async () => {
+      render(
+        <App
+          createRenderer={factory}
+          benchmark={{ options: { ...options, songs: ["wide"], noteDeletes: 5 }, clock }}
+        />,
+      );
+      await screen.findByRole("slider", { name: /Volume/ });
+      await act(() => emit("develop-menu", "run-benchmark"));
+      fireEvent.click(screen.getByRole("button", { name: "Replace and Run" }));
+      await screen.findByLabelText("Benchmark report");
+      // Each clip holds three notes, so the fourth delete is in the next clip.
+      const deletes = calls.filter((c) => c.cmd === "remove_notes").map((c) => c.args);
+      expect(deletes).toEqual([
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-0"] },
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-1"] },
+        { clip: "wide-clip-1-0", notes: ["wide-note-1-0-2"] },
+        { clip: "wide-clip-1-1", notes: ["wide-note-1-1-0"] },
+        { clip: "wide-clip-1-1", notes: ["wide-note-1-1-1"] },
+      ]);
+      await waitFor(() =>
+        expect(renderer.lastNotes().map((n) => n.id)).toEqual(["wide-note-1-1-2"]),
+      );
+    });
+
+    it("says why it stopped if a command fails", async () => {
+      const dialog = await openBenchmark();
+      failWith = "no room";
+      fireEvent.click(within(dialog).getByRole("button", { name: "Replace and Run" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        /The benchmark stopped: .*no room/,
+      );
     });
   });
 

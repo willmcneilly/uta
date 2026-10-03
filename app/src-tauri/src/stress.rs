@@ -1,9 +1,11 @@
 //! Stress notes: thousands of made-up notes that fill the loop, to learn
 //! whether the piano roll stays smooth with a lot to draw (RFC-002, "Risks &
-//! unknowns", web view performance).
+//! unknowns", web view performance). And the benchmark's test songs, made of
+//! them (RFC-004, "The benchmark stays").
 
+use serde::Deserialize;
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
-use uta_core::{Note, NoteId};
+use uta_core::{Clip, ClipId, Note, NoteId, Source, SynthSettings, Track, TrackId};
 
 /// How many notes one press of the menu item adds.
 pub const NOTE_COUNT: usize = 3_000;
@@ -29,6 +31,75 @@ pub fn notes(loop_length: Ticks, seed: u64) -> Vec<Note> {
             length: (1 + random.next() % 16) * sixteenth,
         })
         .collect()
+}
+
+/// The songs the benchmark builds, named after RFC-004's loads ("What we
+/// measured"). The UI only says which; Rust knows the recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TestSong {
+    /// 12 tracks × 64 bars, 64 notes a bar: 49,152 notes.
+    Heavy,
+    /// 32 tracks × 200 bars, 8 notes a bar: 51,200 notes in 6,400 clips.
+    Wide,
+    /// Make a song's manual check 7: 7 tracks × 28 bars, 3,000 notes a bar.
+    #[serde(rename = "check-7")]
+    Check7,
+}
+
+/// How a test song is made: `tracks` tracks, each with `bars` one-bar clips
+/// end to end from the start of the song, each holding `notes_per_clip`
+/// stress notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Recipe {
+    pub tracks: usize,
+    pub bars: u64,
+    pub notes_per_clip: usize,
+}
+
+impl TestSong {
+    pub fn recipe(self) -> Recipe {
+        let (tracks, bars, notes_per_clip) = match self {
+            Self::Heavy => (12, 64, 64),
+            Self::Wide => (32, 200, 8),
+            Self::Check7 => (7, 28, NOTE_COUNT),
+        };
+        Recipe {
+            tracks,
+            bars,
+            notes_per_clip,
+        }
+    }
+}
+
+impl Recipe {
+    /// The song's tracks, named "Synth 1" onwards, with the default sound
+    /// and mixer. Every clip holds the same pattern, as if it had been
+    /// duplicated, and every track, clip and note has a new random ID.
+    pub fn tracks(self, bar: Ticks) -> Vec<Track> {
+        let pattern: Vec<Note> = notes(bar, 0)
+            .into_iter()
+            .take(self.notes_per_clip)
+            .collect();
+        (0..self.tracks)
+            .map(|index| {
+                let clips = (0..self.bars).map(|at| {
+                    Clip::new(ClipId::random(), at * bar, bar).with_notes(pattern.iter().map(
+                        |note| Note {
+                            id: NoteId::random(),
+                            ..*note
+                        },
+                    ))
+                });
+                Track::new(
+                    TrackId::random(),
+                    format!("Synth {}", index + 1),
+                    Source::Synth(SynthSettings::default()),
+                )
+                .with_clips(clips)
+            })
+            .collect()
+    }
 }
 
 /// A small, fast pseudo-random generator. Good enough for made-up notes, and
@@ -69,6 +140,55 @@ mod tests {
         }
         // Spread across the whole loop, not bunched at the start.
         assert!(notes.iter().any(|note| note.start >= 3 * BAR));
+    }
+
+    #[test]
+    fn each_test_song_has_the_rfcs_load() {
+        let notes = |song: TestSong| {
+            let recipe = song.recipe();
+            recipe.tracks as u64 * recipe.bars * recipe.notes_per_clip as u64
+        };
+        assert_eq!(notes(TestSong::Heavy), 49_152);
+        assert_eq!(notes(TestSong::Wide), 51_200);
+        assert_eq!(notes(TestSong::Check7), 588_000);
+    }
+
+    #[test]
+    fn a_recipe_builds_its_tracks_clips_and_notes() {
+        let recipe = Recipe {
+            tracks: 3,
+            bars: 5,
+            notes_per_clip: 7,
+        };
+        let tracks = recipe.tracks(BAR);
+        let names: Vec<_> = tracks.iter().map(Track::name).collect();
+        assert_eq!(names, ["Synth 1", "Synth 2", "Synth 3"]);
+        for track in &tracks {
+            let clips = track.clips();
+            assert_eq!(clips.len(), 5);
+            for (bar, clip) in (0..).zip(clips) {
+                assert_eq!((clip.start(), clip.length()), (bar * BAR, BAR));
+                assert_eq!(clip.notes().len(), 7);
+                assert!(clip.notes().all(|note| note.start < BAR));
+            }
+        }
+        // Every clip holds the same pattern, under its own IDs.
+        let shape = |clip: &Clip| -> Vec<_> {
+            let mut notes: Vec<_> = clip
+                .notes()
+                .map(|n| (n.pitch, n.velocity, n.start, n.length))
+                .collect();
+            notes.sort_unstable();
+            notes
+        };
+        assert_eq!(shape(&tracks[0].clips()[0]), shape(&tracks[2].clips()[4]));
+        let ids: std::collections::HashSet<_> = tracks
+            .iter()
+            .flat_map(Track::clips)
+            .flat_map(Clip::notes)
+            .map(|note| note.id)
+            .collect();
+        assert_eq!(ids.len(), 3 * 5 * 7);
     }
 
     #[test]

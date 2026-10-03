@@ -173,7 +173,7 @@ export type TrackMenuItem = "add-track" | "delete-track" | "duplicate-track";
 /** Sent with the item's ID when an item is chosen from the Develop menu. */
 export const DEVELOP_MENU = "develop-menu";
 
-export type DevelopMenuItem = "add-stress-notes";
+export type DevelopMenuItem = "add-stress-notes" | "run-benchmark";
 
 export function getProject(): Promise<ProjectView> {
   return invoke<ProjectView>("get_project");
@@ -308,6 +308,18 @@ export function removeClips(clips: string[]): Promise<ProjectView> {
 /** Fills a clip with a few thousand notes, as one undo step. */
 export function addStressNotes(clip: string): Promise<ProjectView> {
   return invoke<ProjectView>("add_stress_notes", { clip });
+}
+
+/**
+ * The benchmark's test songs (RFC-004, "What we measured"). Rust knows each
+ * one's recipe: heavy is 12 tracks × 64 one-bar clips × 64 notes, wide is
+ * 32 × 200 × 8, and check-7 is 7 × 28 × 3,000 stress notes.
+ */
+export type TestSong = "heavy" | "wide" | "check-7";
+
+/** Replaces every track with a test song's, as one undo step. */
+export function buildTestSong(song: TestSong): Promise<ProjectView> {
+  return invoke<ProjectView>("build_test_song", { song });
 }
 
 /** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
