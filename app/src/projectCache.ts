@@ -51,7 +51,8 @@ export function receive(cache: ProjectCache, received: Received): ProjectCache {
  * The merge rule:
  * 1. ignore an update older than the latest one taken;
  * 2. take its outline whole;
- * 3. for each clip, use the notes just sent, or keep the ones held (drawn
+ * 3. for each clip, use the notes just sent (unless newer ones are held),
+ *    or keep the ones held (drawn
  *    only if their revision matches, and fetched again otherwise);
  * 4. drop clips the outline no longer has.
  */
@@ -60,8 +61,11 @@ function takeUpdate(cache: ProjectCache, update: Update): ProjectCache {
   const sent = new Map(update.notes.map((notes) => [notes.clip, notes]));
   const notes = new Map<string, ClipNotes>();
   for (const clip of clips(update.outline)) {
-    const held = sent.get(clip.id) ?? cache.notes.get(clip.id);
-    if (held) notes.set(clip.id, held);
+    // Fetched notes can be newer than the ones an update sends, if the
+    // update was built before the change and the fetch after it.
+    const [now, held] = [sent.get(clip.id), cache.notes.get(clip.id)];
+    const keep = now && held ? (held.revision > now.revision ? held : now) : (now ?? held);
+    if (keep) notes.set(clip.id, keep);
   }
   return build(update.sequence, update.outline, notes);
 }

@@ -23,7 +23,9 @@ pub enum PieceId {
 /// What was last sent of one piece.
 struct Sent {
     /// Held so the memory can't be freed and reused for another piece's
-    /// data, which would then look unchanged.
+    /// data, which would then look unchanged. The extra reference also
+    /// means the core's `Arc::make_mut` always copies before an edit, so an
+    /// edited piece can never keep its pointer.
     data: Arc<dyn Any + Send + Sync>,
     revision: u64,
     /// The update that last saw the piece in the project.
@@ -114,6 +116,26 @@ mod tests {
             pieces.finish();
         }
         assert!(revisions.is_sorted_by(|a, b| a < b), "{revisions:?}");
+    }
+
+    #[test]
+    fn new_data_at_the_address_of_data_sent_before_is_still_new() {
+        let mut pieces = Pieces::default();
+        let id = notes();
+        pieces.start();
+        let sent = Arc::new(vec![1]);
+        let address = Arc::as_ptr(&sent).addr();
+        pieces.check(id, &sent);
+        pieces.finish();
+        // The caller lets go. If the tracker didn't hold its own reference,
+        // the allocator would be free to put the next data at the same
+        // address, and it would look unchanged.
+        drop(sent);
+        let next = Arc::new(vec![2]);
+        pieces.start();
+        let (_, new) = pieces.check(id, &next);
+        assert!(new);
+        assert_ne!(Arc::as_ptr(&next).addr(), address);
     }
 
     #[test]

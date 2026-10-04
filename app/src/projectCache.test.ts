@@ -151,4 +151,15 @@ describe("the project cache", () => {
     expect(drawn(caughtUp).a).toEqual([note("a-3")]);
     expect(missingNotes(caughtUp)).toEqual([]);
   });
+
+  it("keeps fetched notes newer than the ones a late-built update sends", () => {
+    // The fetch saw revision 3; an update built before it, sending 2,
+    // arrives after it. Then an update names revision 3.
+    const ahead = fetched(take(started(), update(2, { a: 2, b: 1 })), [notes("a", 3)]);
+    const late = take(ahead, update(3, { a: 2, b: 1 }, [notes("a", 2)]));
+    expect(drawn(late).a).toEqual([]);
+    const caughtUp = take(late, update(4, { a: 3, b: 1 }));
+    expect(drawn(caughtUp).a).toEqual([note("a-3")]);
+    expect(missingNotes(caughtUp)).toEqual([]);
+  });
 });
