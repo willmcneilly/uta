@@ -102,7 +102,7 @@ Checked against `main` at `1b20af4`, after UTA-23 and UTA-24:
 - [ ] UI tests against the mocked back end:
   - the reducer: an update with no notes keeps every held array by identity; sent notes replace only their clip; clips missing from the outline are dropped; an older update is ignored; a held list with the wrong revision is fetched again, including every clip after a reload;
   - the app draws clips from the cache, takes new notes when a revision changes, drops a clip's notes when it goes, and fetches notes for a revision it doesn't have.
-- [ ] The benchmark report in the PR meets all of the RFC's targets: under one frame a step at heavy and wide, and no frame over 50 ms at check 7.
+- [ ] The benchmark report in the PR meets all of the RFC's targets: each step drawn on the next frame at heavy and wide (p99 of at most 20 ms), and no frame over 50 ms at check 7. (Re-scoped after UTA-30's run: it was "under one frame", but a step is timed from just after one frame to the frame that draws it, on a clock that counts whole milliseconds, so even a step that takes no time measures 17 ms.)
 
 **Out of scope:** Any other kind of piece, such as automation (the update is only shaped for them). Loading notes only for clips on screen. A binary format.
 
