@@ -3,7 +3,15 @@
 
 import { act } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
-import type { ClipView, NoteView, ProjectView, TrackView } from "../backend";
+import type {
+  ClipNotes,
+  ClipView,
+  NoteView,
+  Outline,
+  ProjectView,
+  TrackView,
+  Update,
+} from "../backend";
 import type { PlacedNote } from "./notes";
 import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory } from "./renderer";
 import type { Rect, Viewport } from "./viewport";
@@ -18,6 +26,55 @@ export async function announceChange(): Promise<void> {
     await emit("project-changed");
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+}
+
+/**
+ * Turns the mocked back end's project into updates, as Rust's app layer
+ * does: the outline, and the notes of each clip it hasn't sent. A clip's
+ * notes count as changed when they're a different array, as Rust compares
+ * pointers, so a mock that leaves a clip alone keeps its array.
+ */
+export class Updates {
+  private sequence = 0;
+  private lastRevision = 0;
+  private sent = new Map<string, { notes: NoteView[]; revision: number }>();
+
+  /** The update for `project`, recording its notes as sent. */
+  send(project: ProjectView): Update {
+    this.sequence += 1;
+    const notes: ClipNotes[] = [];
+    const seen = new Set<string>();
+    const outline: Outline = {
+      ...project,
+      tracks: project.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          seen.add(clip.id);
+          const [revision, isNew] = this.check(clip);
+          if (isNew) notes.push({ clip: clip.id, revision, notes: clip.notes });
+          return { id: clip.id, start: clip.start, length: clip.length, notesRevision: revision };
+        }),
+      })),
+    };
+    for (const id of this.sent.keys()) if (!seen.has(id)) this.sent.delete(id);
+    return { sequence: this.sequence, outline, notes };
+  }
+
+  /** One clip's notes at its current revision, as `get_notes` answers. */
+  notes(project: ProjectView, id: string): ClipNotes {
+    const clip = project.tracks.flatMap((track) => track.clips).find((c) => c.id === id);
+    if (!clip) throw new Error(`unknown clip ${id}`);
+    const [revision] = this.check(clip);
+    return { clip: id, revision, notes: clip.notes };
+  }
+
+  private check(clip: ClipView): [number, boolean] {
+    const sent = this.sent.get(clip.id);
+    if (sent?.notes === clip.notes) return [sent.revision, false];
+    this.lastRevision += 1;
+    this.sent.set(clip.id, { notes: clip.notes, revision: this.lastRevision });
+    return [this.lastRevision, true];
+  }
 }
 
 /** A track with the default sound and mixer, and `clips`. */

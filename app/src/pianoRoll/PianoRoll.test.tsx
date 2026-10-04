@@ -7,6 +7,7 @@ import App from "../App";
 import type { EditMenuItem, Frame, NoteView, ProjectView } from "../backend";
 import {
   type RecordingRenderer,
+  Updates,
   announceChange,
   firstClip,
   projectView,
@@ -27,6 +28,8 @@ interface Call {
 
 let calls: Call[];
 let project: ProjectView;
+// Rust's side of the updates: what it has sent the UI of each clip's notes.
+let updates: Updates;
 /** The project as each gesture found it, so cancelling can put it back. */
 let beforeGesture: Map<number, ProjectView>;
 let renderer: RecordingRenderer;
@@ -65,6 +68,7 @@ beforeEach(() => {
   frames = null;
   ({ renderer, factory } = recordingFactory());
   vi.stubGlobal("ResizeObserver", FixedSizeObserver);
+  updates = new Updates();
   mockIPC(
     (cmd, payload) => {
       const args = (payload ?? {}) as Record<string, unknown>;
@@ -76,26 +80,28 @@ beforeEach(() => {
       }
       switch (cmd) {
         case "get_project":
-          return project;
+          return updates.send(project);
+        case "get_notes":
+          return updates.notes(project, args.clip as string);
         case "add_notes":
           project = withNotes([...notes, ...(args.notes as NoteView[])]);
-          return project;
+          return updates.send(project);
         case "set_notes": {
           const changed = args.notes as NoteView[];
           project = withNotes(notes.map((n) => changed.find((c) => c.id === n.id) ?? n));
-          return project;
+          return updates.send(project);
         }
         case "remove_notes": {
           const ids = args.notes as string[];
           project = withNotes(notes.filter((n) => !ids.includes(n.id)));
-          return project;
+          return updates.send(project);
         }
         case "trim_notes":
           // Rust works out the trim; the tests check it's asked for.
-          return project;
+          return updates.send(project);
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
-          return project;
+          return updates.send(project);
         case "subscribe":
           frames = args.onFrame as Channel<Frame>;
           return null;

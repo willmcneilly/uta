@@ -6,6 +6,7 @@
 import {
   type ProjectView,
   type TestSong,
+  type Update,
   buildTestSong,
   removeNotes,
   setTrackMixer,
@@ -15,8 +16,10 @@ import type { LoadResult, Report } from "./report";
 
 /** What the benchmark needs from the app. */
 export interface BenchmarkHost {
-  /** Shows a project Rust sent back, as a reply to one of the app's own commands is shown. */
-  apply(view: ProjectView): void;
+  /** Shows an update Rust sent back, as a reply to one of the app's own commands is shown. */
+  apply(update: Update): void;
+  /** The project as the app now draws it. */
+  project(): ProjectView | null;
   /** How many `project-changed` events have arrived so far. */
   events(): number;
   /** Opens a clip in the piano roll. */
@@ -112,12 +115,13 @@ async function runLoad(
   };
 
   /** Sends one change and times it until the screen shows it. */
-  const step = async (send: () => Promise<ProjectView>): Promise<number> => {
+  const step = async (send: () => Promise<Update>): Promise<number> => {
     const before = host.events();
     const start = clock.now();
-    project = await send();
+    const update = await send();
     changes += 1;
-    host.apply(project);
+    host.apply(update);
+    project = host.project();
     await clock.frame();
     const drawn = clock.now();
     return ((await eventDrawn(before, 1)) ?? drawn) - start;
@@ -224,8 +228,8 @@ async function runDrag(
     const sent = clock.now();
     const volumeDb = -10 - i * 0.5;
     replies.push(
-      setTrackMixer(trackId, { ...mixer, volumeDb }, gesture).then(async (view) => {
-        host.apply(view);
+      setTrackMixer(trackId, { ...mixer, volumeDb }, gesture).then(async (update) => {
+        host.apply(update);
         await clock.frame();
         dragSteps.push(clock.now() - sent);
       }),

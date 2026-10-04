@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./App.css";
 import {
+  type ClipNotes,
+  type ClipOutline,
   type Frame,
   type MixerView,
   type OutputView,
   type ProjectView,
   type SynthParam,
   type TrackView,
+  type Update,
   addClip,
   addNotes,
   addStressNotes,
@@ -15,6 +18,7 @@ import {
   auditionNote,
   cancelGesture,
   duplicateTrack,
+  getNotes,
   getProject,
   locate,
   moveTrack,
@@ -63,6 +67,7 @@ import { FrameStats } from "./pianoRoll/frameStats";
 import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
+import { EMPTY_CACHE, inOutline, missingNotes, receive } from "./projectCache";
 import { SynthPanel } from "./SynthPanel";
 import type { TimelineRendererFactory } from "./timeline/renderer";
 import {
@@ -133,7 +138,10 @@ interface Props {
 }
 
 function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
-  const [project, setProject] = useState<ProjectView | null>(null);
+  // The project as Rust sent it: the latest outline and the notes held for
+  // each clip. Only what Rust sends changes it (projectCache.ts).
+  const [cache, dispatch] = useReducer(receive, EMPTY_CACHE);
+  const project = cache.project;
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [changingBuffer, setChangingBuffer] = useState(false);
@@ -163,8 +171,16 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const headers = useRef<HTMLElement>(null);
   // How many project-changed events have arrived, for the benchmark to wait on.
   const changeEvents = useRef(0);
+  // The cache as of the latest render, for the benchmark to read once it's drawn.
+  const cacheRef = useRef(cache);
+  useLayoutEffect(() => {
+    cacheRef.current = cache;
+  });
+  // The clips whose notes are being fetched, at the revision wanted.
+  const fetching = useRef(new Set<string>());
 
   const report = (reason: unknown) => setError(String(reason));
+  const show = (update: Update) => dispatch({ type: "update", update });
 
   // A selected track that has gone (undoing its add, say) stays unselected,
   // so redoing the add doesn't select it again.
@@ -193,7 +209,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     let active = true;
     const fetchProject = () =>
       getProject()
-        .then((view) => active && setProject(view))
+        .then((update) => active && dispatch({ type: "update", update }))
         .catch((reason: unknown) => active && setError(String(reason)));
     void fetchProject();
     // Undo and Redo from the menu bar say only that the project changed, and
@@ -207,6 +223,30 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       void unlisten.then((stopListening) => stopListening());
     };
   }, []);
+
+  // Fetches the notes of clips the cache doesn't hold at the outline's
+  // revision: every clip after the web view reloads, or one whose update was
+  // ignored because a newer one arrived first. Several at once go into the
+  // cache together.
+  useEffect(() => {
+    const key = (clip: ClipOutline) => `${clip.id}@${clip.notesRevision}`;
+    const wanted = missingNotes(cache).filter((clip) => !fetching.current.has(key(clip)));
+    if (wanted.length === 0) return;
+    for (const clip of wanted) fetching.current.add(key(clip));
+    void Promise.allSettled(wanted.map((clip) => getNotes(clip.id))).then((results) => {
+      for (const clip of wanted) fetching.current.delete(key(clip));
+      const notes: ClipNotes[] = [];
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          notes.push(result.value);
+        } else if (inOutline(cacheRef.current, wanted[index].id)) {
+          // A clip deleted while its notes were on their way is no error.
+          setError(String(result.reason));
+        }
+      });
+      dispatch({ type: "notes", notes });
+    });
+  }, [cache]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -246,15 +286,15 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   }, [level, slowestBlock, trackLevels, clock]);
 
   const changeVolume = (volumeDb: number, gesture?: number) => {
-    setVolume(volumeDb, gesture).then(setProject, report);
+    setVolume(volumeDb, gesture).then(show, report);
   };
 
   const changeTempo = (bpm: number, gesture?: number) => {
-    setTempo(bpm, gesture).then(setProject, report);
+    setTempo(bpm, gesture).then(show, report);
   };
 
   const changeLoopEnabled = (enabled: boolean) => {
-    setLoopEnabled(enabled).then(setProject, report);
+    setLoopEnabled(enabled).then(show, report);
   };
 
   // Space plays, and stops back at the play start; Shift+Space pauses, and
@@ -290,11 +330,11 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   }, []);
 
   const changeMixer = (id: string, mixer: MixerView, gesture?: number) => {
-    setTrackMixer(id, mixer, gesture).then(setProject, report);
+    setTrackMixer(id, mixer, gesture).then(show, report);
   };
 
   const soloAlone = (id: string) => {
-    soloTrackAlone(id).then(setProject, report);
+    soloTrackAlone(id).then(show, report);
   };
 
   /** Selects a track. The selected clip stays selected if it's on it. */
@@ -304,8 +344,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   };
 
   /** Selects track `id` once Rust has sent the project with it in. */
-  const showAndSelect = (id: string | null) => (view: ProjectView) => {
-    setProject(view);
+  const showAndSelect = (id: string | null) => (update: Update) => {
+    show(update);
     setSelectedId(id);
     setSelectedClipIds([]);
   };
@@ -318,7 +358,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   };
 
   const moveTrackTo = (id: string, index: number) => {
-    moveTrack(id, index).then(setProject, report);
+    moveTrack(id, index).then(show, report);
   };
 
   // The Track and Develop menus act on the selected track and the clip in
@@ -338,7 +378,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       removeTrack(track.id).then(showAndSelect(next?.id ?? null), report);
     },
     "add-stress-notes": () => {
-      if (clip) addStressNotes(clip.id).then(setProject, report);
+      if (clip) addStressNotes(clip.id).then(show, report);
     },
     "run-benchmark": () => setBenchmarking(true),
   };
@@ -365,18 +405,18 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // The synth panel edits the selected track's sound.
   const changeSynth = (param: SynthParam, gesture?: number) => {
     if (!track) return;
-    setSynthParam(track.id, param, gesture).then(setProject, report);
+    setSynthParam(track.id, param, gesture).then(show, report);
   };
 
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
   const clipId = clip?.id ?? "";
   const trackId = track?.id ?? "";
   const editor: NoteEditor = {
-    add: (notes, gesture) => void addNotes(clipId, notes, gesture).then(setProject, report),
-    set: (notes, gesture) => void setNotes(clipId, notes, gesture).then(setProject, report),
-    remove: (ids) => void removeNotes(clipId, ids).then(setProject, report),
-    trim: (ids, gesture) => void trimNotes(clipId, ids, gesture).then(setProject, report),
-    cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
+    add: (notes, gesture) => void addNotes(clipId, notes, gesture).then(show, report),
+    set: (notes, gesture) => void setNotes(clipId, notes, gesture).then(show, report),
+    remove: (ids) => void removeNotes(clipId, ids).then(show, report),
+    trim: (ids, gesture) => void trimNotes(clipId, ids, gesture).then(show, report),
+    cancel: (gesture) => void cancelGesture(gesture).then(show, report),
     audition: (pitch, velocity) => void auditionNote(trackId, pitch, velocity).catch(report),
   };
 
@@ -384,24 +424,24 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // clips. New clips are selected once Rust has sent them back.
   const clipEditor: ClipEditor = {
     add: (trackId, id, start, length) =>
-      void addClip(trackId, id, start, length).then((view) => {
-        setProject(view);
+      void addClip(trackId, id, start, length).then((update) => {
+        show(update);
         setSelectedClipIds([id]);
       }, report),
-    set: (clips, gesture) => void setClips(clips, gesture).then(setProject, report),
-    remove: (ids) => void removeClips(ids).then(setProject, report),
+    set: (clips, gesture) => void setClips(clips, gesture).then(show, report),
+    remove: (ids) => void removeClips(ids).then(show, report),
     paste: (clips) =>
-      void pasteClips(clips).then((view) => {
-        setProject(view);
+      void pasteClips(clips).then((update) => {
+        show(update);
         setSelectedClipIds(clips.map((clip) => clip.id));
       }, report),
-    cancel: (gesture) => void cancelGesture(gesture).then(setProject, report),
+    cancel: (gesture) => void cancelGesture(gesture).then(show, report),
   };
 
   // The timeline's ruler sets the loop region and moves the play start.
   const rulerActions: RulerActions = {
     loop: (startBar, bars, gesture) =>
-      void setLoop(startBar, bars, gesture).then(setProject, report),
+      void setLoop(startBar, bars, gesture).then(show, report),
     locate: (ticks) => void locate(ticks).catch(report),
   };
 
@@ -415,7 +455,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // The benchmark shows each reply at once, so the frame after it is the
   // one that draws it.
   const benchmarkHost: BenchmarkHost = {
-    apply: (view) => flushSync(() => setProject(view)),
+    apply: (update) => flushSync(() => show(update)),
+    project: () => cacheRef.current.project,
     events: () => changeEvents.current,
     showClip: (id) => {
       setSelectedClipIds([id]);

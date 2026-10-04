@@ -1,12 +1,68 @@
 // The Rust side, as the UI sees it. Every change goes to Rust as a Tauri
 // command; the UI only renders what comes back. The shapes mirror
 // app/src-tauri/src/uta.rs.
+//
+// What comes back is an update: the outline, always whole, and the notes of
+// each clip the UI hasn't been sent at its current revision (RFC-004, part
+// 2). The UI keeps the notes it was sent until Rust says they changed (see
+// projectCache.ts), and draws a project view made of the two.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-/** What the UI shows of the project. Sent after every change to it. */
-export interface ProjectView {
+/**
+ * What a command's reply and `getProject` send: the outline, and the notes
+ * of each clip whose revision the UI hasn't been sent. Each kind of piece
+ * has its own key next to the outline; a clip's notes are the only kind so
+ * far.
+ */
+export interface Update {
+  /** Higher for each later update, so an older one arriving late is ignored. */
+  sequence: number;
+  outline: Outline;
+  notes: ClipNotes[];
+}
+
+/** One clip's notes at a revision. */
+export interface ClipNotes {
+  clip: string;
+  revision: number;
+  /** In order of ID. */
+  notes: NoteView[];
+}
+
+/**
+ * The project without its notes: tracks, mixer and synth settings, clip
+ * positions and the transport.
+ */
+export interface Outline extends ProjectFields {
+  /** Every track, in order from the top. */
+  tracks: TrackOutline[];
+}
+
+/** A track in the outline. */
+export interface TrackOutline extends TrackFields {
+  /** In order of start, then ID. They may overlap. */
+  clips: ClipOutline[];
+}
+
+/** A clip in the outline: where it is, and the revision of its notes. */
+export interface ClipOutline extends ClipFields {
+  /** Goes up whenever the clip's notes change. */
+  notesRevision: number;
+}
+
+/**
+ * What the UI draws: the outline, with each clip's notes from the ones the
+ * UI holds.
+ */
+export interface ProjectView extends ProjectFields {
+  /** Every track, in order from the top. */
+  tracks: TrackView[];
+}
+
+/** What the outline and the project view share. */
+interface ProjectFields {
   volumeDb: number;
   minVolumeDb: number;
   maxVolumeDb: number;
@@ -33,19 +89,21 @@ export interface ProjectView {
   mixerLimits: MixerLimits;
   /** The most tracks a project can have. */
   maxTracks: number;
-  /** Every track, in order from the top. */
-  tracks: TrackView[];
 }
 
 /** A track: its name, mixer strip, synth and clips. */
-export interface TrackView {
+export interface TrackView extends TrackFields {
+  /** In order of start, then ID. They may overlap. */
+  clips: ClipView[];
+}
+
+/** What a track in the outline and in the project view share. */
+interface TrackFields {
   id: string;
   /** Such as "Synth 2". It stays the same when tracks move or go. */
   name: string;
   mixer: MixerView;
   synth: SynthView;
-  /** In order of start, then ID. They may overlap. */
-  clips: ClipView[];
 }
 
 /** A track's volume, pan, mute and solo. */
@@ -104,12 +162,16 @@ export type SynthParam =
     };
 
 /** A clip and its notes. Positions and lengths are in ticks. */
-export interface ClipView {
+export interface ClipView extends ClipFields {
+  notes: NoteView[];
+}
+
+/** Where a clip is. Positions and lengths are in ticks. */
+interface ClipFields {
   id: string;
   /** Where the clip starts, from the start of the song. */
   start: number;
   length: number;
-  notes: NoteView[];
 }
 
 export interface NoteView {
@@ -164,7 +226,7 @@ export interface Frame {
 
 /**
  * Sent, with no payload, after a change the UI didn't ask for: Undo and Redo
- * from the menu bar. The UI fetches the project with `getProject`. A change
+ * from the menu bar. The UI fetches the update with `getProject`. A change
  * the UI asked for comes back only as its command's reply.
  */
 export const PROJECT_CHANGED = "project-changed";
@@ -184,18 +246,24 @@ export const DEVELOP_MENU = "develop-menu";
 
 export type DevelopMenuItem = "add-stress-notes" | "run-benchmark";
 
-export function getProject(): Promise<ProjectView> {
-  return invoke<ProjectView>("get_project");
+/** The update, for when the UI has none to go on: when it opens, and after `project-changed`. */
+export function getProject(): Promise<Update> {
+  return invoke<Update>("get_project");
+}
+
+/** One clip's notes at its current revision: for a revision the UI doesn't hold. */
+export function getNotes(clip: string): Promise<ClipNotes> {
+  return invoke<ClipNotes>("get_notes", { clip });
 }
 
 /** Changes with the same `gesture` (one drag) undo as one step. */
-export function setVolume(volumeDb: number, gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_volume", { volumeDb, gesture: gesture ?? null });
+export function setVolume(volumeDb: number, gesture?: number): Promise<Update> {
+  return invoke<Update>("set_volume", { volumeDb, gesture: gesture ?? null });
 }
 
 /** Changes with the same `gesture` (one drag) undo as one step. */
-export function setTempo(bpm: number, gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_tempo", { bpm, gesture: gesture ?? null });
+export function setTempo(bpm: number, gesture?: number): Promise<Update> {
+  return invoke<Update>("set_tempo", { bpm, gesture: gesture ?? null });
 }
 
 /**
@@ -203,13 +271,13 @@ export function setTempo(bpm: number, gesture?: number): Promise<ProjectView> {
  * and how many bars long it is. Changes with the same `gesture` (one drag)
  * undo as one step.
  */
-export function setLoop(startBar: number, bars: number, gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_loop", { startBar, bars, gesture: gesture ?? null });
+export function setLoop(startBar: number, bars: number, gesture?: number): Promise<Update> {
+  return invoke<Update>("set_loop", { startBar, bars, gesture: gesture ?? null });
 }
 
 /** Switches the loop on or off. One undo step. */
-export function setLoopEnabled(enabled: boolean): Promise<ProjectView> {
-  return invoke<ProjectView>("set_loop_enabled", { enabled });
+export function setLoopEnabled(enabled: boolean): Promise<Update> {
+  return invoke<Update>("set_loop_enabled", { enabled });
 }
 
 /**
@@ -220,8 +288,8 @@ export function setSynthParam(
   track: string,
   param: SynthParam,
   gesture?: number,
-): Promise<ProjectView> {
-  return invoke<ProjectView>("set_synth_param", { track, param, gesture: gesture ?? null });
+): Promise<Update> {
+  return invoke<Update>("set_synth_param", { track, param, gesture: gesture ?? null });
 }
 
 /**
@@ -232,32 +300,32 @@ export function setTrackMixer(
   track: string,
   mixer: MixerView,
   gesture?: number,
-): Promise<ProjectView> {
-  return invoke<ProjectView>("set_track_mixer", { track, mixer, gesture: gesture ?? null });
+): Promise<Update> {
+  return invoke<Update>("set_track_mixer", { track, mixer, gesture: gesture ?? null });
 }
 
 /** Solos a track on its own, or unsolos it if it already is. One undo step. */
-export function soloTrackAlone(track: string): Promise<ProjectView> {
-  return invoke<ProjectView>("solo_track_alone", { track });
+export function soloTrackAlone(track: string): Promise<Update> {
+  return invoke<Update>("solo_track_alone", { track });
 }
 
 /** Adds a synth track below the others, with the ID picked here. */
-export function addTrack(id: string): Promise<ProjectView> {
-  return invoke<ProjectView>("add_track", { id });
+export function addTrack(id: string): Promise<Update> {
+  return invoke<Update>("add_track", { id });
 }
 
 /** Adds a copy of `track` below it, with the ID `id`. Rust picks its clips' and notes' IDs. */
-export function duplicateTrack(track: string, id: string): Promise<ProjectView> {
-  return invoke<ProjectView>("duplicate_track", { track, id });
+export function duplicateTrack(track: string, id: string): Promise<Update> {
+  return invoke<Update>("duplicate_track", { track, id });
 }
 
-export function removeTrack(track: string): Promise<ProjectView> {
-  return invoke<ProjectView>("remove_track", { track });
+export function removeTrack(track: string): Promise<Update> {
+  return invoke<Update>("remove_track", { track });
 }
 
 /** Moves a track to `index` in the order, counting from 0 at the top. */
-export function moveTrack(track: string, index: number): Promise<ProjectView> {
-  return invoke<ProjectView>("move_track", { track, index });
+export function moveTrack(track: string, index: number): Promise<Update> {
+  return invoke<Update>("move_track", { track, index });
 }
 
 /** Where a clip is, as `set_clips` takes it. Positions and lengths are in ticks. */
@@ -275,16 +343,16 @@ export function addClip(
   id: string,
   start: number,
   length: number,
-): Promise<ProjectView> {
-  return invoke<ProjectView>("add_clip", { track, id, start, length });
+): Promise<Update> {
+  return invoke<Update>("add_clip", { track, id, start, length });
 }
 
 /**
  * Sets clips' track, start and length: a move or a resize. Changes with the
  * same `gesture` (one drag) undo as one step.
  */
-export function setClips(clips: ClipPosition[], gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_clips", { clips, gesture: gesture ?? null });
+export function setClips(clips: ClipPosition[], gesture?: number): Promise<Update> {
+  return invoke<Update>("set_clips", { clips, gesture: gesture ?? null });
 }
 
 /**
@@ -305,18 +373,18 @@ export interface PastedClip {
  * Adds copies of clips, as one undo step: a paste or a duplicate. Each
  * copy's ID is picked here; Rust picks its notes'.
  */
-export function pasteClips(clips: PastedClip[]): Promise<ProjectView> {
-  return invoke<ProjectView>("paste_clips", { clips });
+export function pasteClips(clips: PastedClip[]): Promise<Update> {
+  return invoke<Update>("paste_clips", { clips });
 }
 
 /** Deletes clips, with their notes, as one undo step. */
-export function removeClips(clips: string[]): Promise<ProjectView> {
-  return invoke<ProjectView>("remove_clips", { clips });
+export function removeClips(clips: string[]): Promise<Update> {
+  return invoke<Update>("remove_clips", { clips });
 }
 
 /** Fills a clip with a few thousand notes, as one undo step. */
-export function addStressNotes(clip: string): Promise<ProjectView> {
-  return invoke<ProjectView>("add_stress_notes", { clip });
+export function addStressNotes(clip: string): Promise<Update> {
+  return invoke<Update>("add_stress_notes", { clip });
 }
 
 /**
@@ -327,25 +395,25 @@ export function addStressNotes(clip: string): Promise<ProjectView> {
 export type TestSong = "heavy" | "wide" | "check-7";
 
 /** Replaces every track with a test song's, as one undo step. */
-export function buildTestSong(song: TestSong): Promise<ProjectView> {
-  return invoke<ProjectView>("build_test_song", { song });
+export function buildTestSong(song: TestSong): Promise<Update> {
+  return invoke<Update>("build_test_song", { song });
 }
 
 /** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
-export function addNotes(clip: string, notes: NoteView[], gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("add_notes", { clip, notes, gesture: gesture ?? null });
+export function addNotes(clip: string, notes: NoteView[], gesture?: number): Promise<Update> {
+  return invoke<Update>("add_notes", { clip, notes, gesture: gesture ?? null });
 }
 
 /**
  * Sets every value of existing notes. Changes with the same `gesture` (one
  * drag) undo as one step, together with an `addNotes` of the same notes.
  */
-export function setNotes(clip: string, notes: NoteView[], gesture?: number): Promise<ProjectView> {
-  return invoke<ProjectView>("set_notes", { clip, notes, gesture: gesture ?? null });
+export function setNotes(clip: string, notes: NoteView[], gesture?: number): Promise<Update> {
+  return invoke<Update>("set_notes", { clip, notes, gesture: gesture ?? null });
 }
 
-export function removeNotes(clip: string, notes: string[]): Promise<ProjectView> {
-  return invoke<ProjectView>("remove_notes", { clip, notes });
+export function removeNotes(clip: string, notes: string[]): Promise<Update> {
+  return invoke<Update>("remove_notes", { clip, notes });
 }
 
 /**
@@ -353,13 +421,13 @@ export function removeNotes(clip: string, notes: string[]): Promise<ProjectView>
  * another: when a drag of them ends, or a paste lands. It joins `gesture`'s
  * undo step, and ends the gesture.
  */
-export function trimNotes(clip: string, notes: string[], gesture: number): Promise<ProjectView> {
-  return invoke<ProjectView>("trim_notes", { clip, notes, gesture });
+export function trimNotes(clip: string, notes: string[], gesture: number): Promise<Update> {
+  return invoke<Update>("trim_notes", { clip, notes, gesture });
 }
 
 /** Puts back everything `gesture` (one drag) changed, as if it never happened. */
-export function cancelGesture(gesture: number): Promise<ProjectView> {
-  return invoke<ProjectView>("cancel_gesture", { gesture });
+export function cancelGesture(gesture: number): Promise<Update> {
+  return invoke<Update>("cancel_gesture", { gesture });
 }
 
 /** Plays a note briefly on a track, without changing the project, even while stopped. */

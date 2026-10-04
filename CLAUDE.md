@@ -18,8 +18,9 @@ examples              command lists for `uta render/play --commands`
 ```
 
 How the pieces talk:
-- The UI never changes project data. It sends **commands** to Rust as Tauri calls. The project core applies them, records the inverse for undo, and returns the new state.
-- Each change reaches the UI once. A command's reply carries it, and nothing else does. A change the UI didn't ask for (Undo and Redo from the menu bar) emits `project-changed` with **no payload**, and the UI fetches the project with `get_project`.
+- The UI never changes project data. It sends **commands** to Rust as Tauri calls. The project core applies them, records the inverse for undo, and the reply is an **update**.
+- An update is the **outline** (the project without its notes, always whole) plus the **pieces** the UI hasn't been sent. A piece is a part that's big and changes on its own, tracked by a **revision**; today that's each clip's notes. The app layer (`pieces.rs`) gives a piece a new revision when the core's `Arc` for it is a different pointer. The UI keeps the pieces it was sent in one cache (`projectCache.ts`), draws from them, and fetches a revision it doesn't hold with `get_notes`.
+- Each change reaches the UI once. A command's reply carries it, and nothing else does. A change the UI didn't ask for (Undo and Redo from the menu bar) emits `project-changed` with **no payload**, and the UI fetches the update with `get_project`.
 - **No large data in an event.** Rust pushes an event by having the web view run JavaScript: fine for a small message, slow for a big one. Send an ID or nothing, and let the UI fetch the rest with an ordinary call.
 - Commands are serde-serialisable, versioned, and refer to things by permanent IDs, so replaying them always rebuilds the same project.
 - The engine builds a complete "what to play" snapshot from the core's project (`Snapshot::from(&Project)`). The audio thread swaps it in at the start of a block and sends the old one back to be freed.
@@ -92,7 +93,7 @@ Nobody listens to every change, so the tests are the evidence:
 - Tests live next to the code (`#[cfg(test)] mod tests`), integration tests in `crates/<name>/tests/`.
 - Keep `uta-core` free of audio and UI dependencies (`uta-engine` depends on it, never the reverse), and `uta-engine` free of Tauri.
 - Frontend: React function components, strict TypeScript, no `any`. Tests next to the component (`Foo.test.tsx`). UI tests run against Tauri's mocked back end (`@tauri-apps/api/mocks`), never a real one.
-- No project state in the UI: it renders what Rust sends.
+- No project state in the UI: it renders what Rust sends. It may keep what Rust sent until Rust says it changed, but never changes or works out project data itself.
 - Pin major versions: Tauri 2.x (not the 3.0 alphas), cpal 0.18.x.
 
 ## Working on tickets
