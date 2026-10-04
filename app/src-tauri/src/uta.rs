@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use crate::pieces::{PieceId, Pieces};
 use crate::stress::{self, TestSong};
 
 use serde::{Deserialize, Serialize};
@@ -21,10 +22,46 @@ use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status}
 /// the control never asks for a volume the engine would clamp.
 pub const VOLUME_RANGE_DB: (f32, f32) = (-60.0, Snapshot::MAX_VOLUME_DB);
 
-/// What the UI shows of the project. Sent after every change to it.
+/// What a command's reply, `get_project` and `get_notes` send the UI after a
+/// change: the outline, always whole, and each piece the UI hasn't been sent
+/// at its current revision. Each kind of piece has its own key next to the
+/// outline; a clip's notes are the only kind so far (RFC-004, part 2).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectView {
+pub struct Update {
+    /// Higher for each later update, so the UI can ignore one that arrives
+    /// after a newer one.
+    pub sequence: u64,
+    pub outline: Outline,
+    /// The notes of each clip whose revision is newer than the UI was sent.
+    pub notes: Vec<ClipNotes>,
+}
+
+/// One clip's notes at a revision.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipNotes {
+    pub clip: ClipId,
+    pub revision: u64,
+    /// In order of ID.
+    pub notes: Vec<Note>,
+}
+
+/// What the menu bar's enabled items follow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuView {
+    pub can_undo: bool,
+    pub can_redo: bool,
+    /// Whether there's room for another track.
+    pub can_add_track: bool,
+}
+
+/// The project as the UI shows it, without its notes: tracks, mixer and
+/// synth settings, clip positions and the transport. `C` is how each clip
+/// is shown: in an update, a [`ClipOutline`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Outline<C = ClipOutline> {
     pub volume_db: f32,
     pub min_volume_db: f32,
     pub max_volume_db: f32,
@@ -51,19 +88,19 @@ pub struct ProjectView {
     /// The most tracks a project can have.
     pub max_tracks: usize,
     /// Every track, in order from the top.
-    pub tracks: Vec<TrackView>,
+    pub tracks: Vec<TrackOutline<C>>,
 }
 
 /// A track as the UI shows it: its name, mixer strip, synth and clips.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TrackView {
+pub struct TrackOutline<C = ClipOutline> {
     pub id: TrackId,
     pub name: String,
     pub mixer: MixerView,
     pub synth: SynthView,
     /// In order of start, then ID.
-    pub clips: Vec<ClipView>,
+    pub clips: Vec<C>,
 }
 
 /// A track's volume, pan, mute and solo, as the UI shows and sends them.
@@ -165,15 +202,15 @@ impl SynthLimits {
     };
 }
 
-/// A clip and its notes. Note starts are in ticks from the clip's start.
+/// A clip in the outline: where it is, and the revision of its notes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClipView {
+pub struct ClipOutline {
     pub id: ClipId,
     pub start: Ticks,
     pub length: Ticks,
-    /// In order of ID.
-    pub notes: Vec<Note>,
+    /// Goes up whenever the clip's notes change.
+    pub notes_revision: u64,
 }
 
 /// A copy of a clip to add, as the UI sends it for a paste or a duplicate:
@@ -287,6 +324,8 @@ pub struct Uta {
     /// they never match a sequenced note's key, which is a random UUID's
     /// number (always at least 2^78, because of the UUID's version bits).
     last_audition_key: u128,
+    /// What the UI has been sent of each piece, such as a clip's notes.
+    pieces: Pieces,
 }
 
 impl Uta {
@@ -332,31 +371,54 @@ impl Uta {
             gesture: None,
             audition: None,
             last_audition_key: 0,
+            pieces: Pieces::default(),
         }
     }
 
-    pub fn project(&self) -> ProjectView {
+    /// The update to send the UI now: the outline, and the notes of each
+    /// clip whose notes changed since they were last sent. Records them as
+    /// sent, so call it only for an update that goes to the UI.
+    pub fn update(&mut self) -> Update {
+        let sequence = self.pieces.start();
+        let mut notes = Vec::new();
+        let pieces = &mut self.pieces;
+        let outline = outline(&self.session, |clip| {
+            let (revision, new) = pieces.check(PieceId::Notes(clip.id()), clip.shared_notes());
+            if new {
+                notes.push(clip_notes(clip, revision));
+            }
+            clip_outline(clip, revision)
+        });
+        self.pieces.finish();
+        Update {
+            sequence,
+            outline,
+            notes,
+        }
+    }
+
+    /// One clip's notes at its current revision, for the UI to fetch when it
+    /// doesn't hold that revision: after the web view reloads, or if an
+    /// update was ignored because a newer one arrived first.
+    pub fn notes(&mut self, clip: ClipId) -> Result<ClipNotes, String> {
+        let found = self
+            .session
+            .project()
+            .clip(clip)
+            .ok_or_else(|| CommandError::UnknownClip(clip).to_string())?;
+        let (revision, _) = self
+            .pieces
+            .check(PieceId::Notes(clip), found.shared_notes());
+        Ok(clip_notes(found, revision))
+    }
+
+    /// What the menu bar's enabled items follow.
+    pub fn menu_view(&self) -> MenuView {
         let project = self.session.project();
-        let transport = project.transport();
-        ProjectView {
-            volume_db: project.master_volume_db(),
-            min_volume_db: VOLUME_RANGE_DB.0,
-            max_volume_db: VOLUME_RANGE_DB.1,
+        MenuView {
             can_undo: self.session.can_undo(),
             can_redo: self.session.can_redo(),
-            bpm: transport.tempo_map().bpm(),
-            min_bpm: Project::MIN_BPM,
-            max_bpm: Project::MAX_BPM,
-            loop_start: transport.loop_start(),
-            loop_length: transport.loop_length(),
-            loop_enabled: transport.loop_enabled(),
-            song_end: project.song_end(),
-            ticks_per_quarter: TICKS_PER_QUARTER,
-            beats_per_bar: transport.time_signature().beats_per_bar,
-            synth_limits: SynthLimits::ALL,
-            mixer_limits: MixerLimits::ALL,
-            max_tracks: Project::MAX_TRACKS,
-            tracks: project.tracks().iter().map(track_view).collect(),
+            can_add_track: project.tracks().len() < Project::MAX_TRACKS,
         }
     }
 
@@ -946,22 +1008,58 @@ impl Uta {
     }
 }
 
-fn track_view(track: &Track) -> TrackView {
-    let Source::Synth(synth) = track.source();
-    TrackView {
-        id: track.id(),
-        name: track.name().to_owned(),
-        mixer: track.mixer().into(),
-        synth: synth.into(),
-        clips: track.clips().iter().map(clip_view).collect(),
+/// The outline of `session`'s project, with each clip shown by `clip`.
+fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C> {
+    let project = session.project();
+    let transport = project.transport();
+    Outline {
+        volume_db: project.master_volume_db(),
+        min_volume_db: VOLUME_RANGE_DB.0,
+        max_volume_db: VOLUME_RANGE_DB.1,
+        can_undo: session.can_undo(),
+        can_redo: session.can_redo(),
+        bpm: transport.tempo_map().bpm(),
+        min_bpm: Project::MIN_BPM,
+        max_bpm: Project::MAX_BPM,
+        loop_start: transport.loop_start(),
+        loop_length: transport.loop_length(),
+        loop_enabled: transport.loop_enabled(),
+        song_end: project.song_end(),
+        ticks_per_quarter: TICKS_PER_QUARTER,
+        beats_per_bar: transport.time_signature().beats_per_bar,
+        synth_limits: SynthLimits::ALL,
+        mixer_limits: MixerLimits::ALL,
+        max_tracks: Project::MAX_TRACKS,
+        tracks: project
+            .tracks()
+            .iter()
+            .map(|track| {
+                let Source::Synth(synth) = track.source();
+                TrackOutline {
+                    id: track.id(),
+                    name: track.name().to_owned(),
+                    mixer: track.mixer().into(),
+                    synth: synth.into(),
+                    clips: track.clips().iter().map(&mut clip).collect(),
+                }
+            })
+            .collect(),
     }
 }
 
-fn clip_view(clip: &Clip) -> ClipView {
-    ClipView {
+fn clip_outline(clip: &Clip, notes_revision: u64) -> ClipOutline {
+    ClipOutline {
         id: clip.id(),
         start: clip.start(),
         length: clip.length(),
+        notes_revision,
+    }
+}
+
+fn clip_notes(clip: &Clip, revision: u64) -> ClipNotes {
+    ClipNotes {
+        clip: clip.id(),
+        revision,
         notes: clip.notes().copied().collect(),
     }
 }
@@ -994,7 +1092,30 @@ mod tests {
         Uta::offline()
     }
 
+    /// A clip with its notes, as the UI draws it once it holds them.
+    #[derive(Debug, Clone, PartialEq)]
+    struct ClipView {
+        id: ClipId,
+        start: Ticks,
+        length: Ticks,
+        notes: Vec<Note>,
+    }
+
+    /// The outline with every clip's notes in it: what the UI draws.
+    type ProjectView = Outline<ClipView>;
+
     impl Uta {
+        /// What the UI draws once it has caught up, built straight from the
+        /// project, without touching what Rust has sent it.
+        fn project(&self) -> ProjectView {
+            outline(&self.session, |clip| ClipView {
+                id: clip.id(),
+                start: clip.start(),
+                length: clip.length(),
+                notes: clip.notes().copied().collect(),
+            })
+        }
+
         /// Runs the audio thread's side for `frames` frames, in blocks of 128.
         fn render(&mut self, frames: usize) {
             let Some(Playback::Offline(processor)) = &mut self.playback else {
@@ -1127,17 +1248,24 @@ mod tests {
     fn the_project_view_serialises_for_the_ui() {
         let mut uta = offline();
         uta.add_stress_notes(clip_id(&uta)).unwrap();
-        let json = serde_json::to_value(uta.project()).unwrap();
-        assert_eq!(json["bpm"], 120.0);
-        assert_eq!(json["loopLength"], 4 * 4 * TICKS_PER_QUARTER);
-        assert_eq!(json["loopEnabled"], true);
-        assert_eq!(json["tracks"][0]["synth"]["waveform"], "saw");
-        assert_eq!(json["tracks"][0]["synth"]["cutoffHz"], 20_000.0);
-        let note = &json["tracks"][0]["clips"][0]["notes"][0];
+        let json = serde_json::to_value(uta.update()).unwrap();
+        assert!(json["sequence"].is_u64());
+        let outline = &json["outline"];
+        assert_eq!(outline["bpm"], 120.0);
+        assert_eq!(outline["loopLength"], 4 * 4 * TICKS_PER_QUARTER);
+        assert_eq!(outline["loopEnabled"], true);
+        assert_eq!(outline["tracks"][0]["synth"]["waveform"], "saw");
+        assert_eq!(outline["tracks"][0]["synth"]["cutoffHz"], 20_000.0);
+        assert!(outline["tracks"][0]["id"].is_string());
+        let clip = &outline["tracks"][0]["clips"][0];
+        assert!(clip["notes"].is_null(), "the outline holds no notes");
+        let sent = &json["notes"][0];
+        assert_eq!(sent["clip"], clip["id"]);
+        assert_eq!(sent["revision"], clip["notesRevision"]);
+        let note = &sent["notes"][0];
         for field in ["id", "pitch", "velocity", "start", "length"] {
             assert!(!note[field].is_null(), "{field} missing from {note}");
         }
-        assert!(json["tracks"][0]["id"].is_string());
     }
 
     const BAR: Ticks = 4 * TICKS_PER_QUARTER;
@@ -1284,7 +1412,7 @@ mod tests {
 
     #[test]
     fn the_project_view_carries_the_synth_limits() {
-        let json = serde_json::to_value(offline().project()).unwrap();
+        let json = serde_json::to_value(offline().update().outline).unwrap();
         let limits = &json["synthLimits"];
         assert_eq!(limits["cutoffHz"], serde_json::json!([20.0, 20_000.0]));
         assert_eq!(limits["resonance"], serde_json::json!([0.0, 1.0]));
@@ -1895,7 +2023,7 @@ mod tests {
 
     #[test]
     fn the_track_list_serialises_for_the_ui() {
-        let json = serde_json::to_value(offline().project()).unwrap();
+        let json = serde_json::to_value(offline().update().outline).unwrap();
         let track = &json["tracks"][0];
         assert_eq!(track["name"], "Synth 1");
         assert_eq!(
@@ -2409,5 +2537,193 @@ mod tests {
         // The count carries on across a buffer change's new engine.
         uta.set_buffer_size(64).unwrap();
         assert!(uta.frame().clips >= clips);
+    }
+
+    // Updates: the outline and the notes that changed (RFC-004, part 2, and
+    // "How we'll verify it").
+
+    /// An update's size as JSON, without its sequence number and revisions,
+    /// which grow a digit now and then.
+    fn size(update: &Update) -> usize {
+        let mut update = Update {
+            sequence: 0,
+            ..update.clone()
+        };
+        for track in &mut update.outline.tracks {
+            for clip in &mut track.clips {
+                clip.notes_revision = 0;
+            }
+        }
+        serde_json::to_vec(&update).unwrap().len()
+    }
+
+    /// The clips whose notes `update` carries.
+    fn sent(update: &Update) -> Vec<ClipId> {
+        update.notes.iter().map(|notes| notes.clip).collect()
+    }
+
+    /// Each clip's notes revision in `update`'s outline.
+    fn revisions(update: &Update) -> BTreeMap<ClipId, u64> {
+        update
+            .outline
+            .tracks
+            .iter()
+            .flat_map(|track| &track.clips)
+            .map(|clip| (clip.id, clip.notes_revision))
+            .collect()
+    }
+
+    /// The heavy test song with stress notes in its first clip, already sent
+    /// to the UI.
+    fn stress_song() -> Uta {
+        let mut uta = offline();
+        uta.build_test_song(TestSong::Heavy).unwrap();
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
+        let first = uta.update();
+        let clips = revisions(&first).len();
+        assert_eq!(
+            first.notes.len(),
+            clips,
+            "the first update sends every clip"
+        );
+        uta
+    }
+
+    #[test]
+    fn a_slider_step_sends_no_notes_and_doesnt_grow_with_them() {
+        let mut uta = stress_song();
+        let track = first_track(&uta);
+        uta.set_track_mixer(track, mixer(-6.0, 0.0, false, false), None)
+            .unwrap();
+        let before = uta.update();
+        assert!(before.notes.is_empty());
+
+        let last = uta.project().tracks[0].clips.last().unwrap().id;
+        uta.add_stress_notes(last).unwrap();
+        assert_eq!(sent(&uta.update()), [last]);
+        uta.set_track_mixer(track, mixer(-7.0, 0.0, false, false), None)
+            .unwrap();
+        let after = uta.update();
+        assert!(after.notes.is_empty());
+        assert_eq!(size(&after), size(&before));
+    }
+
+    #[test]
+    fn a_note_delete_sends_only_its_clips_notes() {
+        let mut uta = stress_song();
+        let clip = uta.project().tracks[1].clips[5].clone();
+        uta.remove_notes(clip.id, vec![clip.notes[0].id]).unwrap();
+        let update = uta.update();
+        assert_eq!(sent(&update), [clip.id]);
+        assert_eq!(update.notes[0].notes, clip.notes[1..]);
+    }
+
+    #[test]
+    fn adding_a_track_sends_only_its_notes() {
+        let mut uta = stress_song();
+        uta.add_track(TrackId::random()).unwrap();
+        assert!(uta.update().notes.is_empty(), "a new track has no clips");
+
+        let id = TrackId::random();
+        uta.duplicate_track(first_track(&uta), id).unwrap();
+        let update = uta.update();
+        let copy = update.outline.tracks.iter().find(|t| t.id == id).unwrap();
+        let copies: Vec<ClipId> = copy.clips.iter().map(|clip| clip.id).collect();
+        assert_eq!(sent(&update), copies);
+    }
+
+    #[test]
+    fn the_outline_stays_under_1_mb_at_the_target_loads() {
+        for song in [TestSong::Heavy, TestSong::Wide] {
+            let mut uta = offline();
+            uta.build_test_song(song).unwrap();
+            let outline = serde_json::to_vec(&uta.update().outline).unwrap().len();
+            // The early warning in RFC-004's "Growing later": past this, it's
+            // time to split something else out of the outline.
+            assert!(outline < 1_000_000, "{song:?}: {outline} bytes");
+        }
+    }
+
+    #[test]
+    fn editing_undoing_and_redoing_notes_each_give_only_that_clip_a_higher_revision() {
+        let mut uta = stress_song();
+        let clip = uta.project().tracks[2].clips[3].clone();
+        let mut last = revisions(&uta.update());
+        let steps: [fn(&mut Uta, &ClipView); 3] = [
+            |uta, clip| uta.remove_notes(clip.id, vec![clip.notes[0].id]).unwrap(),
+            |uta, _| uta.undo(),
+            |uta, _| uta.redo(),
+        ];
+        for step in steps {
+            step(&mut uta, &clip);
+            let update = uta.update();
+            assert_eq!(sent(&update), [clip.id]);
+            let now = revisions(&update);
+            assert!(now[&clip.id] > last[&clip.id], "a revision never goes back");
+            assert_eq!(update.notes[0].revision, now[&clip.id]);
+            for (id, revision) in &now {
+                if *id != clip.id {
+                    assert_eq!(*revision, last[id]);
+                }
+            }
+            last = now;
+        }
+    }
+
+    #[test]
+    fn moving_a_clip_changes_the_outline_not_the_notes() {
+        let mut uta = stress_song();
+        let before = uta.update();
+        let (track, clip) = (first_track(&uta), clip_id(&uta));
+        let start = 100 * BAR;
+        uta.set_clips(
+            vec![ClipPosition {
+                id: clip,
+                track,
+                start,
+                length: BAR,
+            }],
+            None,
+        )
+        .unwrap();
+        let after = uta.update();
+        assert!(after.notes.is_empty());
+        assert_eq!(revisions(&after), revisions(&before));
+        let moved = after.outline.tracks[0].clips.iter().find(|c| c.id == clip);
+        assert_eq!(moved.unwrap().start, start);
+    }
+
+    #[test]
+    fn a_deleted_clip_brought_back_by_undo_is_sent_again() {
+        let mut uta = stress_song();
+        let clip = clip_id(&uta);
+        let before = revisions(&uta.update())[&clip];
+        uta.remove_clips(vec![clip]).unwrap();
+        assert!(uta.update().notes.is_empty());
+        uta.undo();
+        let update = uta.update();
+        assert_eq!(sent(&update), [clip]);
+        assert!(update.notes[0].revision > before);
+    }
+
+    #[test]
+    fn get_notes_gives_a_clips_notes_at_the_outlines_revision() {
+        let mut uta = stress_song();
+        let clip = uta.project().tracks[3].clips[7].clone();
+        let revision = revisions(&uta.update())[&clip.id];
+        let notes = uta.notes(clip.id).unwrap();
+        assert_eq!((notes.clip, notes.revision), (clip.id, revision));
+        assert_eq!(notes.notes, clip.notes);
+        // Fetching doesn't change what an update sends.
+        assert!(uta.update().notes.is_empty());
+        assert!(uta.notes(ClipId::random()).is_err());
+    }
+
+    #[test]
+    fn each_update_has_a_higher_sequence_number() {
+        let mut uta = offline();
+        let first = uta.update().sequence;
+        uta.set_volume(-3.0, None).unwrap();
+        assert!(uta.update().sequence > first);
     }
 }

@@ -3,6 +3,7 @@
 
 mod commands;
 mod menu;
+mod pieces;
 mod stress;
 mod uta;
 
@@ -43,6 +44,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_project,
+            commands::get_notes,
             commands::set_volume,
             commands::set_tempo,
             commands::set_loop,
@@ -90,8 +92,14 @@ pub fn run() {
 /// on to the UI, which sends back an ordinary command.
 fn menu_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> Result<(), String> {
     match id {
-        menu::UNDO => commands::undo(app.clone()).and_then(|_| commands::announce_change(app)),
-        menu::REDO => commands::redo(app.clone()).and_then(|_| commands::announce_change(app)),
+        menu::UNDO => commands::change_unasked(app, |uta| {
+            uta.undo();
+            Ok(())
+        }),
+        menu::REDO => commands::change_unasked(app, |uta| {
+            uta.redo();
+            Ok(())
+        }),
         menu::COPY | menu::PASTE | menu::DUPLICATE => {
             commands::pass_menu_item(app, commands::EDIT_MENU, id)
         }
@@ -157,10 +165,10 @@ mod tests {
     fn a_command_replies_with_the_change_and_emits_no_event() {
         let (app, events) = app();
         let view = commands::set_volume(app.handle().clone(), -6.0, None).unwrap();
-        assert_eq!(view.volume_db, -6.0);
+        assert_eq!(view.outline.volume_db, -6.0);
         let id = uta_core::TrackId::random();
         let view = commands::add_track(app.handle().clone(), id).unwrap();
-        assert!(view.tracks.iter().any(|track| track.id == id));
+        assert!(view.outline.tracks.iter().any(|track| track.id == id));
         assert!(lock(&events).is_empty());
     }
 
@@ -171,10 +179,28 @@ mod tests {
 
         menu_item(app.handle(), menu::UNDO).unwrap();
         assert_eq!(*lock(&events), ["null"]);
-        assert_ne!(commands::get_project(app.state()).volume_db, -6.0);
+        assert_ne!(commands::get_project(app.state()).outline.volume_db, -6.0);
 
         menu_item(app.handle(), menu::REDO).unwrap();
         assert_eq!(*lock(&events), ["null", "null"]);
-        assert_eq!(commands::get_project(app.state()).volume_db, -6.0);
+        assert_eq!(commands::get_project(app.state()).outline.volume_db, -6.0);
+    }
+
+    #[test]
+    fn notes_undone_from_the_menu_arrive_with_the_fetch_that_follows() {
+        let (app, _) = app();
+        let clip = commands::get_project(app.state()).outline.tracks[0].clips[0].id;
+        let update = commands::add_stress_notes(app.handle().clone(), clip).unwrap();
+        assert_eq!(update.notes.len(), 1);
+
+        menu_item(app.handle(), menu::UNDO).unwrap();
+        let update = commands::get_project(app.state());
+        assert_eq!(update.notes.len(), 1, "the undone clip's notes are sent");
+        assert_eq!(update.notes[0].clip, clip);
+        assert!(update.notes[0].notes.is_empty());
+        assert_eq!(
+            update.outline.tracks[0].clips[0].notes_revision,
+            update.notes[0].revision
+        );
     }
 }

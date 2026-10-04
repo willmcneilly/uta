@@ -14,7 +14,7 @@ use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
 use crate::stress::TestSong;
-use crate::uta::{Frame, MixerView, PastedClip, ProjectView, Uta};
+use crate::uta::{ClipNotes, Frame, MixerView, PastedClip, Update, Uta};
 
 /// The event sent, with no payload, after a change the UI didn't ask for:
 /// Undo and Redo from the menu bar, ⌘Z and ⇧⌘Z included. The UI answers with
@@ -49,41 +49,67 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Changes the project with `change`, updates the menu, and returns the new
-/// [`ProjectView`] as the command's reply.
+/// Changes the project with `change`, updates the menu, and returns the
+/// [`Update`] as the command's reply: the outline, and the notes of any
+/// clip they changed.
 ///
 /// It emits no event: the UI asked for the change, and the reply already
 /// carries it. Never put large data in an event. Rust can only push into the
 /// web view by having it run JavaScript, which is fine for a small message
 /// and slow for a big one (RFC-004, part 1). A change the UI didn't ask for
-/// emits [`PROJECT_CHANGED`] with no payload, through [`announce_change`],
-/// and the UI fetches the project with an ordinary call.
+/// goes through [`change_unasked`] instead.
 pub fn edit<R: Runtime>(
     app: &AppHandle<R>,
     change: impl FnOnce(&mut Uta) -> Result<(), String>,
-) -> Result<ProjectView, String> {
-    let project = {
-        let state = app.state::<AppState>();
-        let mut uta = lock(&state.uta);
-        change(&mut uta)?;
-        uta.project()
-    };
-    if let Some(menu) = app.try_state::<MenuState<R>>() {
-        menu.update(&project).map_err(|error| error.to_string())?;
-    }
-    Ok(project)
+) -> Result<Update, String> {
+    apply(app, change, Uta::update)
 }
 
-/// Tells the UI the project changed without it asking (Undo or Redo from the
-/// menu bar), with no payload: it fetches the project with [`get_project`].
-pub fn announce_change<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+/// Changes the project with `change` and updates the menu, for a change the
+/// UI didn't ask for (Undo or Redo from the menu bar). It emits
+/// [`PROJECT_CHANGED`] with no payload, and the UI fetches the update with
+/// [`get_project`]. No update is made here: one that never reached the UI
+/// would leave Rust thinking it had sent the notes in it.
+pub fn change_unasked<R: Runtime>(
+    app: &AppHandle<R>,
+    change: impl FnOnce(&mut Uta) -> Result<(), String>,
+) -> Result<(), String> {
+    apply(app, change, |_| ())?;
     app.emit(PROJECT_CHANGED, ())
         .map_err(|error| error.to_string())
 }
 
+/// Changes the project with `change`, takes `reply` from it, and updates the
+/// menu.
+fn apply<R: Runtime, T>(
+    app: &AppHandle<R>,
+    change: impl FnOnce(&mut Uta) -> Result<(), String>,
+    reply: impl FnOnce(&mut Uta) -> T,
+) -> Result<T, String> {
+    let (reply, menu_view) = {
+        let state = app.state::<AppState>();
+        let mut uta = lock(&state.uta);
+        change(&mut uta)?;
+        (reply(&mut uta), uta.menu_view())
+    };
+    if let Some(menu) = app.try_state::<MenuState<R>>() {
+        menu.update(menu_view).map_err(|error| error.to_string())?;
+    }
+    Ok(reply)
+}
+
+/// The update, for when the UI has none to go on: when it opens, and after
+/// [`PROJECT_CHANGED`].
 #[tauri::command]
-pub fn get_project(state: State<'_, AppState>) -> ProjectView {
-    lock(&state.uta).project()
+pub fn get_project(state: State<'_, AppState>) -> Update {
+    lock(&state.uta).update()
+}
+
+/// One clip's notes at its current revision, for a clip whose notes the UI
+/// doesn't hold at the revision in the outline.
+#[tauri::command]
+pub fn get_notes(state: State<'_, AppState>, clip: ClipId) -> Result<ClipNotes, String> {
+    lock(&state.uta).notes(clip)
 }
 
 /// Sets the master volume. Calls with the same `gesture` (one drag) undo as
@@ -93,7 +119,7 @@ pub fn set_volume<R: Runtime>(
     app: AppHandle<R>,
     volume_db: f32,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_volume(volume_db, gesture))
 }
 
@@ -103,7 +129,7 @@ pub fn set_tempo<R: Runtime>(
     app: AppHandle<R>,
     bpm: f32,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_tempo(bpm, gesture))
 }
 
@@ -115,16 +141,13 @@ pub fn set_loop<R: Runtime>(
     start_bar: u32,
     bars: u32,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_loop(start_bar, bars, gesture))
 }
 
 /// Switches the loop on or off.
 #[tauri::command]
-pub fn set_loop_enabled<R: Runtime>(
-    app: AppHandle<R>,
-    enabled: bool,
-) -> Result<ProjectView, String> {
+pub fn set_loop_enabled<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result<Update, String> {
     edit(&app, |uta| uta.set_loop_enabled(enabled))
 }
 
@@ -136,7 +159,7 @@ pub fn set_synth_param<R: Runtime>(
     track: TrackId,
     param: SynthParam,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_synth_param(track, param, gesture))
 }
 
@@ -148,7 +171,7 @@ pub fn set_track_mixer<R: Runtime>(
     track: TrackId,
     mixer: MixerView,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| {
         uta.set_track_mixer(track, mixer.into(), gesture)
     })
@@ -157,16 +180,13 @@ pub fn set_track_mixer<R: Runtime>(
 /// Solos a track on its own, or unsolos it if it already is: ⌥-click on
 /// Solo. One undo step.
 #[tauri::command]
-pub fn solo_track_alone<R: Runtime>(
-    app: AppHandle<R>,
-    track: TrackId,
-) -> Result<ProjectView, String> {
+pub fn solo_track_alone<R: Runtime>(app: AppHandle<R>, track: TrackId) -> Result<Update, String> {
     edit(&app, |uta| uta.solo_alone(track))
 }
 
 /// Adds a synth track below the others. The UI picks its ID.
 #[tauri::command]
-pub fn add_track<R: Runtime>(app: AppHandle<R>, id: TrackId) -> Result<ProjectView, String> {
+pub fn add_track<R: Runtime>(app: AppHandle<R>, id: TrackId) -> Result<Update, String> {
     edit(&app, |uta| uta.add_track(id))
 }
 
@@ -177,12 +197,12 @@ pub fn duplicate_track<R: Runtime>(
     app: AppHandle<R>,
     track: TrackId,
     id: TrackId,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.duplicate_track(track, id))
 }
 
 #[tauri::command]
-pub fn remove_track<R: Runtime>(app: AppHandle<R>, track: TrackId) -> Result<ProjectView, String> {
+pub fn remove_track<R: Runtime>(app: AppHandle<R>, track: TrackId) -> Result<Update, String> {
     edit(&app, |uta| uta.remove_track(track))
 }
 
@@ -192,7 +212,7 @@ pub fn move_track<R: Runtime>(
     app: AppHandle<R>,
     track: TrackId,
     index: usize,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.move_track(track, index))
 }
 
@@ -205,7 +225,7 @@ pub fn add_clip<R: Runtime>(
     id: ClipId,
     start: Ticks,
     length: Ticks,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.add_clip(track, id, start, length))
 }
 
@@ -216,7 +236,7 @@ pub fn set_clips<R: Runtime>(
     app: AppHandle<R>,
     clips: Vec<ClipPosition>,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_clips(clips, gesture))
 }
 
@@ -226,15 +246,12 @@ pub fn set_clips<R: Runtime>(
 pub fn paste_clips<R: Runtime>(
     app: AppHandle<R>,
     clips: Vec<PastedClip>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.paste_clips(clips))
 }
 
 #[tauri::command]
-pub fn remove_clips<R: Runtime>(
-    app: AppHandle<R>,
-    clips: Vec<ClipId>,
-) -> Result<ProjectView, String> {
+pub fn remove_clips<R: Runtime>(app: AppHandle<R>, clips: Vec<ClipId>) -> Result<Update, String> {
     edit(&app, |uta| uta.remove_clips(clips))
 }
 
@@ -246,7 +263,7 @@ pub fn add_notes<R: Runtime>(
     clip: ClipId,
     notes: Vec<Note>,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.add_notes(clip, notes, gesture))
 }
 
@@ -258,7 +275,7 @@ pub fn set_notes<R: Runtime>(
     clip: ClipId,
     notes: Vec<Note>,
     gesture: Option<u32>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.set_notes(clip, notes, gesture))
 }
 
@@ -267,7 +284,7 @@ pub fn remove_notes<R: Runtime>(
     app: AppHandle<R>,
     clip: ClipId,
     notes: Vec<NoteId>,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.remove_notes(clip, notes))
 }
 
@@ -279,13 +296,13 @@ pub fn trim_notes<R: Runtime>(
     clip: ClipId,
     notes: Vec<NoteId>,
     gesture: u32,
-) -> Result<ProjectView, String> {
+) -> Result<Update, String> {
     edit(&app, |uta| uta.trim_notes(clip, notes, gesture))
 }
 
 /// Puts back everything `gesture` (one drag) changed: Esc mid-drag.
 #[tauri::command]
-pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<ProjectView, String> {
+pub fn cancel_gesture<R: Runtime>(app: AppHandle<R>, gesture: u32) -> Result<Update, String> {
     edit(&app, |uta| {
         uta.cancel_gesture(gesture);
         Ok(())
@@ -317,25 +334,19 @@ pub fn pass_menu_item<R: Runtime>(
 /// Fills a clip with a few thousand notes, as one undo step. The UI calls it
 /// from the Develop menu, with the clip it's showing.
 #[tauri::command]
-pub fn add_stress_notes<R: Runtime>(
-    app: AppHandle<R>,
-    clip: ClipId,
-) -> Result<ProjectView, String> {
+pub fn add_stress_notes<R: Runtime>(app: AppHandle<R>, clip: ClipId) -> Result<Update, String> {
     edit(&app, |uta| uta.add_stress_notes(clip))
 }
 
 /// Replaces the song with one of the benchmark's test songs, as one undo
 /// step. The UI calls it from Develop → Run Benchmark.
 #[tauri::command]
-pub fn build_test_song<R: Runtime>(
-    app: AppHandle<R>,
-    song: TestSong,
-) -> Result<ProjectView, String> {
+pub fn build_test_song<R: Runtime>(app: AppHandle<R>, song: TestSong) -> Result<Update, String> {
     edit(&app, |uta| uta.build_test_song(song))
 }
 
 #[tauri::command]
-pub fn undo<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
+pub fn undo<R: Runtime>(app: AppHandle<R>) -> Result<Update, String> {
     edit(&app, |uta| {
         uta.undo();
         Ok(())
@@ -343,7 +354,7 @@ pub fn undo<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
 }
 
 #[tauri::command]
-pub fn redo<R: Runtime>(app: AppHandle<R>) -> Result<ProjectView, String> {
+pub fn redo<R: Runtime>(app: AppHandle<R>) -> Result<Update, String> {
     edit(&app, |uta| {
         uta.redo();
         Ok(())

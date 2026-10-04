@@ -24,10 +24,12 @@ import type {
 } from "./backend";
 import {
   type RecordingRenderer,
+  Updates,
   announceChange,
   projectView,
   recordingFactory,
   trackView,
+  withFirstClipNotes,
 } from "./pianoRoll/testing";
 import type { RendererFactory } from "./pianoRoll/renderer";
 
@@ -51,6 +53,8 @@ const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthView> = {
 
 let calls: Call[];
 let project: ProjectView;
+// Rust's side of the updates: what it has sent the UI of each clip's notes.
+let updates: Updates;
 let frames: Channel<Frame> | null;
 let failWith: string | null;
 let renderer: RecordingRenderer;
@@ -119,6 +123,7 @@ beforeEach(() => {
   failWith = null;
   ({ renderer, factory } = recordingFactory());
   vi.stubGlobal("ResizeObserver", FixedSizeObserver);
+  updates = new Updates();
   mockIPC(
     (cmd, payload) => {
       const args = (payload ?? {}) as Record<string, unknown>;
@@ -126,15 +131,17 @@ beforeEach(() => {
       if (failWith) throw new Error(failWith);
       switch (cmd) {
         case "get_project":
-          return project;
+          return updates.send(project);
+        case "get_notes":
+          return updates.notes(project, args.clip as string);
         case "set_volume":
           // Rust rounds to the nearest dB here, to show the UI renders what
           // comes back rather than what it sent.
           project = { ...project, volumeDb: Math.round(args.volumeDb as number), canUndo: true };
-          return project;
+          return updates.send(project);
         case "set_tempo":
           project = { ...project, bpm: args.bpm as number, canUndo: true };
-          return project;
+          return updates.send(project);
         case "set_loop":
           project = {
             ...project,
@@ -142,10 +149,10 @@ beforeEach(() => {
             loopLength: (args.bars as number) * 3840,
             canUndo: true,
           };
-          return project;
+          return updates.send(project);
         case "set_loop_enabled":
           project = { ...project, loopEnabled: args.enabled as boolean, canUndo: true };
-          return project;
+          return updates.send(project);
         case "set_synth_param": {
           const param = args.param as SynthParam;
           // Rust stores f32s, so what comes back isn't quite what was sent.
@@ -154,7 +161,7 @@ beforeEach(() => {
             ...track,
             synth: { ...track.synth, [SYNTH_FIELDS[param.name]]: value },
           }));
-          return project;
+          return updates.send(project);
         }
         case "set_track_mixer": {
           const mixer = args.mixer as MixerView;
@@ -163,7 +170,7 @@ beforeEach(() => {
             ...track,
             mixer: { ...mixer, volumeDb: Math.fround(mixer.volumeDb), pan: Math.fround(mixer.pan) },
           }));
-          return project;
+          return updates.send(project);
         }
         case "solo_track_alone":
           project = {
@@ -174,14 +181,14 @@ beforeEach(() => {
               mixer: { ...track.mixer, solo: track.id === args.track },
             })),
           };
-          return project;
+          return updates.send(project);
         case "add_track":
           project = {
             ...project,
             canUndo: true,
             tracks: [...project.tracks, trackView(args.id as string, nextName())],
           };
-          return project;
+          return updates.send(project);
         case "duplicate_track": {
           const index = project.tracks.findIndex((track) => track.id === args.track);
           const copy = {
@@ -193,7 +200,7 @@ beforeEach(() => {
           const tracks = [...project.tracks];
           tracks.splice(index + 1, 0, copy);
           project = { ...project, canUndo: true, tracks };
-          return project;
+          return updates.send(project);
         }
         case "remove_track":
           project = {
@@ -201,17 +208,17 @@ beforeEach(() => {
             canUndo: true,
             tracks: project.tracks.filter((track) => track.id !== args.track),
           };
-          return project;
+          return updates.send(project);
         case "move_track": {
           const moving = project.tracks.find((track) => track.id === args.track)!;
           const tracks = project.tracks.filter((track) => track !== moving);
           tracks.splice(args.index as number, 0, moving);
           project = { ...project, canUndo: true, tracks };
-          return project;
+          return updates.send(project);
         }
         case "add_stress_notes":
           // What's added is Rust's business; the tests check where it goes.
-          return project;
+          return updates.send(project);
         case "build_test_song": {
           // Two tracks of two clips of three notes, named after the song.
           const song = args.song as string;
@@ -228,7 +235,7 @@ beforeEach(() => {
               trackView(`${song}-track-${t}`, `Synth ${t}`, [clip(t, 0), clip(t, 1)]),
             ),
           };
-          return project;
+          return updates.send(project);
         }
         case "remove_notes": {
           const gone = new Set(args.notes as string[]);
@@ -244,7 +251,7 @@ beforeEach(() => {
               ),
             })),
           };
-          return project;
+          return updates.send(project);
         }
         case "subscribe":
           frames = args.onFrame as Channel<Frame>;
@@ -682,6 +689,64 @@ describe("App", () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(commands().slice(before)).toEqual(["set_volume"]);
     expect(volume()).toHaveValue("-6");
+  });
+
+  describe("notes cache", () => {
+    const fetchedNotes = () =>
+      calls.filter((call) => call.cmd === "get_notes").map((call) => call.args.clip);
+    const withoutClips = () => ({
+      ...project,
+      tracks: project.tracks.map((track) => ({ ...track, clips: [] })),
+    });
+
+    it("draws the notes it holds when an update sends none", async () => {
+      await renderApp();
+      await waitFor(() => expect(drawnNotes()).toHaveLength(2));
+      fireEvent.change(volume(), { target: { value: "-6" } });
+      // The mock, like Rust, sent no notes with it: the clip's are unchanged.
+      await waitFor(() => expect(volume()).toHaveValue("-6"));
+      expect(drawnNotes()).toEqual([
+        ["low", 60, 0, 100],
+        ["high", 72, 3840, 30],
+      ]);
+      expect(fetchedNotes()).toEqual([]);
+    });
+
+    it("takes new notes when a clip's revision changes", async () => {
+      await renderApp();
+      project = withFirstClipNotes(project, [note("new", 67, 0)]);
+      await announceChange();
+      await waitFor(() => expect(drawnNotes()).toEqual([["new", 67, 0, 100]]));
+      expect(fetchedNotes()).toEqual([]);
+    });
+
+    it("drops a clip's notes when it goes, and fetches them if it comes back unsent", async () => {
+      await renderApp();
+      const withClip = project;
+      project = withoutClips();
+      await announceChange();
+      expect(screen.getByText("Synth 1 has no clips yet.")).toBeInTheDocument();
+      // An update the UI never saw brought the clip back, so Rust counts its
+      // notes as sent, and the next one has only its revision.
+      updates.send(withClip);
+      project = withClip;
+      await announceChange();
+      await waitFor(() => expect(drawnNotes()).toHaveLength(2));
+      expect(fetchedNotes()).toEqual(["clip-1"]);
+    });
+
+    it("fetches every clip's notes after the web view reloads", async () => {
+      // Rust sent the notes before the reload, so it sends only the outline.
+      updates.send(project);
+      await renderApp();
+      await waitFor(() =>
+        expect(drawnNotes()).toEqual([
+          ["low", 60, 0, 100],
+          ["high", 72, 3840, 30],
+        ]),
+      );
+      expect(fetchedNotes()).toEqual(["clip-1"]);
+    });
   });
 
   it("offers only the buffer sizes the device supports", async () => {

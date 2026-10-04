@@ -16,6 +16,7 @@ import type {
 } from "../backend";
 import {
   type RecordingRenderer,
+  Updates,
   announceChange,
   projectView,
   recordingFactory,
@@ -40,6 +41,8 @@ const BEAT = 960;
 
 let calls: Call[];
 let project: ProjectView;
+// Rust's side of the updates: what it has sent the UI of each clip's notes.
+let updates: Updates;
 /** The project as each gesture found it, so cancelling can put it back. */
 let beforeGesture: Map<number, ProjectView>;
 let timeline: RecordingTimelineRenderer;
@@ -114,6 +117,7 @@ beforeEach(() => {
   ({ renderer: timeline } = recordingTimelineFactory());
   ({ renderer: roll } = recordingFactory());
   vi.stubGlobal("ResizeObserver", FixedSizeObserver);
+  updates = new Updates();
   mockIPC(
     (cmd, payload) => {
       const args = (payload ?? {}) as Record<string, unknown>;
@@ -124,7 +128,9 @@ beforeEach(() => {
       }
       switch (cmd) {
         case "get_project":
-          return project;
+          return updates.send(project);
+        case "get_notes":
+          return updates.notes(project, args.clip as string);
         case "add_clip":
           project = withTracks(
             project.tracks.map((track) =>
@@ -139,10 +145,10 @@ beforeEach(() => {
                 : track,
             ),
           );
-          return project;
+          return updates.send(project);
         case "set_clips":
           project = setClips(args.clips as ClipPosition[]);
-          return project;
+          return updates.send(project);
         case "remove_clips": {
           const ids = args.clips as string[];
           project = withTracks(
@@ -151,7 +157,7 @@ beforeEach(() => {
               clips: t.clips.filter((c) => !ids.includes(c.id)),
             })),
           );
-          return project;
+          return updates.send(project);
         }
         case "paste_clips": {
           // Rust gives every note a new ID; here, the clip's ID and the note's.
@@ -168,7 +174,7 @@ beforeEach(() => {
               ]),
             })),
           );
-          return project;
+          return updates.send(project);
         }
         case "set_loop":
           project = {
@@ -177,13 +183,13 @@ beforeEach(() => {
             loopStart: (args.startBar as number) * BAR,
             loopLength: (args.bars as number) * BAR,
           };
-          return project;
+          return updates.send(project);
         case "set_loop_enabled":
           project = { ...project, canUndo: true, loopEnabled: args.enabled as boolean };
-          return project;
+          return updates.send(project);
         case "trim_notes":
           // Nothing to trim in these tests.
-          return project;
+          return updates.send(project);
         case "add_notes":
         case "remove_notes": {
           const changeNotes = (notes: NoteView[]) =>
@@ -198,11 +204,11 @@ beforeEach(() => {
               ),
             })),
           );
-          return project;
+          return updates.send(project);
         }
         case "cancel_gesture":
           project = beforeGesture.get(gesture as number) ?? project;
-          return project;
+          return updates.send(project);
         case "subscribe":
           frames = args.onFrame as Channel<Frame>;
           return null;

@@ -1,7 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectView } from "../backend";
-import { projectView, trackView } from "../pianoRoll/testing";
+import { Updates, projectView, trackView } from "../pianoRoll/testing";
 import { type BenchmarkHost, type BenchmarkOptions, type Clock, runBenchmark } from "./run";
 
 const FRAME = 16;
@@ -87,6 +87,7 @@ let event: "none" | "before reply" | { framesLater: number };
 
 const host: BenchmarkHost = {
   apply: () => {},
+  project: () => song,
   events: () => events,
   showClip: () => {},
 };
@@ -100,7 +101,7 @@ beforeEach(() => {
     else if (event !== "none") clock.in(event.framesLater, () => (events += 1));
     // Every command answers with the same song: only the timing is tested.
     return cmd === "build_test_song" || cmd === "set_track_mixer" || cmd === "remove_notes"
-      ? song
+      ? new Updates().send(song)
       : null;
   });
 });

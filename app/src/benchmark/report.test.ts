@@ -46,11 +46,11 @@ describe("summarise", () => {
 });
 
 describe("targets", () => {
-  it("asks for under a frame a step and 20 ms frames at heavy and wide", () => {
+  it("asks for each step on the next frame and 20 ms frames at heavy and wide", () => {
     for (const song of ["heavy", "wide"] as const) {
       expect(targetsFor(song)).toEqual([
-        { measure: "sliderSteps", statistic: "p99", limit: 16.7, inclusive: false },
-        { measure: "noteDeletes", statistic: "p99", limit: 16.7, inclusive: false },
+        { measure: "sliderSteps", statistic: "p99", limit: 20, inclusive: true },
+        { measure: "noteDeletes", statistic: "p99", limit: 20, inclusive: true },
         { measure: "dragFrames", statistic: "p99", limit: 20, inclusive: false },
       ]);
     }
@@ -63,9 +63,13 @@ describe("targets", () => {
   });
 
   it("judges under as under, and no more than as allowing the limit", () => {
+    const [, , frames20] = targetsFor("heavy");
+    expect(meets(summarise([19.9]), frames20)).toBe(true);
+    expect(meets(summarise([20]), frames20)).toBe(false);
     const [slider] = targetsFor("heavy");
-    expect(meets(summarise([16.6]), slider)).toBe(true);
-    expect(meets(summarise([16.7]), slider)).toBe(false);
+    // A step drawn on the next frame measures 17 ms, even if it took no time.
+    expect(meets(summarise([17, 20]), slider)).toBe(true);
+    expect(meets(summarise([20.1]), slider)).toBe(false);
     const [frames] = targetsFor("check-7");
     expect(meets(summarise([17, 50]), frames)).toBe(true);
     expect(meets(summarise([17, 50.1]), frames)).toBe(false);
@@ -99,9 +103,9 @@ describe("formatReport", () => {
     expect(text).toContain("Uta benchmark, 2026-10-03 14:05 UTC");
     expect(text).toContain("heavy: 12 tracks, 768 clips, 49,152 notes (built and drawn in 812 ms)");
     expect(text).toContain(
-      "  slider step     3     82.0     95.0     95.0   p99 < 16.7  ✗ missed",
+      "  slider step     3     82.0     95.0     95.0   p99 ≤ 20  ✗ missed",
     );
-    expect(text).toContain("  note delete     2      9.0     13.0     13.0   p99 < 16.7  ✓ met");
+    expect(text).toContain("  note delete     2      9.0     13.0     13.0   p99 ≤ 20  ✓ met");
     expect(text).toContain("  drag step       2     14.0     15.0     15.0\n");
     expect(text).toContain("  drag frames     3     17.0     18.0     18.0   p99 < 20  ✓ met");
     expect(text).toContain("check 7: 7 tracks, 196 clips, 588,000 notes");

@@ -6,7 +6,7 @@
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};
 
-use crate::uta::ProjectView;
+use crate::uta::MenuView;
 
 pub const UNDO: &str = "undo";
 pub const REDO: &str = "redo";
@@ -31,12 +31,11 @@ pub struct MenuState<R: Runtime> {
 impl<R: Runtime> MenuState<R> {
     /// Enables Undo and Redo when there's something to undo or redo, and
     /// Add and Duplicate while there's room for another track.
-    pub fn update(&self, project: &ProjectView) -> tauri::Result<()> {
-        self.undo.set_enabled(project.can_undo)?;
-        self.redo.set_enabled(project.can_redo)?;
-        let room = project.tracks.len() < project.max_tracks;
-        self.add_track.set_enabled(room)?;
-        self.duplicate_track.set_enabled(room)
+    pub fn update(&self, view: MenuView) -> tauri::Result<()> {
+        self.undo.set_enabled(view.can_undo)?;
+        self.redo.set_enabled(view.can_redo)?;
+        self.add_track.set_enabled(view.can_add_track)?;
+        self.duplicate_track.set_enabled(view.can_add_track)
     }
 }
 
