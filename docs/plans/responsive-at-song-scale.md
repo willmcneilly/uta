@@ -148,6 +148,16 @@ UTA-25 already exists as a Ready chore outside any project. It joins this projec
 
 **Context:** RFC-004, Proposal part 3 ("During a drag, the slider shows where your mouse is", "This belongs in UTA-25's slider") and resolved open question 2. RFC-003, "Alternatives considered" (a custom slider).
 
+### 8. [UTA-32] Catch up instead of skipping when a block has too many note events (Bug)
+
+Added during UTA-30's manual testing: [ticket](https://app.notion.com/p/3ef3af969b6f810abed4ff8b6c663c38).
+
+**Goal:** When a track has more note events due in one block than the per-block budget, the engine releases the voices that shouldn't sound and starts the notes that should, instead of skipping. Dragging a slider on the check-7 song no longer silences a track for a sixteenth at a clip boundary, and skipped note ends no longer leave stuck notes.
+
+**Why:** at a check-7 clip boundary about 1,560 Offs and 200 Ons fall on one sample per track. The Offs use up the 512-event budget and the rest are skipped. A snapshot swap's `release_changed_notes` then releases the stuck voices, and nothing replaces them. It predates this project; UTA-30's faster drags made it easy to hit.
+
+**Depends on:** Nothing. It should land before the end-of-project dropout retest, which it could otherwise confuse.
+
 ## Order and checkpoints
 
 ```
@@ -158,6 +168,7 @@ UTA-25 already exists as a Ready chore outside any project. It joins this projec
 3 Slowest block (any time)
 ```
 
+- 8 (UTA-32, a bug found in UTA-30's testing) can run any time before the end-of-project checks.
 - Tickets 1, 3 and 4 start together. 2 and 6 follow 1. 5 needs 2 and 4. 7 comes last, after 5 and 6. 3 can land any time before the end-of-project checks.
 - **Checkpoint after 1:** Develop → Run Benchmark on today's `main`. The numbers should look like the RFC's table. That's the baseline.
 - **Checkpoint after 2:** the benchmark again. Steps are about 2.5 times faster at heavy and wide and 5 times at check 7, and no change sends an event, but no target is met yet: each reply still carries every note (about 5 MB at heavy and wide, 57 MB at check 7). The targets wait for 5.
