@@ -265,3 +265,7 @@ You choose Develop → Run Benchmark. It warns you that it replaces the current 
 - **Frame budget:** the 16.7 ms the UI has to make each frame at 60 frames a second. Work that runs longer freezes the screen until it's done.
 - **Piece:** a part of the project view that's big and changes on its own, such as a clip's notes, so it's tracked with a revision and sent only when it changes.
 - **Tauri event:** a message Rust broadcasts to the UI. Tauri delivers it as a small program for the web view to run, which is fine for small messages and slow for large ones.
+
+## Amendments
+
+- **2026-10-04, manual check 1's "under one frame":** a step now counts as under one frame if it's drawn on the next frame, measured as p99 of at most 20 ms (the same bar as the drag's frames). The benchmark sends a step just after a frame and times it to the frame that draws it, on a clock that counts whole milliseconds, so even a step that takes no time measures 17 ms, and "under 16.7 ms" could never be met. Found in UTA-30. Agreed with Will. Its runs met this at heavy and check 7. At wide, steps still land on the next frame, but that frame sometimes starts late (up to 25 ms), and that is now UTA-33.

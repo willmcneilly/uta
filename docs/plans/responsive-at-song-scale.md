@@ -102,7 +102,7 @@ Checked against `main` at `1b20af4`, after UTA-23 and UTA-24:
 - [ ] UI tests against the mocked back end:
   - the reducer: an update with no notes keeps every held array by identity; sent notes replace only their clip; clips missing from the outline are dropped; an older update is ignored; a held list with the wrong revision is fetched again, including every clip after a reload;
   - the app draws clips from the cache, takes new notes when a revision changes, drops a clip's notes when it goes, and fetches notes for a revision it doesn't have.
-- [ ] The benchmark report in the PR meets all of the RFC's targets: each step drawn on the next frame at heavy and wide (p99 of at most 20 ms), and no frame over 50 ms at check 7. (Re-scoped after UTA-30's run: it was "under one frame", but a step is timed from just after one frame to the frame that draws it, on a clock that counts whole milliseconds, so even a step that takes no time measures 17 ms.)
+- [ ] The benchmark report in the PR meets the RFC's targets at heavy and check 7: each step drawn on the next frame (p99 of at most 20 ms), drag frames under 20 ms at p99, and no frame over 50 ms at check 7. Wide's steps are measured and reported; their late frames are ticket 9 (UTA-33). (Re-scoped twice during UTA-30, with Will. First, "under one frame" became "drawn on the next frame", because a step is timed from just after one frame to the frame that draws it, on a clock that counts whole milliseconds, so even a step that takes no time measures 17 ms (RFC-004, Amendments). Then wide, which missed narrowly in two runs because frames start late, moved to ticket 9.)
 
 **Out of scope:** Any other kind of piece, such as automation (the update is only shaped for them). Loading notes only for clips on screen. A binary format.
 
@@ -158,6 +158,14 @@ Added during UTA-30's manual testing: [ticket](https://app.notion.com/p/3ef3af96
 
 **Depends on:** Nothing. It should land before the end-of-project dropout retest, which it could otherwise confuse.
 
+### 9. [UTA-33] Draw a wide song's changes on the next frame (Bug)
+
+Split from UTA-30 at review: [ticket](https://app.notion.com/p/3ef3af969b6f8102907fe4ac1bf335b5).
+
+**Goal:** At wide (6,400 clips), slider steps and note deletes are drawn on the next frame: p99 of at most 20 ms. UTA-30's runs measured up to 25 ms, though the data is small and Rust takes 0.5 ms. Profile where the late frame goes (probably rebuilding and redrawing every clip each update), then fix it.
+
+**Depends on:** UTA-30.
+
 ## Order and checkpoints
 
 ```
@@ -168,7 +176,7 @@ Added during UTA-30's manual testing: [ticket](https://app.notion.com/p/3ef3af96
 3 Slowest block (any time)
 ```
 
-- 8 (UTA-32, a bug found in UTA-30's testing) can run any time before the end-of-project checks.
+- 8 (UTA-32, a bug found in UTA-30's testing) can run any time before the end-of-project checks. 9 (UTA-33) follows 5.
 - Tickets 1, 3 and 4 start together. 2 and 6 follow 1. 5 needs 2 and 4. 7 comes last, after 5 and 6. 3 can land any time before the end-of-project checks.
 - **Checkpoint after 1:** Develop → Run Benchmark on today's `main`. The numbers should look like the RFC's table. That's the baseline.
 - **Checkpoint after 2:** the benchmark again. Steps are about 2.5 times faster at heavy and wide and 5 times at check 7, and no change sends an event, but no target is met yet: each reply still carries every note (about 5 MB at heavy and wide, 57 MB at check 7). The targets wait for 5.
@@ -195,7 +203,7 @@ Added during UTA-30's manual testing: [ticket](https://app.notion.com/p/3ef3af96
 | UI: one step in flight, final value sent, one undo step | 6 (and 7 for the slider) |
 | Real-time safety: slowest-block measurement under `assert_no_alloc` and RealtimeSanitizer | 3 |
 | Timing report: check-7 load and first block after Play mid-song | 3 |
-| Manual 1: benchmark targets at heavy, wide and check 7 | 1 (the tool), 5 (all three loads; 2 measured a part of the way there) |
+| Manual 1: benchmark targets at heavy, wide and check 7 | 1 (the tool), 5 (heavy and check 7; 2 measured a part of the way there), 9 (wide) |
 | Manual 2: drag sliders at check 7, slider stays under the mouse | 7 |
 | Manual 3: delete notes, drag clips and notes, undo and redo at check 7 | 5 and 6 |
 | Manual 4: check 8, 10 minutes at buffer 64, slowest block under 50% | end of project (needs 3) |
