@@ -35,7 +35,7 @@ pub use id::{ClipId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};
 pub use synth::{SynthParam, SynthSettings, Waveform};
-pub use track::{Clip, Effect, MixerStrip, Note, Source, Track};
+pub use track::{Clip, Effect, MixerStrip, Note, Notes, Source, Track};
 
 /// The crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -773,17 +773,38 @@ mod tests {
         let mut session = Session::new(start.clone());
         let mut journal = Vec::new();
         for step in steps {
-            let applied: Vec<Applied> = match step {
-                Step::Apply(command) => session.apply(command.clone()).into_iter().collect(),
-                Step::Amend(command) => session.amend(command.clone()).into_iter().collect(),
-                Step::Join(command) => session.join(command.clone()).into_iter().collect(),
-                Step::Undo => session.undo(),
-                Step::Redo => session.redo(),
-                Step::Withdraw => session.withdraw(),
-            };
-            journal.extend(applied);
+            journal.extend(run_step(&mut session, step));
         }
         (start, session, journal)
+    }
+
+    /// Takes one step and returns the changes it made.
+    fn run_step(session: &mut Session, step: &Step) -> Vec<Applied> {
+        match step {
+            Step::Apply(command) => session.apply(command.clone()).into_iter().collect(),
+            Step::Amend(command) => session.amend(command.clone()).into_iter().collect(),
+            Step::Join(command) => session.join(command.clone()).into_iter().collect(),
+            Step::Undo => session.undo(),
+            Step::Redo => session.redo(),
+            Step::Withdraw => session.withdraw(),
+        }
+    }
+
+    /// The clips whose notes `command` sets: the clip a notes command
+    /// names, and every clip it adds.
+    fn sets_notes_of(command: &Command) -> Vec<ClipId> {
+        match command {
+            Command::AddNotes { clip, .. }
+            | Command::RemoveNotes { clip, .. }
+            | Command::SetNotes { clip, .. } => vec![*clip],
+            Command::AddClips { clips } => clips.iter().map(|placed| placed.clip.id()).collect(),
+            Command::AddTracks { tracks } => tracks
+                .iter()
+                .flat_map(|placed| placed.track.clips())
+                .map(Clip::id)
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     proptest! {
@@ -803,6 +824,28 @@ mod tests {
             prop_assert_eq!(&replayed, session.project());
             // And again: replay is deterministic.
             prop_assert_eq!(start.replay(&saved).unwrap(), replayed);
+        }
+
+        /// After any step, including an undo or a redo, every clip whose
+        /// notes it didn't set still shares them with the project before,
+        /// by pointer. See RFC-004, "How changes are spotted".
+        #[test]
+        fn a_step_shares_the_notes_of_every_clip_it_doesn_t_change(
+            steps in prop::collection::vec(step(), 0..200)
+        ) {
+            let mut session = Session::new(testing::project());
+            for step in &steps {
+                let before = session.project().clone();
+                let applied = run_step(&mut session, step);
+                let set: Vec<ClipId> = applied.iter().flat_map(|a| sets_notes_of(&a.command)).collect();
+                for clip in session.project().tracks().iter().flat_map(Track::clips) {
+                    if let Some(was) = before.clip(clip.id())
+                        && !set.contains(&clip.id())
+                    {
+                        prop_assert!(clip.shares_notes(was), "{:?} copied {}'s notes", step, clip.id());
+                    }
+                }
+            }
         }
 
         #[test]
