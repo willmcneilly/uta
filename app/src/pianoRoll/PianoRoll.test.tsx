@@ -537,6 +537,7 @@ describe("copy, paste and duplicate from the Edit menu", () => {
         trackPeaks: {},
         clips: 0,
         dropouts: 0,
+        slowestBlock: 0,
         output: {
           state: "running",
           device: null,

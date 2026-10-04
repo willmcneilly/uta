@@ -275,7 +275,8 @@ impl Controller {
 
     /// Reads everything the audio thread has reported and frees the snapshots
     /// it has finished with. Returns the newest status, with `peak` and
-    /// `track_peaks` the loudest levels since the previous call.
+    /// `track_peaks` the loudest levels, and `slowest_block` the slowest
+    /// block, since the previous call.
     ///
     /// If the engine has moved to a new sample rate (a device switch), sends
     /// the snapshot again, retimed for it.
@@ -283,8 +284,10 @@ impl Controller {
         self.free_used_snapshots();
         let mut peak = 0.0f32;
         let mut track_peaks = [0.0f32; TRACK_SLOTS];
+        let mut slowest_block = 0.0f32;
         while let Ok(status) = self.status.pop() {
             peak = peak.max(status.peak);
+            slowest_block = slowest_block.max(status.slowest_block);
             for (peak, &track_peak) in track_peaks.iter_mut().zip(&status.track_peaks) {
                 *peak = peak.max(track_peak);
             }
@@ -312,6 +315,7 @@ impl Controller {
         Status {
             peak,
             track_peaks,
+            slowest_block,
             ..self.latest
         }
     }

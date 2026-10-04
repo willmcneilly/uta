@@ -67,12 +67,14 @@ impl Renderer {
         }
     }
 
-    /// The latest status, with `peak` and `track_peaks` the loudest since
-    /// the last call (or since the renderer was made).
+    /// The latest status, with `peak` and `track_peaks` the loudest, and
+    /// `slowest_block` the slowest, since the last call (or since the
+    /// renderer was made).
     pub fn take_status(&mut self) -> Status {
         let status = self.status;
         self.status.peak = 0.0;
         self.status.track_peaks = [0.0; crate::TRACK_SLOTS];
+        self.status.slowest_block = 0.0;
         status
     }
 
@@ -85,6 +87,7 @@ impl Renderer {
         self.status = Status {
             peak: self.status.peak.max(status.peak),
             track_peaks: peaks,
+            slowest_block: self.status.slowest_block.max(status.slowest_block),
             ..status
         };
     }
@@ -163,4 +166,25 @@ pub fn read_wav(path: &Path) -> Result<(hound::WavSpec, Vec<f32>), hound::Error>
     let spec = reader.spec();
     let samples = reader.samples::<f32>().collect::<Result<_, _>>()?;
     Ok((spec, samples))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An offline render times its blocks as a device's would, and reports
+    /// the slowest since the status was last taken.
+    #[test]
+    fn an_offline_render_reports_its_slowest_block() {
+        let project = uta_core::Project::new();
+        let mut renderer = Renderer::new(EngineConfig::default(), Snapshot::from(&project), 128);
+        renderer.controller.play().unwrap();
+        renderer.render_seconds(1.0);
+        let status = renderer.take_status();
+        assert!(
+            status.slowest_block > 0.0 && status.slowest_block.is_finite(),
+            "{status:?}"
+        );
+        assert_eq!(renderer.take_status().slowest_block, 0.0);
+    }
 }

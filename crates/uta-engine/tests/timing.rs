@@ -9,8 +9,10 @@ mod common;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    ClipId, Command, Note, NoteId, PlacedTrack, Project, ProjectId, SynthParam, TrackId,
+    Clip, ClipId, Command, Note, NoteId, PlacedClip, PlacedTrack, Project, ProjectId, SynthParam,
+    TrackId,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, VOICES};
@@ -19,6 +21,10 @@ use uuid::Uuid;
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
 const BLOCKS: usize = 20_000;
+/// How many times Play is pressed to time the first block after it.
+const PLAYS: usize = 200;
+/// A bar of 4/4, in ticks.
+const BAR: Ticks = 4 * TICKS_PER_QUARTER;
 
 /// What the engine is doing while it's timed.
 #[derive(Clone, Copy)]
@@ -34,6 +40,14 @@ enum Load {
     /// volume gliding. Far more than a realistic song, to see where the
     /// limit is. See RFC-003, "Risks & unknowns" (CPU with many tracks).
     Tracks,
+    /// Make a song's manual check 7, the stress ceiling: 7 tracks × 28
+    /// one-bar clips × 3,000 stress notes, 588,000 notes in all, with the
+    /// volume gliding. See RFC-004, "What we measured".
+    Check7,
+    /// The same song, timing only the first block after Play from bar
+    /// 10.5, where the notes already sounding there are started. Play is
+    /// pressed [`PLAYS`] times, each once the last Play's notes are silent.
+    Check7FirstBlock,
 }
 
 impl Load {
@@ -43,8 +57,75 @@ impl Load {
             Self::Voices => "16 voices",
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
+            Self::Check7 => "Check 7 (588k notes)",
+            Self::Check7FirstBlock => "Check 7, first block after Play from bar 10.5",
         }
     }
+}
+
+/// The app's stress notes (`stress::notes` in `uta-app`) for one bar, seed
+/// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
+fn stress_notes() -> Vec<Note> {
+    let sixteenth = TICKS_PER_QUARTER / 4;
+    let steps = BAR / sixteenth;
+    let mut state: u64 = 1;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    (0..3_000)
+        .map(|_| Note {
+            id: NoteId::random(),
+            pitch: 24 + (next() % 85) as u8,
+            velocity: Note::MIN_VELOCITY
+                + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
+            start: (next() % steps) * sixteenth,
+            length: (1 + next() % 16) * sixteenth,
+        })
+        .collect()
+}
+
+/// Check 7's song: 7 tracks, each with 28 one-bar clips end to end, each
+/// clip holding the same 3,000 stress notes. The loop stays on its first 4
+/// bars, which play the same notes as any other 4.
+fn check_7() -> Project {
+    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let track = project.tracks()[0].id();
+    let first = project.tracks()[0].clips()[0].id();
+    project
+        .apply(&Command::RemoveClips { clips: vec![first] })
+        .unwrap();
+    let pattern = stress_notes();
+    let clips = (0..28)
+        .map(|bar| PlacedClip {
+            track,
+            clip: Clip::new(ClipId::random(), bar * BAR, BAR).with_notes(pattern.iter().map(
+                |note| Note {
+                    id: NoteId::random(),
+                    ..*note
+                },
+            )),
+        })
+        .collect();
+    project.apply(&Command::AddClips { clips }).unwrap();
+    let first = project.tracks()[0].clone();
+    let copies = (1..7)
+        .map(|index| PlacedTrack {
+            index,
+            track: first.copy(
+                TrackId::random(),
+                format!("Synth {}", index + 1),
+                ClipId::random,
+                NoteId::random,
+            ),
+        })
+        .collect();
+    project
+        .apply(&Command::AddTracks { tracks: copies })
+        .unwrap();
+    project
 }
 
 /// 32 tracks, each holding the same 8-note saw chord through the whole
@@ -97,18 +178,41 @@ struct Report {
     max: Duration,
 }
 
-fn measure(load: Load, block_size: usize) -> Report {
-    let config = EngineConfig {
-        sample_rate: SAMPLE_RATE,
-        channels: CHANNELS,
-    };
-    let snapshot = match load {
+fn snapshot(load: Load) -> Snapshot {
+    match load {
         Load::Loop => Snapshot::from(&common::demo_loop()),
         Load::Voices => Snapshot::default(),
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks()),
-    };
-    let mut renderer = Renderer::new(config, snapshot, block_size);
+        Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
+    }
+}
+
+fn config() -> EngineConfig {
+    EngineConfig {
+        sample_rate: SAMPLE_RATE,
+        channels: CHANNELS,
+    }
+}
+
+fn report(load: Load, block_size: usize, mut times: Vec<Duration>) -> Report {
+    times.sort_unstable();
+    let percentile = |p: f64| times[((times.len() - 1) as f64 * p).round() as usize];
+    Report {
+        load,
+        block_size,
+        deadline: Duration::from_secs_f64(block_size as f64 / f64::from(SAMPLE_RATE)),
+        p50: percentile(0.5),
+        p99: percentile(0.99),
+        max: *times.last().unwrap(),
+    }
+}
+
+fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
+    if let Load::Check7FirstBlock = load {
+        return measure_first_blocks(block_size, snapshot);
+    }
+    let mut renderer = Renderer::new(config(), snapshot, block_size);
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let mut times = Vec::with_capacity(BLOCKS);
     renderer.controller.play().unwrap();
@@ -124,7 +228,7 @@ fn measure(load: Load, block_size: usize) -> Report {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
             match load {
-                Load::Loop | Load::Song | Load::Tracks => renderer
+                Load::Loop | Load::Song | Load::Tracks | Load::Check7 => renderer
                     .controller
                     .set_volume_db(-(((i / 64) % 24) as f32))
                     .unwrap(),
@@ -141,6 +245,7 @@ fn measure(load: Load, block_size: usize) -> Report {
                         },
                     )
                     .unwrap(),
+                Load::Check7FirstBlock => unreachable!(),
             }
         }
         let start = Instant::now();
@@ -148,16 +253,33 @@ fn measure(load: Load, block_size: usize) -> Report {
         times.push(start.elapsed());
         renderer.controller.poll();
     }
-    times.sort_unstable();
-    let percentile = |p: f64| times[((times.len() - 1) as f64 * p).round() as usize];
-    Report {
-        load,
-        block_size,
-        deadline: Duration::from_secs_f64(block_size as f64 / f64::from(SAMPLE_RATE)),
-        p50: percentile(0.5),
-        p99: percentile(0.99),
-        max: *times.last().unwrap(),
+    report(load, block_size, times)
+}
+
+/// Times the first block after Play from bar 10.5, [`PLAYS`] times. Before
+/// each Play the last one is stopped and its notes are left to fall silent,
+/// so every Play starts the same way.
+fn measure_first_blocks(block_size: usize, snapshot: Snapshot) -> Report {
+    let mut renderer = Renderer::new(config(), snapshot, block_size);
+    let mut buffer = vec![0.0; block_size * CHANNELS];
+    let mut times = Vec::with_capacity(PLAYS);
+    let silent_within = 5 * SAMPLE_RATE as usize / block_size;
+    for _ in 0..PLAYS {
+        renderer.controller.stop().unwrap();
+        renderer.controller.locate(9 * BAR + BAR / 2).unwrap();
+        for _ in 0..silent_within {
+            renderer.processor().process(&mut buffer);
+            if renderer.controller.poll().sounding_slots == 0 {
+                break;
+            }
+        }
+        renderer.controller.play().unwrap();
+        let start = Instant::now();
+        renderer.processor().process(&mut buffer);
+        times.push(start.elapsed());
+        renderer.controller.poll();
     }
+    report(Load::Check7FirstBlock, block_size, times)
 }
 
 fn micros(duration: Duration) -> String {
@@ -179,21 +301,29 @@ fn report_block_timing() {
          | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
          |---|---|---|---|---|---|---|\n"
     );
-    for (load, block_size) in [Load::Loop, Load::Voices, Load::Song, Load::Tracks]
-        .into_iter()
-        .flat_map(|load| [32, 128, 1024].map(|block_size| (load, block_size)))
-    {
-        let r = measure(load, block_size);
-        table += &format!(
-            "| {} | {} | {} | {} | {} | {} | {} |\n",
-            r.load.name(),
-            r.block_size,
-            micros(r.deadline),
-            micros(r.p50),
-            micros(r.p99),
-            micros(r.max),
-            share(r.p99, r.deadline),
-        );
+    let loads = [
+        Load::Loop,
+        Load::Voices,
+        Load::Song,
+        Load::Tracks,
+        Load::Check7,
+        Load::Check7FirstBlock,
+    ];
+    for load in loads {
+        let snapshot = snapshot(load);
+        for block_size in [32, 128, 1024] {
+            let r = measure(load, block_size, snapshot.clone());
+            table += &format!(
+                "| {} | {} | {} | {} | {} | {} | {} |\n",
+                r.load.name(),
+                r.block_size,
+                micros(r.deadline),
+                micros(r.p50),
+                micros(r.p99),
+                micros(r.max),
+                share(r.p99, r.deadline),
+            );
+        }
     }
     if cfg!(debug_assertions) {
         table += "\nDebug build: these numbers are not representative.\n";

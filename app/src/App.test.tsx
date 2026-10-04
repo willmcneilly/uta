@@ -74,6 +74,7 @@ const frame = (overrides: Partial<Frame> = {}): Frame => ({
   trackPeaks: {},
   clips: 0,
   dropouts: 0,
+  slowestBlock: 0,
   output: {
     state: "running",
     device: "MacBook Pro Speakers",
@@ -295,6 +296,13 @@ describe("App", () => {
     expect(screen.getByTestId("device")).toHaveTextContent("MacBook Pro Speakers · 48 kHz");
     expect(screen.getByLabelText("Buffer")).toHaveValue("128");
     expect(screen.getByTestId("dropouts")).toHaveTextContent("3");
+  });
+
+  it("shows the slowest block from the frame stream, held until the readout refreshes", async () => {
+    await renderApp();
+    sendFrame({ slowestBlock: 0.5 });
+    sendFrame({ slowestBlock: 0.12 });
+    await waitFor(() => expect(screen.getByTestId("slowest-block")).toHaveTextContent("50%"));
   });
 
   it("shows the transport state and position in bars and beats from the frame stream", async () => {

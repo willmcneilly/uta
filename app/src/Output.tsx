@@ -1,8 +1,13 @@
+import { useEffect, useState } from "react";
 import type { OutputView } from "./backend";
+import type { MeterLevel } from "./meterLevel";
+import { percent, SLOWEST_BLOCK_REFRESH_MS } from "./slowestBlock";
 
 interface Props {
   output: OutputView;
   dropouts: number;
+  /** The slowest block from each frame, as a share of its deadline. */
+  slowestBlock: MeterLevel;
   /** Whether a buffer change is still being applied. */
   busy: boolean;
   onBufferSize: (size: number) => void;
@@ -21,8 +26,29 @@ function describe(output: OutputView): string {
   }
 }
 
-/** The output device, its buffer size and the dropout count. */
-export function Output({ output, dropouts, busy, onBufferSize }: Props) {
+/**
+ * The audio thread's slowest block, as a share of its deadline. It shows the
+ * slowest since its last refresh, so one slow block between refreshes is
+ * still seen.
+ */
+function SlowestBlock({ load }: { load: MeterLevel }) {
+  const [slowest, setSlowest] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = setInterval(() => setSlowest(load.take()), SLOWEST_BLOCK_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
+  return (
+    <dd
+      data-testid="slowest-block"
+      title="The audio thread's slowest block, as a share of the time it has. Over 100% is late."
+    >
+      {slowest === null ? "–" : percent(slowest)}
+    </dd>
+  );
+}
+
+/** The output device, its buffer size, the dropout count and the slowest block. */
+export function Output({ output, dropouts, slowestBlock, busy, onBufferSize }: Props) {
   // The picked size stays listed even if this device doesn't support it.
   const sizes = [...new Set([...output.bufferSizes, output.requestedBufferSize])].sort(
     (a, b) => a - b,
@@ -55,6 +81,9 @@ export function Output({ output, dropouts, busy, onBufferSize }: Props) {
 
       <dt>Dropouts</dt>
       <dd data-testid="dropouts">{dropouts}</dd>
+
+      <dt>Slowest block</dt>
+      <SlowestBlock load={slowestBlock} />
     </dl>
   );
 }
