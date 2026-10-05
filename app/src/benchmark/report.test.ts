@@ -18,6 +18,7 @@ const load = (song: LoadResult["song"], overrides: Partial<LoadResult> = {}): Lo
   sliderSteps: [10, 12, 11],
   noteDeletes: [9, 13],
   dragSteps: [14, 15],
+  dragSent: 2,
   dragFrames: [16, 17, 18],
   dragMs: 530,
   changes: 36,
@@ -94,6 +95,8 @@ describe("formatReport", () => {
           clips: 196,
           notes: 588_000,
           dragFrames: [17, 8800],
+          dragSteps: Array(30).fill(500),
+          dragSent: 4,
           dragMs: 36_000,
           events: 52,
           changes: 52,
@@ -111,6 +114,7 @@ describe("formatReport", () => {
     expect(text).toContain("check 7: 7 tracks, 196 clips, 588,000 notes");
     expect(text).toContain("  drag frames     2     17.0   8800.0   8800.0   max ≤ 50  ✗ missed");
     expect(text).toContain("  the drag took 36,000 ms from its first step until all drawn");
+    expect(text).toContain("  the drag sent 4 of its 30 steps; newer ones replaced the rest");
     expect(text).toContain("  project-changed events: 52 for 52 changes");
     expect(text.endsWith("Some targets missed.")).toBe(true);
   });

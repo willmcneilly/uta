@@ -28,8 +28,13 @@ export interface LoadResult {
   sliderSteps: number[];
   /** Each note delete in the piano roll, likewise. */
   noteDeletes: number[];
-  /** Each step of the drag, from sending it to the screen showing its reply. */
+  /**
+   * Each step of the drag, from making it to the screen showing it: its own
+   * reply, or the reply to a newer step that replaced it while it waited.
+   */
   dragSteps: number[];
+  /** How many of the drag's steps were sent; the rest were replaced by newer ones. */
+  dragSent: number;
   /** The time between screen frames, from the drag's first step until it's all drawn. */
   dragFrames: number[];
   /** From the drag's first step until it's all drawn. */
@@ -154,6 +159,7 @@ export function formatReport(report: Report): string {
     }
     lines.push(
       `  the drag took ${count(Math.round(load.dragMs))} ms from its first step until all drawn`,
+      `  the drag sent ${count(load.dragSent)} of its ${count(load.dragSteps.length)} steps; newer ones replaced the rest`,
       `  project-changed events: ${count(load.events)} for ${count(load.changes)} changes`,
     );
   }
