@@ -12,6 +12,7 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { toPosition } from "./synthScale";
 import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
   Frame,
@@ -23,6 +24,7 @@ import type {
   TrackView,
 } from "./backend";
 import {
+  HeldReplies,
   type RecordingRenderer,
   Updates,
   announceChange,
@@ -517,6 +519,107 @@ describe("App", () => {
     expect(gestures[2]).toBeNull();
     expect(gestures[3]).toEqual(expect.any(Number));
     expect(gestures[3]).not.toBe(gestures[0]);
+  });
+
+  describe("a slider drag while Rust is slow to reply", () => {
+    // Each slider, the command it sends, and the value in that command.
+    const sliders: [
+      string,
+      () => HTMLElement,
+      string,
+      (args: Record<string, unknown>) => unknown,
+      string[],
+    ][] = [
+      [
+        "master volume",
+        () => volume(),
+        "set_volume",
+        (args) => args.volumeDb,
+        ["-20", "-25", "-30", "-35"],
+      ],
+      ["tempo", () => tempo(), "set_tempo", (args) => args.bpm, ["100", "110", "120", "130"]],
+      [
+        "track volume",
+        () => screen.getByRole("slider", { name: "Synth 1 volume" }),
+        "set_track_mixer",
+        (args) => (args.mixer as MixerView).volumeDb,
+        ["-20", "-25", "-30", "-35"],
+      ],
+      [
+        "synth cutoff",
+        () => {
+          fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+          return within(screen.getByRole("region", { name: "Synth" })).getByRole("slider", {
+            name: /^Cutoff/,
+          });
+        },
+        "set_synth_param",
+        // The slider's position, from the cutoff it sent.
+        (args) =>
+          toPosition((args.param as { value: number }).value, project.synthLimits.cutoffHz, "log"),
+        ["800", "700", "600", "500"],
+      ],
+    ];
+
+    it.each(sliders)(
+      "%s: sends one step at a time, the newest next, and the final value last, in one gesture",
+      async (_name, slider, cmd, value, values) => {
+        await renderApp();
+        const held = new HeldReplies([cmd]);
+        const sent = () => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+        fireEvent.pointerDown(slider());
+        for (const v of values) fireEvent.change(slider(), { target: { value: v } });
+        fireEvent.pointerUp(window);
+
+        // The first step is on its way; the rest wait, and replace each other.
+        expect(held.inFlight).toBe(1);
+        expect(sent().map(value)).toEqual([Number(values[0])]);
+        await held.reply();
+        expect(held.inFlight).toBe(1);
+        await held.replyToAll();
+
+        expect(sent().map(value)).toEqual([Number(values[0]), Number(values.at(-1))]);
+        expect(sent()[0].gesture).toEqual(expect.any(Number));
+        expect(sent()[1].gesture).toBe(sent()[0].gesture);
+      },
+    );
+
+    it("keeps a keyboard change after the drag's final step", async () => {
+      await renderApp();
+      const held = new HeldReplies(["set_volume"]);
+      const slider = volume();
+      fireEvent.pointerDown(slider);
+      fireEvent.change(slider, { target: { value: "-20" } });
+      fireEvent.change(slider, { target: { value: "-30" } });
+      fireEvent.pointerUp(window);
+      fireEvent.change(slider, { target: { value: "-40" } });
+      await held.replyToAll();
+
+      const sent = calls.filter((c) => c.cmd === "set_volume").map((c) => c.args);
+      expect(sent.map((args) => args.volumeDb)).toEqual([-20, -30, -40]);
+      expect(sent[2].gesture).toBeNull();
+      await waitFor(() => expect(screen.getByText("-40.0 dB")).toBeInTheDocument());
+    });
+
+    it("carries on after a step fails, and shows the error", async () => {
+      await renderApp();
+      const held = new HeldReplies(["set_volume"]);
+      failWith = "the engine is gone";
+      const slider = volume();
+      fireEvent.pointerDown(slider);
+      fireEvent.change(slider, { target: { value: "-20" } });
+      fireEvent.change(slider, { target: { value: "-30" } });
+      await held.reply();
+      failWith = null;
+      fireEvent.change(slider, { target: { value: "-35" } });
+      fireEvent.pointerUp(window);
+      await held.replyToAll();
+
+      expect(screen.getByRole("alert")).toHaveTextContent("the engine is gone");
+      const sent = calls.filter((c) => c.cmd === "set_volume").map((c) => c.args.volumeDb);
+      expect(sent).toEqual([-20, -30, -35]);
+      await waitFor(() => expect(screen.getByText("-35.0 dB")).toBeInTheDocument());
+    });
   });
 
   describe("synth panel", () => {

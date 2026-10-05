@@ -182,3 +182,45 @@ export function recordingFactory(): { factory: RendererFactory; renderer: Record
   const renderer = new RecordingRenderer();
   return { factory: () => renderer, renderer };
 }
+
+type Invoke = (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
+
+/**
+ * Holds back the mocked back end's replies to `commands`, as a slow Rust
+ * would: each command still reaches the mock when it's sent, but its reply
+ * waits until `reply` lets it go. Call it after `mockIPC`.
+ */
+export class HeldReplies {
+  private waiting: (() => void)[] = [];
+
+  constructor(commands: readonly string[]) {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+      .__TAURI_INTERNALS__;
+    const invoke = internals.invoke;
+    internals.invoke = (cmd, args, options) => {
+      const reply = invoke(cmd, args, options);
+      if (!commands.includes(cmd)) return reply;
+      // A failure is the UI's to handle once the reply goes, not before.
+      reply.catch(() => {});
+      return new Promise((resolve) => this.waiting.push(() => resolve(reply)));
+    };
+  }
+
+  /** How many commands are waiting for their reply. */
+  get inFlight(): number {
+    return this.waiting.length;
+  }
+
+  /** Lets the oldest waiting reply go, and waits for the UI to take it. */
+  async reply(): Promise<void> {
+    await act(async () => {
+      this.waiting.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  /** Lets replies go, one at a time, until none is waiting. */
+  async replyToAll(): Promise<void> {
+    while (this.inFlight > 0) await this.reply();
+  }
+}

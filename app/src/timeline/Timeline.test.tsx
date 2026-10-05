@@ -15,6 +15,7 @@ import type {
   TrackView,
 } from "../backend";
 import {
+  HeldReplies,
   type RecordingRenderer,
   Updates,
   announceChange,
@@ -1393,5 +1394,88 @@ describe("the timeline", () => {
       sendFrame(true, 8 * BAR);
       await waitFor(() => expect(rollView().scrollTicks).toBeGreaterThanOrEqual(8 * BAR));
     });
+  });
+});
+
+describe("a drag while Rust is slow to reply", () => {
+  const COMMANDS = ["set_clips", "set_loop", "cancel_gesture"];
+
+  it("moves a clip one step at a time, the newest next, and the final one last", async () => {
+    await renderApp();
+    const held = new HeldReplies(COMMANDS);
+    await press(BAR, 0);
+    await moveTo(2.2 * BAR, 0);
+    await moveTo(3.2 * BAR, 0);
+    await moveTo(4.2 * BAR, 0);
+    await moveTo(5.2 * BAR, 1);
+    await release();
+
+    expect(held.inFlight).toBe(1);
+    await held.reply();
+    expect(held.inFlight).toBe(1);
+    await held.replyToAll();
+
+    const moves = sent("set_clips");
+    expect(moves.map((move) => (move.clips as ClipPosition[])[0])).toEqual([
+      { id: "clip-1", track: "track-1", start: BAR, length: 4 * BAR },
+      { id: "clip-1", track: "track-2", start: 4 * BAR, length: 4 * BAR },
+    ]);
+    expect(moves[1].gesture).toBe(moves[0].gesture);
+    await waitFor(() => expect(drawn()[0]).toEqual(["clip-1", 1, 4 * BAR, 4 * BAR]));
+  });
+
+  it("resizes a clip the same way", async () => {
+    await renderApp();
+    const held = new HeldReplies(COMMANDS);
+    const edge = 4 * BAR - 2 / timeline.lastView().pixelsPerTick;
+    await press(edge, 0);
+    await moveTo(edge + 1.1 * BAR, 0);
+    await moveTo(edge + 2.1 * BAR, 0);
+    await moveTo(edge + 3.1 * BAR, 0);
+    await release();
+    await held.replyToAll();
+
+    const sizes = sent("set_clips");
+    expect(sizes.map((size) => (size.clips as ClipPosition[])[0].length)).toEqual([
+      5 * BAR,
+      7 * BAR,
+    ]);
+    expect(sizes[1].gesture).toBe(sizes[0].gesture);
+  });
+
+  it("puts a clip back on Esc, dropping the waiting step and cancelling after the one in flight", async () => {
+    await renderApp();
+    const held = new HeldReplies(COMMANDS);
+    await press(BAR, 0);
+    await moveTo(3 * BAR, 0);
+    await moveTo(4 * BAR, 1);
+    await key(window, "Escape");
+    await release();
+    await held.replyToAll();
+
+    const [move] = sent("set_clips");
+    expect(edits()).toEqual(["set_clips", "cancel_gesture"]);
+    expect(sent("cancel_gesture")).toEqual([{ gesture: move.gesture }]);
+    await waitFor(() => expect(drawn()[0]).toEqual(["clip-1", 0, 0, 4 * BAR]));
+  });
+
+  it("sets the loop region one step at a time, and the final one last", async () => {
+    await renderApp();
+    const held = new HeldReplies(COMMANDS);
+    await pressRuler(2.1 * BAR);
+    await moveOnRuler(3.4 * BAR);
+    await moveOnRuler(4.4 * BAR);
+    await moveOnRuler(5.6 * BAR);
+    await release();
+    await held.replyToAll();
+
+    const loops = sent("set_loop");
+    expect(loops.map((args) => [args.startBar, args.bars])).toEqual([
+      [2, 1],
+      [2, 4],
+    ]);
+    expect(loops[1].gesture).toBe(loops[0].gesture);
+    const loop = () => timeline.grids.at(-1)!.loop;
+    await waitFor(() => expect(loop()).toEqual({ start: 2 * BAR, end: 6 * BAR, enabled: true }));
   });
 });
