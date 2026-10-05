@@ -213,8 +213,10 @@ fn stop_releases_the_notes_and_goes_back_to_the_play_start() {
     assert_eq!(first_sound(samples), Some(1));
 }
 
+/// Past the budget, the starts the voices can't hold are counted, and the
+/// ends are caught up on without counting any.
 #[test]
-fn too_many_events_in_one_block_are_skipped_and_counted() {
+fn too_many_events_in_one_block_are_caught_up_and_counted() {
     // More notes starting on the same sample than one block may handle.
     let extra = 88;
     let count = MAX_NOTE_EVENTS_PER_BLOCK + extra;
@@ -226,12 +228,11 @@ fn too_many_events_in_one_block_are_skipped_and_counted() {
     renderer.controller.play().unwrap();
     renderer.render(128);
     assert_eq!(renderer.controller.poll().dropped_note_events, extra as u64);
-    // The ends all fall in one block too.
-    renderer.render(12_000);
-    assert_eq!(
-        renderer.controller.poll().dropped_note_events,
-        2 * extra as u64
-    );
+    // The ends all fall in one block too, and every note is released.
+    renderer.render(13_000);
+    assert_eq!(renderer.controller.poll().dropped_note_events, extra as u64);
+    // Silent once the take-over fades and releases are over.
+    assert_eq!(first_sound(&renderer.samples()[12_500..]), None);
 }
 
 #[test]

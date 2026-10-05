@@ -117,8 +117,9 @@ pub struct Status {
     pub dropouts: u64,
     /// Whether the transport is playing.
     pub playing: bool,
-    /// Note starts and ends skipped so far because a block had more than
-    /// [`MAX_NOTE_EVENTS_PER_BLOCK`].
+    /// Notes that couldn't be played so far because a block had more note
+    /// events on a track than [`MAX_NOTE_EVENTS_PER_BLOCK`]: starts its
+    /// voices couldn't hold, and chased notes past the limit.
     pub dropped_note_events: u64,
     /// The rate the engine is running at.
     pub sample_rate: u32,

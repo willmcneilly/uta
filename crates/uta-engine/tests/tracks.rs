@@ -657,7 +657,7 @@ fn overlapping_clips_on_one_track_both_play() {
 
 /// The limit on note events per block applies to each track: two tracks
 /// that each start the most notes a block allows lose none, and one note
-/// more on one of them is dropped.
+/// more on one of them is dropped: its start finds no free voice.
 #[test]
 fn the_limit_on_events_per_block_is_per_track() {
     let dropped = |extra: usize| {
@@ -678,8 +678,8 @@ fn the_limit_on_events_per_block_is_per_track() {
         renderer.take_status().dropped_note_events
     };
     assert_eq!(dropped(0), 0);
-    // The extra start, and its end.
-    assert_eq!(dropped(1), 2);
+    // The extra start. Its end is caught up on, not counted.
+    assert_eq!(dropped(1), 1);
 }
 
 /// A live note plays on the track in its slot, through that track's mixer

@@ -92,6 +92,11 @@ impl Voice {
         self.take_over_remaining > 0
     }
 
+    /// Whether its note has started and not been released.
+    fn is_held(&self) -> bool {
+        !matches!(self.envelope.stage(), Stage::Idle | Stage::Release)
+    }
+
     fn is_releasing(&self) -> bool {
         self.envelope.stage() == Stage::Release && !self.is_taken_over()
     }
@@ -251,6 +256,33 @@ impl Synth {
                 voice.envelope.release(&self.times);
             }
         }
+    }
+
+    /// Whether the note with this key is held: started and not released, or
+    /// waiting for a voice. Bounded by the number of voices.
+    pub(crate) fn is_holding(&self, key: NoteKey) -> bool {
+        self.voices.iter().any(|voice| {
+            if voice.is_taken_over() {
+                voice.pending.is_some_and(|pending| pending.key == key)
+            } else {
+                voice.key == Some(key) && voice.is_held()
+            }
+        })
+    }
+
+    /// How many notes are held: started and not released, or waiting for a
+    /// voice. At most [`VOICES`].
+    pub(crate) fn held(&self) -> usize {
+        self.voices
+            .iter()
+            .filter(|voice| {
+                if voice.is_taken_over() {
+                    voice.pending.is_some()
+                } else {
+                    voice.is_held()
+                }
+            })
+            .count()
     }
 
     /// Releases every note, and cancels any waiting for a voice.
@@ -459,6 +491,23 @@ mod tests {
         let mut keys: Vec<u128> = synth.sounding_keys().iter().map(|k| k.unwrap().0).collect();
         keys.sort_unstable();
         assert_eq!(keys, (0..VOICES as u128).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn held_notes_are_the_started_ones_not_released_and_the_waiting_ones() {
+        let mut synth = full_synth();
+        assert_eq!(synth.held(), VOICES);
+        synth.note_off(NoteKey(3));
+        assert_eq!(synth.held(), VOICES - 1);
+        assert!(!synth.is_holding(NoteKey(3)));
+        assert!(synth.is_holding(NoteKey(4)));
+
+        // It takes over the releasing voice: the note waiting there is
+        // held, and the one fading out isn't.
+        synth.note_on(note(100));
+        assert_eq!(synth.held(), VOICES);
+        assert!(synth.is_holding(NoteKey(100)));
+        assert!(!synth.is_holding(NoteKey(3)));
     }
 
     #[test]
