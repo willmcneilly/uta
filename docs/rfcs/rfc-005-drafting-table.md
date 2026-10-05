@@ -12,7 +12,7 @@ Bring the design direction chosen in the design rounds ("Drafting table" with tw
 - **The direction is chosen.** Two design rounds compared four directions, then refined one. The result is Drafting table with two inks, and it now needs to meet the real components. Tuning it further on a copy of the app has stopped paying off: spacing, density and type only settle against the real thing.
 - **More features are coming.** Each new control or view needs something to build on. Without a system, every ticket invents its own look, and agents fill the gaps with the average-looking defaults we're trying to leave behind.
 
-**When:** after the Responsive at song scale project (RFC-004) finishes. Its UTA-25 replaces the built-in sliders in the same components this restyles (open question 1, resolved).
+**When:** after the Responsive at song scale project (RFC-004) finishes. UTA-25, which replaces the built-in sliders with one that follows the mouse, moved into this project from that one, because it changes the same components this restyles (open question 1, resolved and amended).
 
 ## The direction, in brief
 
@@ -179,7 +179,7 @@ After the first pass, the parts that appear more than once become shared compone
 
 ## Open questions
 
-1. **When does this start?** Recommendation: after the Responsive at song scale project, because UTA-25 replaces the built-in sliders in the same components. **Resolved: after RFC-004's project finishes (Will, 2026-10-04).**
+1. **When does this start?** Recommendation: after the Responsive at song scale project, because UTA-25 replaces the built-in sliders in the same components. **Resolved: after RFC-004's project finishes (Will, 2026-10-04).** **Amended 2026-10-05:** UTA-25 moves into this project instead of finishing RFC-004's, so its slider is built once, in the new style. Its criteria come with it unchanged, including the gesture state from RFC-004 part 3 (Will).
 2. **Which theme is the default?** Recommendation: keep following the system setting, and leave a switch inside the app out of this project. The design rounds favour light, and tuning both themes in the real app is part of this project. **Resolved: the app follows the system. The tuning panel gets a theme switch for development builds, so either theme can be tuned without changing the Mac's setting (Will, 2026-10-04).**
 3. **Do fonts have to be free?** Recommendation: try anything while tuning, using the trial folder. The font that ships must be free (OFL) or a system font, unless you choose to buy a licence that allows embedding in an app. If you do, we amend this RFC with how the font file stays out of the public repo. **Resolved: as recommended (Will, 2026-10-04).**
 4. **Fold in the scratchpad note "Open the window filling the screen, then remember its size and position"?** Recommendation: yes, as a small ticket in this project. The restyle is the moment the window's starting size matters. **Resolved: yes (Will, 2026-10-04).**

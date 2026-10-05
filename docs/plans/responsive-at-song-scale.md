@@ -4,7 +4,7 @@
 
 ## Goal
 
-Build RFC-004. A slider step or a note edit costs a few milliseconds however many notes the song holds, so the check-7 song (588,000 notes) never freezes and the 50,000-note target songs stay at 60 frames a second. Each change travels once, the fast way, and carries only the notes that changed. Sliders follow the mouse and a drag never builds a queue. A benchmark and a live "slowest block" readout prove it, and say where a dropout came from if one happens.
+Build RFC-004. A slider step or a note edit costs a few milliseconds however many notes the song holds, so the check-7 song (588,000 notes) never freezes and the 50,000-note target songs stay at 60 frames a second. Each change travels once, the fast way, and carries only the notes that changed. A drag never builds a queue. A benchmark and a live "slowest block" readout prove it, and say where a dropout came from if one happens.
 
 ## Where the code starts
 
@@ -122,31 +122,15 @@ Checked against `main` at `1b20af4`, after UTA-23 and UTA-24:
 - [ ] UI tests against the mocked back end, with replies held back: at most one step is in flight, the final value is always sent, a drag keeps one gesture number, Esc puts everything back, and a note drag's trim follows its final step.
 - [ ] The benchmark report in the PR shows the check-7 drag finishing without a queue building: no multi-second freeze, though each step is still slow until ticket 5.
 
-**Out of scope:** The slider showing its own value during a drag (ticket 7). Changing what a drag sends, only when.
+**Out of scope:** The slider showing its own value during a drag (UTA-25, now in the Drafting table project). Changing what a drag sends, only when.
 
 **Depends on:** 1. It can run alongside 2, 4 and 5.
 
 **Context:** RFC-004, Proposal part 3 ("One step in flight at a time, latest wins") and "How we'll verify it" (a drag sends at most one step at a time).
 
-### 7. [UTA-25] Replace the built-in sliders with one that follows the mouse and takes focus on click (Feature)
+### 7. [UTA-25] Replace the built-in sliders with one that follows the mouse and takes focus on click (moved out)
 
-UTA-25 already exists as a Ready chore outside any project. It joins this project (resolved open question 2), its criteria gain the gesture state, and it waits for tickets 5 and 6.
-
-**Goal:** Every slider in the app is one component. It stays under your mouse during a drag, works from the keyboard as soon as you click it, and can be set finely or reset. The web view's built-in range inputs move only when Rust replies, and don't take focus on click.
-
-**Acceptance criteria**
-- [ ] One slider component, used by every slider in the app: the transport, the synth panel and the track headers.
-- [ ] From press to release, it shows its own value, where the mouse is, and sends steps through ticket 6's helper. On release it shows the project's value again. That value is gesture state, gone when the drag ends.
-- [ ] Clicking or dragging it gives it focus. Arrow keys step it, and Shift+arrow takes bigger steps. ⌥-drag moves it in fine steps. Double-click resets it to its default.
-- [ ] The outline carries each control's default (master volume, tempo, synth settings and the track mixer), so the UI never hard-codes them.
-- [ ] A drag is still one undo step. It's accessible as a slider (role, value and range for assistive tech).
-- [ ] UI tests: it shows its own value during a drag and the project's after; click focuses; arrow and Shift+arrow step; ⌥-drag takes fine steps; double-click resets, each sending the expected commands.
-
-**Out of scope:** Knobs, and any control that isn't a slider today. Coalescing itself (ticket 6).
-
-**Depends on:** 5 and 6.
-
-**Context:** RFC-004, Proposal part 3 ("During a drag, the slider shows where your mouse is", "This belongs in UTA-25's slider") and resolved open question 2. RFC-003, "Alternatives considered" (a custom slider).
+**Moved to the Drafting table project (RFC-005) on 2026-10-05, with Will.** RFC-005 restyles the same components (the transport, the synth panel and the track headers), and its design work may change what some of these controls are. Building the slider now would mean restyling it straight away, so it's built once, in the new style. Its criteria stay as they were, including the gesture state from RFC-004 Proposal part 3, and it still sends steps through ticket 6's helper. It stays in Backlog with no project until Drafting table is planned.
 
 ### 8. [UTA-32] Catch up instead of skipping when a block has too many note events (Bug)
 
@@ -170,20 +154,22 @@ Split from UTA-30 at review: [ticket](https://app.notion.com/p/3ef3af969b6f81029
 
 ```
 1 Benchmark ──┬─► 2 Send once ──┐
-              │                 ├─► 5 Notes only when changed ──┐
-4 Share notes ┼─────────────────┘                               ├─► 7 Slider (UTA-25)
-              └─► 6 Latest step of a drag ──────────────────────┘
+              │                 ├─► 5 Notes only when changed ──► 9 Wide on the next frame
+4 Share notes ┼─────────────────┘
+              └─► 6 Latest step of a drag
 3 Slowest block (any time)
+8 Catch up on note events (any time before the end-of-project checks)
 ```
 
 - 8 (UTA-32, a bug found in UTA-30's testing) can run any time before the end-of-project checks. 9 (UTA-33) follows 5.
-- Tickets 1, 3 and 4 start together. 2 and 6 follow 1. 5 needs 2 and 4. 7 comes last, after 5 and 6. 3 can land any time before the end-of-project checks.
+- Tickets 1, 3 and 4 start together. 2 and 6 follow 1. 5 needs 2 and 4. 3 can land any time before the end-of-project checks.
+- Ticket 7 (UTA-25) moved to the Drafting table project. What's left is 6, 8 and 9: 6 and 8 can run alongside each other, and 9 is best after 6, because both change the timeline's code.
 - **Checkpoint after 1:** Develop → Run Benchmark on today's `main`. The numbers should look like the RFC's table. That's the baseline.
 - **Checkpoint after 2:** the benchmark again. Steps are about 2.5 times faster at heavy and wide and 5 times at check 7, and no change sends an event, but no target is met yet: each reply still carries every note (about 5 MB at heavy and wide, 57 MB at check 7). The targets wait for 5.
 - **Checkpoint after 3:** play the check-7 song at a 64-sample buffer and watch the slowest-block readout while you work the controls.
 - **Checkpoint after 6:** drag a volume on the check-7 song. Each step is still slow, but the drag never freezes for seconds.
 - **Checkpoint after 5:** delete notes in the piano roll on the check-7 song. They go at once. The benchmark meets every target (manual check 1). Undo and redo from the keyboard and the menu bar show the right notes (manual check 3).
-- **Checkpoint after 7:** RFC-004's "What it looks like to you" end to end, and manual checks 2, 4 and 5, including both 10-minute runs at a 64-sample buffer. That's the project done, and the dropout retest: if dropouts remain, the slowest-block readout says whether the engine or the device is to blame.
+- **End of project, after 6, 8 and 9:** RFC-004's "What it looks like to you" end to end, except the slider following the mouse, which waits for UTA-25. Manual check 2 without that part (dragging sliders at check 7 never freezes), and manual checks 4 and 5, including both 10-minute runs at a 64-sample buffer. That's the project done, and the dropout retest: if dropouts remain, the slowest-block readout says whether the engine or the device is to blame.
 
 ## Coverage
 
@@ -199,18 +185,18 @@ Split from UTA-30 at review: [ticket](https://app.notion.com/p/3ef3af969b6f81029
 | UI: reducer merge rule (identity, replace, drop, older ignored, refetch after reload) | 5 |
 | UI: draws from the cache, takes new notes, drops gone clips, fetches a missing revision | 5 |
 | UI: `project-changed` with no payload calls `get_project` | 2 |
-| UI: a slider shows its own value during a drag and the project's after | 7 |
-| UI: one step in flight, final value sent, one undo step | 6 (and 7 for the slider) |
+| UI: a slider shows its own value during a drag and the project's after | UTA-25 (Drafting table project) |
+| UI: one step in flight, final value sent, one undo step | 6 |
 | Real-time safety: slowest-block measurement under `assert_no_alloc` and RealtimeSanitizer | 3 |
 | Timing report: check-7 load and first block after Play mid-song | 3 |
 | Manual 1: benchmark targets at heavy, wide and check 7 | 1 (the tool), 5 (heavy and check 7; 2 measured a part of the way there), 9 (wide) |
-| Manual 2: drag sliders at check 7, slider stays under the mouse | 7 |
+| Manual 2: drag sliders at check 7, slider stays under the mouse | 6 and end of project (no freeze); UTA-25 in the Drafting table project (under the mouse) |
 | Manual 3: delete notes, drag clips and notes, undo and redo at check 7 | 5 and 6 |
 | Manual 4: check 8, 10 minutes at buffer 64, slowest block under 50% | end of project (needs 3) |
 | Manual 5: 10 minutes at buffer 64 while dragging | end of project (needs 3) |
 | Proposal 1: no large data in an event | 2 |
 | Open question 1: `CLAUDE.md` rule reworded | 5 |
-| Open question 2: UTA-25 joins, after parts 1 and 2 | 7 |
+| Open question 2: UTA-25 joins, after parts 1 and 2 | Reversed 2026-10-05: UTA-25 moves to the Drafting table project (see open question 3) |
 | Open question 3: benchmark and readout kept in the app | 1, 3 |
 
 ## Not in this project
@@ -229,3 +215,4 @@ Split from UTA-30 at review: [ticket](https://app.notion.com/p/3ef3af969b6f81029
 
 1. **Resolved: benchmark first.** Will agreed with the recommendation. The question was: benchmark first, or the quick fix first? Ticket 2 is small and is the biggest single win, and it could start straight away. Recommendation: land the benchmark (1) first and make 2 wait for it, so 2's PR shows a before and after measured by the tool everyone will keep using, not by the spike. Tickets 3 and 4 run alongside 1, so nothing else waits.
 2. **Resolved: UTA-25 becomes a Feature, in Backlog.** Will agreed with the recommendation. The question was its type. It was a chore, but with the slider following the mouse it's something you'll notice. Recommendation: change it to Feature when it joins the project, and move it from Ready to Backlog until 5 and 6 are merged.
+3. **Resolved: UTA-25 moves to the Drafting table project.** Will's call on 2026-10-05, after UTA-30. The Drafting table redesign (RFC-005) follows this project and restyles the same components, so UTA-25's slider is built once, in the new style. This project finishes with tickets 6, 8 and 9 and the end-of-project checks. The slider following the mouse (manual check 2's second half) is checked when UTA-25 lands. RFC-004 and RFC-005 are amended to match.
