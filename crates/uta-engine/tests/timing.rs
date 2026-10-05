@@ -63,30 +63,6 @@ impl Load {
     }
 }
 
-/// The app's stress notes (`stress::notes` in `uta-app`) for one bar, seed
-/// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
-fn stress_notes() -> Vec<Note> {
-    let sixteenth = TICKS_PER_QUARTER / 4;
-    let steps = BAR / sixteenth;
-    let mut state: u64 = 1;
-    let mut next = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
-    };
-    (0..3_000)
-        .map(|_| Note {
-            id: NoteId::random(),
-            pitch: 24 + (next() % 85) as u8,
-            velocity: Note::MIN_VELOCITY
-                + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
-            start: (next() % steps) * sixteenth,
-            length: (1 + next() % 16) * sixteenth,
-        })
-        .collect()
-}
-
 /// Check 7's song: 7 tracks, each with 28 one-bar clips end to end, each
 /// clip holding the same 3,000 stress notes. The loop stays on its first 4
 /// bars, which play the same notes as any other 4.
@@ -97,7 +73,7 @@ fn check_7() -> Project {
     project
         .apply(&Command::RemoveClips { clips: vec![first] })
         .unwrap();
-    let pattern = stress_notes();
+    let pattern = common::stress_notes();
     let clips = (0..28)
         .map(|bar| PlacedClip {
             track,
