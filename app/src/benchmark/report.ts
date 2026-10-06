@@ -159,7 +159,9 @@ export function formatReport(report: Report): string {
     }
     lines.push(
       `  the drag took ${count(Math.round(load.dragMs))} ms from its first step until all drawn`,
-      `  the drag sent ${count(load.dragSent)} of its ${count(load.dragSteps.length)} steps; newer ones replaced the rest`,
+      load.dragSent === load.dragSteps.length
+        ? `  the drag sent all ${count(load.dragSent)} of its steps; none waited long enough to be replaced`
+        : `  the drag sent ${count(load.dragSent)} of its ${count(load.dragSteps.length)} steps; newer ones replaced the rest`,
       `  project-changed events: ${count(load.events)} for ${count(load.changes)} changes`,
     );
   }

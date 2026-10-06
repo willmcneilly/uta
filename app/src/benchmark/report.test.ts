@@ -115,6 +115,9 @@ describe("formatReport", () => {
     expect(text).toContain("  drag frames     2     17.0   8800.0   8800.0   max ≤ 50  ✗ missed");
     expect(text).toContain("  the drag took 36,000 ms from its first step until all drawn");
     expect(text).toContain("  the drag sent 4 of its 30 steps; newer ones replaced the rest");
+    expect(text).toContain(
+      "  the drag sent all 2 of its steps; none waited long enough to be replaced",
+    );
     expect(text).toContain("  project-changed events: 52 for 52 changes");
     expect(text.endsWith("Some targets missed.")).toBe(true);
   });
