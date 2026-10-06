@@ -28,7 +28,9 @@ pub const VOLUME_SMOOTHING_SECONDS: f64 = 0.02;
 /// per block stays bounded however dense the notes are. Chased notes count
 /// too. Past it, a track catches up on the events due instead of handling
 /// each one: it releases the notes that have ended and starts the ones that
-/// should be sounding, as far as its voices go. Starts the voices can't hold,
+/// should be sounding, as far as its voices go. It does so at each later
+/// event in that block, each time bounded by the voices, so a block's work
+/// is still bounded by its length. Starts the voices can't hold,
 /// and chased notes past the budget, are counted in
 /// [`Status::dropped_note_events`]. It's far more than music needs: 256
 /// notes starting and ending within one block.
@@ -208,15 +210,14 @@ impl Slot {
         }
     }
 
-    /// When more events are due by `playhead` than the budget allows, plays
-    /// what handling them all would leave sounding, without going through
-    /// them one by one:
+    /// When more events are due by `playhead` than the budget allows,
+    /// catches up on them without going through them one by one:
     /// 1. releases every note the sequencer started that `notes` doesn't
     ///    play at `playhead`, so no end it didn't handle leaves a note stuck;
-    /// 2. starts the notes starting at `playhead`, in the voices not holding
-    ///    a note;
-    /// 3. if voices are still free, starts notes already under way there
-    ///    that aren't held, latest start first.
+    /// 2. starts the notes starting at `playhead`, in the free and releasing
+    ///    voices, so no held note is taken over;
+    /// 3. if any of those voices are left, starts notes already under way
+    ///    there that aren't held, latest start first.
     ///
     /// A start in step 2 that doesn't get a voice is counted in `dropped`:
     /// only notes the voices can't hold are. Bounded by the voices, plus a
@@ -235,7 +236,7 @@ impl Slot {
         self.bookmark = due;
 
         self.release_ended(notes, playhead);
-        let mut room = VOICES - self.synth.held();
+        let mut room = VOICES - self.synth.busy_voices();
         let starting = &events[starts..due];
         let started = starting.len().min(room);
         // Bounded by the voices.
@@ -257,9 +258,9 @@ impl Slot {
         *dropped += (starting.len() - started) as u64;
         room -= started;
 
-        // At most `VOICES` of them are held and skipped, so this is
-        // bounded by twice the voices.
-        for note in notes.sounding_at(playhead).take(room + VOICES) {
+        // The notes skipped here are held, so in busy voices: the room
+        // plus the skips is at most the voices.
+        for note in notes.sounding_at(playhead).take(VOICES) {
             if room == 0 {
                 break;
             }
@@ -910,6 +911,63 @@ mod tests {
             }
         }
         onsets
+    }
+
+    /// Notes held across a sample with more note events than a block may
+    /// handle keep their voices: catching up neither takes them over nor
+    /// starts them again. 600 notes start at the beginning, 4 long ones a
+    /// beat later, and the 600 all end on beat 3.
+    #[test]
+    fn notes_held_across_a_catch_up_keep_their_voices() {
+        let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+        let track = project.tracks()[0].id();
+        let clip = project.tracks()[0].clips()[0].id();
+        let note = |id: u128, pitch: u8, start: Ticks, length: Ticks| Note {
+            id: NoteId::from_uuid(Uuid::from_u128(id)),
+            pitch,
+            velocity: 100,
+            start,
+            length,
+        };
+        let crowd = MAX_NOTE_EVENTS_PER_BLOCK as u128 + 88;
+        let mut notes: Vec<Note> = (0..crowd)
+            .map(|i| note(i, 40 + (i % 20) as u8, 0, 2 * BEAT))
+            .collect();
+        let long: Vec<u128> = (10_000..10_004).collect();
+        notes.extend(
+            long.iter()
+                .map(|&id| note(id, 70 + (id % 10) as u8, BEAT, 2 * BEAT)),
+        );
+        project.apply(&Command::AddNotes { clip, notes }).unwrap();
+        project
+            .apply(&Command::SetSynthParam {
+                track,
+                param: SynthParam::ReleaseSeconds(0.001),
+            })
+            .unwrap();
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&project), 128);
+        renderer.controller.play().unwrap();
+        let held_long = |renderer: &mut Renderer| {
+            let held = renderer.processor().slots[0].synth.held_notes();
+            held.into_iter()
+                .filter(|(key, _)| long.contains(&key.0))
+                .collect::<Vec<_>>()
+        };
+        // Beat 3 is at sample 48,000.
+        renderer.render(47_000);
+        let before = held_long(&mut renderer);
+        assert_eq!(before.len(), long.len(), "the long notes are playing");
+        renderer.render(2_000);
+        assert_eq!(held_long(&mut renderer), before);
+        assert_eq!(
+            renderer.processor().slots[0].synth.held_notes().len(),
+            long.len(),
+            "the crowd is released"
+        );
     }
 
     /// A sample within full scale comes out of the hard clip bit for bit

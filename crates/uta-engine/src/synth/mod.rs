@@ -270,19 +270,26 @@ impl Synth {
         })
     }
 
-    /// How many notes are held: started and not released, or waiting for a
-    /// voice. At most [`VOICES`].
-    pub(crate) fn held(&self) -> usize {
+    /// How many voices a new note can't have without taking over a held
+    /// note: those holding one, and those being taken over, whether or not
+    /// a note still waits there. The rest are free or releasing, which
+    /// [`Self::note_on`] takes first. At most [`VOICES`].
+    pub(crate) fn busy_voices(&self) -> usize {
         self.voices
             .iter()
-            .filter(|voice| {
-                if voice.is_taken_over() {
-                    voice.pending.is_some()
-                } else {
-                    voice.is_held()
-                }
-            })
+            .filter(|voice| voice.is_taken_over() || voice.is_held())
             .count()
+    }
+
+    /// The key of each note started and not released, and when it started,
+    /// in voice order.
+    #[cfg(test)]
+    pub(crate) fn held_notes(&self) -> Vec<(NoteKey, u64)> {
+        self.voices
+            .iter()
+            .filter(|voice| !voice.is_taken_over() && voice.is_held())
+            .filter_map(|voice| voice.key.map(|key| (key, voice.started)))
+            .collect()
     }
 
     /// Releases every note, and cancels any waiting for a voice.
@@ -494,20 +501,36 @@ mod tests {
     }
 
     #[test]
-    fn held_notes_are_the_started_ones_not_released_and_the_waiting_ones() {
+    fn busy_voices_hold_a_note_or_are_being_taken_over() {
         let mut synth = full_synth();
-        assert_eq!(synth.held(), VOICES);
+        assert_eq!(synth.busy_voices(), VOICES);
         synth.note_off(NoteKey(3));
-        assert_eq!(synth.held(), VOICES - 1);
+        assert_eq!(synth.busy_voices(), VOICES - 1);
         assert!(!synth.is_holding(NoteKey(3)));
         assert!(synth.is_holding(NoteKey(4)));
 
         // It takes over the releasing voice: the note waiting there is
         // held, and the one fading out isn't.
         synth.note_on(note(100));
-        assert_eq!(synth.held(), VOICES);
+        assert_eq!(synth.busy_voices(), VOICES);
         assert!(synth.is_holding(NoteKey(100)));
         assert!(!synth.is_holding(NoteKey(3)));
+    }
+
+    /// A voice being taken over is busy even once the note waiting there is
+    /// cancelled: a new note would take over a held voice, not that one.
+    #[test]
+    fn a_voice_being_taken_over_is_busy_without_a_waiting_note() {
+        let mut synth = full_synth();
+        synth.note_on(note(100));
+        synth.note_off(NoteKey(100));
+        assert!(!synth.is_holding(NoteKey(100)));
+        assert_eq!(synth.busy_voices(), VOICES);
+        synth.note_on(note(101));
+        assert!(
+            !synth.is_holding(NoteKey(1)),
+            "the next note takes over a held voice"
+        );
     }
 
     #[test]
