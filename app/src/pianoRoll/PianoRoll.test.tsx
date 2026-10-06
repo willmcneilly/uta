@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { EditMenuItem, Frame, NoteView, ProjectView } from "../backend";
 import {
+  HeldReplies,
   type RecordingRenderer,
   Updates,
   announceChange,
@@ -768,5 +769,94 @@ describe("the velocity lane", () => {
     await release();
     expect(edits()).toEqual([]);
     expect(renderer.lastSelected()).toEqual([]);
+  });
+});
+
+describe("a drag while Rust is slow to reply", () => {
+  const NOTE_COMMANDS = ["add_notes", "set_notes", "trim_notes", "cancel_gesture"];
+
+  beforeEach(() => {
+    project = projectView({}, [note("low", 60, 0), note("next", 60, 1920), note("high", 72, 3840)]);
+  });
+
+  it("sends one step at a time, the newest next, then the final one, then the trim", async () => {
+    await renderApp();
+    const held = new HeldReplies(NOTE_COMMANDS);
+    await press(240, 60);
+    await moveTo(240 + 480, 60);
+    await moveTo(240 + 960, 61);
+    await moveTo(240 + 1440, 62);
+    await moveTo(240 + 1920, 60); // onto "next"
+    await release();
+
+    expect(held.inFlight).toBe(1);
+    expect(edits()).toEqual(["set_notes"]);
+    await held.reply();
+    expect(held.inFlight).toBe(1);
+    await held.replyToAll();
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([[note("low", 60, 480)], [note("low", 60, 1920)]]);
+    expect(sets[1].gesture).toBe(sets[0].gesture);
+    // The trim goes after the final step, as part of the same gesture.
+    expect(edits()).toEqual(["set_notes", "set_notes", "trim_notes"]);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low"], gesture: sets[0].gesture },
+    ]);
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 1920 }));
+  });
+
+  it("on Esc, drops the waiting step and cancels after the one in flight", async () => {
+    await renderApp();
+    const held = new HeldReplies(NOTE_COMMANDS);
+    await press(240, 60);
+    await moveTo(240 + 480, 62);
+    await moveTo(240 + 960, 64);
+    await key(window, "Escape");
+    await release();
+    await held.replyToAll();
+
+    const [set] = sent("set_notes");
+    expect(set.notes).toEqual([note("low", 62, 480)]);
+    expect(edits()).toEqual(["set_notes", "cancel_gesture"]);
+    expect(sent("cancel_gesture")).toEqual([{ gesture: set.gesture }]);
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 }));
+  });
+
+  it("adds a drawn note even when the add has to wait, before any of its steps", async () => {
+    await renderApp();
+    const held = new HeldReplies(NOTE_COMMANDS);
+    // A note drag whose step is still in flight, so the drawing's add waits.
+    await press(240, 60);
+    await moveTo(240 + 480, 60);
+    await release();
+    await press(2400, 64);
+    await moveTo(2900, 64);
+    await moveTo(3400, 64);
+    await release();
+    expect(held.inFlight).toBe(1);
+    await held.replyToAll();
+
+    expect(edits()).toEqual(["set_notes", "trim_notes", "add_notes", "set_notes", "trim_notes"]);
+    const [added] = sent("add_notes")[0].notes as NoteView[];
+    const drawingSet = sent("set_notes")[1];
+    expect(drawingSet.gesture).toBe(sent("add_notes")[0].gesture);
+    expect((drawingSet.notes as NoteView[])[0].id).toBe(added.id);
+    await waitFor(() => expect(drawnNote(added.id)).toBeDefined());
+  });
+
+  it("on Esc while drawing a note, still adds it first, then cancels it", async () => {
+    await renderApp();
+    const held = new HeldReplies(NOTE_COMMANDS);
+    await press(1000, 64);
+    await moveTo(1500, 64);
+    await moveTo(2000, 64);
+    await key(window, "Escape");
+    await held.replyToAll();
+
+    expect(edits()).toEqual(["add_notes", "cancel_gesture"]);
+    const gesture = sent("add_notes")[0].gesture;
+    expect(sent("cancel_gesture")).toEqual([{ gesture }]);
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(3));
   });
 });

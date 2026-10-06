@@ -155,6 +155,39 @@ describe("runBenchmark's timing", () => {
     expect(load.dragFrames).toEqual([FRAME, FRAME, FRAME]);
   });
 
+  it("sends the drag's steps one at a time, latest wins, when replies are slow", async () => {
+    let inFlight = 0;
+    let most = 0;
+    const volumes: number[] = [];
+    mockIPC((cmd, payload) => {
+      if (cmd !== "set_track_mixer")
+        return cmd === "build_test_song" ? new Updates().send(song) : null;
+      const { mixer } = payload as { mixer: { volumeDb: number } };
+      volumes.push(mixer.volumeDb);
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      // Each reply takes three frames.
+      return new Promise((resolve) =>
+        clock.in(3, () => {
+          inFlight -= 1;
+          resolve(new Updates().send(song));
+        }),
+      );
+    });
+    const load = await run({ sliderSteps: 0, noteDeletes: 0, dragSteps: 8 });
+
+    expect(most).toBe(1);
+    expect(load.dragSent).toBeLessThan(8);
+    expect(load.dragSent).toBe(volumes.length);
+    // The first step goes at once and the final one always goes; between
+    // them, only the newest of those that waited.
+    expect(volumes[0]).toBe(-10);
+    expect(volumes.at(-1)).toBe(-10 - 7 * 0.5);
+    expect([...volumes].sort((a, b) => b - a)).toEqual(volumes);
+    // Every step is timed, including those replaced by a newer one.
+    expect(load.dragSteps).toHaveLength(8);
+  });
+
   it("ends the drag when its last event is drawn, frames included", async () => {
     event = { framesLater: 3 };
     const load = await run();

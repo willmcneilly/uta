@@ -11,6 +11,7 @@ import {
   removeNotes,
   setTrackMixer,
 } from "../backend";
+import { DragSteps } from "../dragSteps";
 import { nextGesture } from "../useGesture";
 import type { LoadResult, Report } from "./report";
 
@@ -45,7 +46,10 @@ export interface BenchmarkOptions {
   songs: TestSong[];
   sliderSteps: number;
   noteDeletes: number;
-  /** A real drag sends a step every frame, without waiting for replies. */
+  /**
+   * A real drag makes a step every frame, and sends them as the app does:
+   * one at a time, latest wins.
+   */
   dragSteps: number;
   /**
    * How long to wait for a `project-changed` event once a reply is drawn.
@@ -178,7 +182,7 @@ async function runLoad(
 
   say("a drag");
   const drag = await runDrag(trackId, mixer(), host, options, clock, eventDrawn);
-  changes += options.dragSteps;
+  changes += drag.dragSent;
 
   return {
     song,
@@ -194,8 +198,14 @@ async function runLoad(
 
 /**
  * A drag of the track's volume, as the slider makes one: a step every
- * frame, all in one gesture, each sent without waiting for the last reply.
- * Each reply is shown as it arrives.
+ * frame, all in one gesture, sent through the app's `DragSteps`, so one is
+ * in flight at a time and newer ones replace those waiting. Each reply is
+ * shown as it arrives. A step is timed from when it's made to the frame
+ * that draws it, or a newer step that replaced it. Each send holds the
+ * in-flight slot until that frame, to time it, where the app's frees it as
+ * soon as the reply is shown. So when replies are slow, the benchmark
+ * replaces a few more steps than the app would, and its "sent" count can
+ * be a little lower than a real drag's.
  */
 async function runDrag(
   trackId: string,
@@ -204,10 +214,14 @@ async function runDrag(
   options: BenchmarkOptions,
   clock: Clock,
   eventDrawn: (before: number, expected: number) => Promise<number | null>,
-): Promise<Pick<LoadResult, "dragSteps" | "dragFrames" | "dragMs">> {
+): Promise<Pick<LoadResult, "dragSteps" | "dragSent" | "dragFrames" | "dragMs">> {
   const gesture = nextGesture();
+  const drags = new DragSteps();
   const before = host.events();
+  // When each step was made, and how long until it was drawn.
+  const made: number[] = [];
   const dragSteps: number[] = [];
+  let dragSent = 0;
   // Each frame's time and the time since the one before it.
   const frames: { at: number; gap: number }[] = [];
   let recording = true;
@@ -222,26 +236,39 @@ async function runDrag(
   const recorder = record();
 
   const start = clock.now();
-  const replies: Promise<void>[] = [];
+  let finished: () => void = () => {};
+  let failed: (reason: unknown) => void = () => {};
+  const allDrawn = new Promise<void>((resolve, reject) => {
+    finished = resolve;
+    failed = reject;
+  });
   for (let i = 0; i < options.dragSteps; i++) {
     await clock.frame();
-    const sent = clock.now();
+    made.push(clock.now());
     const volumeDb = -10 - i * 0.5;
-    replies.push(
-      setTrackMixer(trackId, { ...mixer, volumeDb }, gesture).then(async (update) => {
+    drags.step(gesture, async () => {
+      dragSent += 1;
+      try {
+        const update = await setTrackMixer(trackId, { ...mixer, volumeDb }, gesture);
         host.apply(update);
         await clock.frame();
-        dragSteps.push(clock.now() - sent);
-      }),
-    );
+      } catch (reason) {
+        failed(reason);
+        return;
+      }
+      // This reply draws step `i`, and every step before it still waiting.
+      const drawn = clock.now();
+      while (dragSteps.length <= i) dragSteps.push(drawn - made[dragSteps.length]);
+      if (dragSteps.length === options.dragSteps) finished();
+    });
   }
-  await Promise.all(replies);
+  await allDrawn;
   // If no events come, the drag ended when its last reply was drawn: the
   // wait for them, and the idle frames during it, aren't counted.
   const drawn = clock.now();
-  const end = (await eventDrawn(before, options.dragSteps)) ?? drawn;
+  const end = (await eventDrawn(before, dragSent)) ?? drawn;
   recording = false;
   await recorder;
   const dragFrames = frames.filter((frame) => frame.at <= end).map((frame) => frame.gap);
-  return { dragSteps, dragFrames, dragMs: end - start };
+  return { dragSteps, dragSent, dragFrames, dragMs: end - start };
 }

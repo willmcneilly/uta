@@ -57,6 +57,7 @@ import {
   runBenchmark,
 } from "./benchmark/run";
 import { Divider } from "./Divider";
+import { DragSteps } from "./dragSteps";
 import { FrameLoop } from "./frameLoop";
 import { Meter } from "./Meter";
 import { MeterLevel, TrackLevels, clipLit } from "./meterLevel";
@@ -162,6 +163,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [clock] = useState(() => new PlayheadClock());
   const [stats] = useState(() => new FrameStats());
   const [frames] = useState(() => new FrameLoop(stats));
+  // Every control's drags send their steps through it, one at a time, latest wins.
+  const [drags] = useState(() => new DragSteps());
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
   const pianoRoll = useRef<PianoRollHandle>(null);
@@ -286,11 +289,11 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   }, [level, slowestBlock, trackLevels, clock]);
 
   const changeVolume = (volumeDb: number, gesture?: number) => {
-    setVolume(volumeDb, gesture).then(show, report);
+    drags.step(gesture, () => setVolume(volumeDb, gesture).then(show, report));
   };
 
   const changeTempo = (bpm: number, gesture?: number) => {
-    setTempo(bpm, gesture).then(show, report);
+    drags.step(gesture, () => setTempo(bpm, gesture).then(show, report));
   };
 
   const changeLoopEnabled = (enabled: boolean) => {
@@ -330,7 +333,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   }, []);
 
   const changeMixer = (id: string, mixer: MixerView, gesture?: number) => {
-    setTrackMixer(id, mixer, gesture).then(show, report);
+    drags.step(gesture, () => setTrackMixer(id, mixer, gesture).then(show, report));
   };
 
   const soloAlone = (id: string) => {
@@ -405,43 +408,52 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // The synth panel edits the selected track's sound.
   const changeSynth = (param: SynthParam, gesture?: number) => {
     if (!track) return;
-    setSynthParam(track.id, param, gesture).then(show, report);
+    const id = track.id;
+    drags.step(gesture, () => setSynthParam(id, param, gesture).then(show, report));
   };
 
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
   const clipId = clip?.id ?? "";
   const trackId = track?.id ?? "";
+  // A drag's steps go through `drags`, and so does everything else that
+  // edits notes, so nothing overtakes a step that's still waiting.
   const editor: NoteEditor = {
-    add: (notes, gesture) => void addNotes(clipId, notes, gesture).then(show, report),
-    set: (notes, gesture) => void setNotes(clipId, notes, gesture).then(show, report),
-    remove: (ids) => void removeNotes(clipId, ids).then(show, report),
-    trim: (ids, gesture) => void trimNotes(clipId, ids, gesture).then(show, report),
-    cancel: (gesture) => void cancelGesture(gesture).then(show, report),
+    add: (notes, gesture) => drags.then(() => addNotes(clipId, notes, gesture).then(show, report)),
+    set: (notes, gesture) =>
+      drags.step(gesture, () => setNotes(clipId, notes, gesture).then(show, report)),
+    remove: (ids) => drags.then(() => removeNotes(clipId, ids).then(show, report)),
+    trim: (ids, gesture) => drags.then(() => trimNotes(clipId, ids, gesture).then(show, report)),
+    cancel: (gesture) => drags.cancel(gesture, () => cancelGesture(gesture).then(show, report)),
     audition: (pitch, velocity) => void auditionNote(trackId, pitch, velocity).catch(report),
   };
 
   // The timeline draws, moves, resizes, deletes, pastes and duplicates
   // clips. New clips are selected once Rust has sent them back.
+  // Its drags go through `drags` too, as do its other edits.
   const clipEditor: ClipEditor = {
     add: (trackId, id, start, length) =>
-      void addClip(trackId, id, start, length).then((update) => {
-        show(update);
-        setSelectedClipIds([id]);
-      }, report),
-    set: (clips, gesture) => void setClips(clips, gesture).then(show, report),
-    remove: (ids) => void removeClips(ids).then(show, report),
+      drags.then(() =>
+        addClip(trackId, id, start, length).then((update) => {
+          show(update);
+          setSelectedClipIds([id]);
+        }, report),
+      ),
+    set: (clips, gesture) => drags.step(gesture, () => setClips(clips, gesture).then(show, report)),
+    remove: (ids) => drags.then(() => removeClips(ids).then(show, report)),
     paste: (clips) =>
-      void pasteClips(clips).then((update) => {
-        show(update);
-        setSelectedClipIds(clips.map((clip) => clip.id));
-      }, report),
-    cancel: (gesture) => void cancelGesture(gesture).then(show, report),
+      drags.then(() =>
+        pasteClips(clips).then((update) => {
+          show(update);
+          setSelectedClipIds(clips.map((clip) => clip.id));
+        }, report),
+      ),
+    cancel: (gesture) => drags.cancel(gesture, () => cancelGesture(gesture).then(show, report)),
   };
 
   // The timeline's ruler sets the loop region and moves the play start.
   const rulerActions: RulerActions = {
     loop: (startBar, bars, gesture) =>
-      void setLoop(startBar, bars, gesture).then(show, report),
+      drags.step(gesture, () => setLoop(startBar, bars, gesture).then(show, report)),
     locate: (ticks) => void locate(ticks).catch(report),
   };
 
