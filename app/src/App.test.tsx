@@ -34,6 +34,7 @@ import {
   withFirstClipNotes,
 } from "./pianoRoll/testing";
 import type { RendererFactory } from "./pianoRoll/renderer";
+import { recordingTimelineFactory } from "./timeline/testing";
 
 // Tauri's mocked back end stands in for Rust. It keeps its own project so the
 // tests can check the UI shows whatever Rust sends back, never its own copy.
@@ -813,6 +814,22 @@ describe("App", () => {
         ["high", 72, 3840, 30],
       ]);
       expect(fetchedNotes()).toEqual([]);
+    });
+
+    it("redraws neither the clips nor the notes when an update changes only a volume", async () => {
+      // An unchanged clip keeps its object through the cache, so neither view
+      // has anything to redraw (UTA-33).
+      const { factory: timelineFactory, renderer: timeline } = recordingTimelineFactory();
+      render(<App createRenderer={factory} createTimelineRenderer={timelineFactory} />);
+      await screen.findByRole("slider", { name: /Volume/ });
+      await waitFor(() => expect(timeline.clips.length).toBeGreaterThan(0));
+      await waitFor(() => expect(drawnNotes()).toHaveLength(2));
+      const before = [timeline.clips.length, renderer.notes.length];
+      fireEvent.change(volume(), { target: { value: "-6" } });
+      await waitFor(() => expect(volume()).toHaveValue("-6"));
+      // A few frames, to draw anything that needs it.
+      for (let i = 0; i < 3; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect([timeline.clips.length, renderer.notes.length]).toEqual(before);
     });
 
     it("takes new notes when a clip's revision changes", async () => {

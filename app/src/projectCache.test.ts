@@ -96,6 +96,41 @@ describe("the project cache", () => {
     expect(missingNotes(after)).toEqual([]);
   });
 
+  it("keeps every clip's object, and the track's list, when an update changes something else", () => {
+    // At thousands of clips, the timeline then has nothing to compare (UTA-33).
+    const before = started();
+    const after = take(before, update(2, { a: 1, b: 1 }, [], -6));
+    expect(after.project?.tracks[0]).not.toBe(before.project?.tracks[0]);
+    expect(after.project?.tracks[0].clips).toBe(before.project?.tracks[0].clips);
+  });
+
+  it("gives a new object only to a clip that changed, and a new list to its track", () => {
+    const before = started();
+    const [a, b] = before.project?.tracks[0].clips ?? [];
+
+    const edited = take(before, update(2, { a: 1, b: 2 }, [notes("b", 2)]));
+    const clips = edited.project?.tracks[0].clips ?? [];
+    expect(clips).not.toBe(before.project?.tracks[0].clips);
+    expect(clips[0]).toBe(a);
+    expect(clips[1]).not.toBe(b);
+    expect(clips[1].notes).toEqual([note("b-2")]);
+
+    const sent = update(3, { a: 1, b: 2 });
+    sent.outline.tracks[0].clips[1].start = 9_600;
+    const moved = take(edited, sent);
+    expect(moved.project?.tracks[0].clips[0]).toBe(a);
+    expect(moved.project?.tracks[0].clips[1]).toMatchObject({ id: "b", start: 9_600 });
+  });
+
+  it("gives a clip a new object when its notes stop being drawn", () => {
+    // Revision 2 is named but not held, so b's notes aren't drawn until fetched.
+    const before = started();
+    const after = take(before, update(2, { a: 1, b: 2 }));
+    expect(after.project?.tracks[0].clips[1]).not.toBe(before.project?.tracks[0].clips[1]);
+    expect(drawn(after).b).toEqual([]);
+    expect(missingNotes(after).map((clip) => clip.id)).toEqual(["b"]);
+  });
+
   it("replaces only the clip whose notes were sent", () => {
     const before = started();
     const after = take(before, update(2, { a: 2, b: 1 }, [notes("a", 2)]));

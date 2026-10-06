@@ -271,6 +271,8 @@ function sameView(a: Viewport, b: Viewport): boolean {
 export function sameClip(a: ClipView, b: ClipView): boolean {
   if (a === b) return true;
   if (a.id !== b.id || a.start !== b.start || a.length !== b.length) return false;
+  // Notes Rust hasn't changed are the same array (projectCache.ts).
+  if (a.notes === b.notes) return true;
   if (a.notes.length !== b.notes.length) return false;
   return a.notes.every((note, i) => {
     const other = b.notes[i];

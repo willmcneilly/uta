@@ -159,6 +159,39 @@ describe("TimelineScene", () => {
     expect([renderer.grids.length, renderer.clips.length, renderer.tops.length]).toEqual([2, 3, 2]);
   });
 
+  it("doesn't go through the clips when every track kept its list", () => {
+    // projectCache.ts keeps an unchanged track's list of clips, so a wide
+    // song's volume step has nothing to compare (UTA-33).
+    const reads = { count: 0 };
+    const watched = (clips: ClipView[]) =>
+      new Proxy(clips, {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key)) reads.count += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      });
+    const t1 = trackView("t1", "Synth 1", watched([clip("a", 0, BAR, [note("n", 60, 0)])]));
+    const t2 = trackView("t2", "Synth 2", watched([clip("b", 0, BAR)]));
+    const { timeline, renderer } = scene(project([t1, t2]));
+    reads.count = 0;
+
+    // New track objects, as each update makes, with the same lists.
+    timeline.setProject({ ...project([{ ...t1 }, { ...t2 }]), volumeDb: -3 });
+    timeline.draw(0);
+    expect(reads.count).toBe(0);
+    expect(renderer.clips.length).toBe(1);
+
+    // Another track's list: everything is compared, and only that change drawn.
+    const changed = { ...t2, clips: [clip("b", 0, BAR, [note("new", 60, 0)])] };
+    timeline.setProject(project([{ ...t1 }, changed]));
+    timeline.draw(0);
+    expect(renderer.clips.length).toBe(2);
+    expect(renderer.lastClips().map((drawn) => [drawn.id, drawn.notes.length])).toEqual([
+      ["a", 1],
+      ["b", 1],
+    ]);
+  });
+
   it("highlights the selected track and clips", () => {
     const view = project([
       trackView("t1", "Synth 1", [clip("a", 0, BAR), clip("c", BAR, BAR)]),

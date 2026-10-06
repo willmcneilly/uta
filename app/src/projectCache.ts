@@ -23,8 +23,15 @@ export interface ProjectCache {
   outline: Outline | null;
   /** The notes held for each clip in the outline, by clip ID, at the revision they were sent. */
   notes: ReadonlyMap<string, ClipNotes>;
-  /** What the UI draws: the outline, with each clip's notes if they're held at its revision. */
+  /**
+   * What the UI draws: the outline, with each clip's notes if they're held
+   * at its revision. A clip that's the same as in the last one keeps its
+   * object, and a track whose clips are all the same keeps its list, so
+   * views can skip them.
+   */
   project: ProjectView | null;
+  /** The clips in the outline whose notes aren't held at its revision. */
+  missing: ClipOutline[];
 }
 
 /** What Rust sent: an update, or clips' notes, fetched with `getNotes`. */
@@ -35,6 +42,7 @@ export const EMPTY_CACHE: ProjectCache = {
   outline: null,
   notes: new Map(),
   project: null,
+  missing: [],
 };
 
 /** A clip's notes while the UI doesn't hold them at its revision. */
@@ -55,6 +63,11 @@ export function receive(cache: ProjectCache, received: Received): ProjectCache {
  *    or keep the ones held (drawn
  *    only if their revision matches, and fetched again otherwise);
  * 4. drop clips the outline no longer has.
+ *
+ * A clip drawn the same as before keeps its object, and a track whose
+ * clips all do keeps its list, so the views can skip what hasn't changed.
+ * At thousands of clips, comparing them all again each update was enough
+ * to make the frame late (UTA-33).
  */
 function takeUpdate(cache: ProjectCache, update: Update): ProjectCache {
   if (update.sequence <= cache.sequence) return cache;
@@ -67,7 +80,7 @@ function takeUpdate(cache: ProjectCache, update: Update): ProjectCache {
     const keep = now && held ? (held.revision > now.revision ? held : now) : (now ?? held);
     if (keep) notes.set(clip.id, keep);
   }
-  return build(update.sequence, update.outline, notes);
+  return build(update.sequence, update.outline, notes, cache.project);
 }
 
 /**
@@ -86,39 +99,48 @@ function takeNotes(cache: ProjectCache, fetched: ClipNotes[]): ProjectCache {
     notes.set(clip.clip, clip);
     changed = true;
   }
-  return changed ? build(cache.sequence, cache.outline, notes) : cache;
+  return changed ? build(cache.sequence, cache.outline, notes, cache.project) : cache;
 }
 
 function build(
   sequence: number,
   outline: Outline,
   notes: ReadonlyMap<string, ClipNotes>,
+  previous: ProjectView | null,
 ): ProjectCache {
+  const before = new Map(previous?.tracks.map((track) => [track.id, track.clips]));
+  const missing: ClipOutline[] = [];
   const project: ProjectView = {
     ...outline,
-    tracks: outline.tracks.map((track) => ({
-      ...track,
-      clips: track.clips.map((clip): ClipView => {
+    tracks: outline.tracks.map((track) => {
+      const was = before.get(track.id);
+      let same = was !== undefined && was.length === track.clips.length;
+      const clips = track.clips.map((clip, i): ClipView => {
         const held = notes.get(clip.id);
-        return {
-          id: clip.id,
-          start: clip.start,
-          length: clip.length,
-          // The same array as before when unchanged, so views can skip it.
-          notes: held?.revision === clip.notesRevision ? held.notes : NO_NOTES,
-        };
-      }),
-    })),
+        // The same array as before when unchanged, so views can skip it.
+        const drawn = held?.revision === clip.notesRevision ? held.notes : NO_NOTES;
+        if (drawn === NO_NOTES) missing.push(clip);
+        const kept = was?.[i];
+        if (
+          kept?.id === clip.id &&
+          kept.start === clip.start &&
+          kept.length === clip.length &&
+          kept.notes === drawn
+        ) {
+          return kept;
+        }
+        same = false;
+        return { id: clip.id, start: clip.start, length: clip.length, notes: drawn };
+      });
+      return { ...track, clips: same && was ? was : clips };
+    }),
   };
-  return { sequence, outline, notes, project };
+  return { sequence, outline, notes, project, missing };
 }
 
 /** The clips in the outline whose notes aren't held at its revision: to fetch with `getNotes`. */
 export function missingNotes(cache: ProjectCache): ClipOutline[] {
-  if (!cache.outline) return [];
-  return clips(cache.outline).filter(
-    (clip) => cache.notes.get(clip.id)?.revision !== clip.notesRevision,
-  );
+  return cache.missing;
 }
 
 /** Whether `clip` is in the cache's outline. */
