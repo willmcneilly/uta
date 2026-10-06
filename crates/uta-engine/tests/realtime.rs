@@ -636,25 +636,42 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     );
 }
 
-/// A block with more note events than it may handle skips the rest with a
-/// search, not a loop over each one, and still doesn't allocate.
+/// A block with more note events than it may handle catches up on the rest
+/// with searches, not a loop over each one, and still doesn't allocate,
+/// with a snapshot swapped in every block. Every step of the catch-up runs:
+/// - at the start, 1,044 notes start: 512 are handled, and the rest find no
+///   free voice and are counted;
+/// - an eighth in, 1,024 of them end and 8 more start: the ended notes are
+///   released, the 8 start, and 8 of the 20 long notes still under way,
+///   which never got a voice, start too.
 #[test]
 fn too_many_note_events_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
-    let count = 2 * MAX_NOTE_EVENTS_PER_BLOCK;
-    let notes = (0..count as u128)
+    let short = 2 * MAX_NOTE_EVENTS_PER_BLOCK as u128;
+    let long = 20;
+    let starting = 8;
+    let mut notes: Vec<_> = (0..short)
         .map(|i| note(i, 40 + (i % 60) as u8, 0, 480))
         .collect();
+    notes.extend((short..short + long).map(|i| note(i, 40 + (i % 60) as u8, 0, 1920)));
+    notes.extend(
+        (short + long..short + long + starting).map(|i| note(i, 40 + (i % 60) as u8, 480, 480)),
+    );
     let project = project(120.0, 1, &[], notes);
     let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
     let mut buffer = vec![0.0; BLOCK * 2];
     renderer.controller.play().unwrap();
-    for _ in 0..100 {
+    // Past the long notes' ends.
+    for _ in 0..400 {
+        renderer
+            .controller
+            .set_snapshot(Snapshot::from(&project))
+            .unwrap();
         process_block(renderer.processor(), &mut buffer);
     }
     assert_eq!(
         renderer.controller.poll().dropped_note_events,
-        (2 * (count - MAX_NOTE_EVENTS_PER_BLOCK)) as u64
+        (short + long) as u64 - MAX_NOTE_EVENTS_PER_BLOCK as u64
     );
 }
 

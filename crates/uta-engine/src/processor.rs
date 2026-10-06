@@ -12,10 +12,10 @@ use uta_core::TrackId;
 use uta_core::time::Ticks;
 
 use crate::ramp::Ramp;
-use crate::synth::{NoteOn, Synth};
+use crate::synth::{NoteOn, Synth, VOICES};
 use crate::{
-    COMMAND_CAPACITY, Command, NoteEvent, NoteEventKind, Snapshot, Status, SynthSettings,
-    TRACK_SLOTS, TrackNotes, TrackSnapshot,
+    COMMAND_CAPACITY, Command, NoteEventKind, Snapshot, Status, SynthSettings, TRACK_SLOTS,
+    TrackNotes, TrackSnapshot,
 };
 
 /// How long the output takes to fade out before a stream is replaced, and
@@ -26,8 +26,13 @@ pub const FADE_SECONDS: f64 = 0.005;
 pub const VOLUME_SMOOTHING_SECONDS: f64 = 0.02;
 /// The most note starts and ends each track handles in one block, so the work
 /// per block stays bounded however dense the notes are. Chased notes count
-/// too. Any more on the same track in the same block are skipped and counted
-/// in [`Status::dropped_note_events`]. It's far more than music needs: 256
+/// too. Past it, a track catches up on the events due instead of handling
+/// each one: it releases the notes that have ended and starts the ones that
+/// should be sounding, as far as its voices go. It does so at each later
+/// event in that block, each time bounded by the voices, so a block's work
+/// is still bounded by its length. Starts the voices can't hold,
+/// and chased notes past the budget, are counted in
+/// [`Status::dropped_note_events`]. It's far more than music needs: 256
 /// notes starting and ending within one block.
 pub const MAX_NOTE_EVENTS_PER_BLOCK: usize = 512;
 /// The most frames each track renders at a time: the size of its buffer, set
@@ -175,17 +180,16 @@ impl Slot {
         *dropped += sounding.len() as u64;
     }
 
-    /// Handles every event in `events` due by `playhead`, up to the slot's
-    /// budget. The rest are skipped with a search, and counted in `dropped`.
-    fn handle_due_events(&mut self, events: &[NoteEvent], playhead: u64, dropped: &mut u64) {
-        // Bounded by the budget, then one skip.
+    /// Handles every event in `notes` due by `playhead`, up to the slot's
+    /// budget. Past it, catches up instead: see [`Self::catch_up`].
+    fn handle_due_events(&mut self, notes: &TrackNotes, playhead: u64, dropped: &mut u64) {
+        let events = notes.events();
+        // Bounded by the budget, then one catch-up.
         while let Some(event) = events.get(self.bookmark)
             && event.sample <= playhead
         {
             if self.budget == 0 {
-                let due = events.partition_point(|event| event.sample <= playhead);
-                *dropped += (due - self.bookmark) as u64;
-                self.bookmark = due;
+                self.catch_up(notes, playhead, dropped);
                 break;
             }
             self.budget -= 1;
@@ -204,6 +208,84 @@ impl Slot {
             }
             self.bookmark += 1;
         }
+    }
+
+    /// When more events are due by `playhead` than the budget allows,
+    /// catches up on them without going through them one by one:
+    /// 1. releases every note the sequencer started that `notes` doesn't
+    ///    play at `playhead`, so no end it didn't handle leaves a note stuck;
+    /// 2. starts the notes starting at `playhead`, in the free and releasing
+    ///    voices, so no held note is taken over;
+    /// 3. if any of those voices are left, starts notes already under way
+    ///    there that aren't held, latest start first.
+    ///
+    /// A start in step 2 that doesn't get a voice is counted in `dropped`:
+    /// only notes the voices can't hold are. Bounded by the voices, plus a
+    /// few binary searches.
+    fn catch_up(&mut self, notes: &TrackNotes, playhead: u64, dropped: &mut u64) {
+        let events = notes.events();
+        let due = self.bookmark
+            + events[self.bookmark..].partition_point(|event| event.sample <= playhead);
+        // Ends sort before starts on the same sample, so the starts on the
+        // playhead are the last of the events due. A start before it that's
+        // still due was missed, and step 3 finds its note.
+        let starts = self.bookmark
+            + events[self.bookmark..due].partition_point(|event| {
+                event.sample < playhead || matches!(event.kind, NoteEventKind::Off { .. })
+            });
+        self.bookmark = due;
+
+        self.release_ended(notes, playhead);
+        let mut room = VOICES - self.synth.busy_voices();
+        let starting = &events[starts..due];
+        let started = starting.len().min(room);
+        // Bounded by the voices.
+        for event in &starting[..started] {
+            if let NoteEventKind::On {
+                key,
+                pitch,
+                velocity,
+            } = event.kind
+            {
+                self.synth.note_on(NoteOn {
+                    key,
+                    pitch,
+                    velocity,
+                    sequenced: true,
+                });
+            }
+        }
+        *dropped += (starting.len() - started) as u64;
+        room -= started;
+
+        // The notes skipped here are held, so in busy voices: the room
+        // plus the skips is at most the voices.
+        for note in notes.sounding_at(playhead).take(VOICES) {
+            if room == 0 {
+                break;
+            }
+            if self.synth.is_holding(note.key) {
+                continue;
+            }
+            room -= 1;
+            self.synth.note_on(NoteOn {
+                key: note.key,
+                pitch: note.pitch,
+                velocity: note.velocity,
+                sequenced: true,
+            });
+        }
+    }
+
+    /// Releases every note the sequencer started that `notes` doesn't play
+    /// at `playhead`, and cancels any such note waiting for a voice. Bounded
+    /// by the voices, each a binary search.
+    fn release_ended(&mut self, notes: &TrackNotes, playhead: u64) {
+        self.synth.release_sequenced_unless(|key, pitch| {
+            notes
+                .note(key)
+                .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
+        });
     }
 
     /// Renders the synth into the buffer, then adds it to `left` and `right`
@@ -414,7 +496,7 @@ impl Processor {
     /// loop's end (or past it, if a new snapshot shortened the loop), goes
     /// back to the loop's start and handles the events due there, so it lands
     /// on the same sample. At the song's end, stops. Each track handles at
-    /// most its budget of events; the rest are skipped and counted.
+    /// most its budget of events, and catches up on the rest.
     fn handle_due_events(&mut self) {
         // Two rounds at most: going round the loop, then the events at its
         // start. Either way the caller has at least one frame to render
@@ -434,7 +516,7 @@ impl Processor {
             // Bounded by TRACK_SLOTS.
             for track in self.snapshot.tracks() {
                 self.slots[track.slot()].handle_due_events(
-                    track.notes().events(),
+                    track.notes(),
                     playhead,
                     &mut self.dropped_note_events,
                 );
@@ -557,14 +639,7 @@ impl Processor {
     fn release_changed_notes(&mut self) {
         let playhead = self.playhead;
         for track in self.snapshot.tracks() {
-            let notes = track.notes();
-            self.slots[track.slot()]
-                .synth
-                .release_sequenced_unless(|key, pitch| {
-                    notes
-                        .note(key)
-                        .is_some_and(|note| note.pitch == pitch && note.contains(playhead))
-                });
+            self.slots[track.slot()].release_ended(track.notes(), playhead);
         }
     }
 
@@ -836,6 +911,63 @@ mod tests {
             }
         }
         onsets
+    }
+
+    /// Notes held across a sample with more note events than a block may
+    /// handle keep their voices: catching up neither takes them over nor
+    /// starts them again. 600 notes start at the beginning, 4 long ones a
+    /// beat later, and the 600 all end on beat 3.
+    #[test]
+    fn notes_held_across_a_catch_up_keep_their_voices() {
+        let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+        let track = project.tracks()[0].id();
+        let clip = project.tracks()[0].clips()[0].id();
+        let note = |id: u128, pitch: u8, start: Ticks, length: Ticks| Note {
+            id: NoteId::from_uuid(Uuid::from_u128(id)),
+            pitch,
+            velocity: 100,
+            start,
+            length,
+        };
+        let crowd = MAX_NOTE_EVENTS_PER_BLOCK as u128 + 88;
+        let mut notes: Vec<Note> = (0..crowd)
+            .map(|i| note(i, 40 + (i % 20) as u8, 0, 2 * BEAT))
+            .collect();
+        let long: Vec<u128> = (10_000..10_004).collect();
+        notes.extend(
+            long.iter()
+                .map(|&id| note(id, 70 + (id % 10) as u8, BEAT, 2 * BEAT)),
+        );
+        project.apply(&Command::AddNotes { clip, notes }).unwrap();
+        project
+            .apply(&Command::SetSynthParam {
+                track,
+                param: SynthParam::ReleaseSeconds(0.001),
+            })
+            .unwrap();
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&project), 128);
+        renderer.controller.play().unwrap();
+        let held_long = |renderer: &mut Renderer| {
+            let held = renderer.processor().slots[0].synth.held_notes();
+            held.into_iter()
+                .filter(|(key, _)| long.contains(&key.0))
+                .collect::<Vec<_>>()
+        };
+        // Beat 3 is at sample 48,000.
+        renderer.render(47_000);
+        let before = held_long(&mut renderer);
+        assert_eq!(before.len(), long.len(), "the long notes are playing");
+        renderer.render(2_000);
+        assert_eq!(held_long(&mut renderer), before);
+        assert_eq!(
+            renderer.processor().slots[0].synth.held_notes().len(),
+            long.len(),
+            "the crowd is released"
+        );
     }
 
     /// A sample within full scale comes out of the hard clip bit for bit

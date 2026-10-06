@@ -3,7 +3,7 @@
 
 #![allow(dead_code)] // Each test binary uses a different subset.
 
-use uta_core::time::Ticks;
+use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{Command, CommandList, Note, NoteId, Project, ProjectId, SynthParam};
 use uuid::Uuid;
 
@@ -200,4 +200,28 @@ pub fn with_synth(
 ) -> uta_engine::Snapshot {
     snapshot.tracks_mut()[0].synth = synth;
     snapshot
+}
+
+/// The app's stress notes (`stress::notes` in `uta-app`) for one bar of 4/4, seed
+/// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
+pub fn stress_notes() -> Vec<Note> {
+    let sixteenth = TICKS_PER_QUARTER / 4;
+    let steps = 16;
+    let mut state: u64 = 1;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    (0..3_000)
+        .map(|_| Note {
+            id: NoteId::random(),
+            pitch: 24 + (next() % 85) as u8,
+            velocity: Note::MIN_VELOCITY
+                + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
+            start: (next() % steps) * sixteenth,
+            length: (1 + next() % 16) * sixteenth,
+        })
+        .collect()
 }

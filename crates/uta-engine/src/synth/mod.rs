@@ -92,6 +92,11 @@ impl Voice {
         self.take_over_remaining > 0
     }
 
+    /// Whether its note has started and not been released.
+    fn is_held(&self) -> bool {
+        !matches!(self.envelope.stage(), Stage::Idle | Stage::Release)
+    }
+
     fn is_releasing(&self) -> bool {
         self.envelope.stage() == Stage::Release && !self.is_taken_over()
     }
@@ -251,6 +256,40 @@ impl Synth {
                 voice.envelope.release(&self.times);
             }
         }
+    }
+
+    /// Whether the note with this key is held: started and not released, or
+    /// waiting for a voice. Bounded by the number of voices.
+    pub(crate) fn is_holding(&self, key: NoteKey) -> bool {
+        self.voices.iter().any(|voice| {
+            if voice.is_taken_over() {
+                voice.pending.is_some_and(|pending| pending.key == key)
+            } else {
+                voice.key == Some(key) && voice.is_held()
+            }
+        })
+    }
+
+    /// How many voices a new note can't have without taking over a held
+    /// note: those holding one, and those being taken over, whether or not
+    /// a note still waits there. The rest are free or releasing, which
+    /// [`Self::note_on`] takes first. At most [`VOICES`].
+    pub(crate) fn busy_voices(&self) -> usize {
+        self.voices
+            .iter()
+            .filter(|voice| voice.is_taken_over() || voice.is_held())
+            .count()
+    }
+
+    /// The key of each note started and not released, and when it started,
+    /// in voice order.
+    #[cfg(test)]
+    pub(crate) fn held_notes(&self) -> Vec<(NoteKey, u64)> {
+        self.voices
+            .iter()
+            .filter(|voice| !voice.is_taken_over() && voice.is_held())
+            .filter_map(|voice| voice.key.map(|key| (key, voice.started)))
+            .collect()
     }
 
     /// Releases every note, and cancels any waiting for a voice.
@@ -459,6 +498,39 @@ mod tests {
         let mut keys: Vec<u128> = synth.sounding_keys().iter().map(|k| k.unwrap().0).collect();
         keys.sort_unstable();
         assert_eq!(keys, (0..VOICES as u128).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn busy_voices_hold_a_note_or_are_being_taken_over() {
+        let mut synth = full_synth();
+        assert_eq!(synth.busy_voices(), VOICES);
+        synth.note_off(NoteKey(3));
+        assert_eq!(synth.busy_voices(), VOICES - 1);
+        assert!(!synth.is_holding(NoteKey(3)));
+        assert!(synth.is_holding(NoteKey(4)));
+
+        // It takes over the releasing voice: the note waiting there is
+        // held, and the one fading out isn't.
+        synth.note_on(note(100));
+        assert_eq!(synth.busy_voices(), VOICES);
+        assert!(synth.is_holding(NoteKey(100)));
+        assert!(!synth.is_holding(NoteKey(3)));
+    }
+
+    /// A voice being taken over is busy even once the note waiting there is
+    /// cancelled: a new note would take over a held voice, not that one.
+    #[test]
+    fn a_voice_being_taken_over_is_busy_without_a_waiting_note() {
+        let mut synth = full_synth();
+        synth.note_on(note(100));
+        synth.note_off(NoteKey(100));
+        assert!(!synth.is_holding(NoteKey(100)));
+        assert_eq!(synth.busy_voices(), VOICES);
+        synth.note_on(note(101));
+        assert!(
+            !synth.is_holding(NoteKey(1)),
+            "the next note takes over a held voice"
+        );
     }
 
     #[test]
