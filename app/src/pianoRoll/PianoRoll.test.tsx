@@ -823,6 +823,28 @@ describe("a drag while Rust is slow to reply", () => {
     await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 }));
   });
 
+  it("adds a drawn note even when the add has to wait, before any of its steps", async () => {
+    await renderApp();
+    const held = new HeldReplies(NOTE_COMMANDS);
+    // A note drag whose step is still in flight, so the drawing's add waits.
+    await press(240, 60);
+    await moveTo(240 + 480, 60);
+    await release();
+    await press(2400, 64);
+    await moveTo(2900, 64);
+    await moveTo(3400, 64);
+    await release();
+    expect(held.inFlight).toBe(1);
+    await held.replyToAll();
+
+    expect(edits()).toEqual(["set_notes", "trim_notes", "add_notes", "set_notes", "trim_notes"]);
+    const [added] = sent("add_notes")[0].notes as NoteView[];
+    const drawingSet = sent("set_notes")[1];
+    expect(drawingSet.gesture).toBe(sent("add_notes")[0].gesture);
+    expect((drawingSet.notes as NoteView[])[0].id).toBe(added.id);
+    await waitFor(() => expect(drawnNote(added.id)).toBeDefined());
+  });
+
   it("on Esc while drawing a note, still adds it first, then cancels it", async () => {
     await renderApp();
     const held = new HeldReplies(NOTE_COMMANDS);

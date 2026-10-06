@@ -201,7 +201,11 @@ async function runLoad(
  * frame, all in one gesture, sent through the app's `DragSteps`, so one is
  * in flight at a time and newer ones replace those waiting. Each reply is
  * shown as it arrives. A step is timed from when it's made to the frame
- * that draws it, or a newer step that replaced it.
+ * that draws it, or a newer step that replaced it. Each send holds the
+ * in-flight slot until that frame, to time it, where the app's frees it as
+ * soon as the reply is shown. So when replies are slow, the benchmark
+ * replaces a few more steps than the app would, and its "sent" count can
+ * be a little lower than a real drag's.
  */
 async function runDrag(
   trackId: string,
