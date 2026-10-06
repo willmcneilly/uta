@@ -55,8 +55,36 @@ export class TimelineScene {
   setProject(project: ProjectView): void {
     const previous = this.project;
     this.project = project;
-    // Every view from Rust is a fresh object, so compare what's in it: a
-    // volume or tempo change mustn't redraw every clip.
+    // A volume or tempo change mustn't redraw every clip. A track whose
+    // clips are all unchanged keeps its list (projectCache.ts), so when
+    // every track does there's nothing to compare, even at thousands of
+    // clips. Otherwise compare what's in them.
+    const unchanged =
+      previous !== null &&
+      previous.tracks.length === project.tracks.length &&
+      project.tracks.every((track, index) => track.clips === previous.tracks[index].clips);
+    if (!unchanged && this.compareClips(previous, project)) this.clipsDirty = true;
+    if (
+      !previous ||
+      previous.tracks.length !== project.tracks.length ||
+      previous.ticksPerQuarter !== project.ticksPerQuarter ||
+      previous.beatsPerBar !== project.beatsPerBar ||
+      previous.loopStart !== project.loopStart ||
+      previous.loopLength !== project.loopLength ||
+      previous.loopEnabled !== project.loopEnabled ||
+      previous.tracks.some((track, i) => track.id !== project.tracks[i].id)
+    ) {
+      this.gridDirty = true;
+    }
+    if (!this.view && this.size) this.view = this.initialView();
+    this.clampView();
+  }
+
+  /**
+   * Keeps each clip's indexed notes if it's unchanged, and indexes them
+   * again if not. Returns whether any clip changed, moved or went.
+   */
+  private compareClips(previous: ProjectView | null, project: ProjectView): boolean {
     const notes = new Map<string, ClipNotes>();
     let changed = previous === null || previous.tracks.length !== project.tracks.length;
     project.tracks.forEach((track, index) => {
@@ -76,21 +104,7 @@ export class TimelineScene {
       });
     });
     this.notes = notes;
-    if (changed) this.clipsDirty = true;
-    if (
-      !previous ||
-      previous.tracks.length !== project.tracks.length ||
-      previous.ticksPerQuarter !== project.ticksPerQuarter ||
-      previous.beatsPerBar !== project.beatsPerBar ||
-      previous.loopStart !== project.loopStart ||
-      previous.loopLength !== project.loopLength ||
-      previous.loopEnabled !== project.loopEnabled ||
-      previous.tracks.some((track, i) => track.id !== project.tracks[i].id)
-    ) {
-      this.gridDirty = true;
-    }
-    if (!this.view && this.size) this.view = this.initialView();
-    this.clampView();
+    return changed;
   }
 
   /** The timeline's size in CSS pixels. */

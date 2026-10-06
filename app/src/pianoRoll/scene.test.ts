@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { NoteView, ProjectView } from "../backend";
-import { PianoRollScene } from "./scene";
+import { PianoRollScene, sameClip } from "./scene";
 import { RecordingRenderer, firstClip, projectView, trackView } from "./testing";
 import {
   KEYBOARD_WIDTH,
@@ -252,5 +252,22 @@ describe("PianoRollScene", () => {
     scene.draw(0);
     expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
     expect(renderer.boxes).toEqual([null, box, null]);
+  });
+});
+
+describe("sameClip", () => {
+  it("doesn't compare the notes one by one when they're the same array", () => {
+    let reads = 0;
+    const notes = new Proxy([note("a", 0), note("b", 480)], {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) reads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    const clip = { id: "c", start: 0, length: 3840, notes };
+    expect(sameClip(clip, { ...clip })).toBe(true);
+    expect(reads).toBe(0);
+    expect(sameClip(clip, { ...clip, notes: [note("a", 0), note("b", 480)] })).toBe(true);
+    expect(sameClip(clip, { ...clip, start: 960 })).toBe(false);
   });
 });
