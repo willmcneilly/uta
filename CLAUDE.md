@@ -11,6 +11,7 @@ crates/uta-engine     the audio engine: control side + audio-thread processor
 crates/uta-cli        the `uta` binary: offline render, terminal playback
 app/                  Tauri app: React + TypeScript, Vite, npm
 app/src-tauri         the app's Rust side (crate `uta-app`)
+DESIGN.md             design tokens and the reasons for them (generates app/src/design/tokens.*)
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`
@@ -48,6 +49,8 @@ npm ci
 npm run typecheck                                   # tsc -b
 npm run lint                                        # eslint
 npm test                                            # vitest, jsdom
+npm run tokens                                      # regenerate src/design/tokens.{css,ts} from DESIGN.md
+npx designmd lint ../DESIGN.md                      # check DESIGN.md against its format
 npm run tauri dev                                   # open the app with hot reload
 npm run tauri build -- --ci                         # release build: target/release/bundle/macos/Uta.app
 ```
