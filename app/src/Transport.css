@@ -1,0 +1,69 @@
+/* The top bar: the transport, and the master that App draws beside it. */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transport .loop-switch[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.transport .state {
+  margin-left: 8px;
+  color: var(--ink-2);
+}
+
+.transport .position {
+  margin-left: auto;
+  min-width: 48px;
+  text-align: right;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transport .setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.transport .setting output {
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+
+.master {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.master .volume input {
+  width: 100px;
+}
+
+.master-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Lit when the master has clipped, until it's clicked. */
+.clip-light {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  background: var(--line-2);
+}
+
+.clip-light[data-lit="true"] {
+  background: var(--clip);
+  border-color: var(--clip);
+  box-shadow: 0 0 6px var(--clip);
+}

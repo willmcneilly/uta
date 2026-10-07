@@ -1,6 +1,7 @@
 import type { ProjectView } from "./backend";
 import { type BarBeat, formatBarBeat } from "./musicalTime";
 import { useGesture } from "./useGesture";
+import "./Transport.css";
 
 interface Props {
   project: ProjectView | null;

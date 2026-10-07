@@ -1,0 +1,13 @@
+/* Drag it to share the height between the timeline and the editor. */
+.divider {
+  flex: 0 0 6px;
+  margin: -4px 0;
+  border-radius: 3px;
+  cursor: row-resize;
+}
+
+.divider:hover,
+.divider:focus-visible {
+  background: var(--line-2);
+  outline: none;
+}

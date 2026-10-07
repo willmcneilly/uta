@@ -1,0 +1,6 @@
+.frame-time {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

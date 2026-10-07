@@ -11,6 +11,7 @@ import {
   toPosition,
 } from "./synthScale";
 import { useGesture } from "./useGesture";
+import "./SynthPanel.css";
 
 interface Props {
   synth: SynthView;

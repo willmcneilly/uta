@@ -2,6 +2,7 @@
 // and loops only over what fits on screen, so its work doesn't grow with the
 // song.
 
+import { readColours } from "../design/readColours";
 import { type Theme, readTheme } from "../pianoRoll/colours";
 import type { Rect } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
@@ -42,15 +43,14 @@ interface ClipTheme {
 }
 
 function readClipTheme(element: Element): ClipTheme {
-  const style = getComputedStyle(element);
-  const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  const c = readColours(element);
   return {
-    fill: read("--clip-fill", "#b9d4f5"),
-    edge: read("--clip-edge", "#6d98d4"),
-    note: read("--clip-note", "#1f4f99"),
-    selectedEdge: read("--roll-note-selected", "#1c1c1e"),
-    selectedTrack: read("--selected", "rgba(0, 113, 227, 0.08)"),
-    belowTracks: read("--roll-ruler", "#efefec"),
+    fill: c.line,
+    edge: c.ink2,
+    note: c.ink,
+    selectedEdge: c.selected,
+    selectedTrack: c.selectedWash,
+    belowTracks: c.paper,
   };
 }
 

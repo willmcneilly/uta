@@ -1,5 +1,7 @@
-// The piano roll's colours, from the CSS custom properties in App.css, so
-// they follow light and dark mode.
+// The piano roll's colours, from the design tokens' CSS variables, so they
+// follow light and dark mode.
+
+import { readColours } from "../design/readColours";
 
 export interface Theme {
   background: string;
@@ -32,34 +34,30 @@ export interface Theme {
   noteByVelocity: string[];
 }
 
+/** The piano roll's colours, by what each part means in DESIGN.md. */
 export function readTheme(element: Element): Theme {
-  const style = getComputedStyle(element);
-  const read = (name: string, fallback: string) =>
-    style.getPropertyValue(name).trim() || fallback;
+  const c = readColours(element);
   return {
-    background: read("--roll-background", "#ffffff"),
-    blackKeyRow: read("--roll-black-key-row", "#f1f1ef"),
-    outsideClip: read("--roll-outside-clip", "rgba(0, 0, 0, 0.06)"),
-    barLine: read("--roll-bar-line", "#b8b8b4"),
-    beatLine: read("--roll-beat-line", "#d9d9d6"),
-    subLine: read("--roll-sub-line", "#ebebe8"),
-    octaveLine: read("--roll-octave-line", "#cfcfcb"),
-    ruler: read("--roll-ruler", "#efefec"),
-    rulerText: read("--roll-ruler-text", "#6e6e73"),
-    whiteKey: read("--roll-white-key", "#ffffff"),
-    blackKey: read("--roll-black-key", "#2c2c2e"),
-    keyText: read("--roll-key-text", "#6e6e73"),
-    playhead: read("--roll-playhead", "#e5484d"),
-    loop: read("--roll-loop", "#1f5fbf"),
-    loopRegion: read("--roll-loop-region", "rgba(31, 95, 191, 0.16)"),
-    selectedNote: read("--roll-note-selected", "#1c1c1e"),
-    velocityLane: read("--roll-velocity-lane", "#f7f7f5"),
-    selectionBox: read("--roll-selection-box", "rgba(31, 95, 191, 0.12)"),
-    selectionBoxEdge: read("--roll-selection-box-edge", "#1f5fbf"),
-    noteByVelocity: velocityColours(
-      read("--roll-note-soft", "#b9d4f5"),
-      read("--roll-note-hard", "#1f5fbf"),
-    ),
+    background: c.sheet,
+    blackKeyRow: c.line,
+    outsideClip: c.line2,
+    barLine: c.ink3,
+    beatLine: c.line2,
+    subLine: c.line,
+    octaveLine: c.line2,
+    ruler: c.paper,
+    rulerText: c.ink2,
+    whiteKey: c.sheet,
+    blackKey: c.ink3,
+    keyText: c.ink2,
+    playhead: c.live,
+    loop: c.ink2,
+    loopRegion: c.line2,
+    selectedNote: c.selected,
+    velocityLane: c.paper,
+    selectionBox: c.selectedWash,
+    selectionBoxEdge: c.selected,
+    noteByVelocity: velocityColours(c.ink3, c.ink),
   };
 }
 
