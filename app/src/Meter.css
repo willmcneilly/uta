@@ -1,0 +1,5 @@
+/* Its colours are drawn on the canvas: see Meter.tsx. */
+.meter {
+  display: block;
+  border-radius: 2px;
+}

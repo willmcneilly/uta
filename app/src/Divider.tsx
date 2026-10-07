@@ -1,4 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from "react";
+import "./Divider.css";
 
 /** How far each arrow key press moves the divider, in CSS pixels. */
 const KEY_STEP = 16;

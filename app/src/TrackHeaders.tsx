@@ -5,6 +5,7 @@ import type { TrackLevels } from "./meterLevel";
 import { ADD_TRACK_HEIGHT, RULER_HEIGHT, TRACK_HEIGHT } from "./timeline/viewport";
 import { dropIndex, formatPan } from "./trackOrder";
 import { useGesture } from "./useGesture";
+import "./TrackHeaders.css";
 
 /** How wide each header's meter is, in CSS pixels. */
 const METER_WIDTH = 180;

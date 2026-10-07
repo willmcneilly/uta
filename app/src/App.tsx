@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import "./design/tokens.css";
 import "./App.css";
 import {
   type ClipNotes,

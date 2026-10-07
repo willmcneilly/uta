@@ -1,12 +1,15 @@
 // Where the timeline is looking, and the maths between ticks, tracks and
 // pixels. All sizes are CSS pixels. Pure functions, so they're easy to test.
+// The fixed sizes come from DESIGN.md.
+
+import { spacing } from "../design/tokens";
 
 /** The bar ruler's height, across the top. The track headers leave the same space above them. */
-export const RULER_HEIGHT = 24;
+export const RULER_HEIGHT = spacing.rulerHeight;
 /** Each track's row, and its header, are this tall, so the two line up. */
-export const TRACK_HEIGHT = 96;
+export const TRACK_HEIGHT = spacing.trackHeight;
 /** The space below the last track, where the headers have **+ Add track**. */
-export const ADD_TRACK_HEIGHT = 44;
+export const ADD_TRACK_HEIGHT = spacing.addTrackHeight;
 
 /** At 960 ticks a quarter: 128 bars fit in about 1000 px. */
 export const MIN_PIXELS_PER_TICK = 0.002;

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { OutputView } from "./backend";
 import type { MeterLevel } from "./meterLevel";
 import { percent, SLOWEST_BLOCK_REFRESH_MS } from "./slowestBlock";
+import "./Output.css";
 
 interface Props {
   output: OutputView;

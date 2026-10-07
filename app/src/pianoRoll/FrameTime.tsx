@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FrameStats, FrameSummary } from "./frameStats";
+import "./FrameTime.css";
 
 /** How often the readout updates. */
 const REFRESH_MS = 500;

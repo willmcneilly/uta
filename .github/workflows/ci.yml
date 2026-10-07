@@ -67,6 +67,10 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+      # The token files are generated from DESIGN.md, and must match it.
+      - name: Token files match DESIGN.md
+        run: npm run tokens && git diff --exit-code -- src/design/tokens.css src/design/tokens.ts
+      - run: npx designmd lint ../DESIGN.md
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

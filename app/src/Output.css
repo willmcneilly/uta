@@ -1,0 +1,20 @@
+/* One row of label and value pairs, so the top stays short. */
+.output {
+  display: grid;
+  grid-template-columns: repeat(3, max-content max-content);
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.output dt {
+  color: var(--ink-2);
+}
+
+.output dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.output .note {
+  color: var(--ink-2);
+}

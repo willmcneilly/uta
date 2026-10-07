@@ -1,0 +1,47 @@
+.synth {
+  display: flex;
+  gap: 24px;
+}
+
+.synth fieldset {
+  display: grid;
+  grid-template-columns: max-content minmax(100px, 1fr) max-content;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.synth legend {
+  padding: 0 0 4px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.synth .waveform {
+  grid-template-columns: max-content max-content;
+  align-content: start;
+}
+
+.synth .waveform label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.synth .envelope {
+  flex: 1;
+  grid-template-columns: max-content minmax(80px, 1fr) max-content max-content minmax(80px, 1fr) max-content;
+}
+
+/* Each slider's label, input and value sit in the fieldset's own columns. */
+.synth .setting {
+  display: contents;
+}
+
+.synth .setting output {
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+}

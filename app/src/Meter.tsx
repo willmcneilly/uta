@@ -1,5 +1,8 @@
 import { useEffect, useRef } from "react";
+import { type Colours, readColours } from "./design/readColours";
 import { type MeterLevel, SILENT, meterFraction, nextShown } from "./meterLevel";
+import { useColourScheme } from "./useColourScheme";
+import "./Meter.css";
 
 const HEIGHT = 10;
 
@@ -13,10 +16,12 @@ interface Props {
 
 /**
  * A peak meter drawn on a canvas, once per screen frame. It holds each peak
- * for about a second, then falls.
+ * for about a second, then falls. A new colour scheme repaints it in the new
+ * colours.
  */
 export function Meter({ level, label, width = 240 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scheme = useColourScheme();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -27,7 +32,7 @@ export function Meter({ level, label, width = 240 }: Props) {
     canvas.width = width * scale;
     canvas.height = HEIGHT * scale;
     context.scale(scale, scale);
-    const track = getComputedStyle(canvas).getPropertyValue("--meter-track") || "#333";
+    const colours = readColours(canvas);
 
     let shown = SILENT;
     let painted = NaN;
@@ -39,14 +44,14 @@ export function Meter({ level, label, width = 240 }: Props) {
       const fraction = meterFraction(shown.db);
       // Most meters sit still most of the time: only repaint when they move.
       if (fraction !== painted) {
-        paint(context, width, fraction, track);
+        paint(context, width, fraction, colours);
         painted = fraction;
       }
       request = requestAnimationFrame(draw);
     };
     request = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(request);
-  }, [level, width]);
+  }, [level, width, scheme]);
 
   return (
     <canvas
@@ -63,15 +68,15 @@ function paint(
   context: CanvasRenderingContext2D,
   width: number,
   fraction: number,
-  track: string,
+  colours: Colours,
 ): void {
-  context.fillStyle = track;
+  context.fillStyle = colours.line2;
   context.fillRect(0, 0, width, HEIGHT);
-  // Green up to -18 dB, amber to -6 dB, red above.
+  // Signal up to -18 dB, hot above. The scale stops at 0 dB, so clipping
+  // shows on the clip light, not here.
   const zones: [number, string][] = [
-    [meterFraction(-18), "#3fb950"],
-    [meterFraction(-6), "#d29922"],
-    [1, "#f85149"],
+    [meterFraction(-18), colours.signal],
+    [1, colours.signalHot],
   ];
   let from = 0;
   for (const [to, colour] of zones) {

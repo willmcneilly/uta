@@ -28,6 +28,7 @@ import {
   zoomPitch,
   zoomTime,
 } from "./viewport";
+import "./PianoRoll.css";
 
 /**
  * What the piano roll's edits do. The app sends each to Rust; the piano roll

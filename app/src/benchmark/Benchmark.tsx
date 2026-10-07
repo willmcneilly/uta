@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TestSong } from "../backend";
 import { type Report, formatReport } from "./report";
 import type { Progress } from "./run";
+import "./Benchmark.css";
 
 const SONG_NAMES: Record<TestSong, string> = {
   heavy: "heavy",

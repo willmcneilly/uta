@@ -1,0 +1,103 @@
+/* It scrolls with the timeline rather than by itself, so it has no scroll bar. */
+.track-headers {
+  flex: 0 0 var(--track-headers-width);
+  overflow: hidden;
+  border-right: 1px solid var(--line-2);
+}
+
+/* Level with the timeline's ruler, and stays put while the headers scroll under it. */
+.track-headers-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--sheet);
+  border-bottom: 1px solid var(--line-2);
+  box-sizing: border-box;
+}
+
+.track-headers ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* As tall as its row on the timeline, set from TRACK_HEIGHT. */
+.track-header {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.track-header.selected {
+  background: var(--selected-wash);
+}
+
+.track-header.dragging {
+  opacity: 0.5;
+}
+
+.track-header.drop-above {
+  box-shadow: inset 0 2px 0 var(--selected);
+}
+
+.track-header.drop-below {
+  box-shadow: inset 0 -2px 0 var(--selected);
+}
+
+.track-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.track-name {
+  flex: 1;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.track-title button {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.track-title .mute[aria-pressed="true"],
+.track-title .solo[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.track-setting {
+  display: grid;
+  grid-template-columns: 28px 1fr 56px;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.track-setting input {
+  min-width: 0;
+}
+
+.track-setting output {
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.add-track-row {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+}

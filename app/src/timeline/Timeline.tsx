@@ -53,6 +53,7 @@ import {
   yToTrack,
   zoomTime,
 } from "./viewport";
+import "./Timeline.css";
 
 /**
  * What the timeline's edits do. The app sends each to Rust; the timeline

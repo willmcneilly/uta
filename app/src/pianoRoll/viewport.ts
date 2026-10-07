@@ -1,12 +1,15 @@
 // Where the piano roll is looking, and the maths between ticks, pitches and
 // pixels. All sizes are CSS pixels. Pure functions, so they're easy to test.
+// The fixed sizes come from DESIGN.md.
+
+import { spacing } from "../design/tokens";
 
 /** The keyboard's width, down the left. */
-export const KEYBOARD_WIDTH = 56;
+export const KEYBOARD_WIDTH = spacing.keyboardWidth;
 /** The bar and beat ruler's height, across the top. */
-export const RULER_HEIGHT = 24;
+export const RULER_HEIGHT = spacing.rulerHeight;
 /** The velocity lane's height, along the bottom, under the notes. */
-export const VELOCITY_LANE_HEIGHT = 72;
+export const VELOCITY_LANE_HEIGHT = spacing.velocityLaneHeight;
 /** Space above and below the velocity lane's tallest and shortest bars. */
 const VELOCITY_LANE_PADDING = 6;
 /** MIDI notes 0 to 127. */

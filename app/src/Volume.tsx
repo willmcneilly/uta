@@ -1,5 +1,6 @@
 import type { ProjectView } from "./backend";
 import { useGesture } from "./useGesture";
+import "./Volume.css";
 
 interface Props {
   project: ProjectView;
