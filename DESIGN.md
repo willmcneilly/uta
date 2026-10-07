@@ -137,7 +137,7 @@ Two inks on paper. Everything is drawn in black and grey ink, except for two col
 - **Hatching (`hatch`):** the hatching under drawn curves such as the filter response and the envelope.
 - **Live (`live`):** orange. Only what is playing now: the playhead and the notes sounding. Nothing else is orange.
 - **Selected (`selected`, `selected-wash`):** blue. Only what you've selected, and the focus ring. The wash is the same blue, faint, for areas such as a selected track or the selection box.
-- **Meter (`signal`, `signal-hot`, `clip`):** a level meter is ink: `ink-2` for an ordinary level, `ink` once it's loud. Only clipping gets a colour, the error red, because it's a warning.
+- **Meter (`signal`, `signal-hot`, `clip`):** a level meter is ink: `ink-2` for an ordinary level, `ink` once it's loud (above -18 dB). Only clipping gets a colour, the error red on the clip light, because it's a warning.
 - **Error (`error`):** messages that something went wrong, and clipping.
 - **Scrim (`scrim`):** behind a dialog, to set it apart from the app.
 

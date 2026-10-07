@@ -72,11 +72,11 @@ function paint(
 ): void {
   context.fillStyle = colours.line2;
   context.fillRect(0, 0, width, HEIGHT);
-  // Signal up to -18 dB, hot to -6 dB, clip above.
+  // Signal up to -18 dB, hot above. The scale stops at 0 dB, so clipping
+  // shows on the clip light, not here.
   const zones: [number, string][] = [
     [meterFraction(-18), colours.signal],
-    [meterFraction(-6), colours.signalHot],
-    [1, colours.clip],
+    [1, colours.signalHot],
   ];
   let from = 0;
   for (const [to, colour] of zones) {
