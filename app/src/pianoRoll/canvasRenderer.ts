@@ -480,14 +480,22 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.beginPath();
     context.rect(area.x, area.y, area.width, area.height);
     context.clip();
+    context.fillStyle = theme.soundingNote;
     for (const note of sounding) {
-      const rect = noteRect(view, note);
-      const isSelected = selected.has(note.id);
+      const { x, y, width, height } = noteRect(view, note);
+      context.fillRect(x, y, width, height);
+    }
+    // One stroke for the outlines of each kind, as on the notes layer.
+    for (const isSelected of [false, true]) {
       const line = isSelected ? theme.selectedNoteWidth : theme.noteWidth;
-      context.fillStyle = theme.soundingNote;
-      context.fillRect(rect.x, rect.y, rect.width, rect.height);
       context.beginPath();
-      outline(context, rect, line);
+      let any = false;
+      for (const note of sounding) {
+        if (selected.has(note.id) !== isSelected) continue;
+        outline(context, noteRect(view, note), line);
+        any = true;
+      }
+      if (!any) continue;
       context.strokeStyle = isSelected ? theme.selectedNote : theme.soundingNote;
       context.lineWidth = line;
       context.stroke();
