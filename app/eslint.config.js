@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import comments from "@eslint-community/eslint-plugin-eslint-comments";
 import { defineConfig } from "eslint/config";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -27,5 +28,11 @@ export default defineConfig(
     ignores: ["src/design/tokens.ts"],
     plugins: { uta },
     rules: { "uta/no-raw-colour": "error" },
+  },
+  // Every escape has to say why, after `--`.
+  {
+    files: ["**/*.{ts,tsx}"],
+    plugins: { "@eslint-community/eslint-comments": comments },
+    rules: { "@eslint-community/eslint-comments/require-description": "error" },
   },
 );

@@ -19,6 +19,8 @@ describe("rawColour", () => {
     expect(rawColour("hsl(210deg 10% 15%)")).toBe("hsl(");
     expect(rawColour("oklch(0.5 0.1 200)")).toBe("oklch(");
     expect(rawColour("Red")).toBe("red");
+    expect(rawColour("RGB(1 2 3)")).toBe("RGB(");
+    expect(rawColour("color(display-p3 0.1 0.2 0.3)")).toBe("color(display-p3");
   });
 
   it("leaves tokens and ordinary text alone", () => {
@@ -27,6 +29,7 @@ describe("rawColour", () => {
     expect(rawColour("&#123;")).toBeUndefined();
     expect(rawColour("the red one")).toBeUndefined();
     expect(rawColour("black keys")).toBeUndefined();
+    expect(rawColour("the color(s) used")).toBeUndefined();
   });
 });
 
@@ -35,13 +38,20 @@ describe("the colour check", () => {
     // `ignore: false` because the app's own lint skips the fixtures.
     const eslint = new ESLint({ cwd: app, ignore: false });
     const [result] = await eslint.lintFiles([fixture("rawColour.ts")]);
-    const caught = result.messages
-      .filter((m) => m.ruleId === "uta/no-raw-colour")
-      .map((m) => m.line);
-    // hex, rgb(), hsl(), a named colour and a template; not the escaped line,
-    // the token or the words.
-    expect(caught).toEqual([2, 3, 4, 5, 6]);
-    expect(result.messages.filter((m) => m.ruleId !== "uta/no-raw-colour")).toEqual([]);
+    const caught = result.messages.map((m) => [m.line, m.ruleId]);
+    // hex, rgb(), hsl(), a named colour, a template, uppercase RGB() and
+    // color(); not the escaped line, the token or the words. An escape with
+    // no reason is caught itself.
+    expect(caught).toEqual([
+      [2, "uta/no-raw-colour"],
+      [3, "uta/no-raw-colour"],
+      [4, "uta/no-raw-colour"],
+      [5, "uta/no-raw-colour"],
+      [6, "uta/no-raw-colour"],
+      [13, "uta/no-raw-colour"],
+      [14, "uta/no-raw-colour"],
+      [16, "@eslint-community/eslint-comments/require-description"],
+    ]);
   });
 
   it("catches each colour planted in a CSS fixture", async () => {
@@ -54,6 +64,9 @@ describe("the colour check", () => {
       [7, "function-disallowed-list"],
       [11, "function-disallowed-list"],
       [15, "color-named"],
+      [28, "function-disallowed-list"],
+      [32, "function-disallowed-list"],
+      [36, "--report-descriptionless-disables"],
     ]);
   });
 

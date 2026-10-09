@@ -10,3 +10,8 @@ export const escaped = "#ffffff";
 
 export const token = "var(--ink)";
 export const words = "Track #1 is red";
+export const uppercase = "RGB(34, 38, 42)";
+export const colorFunction = "color(display-p3 0.1 0.2 0.3)";
+
+// eslint-disable-next-line uta/no-raw-colour
+export const reasonless = "#ffffff";

@@ -11,7 +11,8 @@ import type { Rule } from "eslint";
 //   // eslint-disable-next-line uta/no-raw-colour -- <reason>
 
 const HEX = /(?:^|[^\w&])(#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4}))(?!\w)/i;
-const FUNCTION = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/i;
+const FUNCTION =
+  /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(|\bcolor\(\s*(?:srgb|srgb-linear|display-p3|a98-rgb|prophoto-rgb|rec2020|xyz|xyz-d50|xyz-d65)\b/i;
 const NAMED = new Set(Object.keys(colorNames));
 
 /** The colour written in `text`, if there is one. */
