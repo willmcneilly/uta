@@ -97,6 +97,8 @@ spacing:
   stroke-clip-notes: 1.5px
   stroke-curve: 1.5px
   stroke-playhead: 1px
+  stroke-grid: 1px
+  stroke-selection-box: 1px
   hatch-gap: 5px
   mm-grid-gap: 20px
 ---
@@ -147,6 +149,8 @@ Colours are named for what they mean, never for where they're used: `--ink-2`, n
 
 The system fonts for now: SF Pro through `system-ui` for words and SF Mono through `ui-monospace` for numbers, until tuning in the app settles on a typeface. The font that ships must be free (such as SIL Open Font License) or a system font.
 
+**Trying fonts.** In development builds (`npm run tauri dev`) the tuning panel offers the system fonts, the free fonts kept in the repo in `app/src/design/fonts/`, and the font files (`.woff2`, `.woff`, `.ttf`, `.otf`) in a folder outside the repo named by the `UTA_TRIAL_FONTS` environment variable, for trial fonts whose licences only cover testing: `UTA_TRIAL_FONTS=~/Fonts/trials npm run tauri dev`. The development server reads them from that folder for the panel and never copies them; nothing from it may be committed. Each file is offered under its name up to the first hyphen, so `CommitMono-Bold.otf` is the family `CommitMono` at weight 700.
+
 - **Name (`name`):** track and clip names, the things you made.
 - **Text (`text`):** ordinary interface text: settings, messages, buttons.
 - **Label (`label`):** small captions on the canvases, such as clip labels and key names.
@@ -166,7 +170,7 @@ Flat. Hierarchy comes from ink weight, not shadows: structure is faint, content 
 
 ## Shapes
 
-- **Line weights (`stroke-*`):** clips and notes are outlined at `stroke-clip` and `stroke-note`, and drawn heavier when selected (`stroke-clip-selected`, `stroke-note-selected`). Notes inside a clip's preview use `stroke-clip-notes`, curves `stroke-curve`, and the playhead `stroke-playhead`.
+- **Line weights (`stroke-*`):** clips and notes are outlined at `stroke-clip` and `stroke-note`, and drawn heavier when selected (`stroke-clip-selected`, `stroke-note-selected`). Notes inside a clip's preview use `stroke-clip-notes`, curves `stroke-curve`, and the playhead `stroke-playhead`. Grid lines, ruler ticks and the lines between rows and tracks use `stroke-grid`, and the edge of the selection box `stroke-selection-box`.
 - **Hatching:** under a curve, diagonal lines in `hatch` every `hatch-gap`.
 - **Millimetre grid:** behind the piano roll's bar and beat lines, in `mm-line` every `mm-grid-gap`.
 - **Corners:** small. `rounded-sm` for meters and small marks, `rounded-md` for controls, `rounded-lg` for panels.

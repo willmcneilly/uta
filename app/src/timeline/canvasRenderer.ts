@@ -3,6 +3,7 @@
 // song.
 
 import { readColours } from "../design/readColours";
+import { readLineWidths } from "../design/readTokens";
 import { type Theme, readTheme } from "../pianoRoll/colours";
 import type { Rect } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
@@ -40,10 +41,14 @@ interface ClipTheme {
   selectedEdge: string;
   selectedTrack: string;
   belowTracks: string;
+  /** Line weights for a clip's edge, in CSS pixels. */
+  edgeWidth: number;
+  selectedEdgeWidth: number;
 }
 
 function readClipTheme(element: Element): ClipTheme {
   const c = readColours(element);
+  const widths = readLineWidths(element);
   return {
     fill: c.line,
     edge: c.ink2,
@@ -51,6 +56,8 @@ function readClipTheme(element: Element): ClipTheme {
     selectedEdge: c.selected,
     selectedTrack: c.selectedWash,
     belowTracks: c.paper,
+    edgeWidth: widths.strokeClip,
+    selectedEdgeWidth: widths.strokeClipSelected,
   };
 }
 
@@ -105,6 +112,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     const tracks = visibleTracks(view, trackCount);
     const bar = ticksPerQuarter * beatsPerBar;
     const tracksBottom = Math.min(this.height, trackToY(view, trackCount));
+    const line = theme.gridWidth;
 
     context.fillStyle = theme.background;
     context.fillRect(0, 0, this.width, this.height);
@@ -135,13 +143,13 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
           : tick % ticksPerQuarter === 0
             ? theme.beatLine
             : theme.subLine;
-      context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT, 1, gridBottom - RULER_HEIGHT);
+      context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT, line, gridBottom - RULER_HEIGHT);
     }
 
     // Rows: a line under each track, as under each header.
     context.fillStyle = theme.barLine;
     for (let track = tracks.first; track <= tracks.last; track++) {
-      context.fillRect(0, Math.round(trackToY(view, track + 1)) - 1, this.width, 1);
+      context.fillRect(0, Math.round(trackToY(view, track + 1)) - line, this.width, line);
     }
     context.restore();
 
@@ -157,6 +165,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     const context = this.contexts.grid;
     const theme = this.theme;
     const ticks = visibleTicks(view);
+    const line = theme.gridWidth;
     context.fillStyle = theme.ruler;
     context.fillRect(0, 0, this.width, RULER_HEIGHT);
 
@@ -173,11 +182,11 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       context.fillRect(loopLeft, RULER_HEIGHT - 4, loopRight - loopLeft, 4);
     }
     context.fillStyle = theme.barLine;
-    context.fillRect(0, RULER_HEIGHT - 1, this.width, 1);
+    context.fillRect(0, RULER_HEIGHT - line, this.width, line);
 
     // Beat ticks when they're far enough apart, and bar numbers.
     context.fillStyle = theme.rulerText;
-    context.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+    context.font = theme.labelFont;
     context.textBaseline = "top";
     if (ticksPerQuarter * view.pixelsPerTick >= 6) {
       for (
@@ -186,7 +195,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
         tick += ticksPerQuarter
       ) {
         if (tick % bar !== 0) {
-          context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT - 9, 1, 5);
+          context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT - 9, line, 5);
         }
       }
     }
@@ -198,7 +207,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       tick += barStep
     ) {
       const x = Math.round(tickToX(view, tick));
-      context.fillRect(x, 4, 1, RULER_HEIGHT - 8);
+      context.fillRect(x, 4, line, RULER_HEIGHT - 8);
       context.fillText(String(tick / bar + 1), x + 4, 4);
     }
   }
@@ -221,7 +230,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     const x = tickToX(view, clip.start);
     const y = trackToY(view, clip.track) + CLIP_INSET;
     const width = Math.max(1, clip.length * view.pixelsPerTick);
-    const height = TRACK_HEIGHT - 2 * CLIP_INSET - 1;
+    const height = TRACK_HEIGHT - 2 * CLIP_INSET - this.theme.gridWidth;
 
     context.fillStyle = theme.fill;
     context.fillRect(x, y, width, height);
@@ -247,7 +256,7 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     }
 
     context.strokeStyle = clip.selected ? theme.selectedEdge : theme.edge;
-    context.lineWidth = clip.selected ? 2 : 1;
+    context.lineWidth = clip.selected ? theme.selectedEdgeWidth : theme.edgeWidth;
     const inset = context.lineWidth / 2;
     context.strokeRect(x + inset, y + inset, Math.max(0, width - 2 * inset), height - 2 * inset);
   }
@@ -264,27 +273,29 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       context.clip();
       context.fillStyle = this.theme.selectionBox;
       context.fillRect(x, y, width, height);
+      const line = this.theme.selectionBoxWidth;
       context.strokeStyle = this.theme.selectionBoxEdge;
-      context.lineWidth = 1;
-      context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+      context.lineWidth = line;
+      context.strokeRect(x + line / 2, y + line / 2, width - line, height - line);
       context.restore();
     };
     if (drawing) {
       const x = tickToX(view, drawing.start);
       const y = trackToY(view, drawing.track) + CLIP_INSET;
       const width = Math.max(1, drawing.length * view.pixelsPerTick);
-      shade(x, y, width, TRACK_HEIGHT - 2 * CLIP_INSET - 1);
+      shade(x, y, width, TRACK_HEIGHT - 2 * CLIP_INSET - this.theme.gridWidth);
     }
     if (box) shade(box.x, box.y, box.width, box.height);
     const x = Math.round(tickToX(view, playhead));
     if (x < 0 || x > this.width) return;
     context.fillStyle = this.theme.playhead;
-    context.fillRect(x, 0, 1, this.height);
-    // A marker in the ruler.
+    context.fillRect(x, 0, this.theme.playheadWidth, this.height);
+    // A marker in the ruler, centred on the line.
+    const middle = x + this.theme.playheadWidth / 2;
     context.beginPath();
-    context.moveTo(x - 5, 0);
-    context.lineTo(x + 6, 0);
-    context.lineTo(x + 0.5, 7);
+    context.moveTo(middle - 5.5, 0);
+    context.lineTo(middle + 5.5, 0);
+    context.lineTo(middle, 7);
     context.closePath();
     context.fill();
   }

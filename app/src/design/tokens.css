@@ -72,6 +72,8 @@
   --stroke-clip-notes: 1.5px;
   --stroke-curve: 1.5px;
   --stroke-playhead: 1px;
+  --stroke-grid: 1px;
+  --stroke-selection-box: 1px;
   --hatch-gap: 5px;
   --mm-grid-gap: 20px;
 }

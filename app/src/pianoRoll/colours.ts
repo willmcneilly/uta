@@ -1,7 +1,8 @@
-// The piano roll's colours, from the design tokens' CSS variables, so they
-// follow light and dark mode.
+// The piano roll's colours, line weights and fonts, from the design tokens'
+// CSS variables, so they follow light and dark mode and the tuning panel.
 
 import { readColours } from "../design/readColours";
+import { readFonts, readLineWidths } from "../design/readTokens";
 
 export interface Theme {
   background: string;
@@ -32,11 +33,19 @@ export interface Theme {
   selectionBoxEdge: string;
   /** A note's fill at each velocity, 0 to 127 (0 is never used). */
   noteByVelocity: string[];
+  /** Line weights, in CSS pixels: grid lines and ruler ticks, and the rest by name. */
+  gridWidth: number;
+  playheadWidth: number;
+  selectedNoteWidth: number;
+  selectionBoxWidth: number;
+  /** The canvas font for the rulers' numbers, key names and the lane's label. */
+  labelFont: string;
 }
 
-/** The piano roll's colours, by what each part means in DESIGN.md. */
+/** The piano roll's colours, line weights and fonts, by what each part means in DESIGN.md. */
 export function readTheme(element: Element): Theme {
   const c = readColours(element);
+  const widths = readLineWidths(element);
   return {
     background: c.sheet,
     blackKeyRow: c.line,
@@ -58,6 +67,11 @@ export function readTheme(element: Element): Theme {
     selectionBox: c.selectedWash,
     selectionBoxEdge: c.selected,
     noteByVelocity: velocityColours(c.ink3, c.ink),
+    gridWidth: widths.strokeGrid,
+    playheadWidth: widths.strokePlayhead,
+    selectedNoteWidth: widths.strokeNoteSelected,
+    selectionBoxWidth: widths.strokeSelectionBox,
+    labelFont: readFonts(element).label,
   };
 }
 
