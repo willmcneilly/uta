@@ -51,9 +51,9 @@ Read:
 
 When the UI work needs something `DESIGN.md` doesn't cover (a new component, a layout pattern, a new token, or bending one of its rules), don't block the ticket and don't invent a rule quietly. Build the best version you can from the principles, then:
 
-1. **Log it** in the Design decisions database (see the `notion` skill), with `Status: Open`: what was needed, what you chose and why, the principles you relied on, the alternatives, a screenshot, and the ticket. Its ID is `D-n`.
+1. **Log it** in the Design decisions database (see the `notion` skill), with `Status: Open`: what was needed, what you chose and why, the principles you relied on, the alternatives, and the ticket. Its ID is `D-n`. Leave `Screenshot` empty: the PR body has the screenshots, and that's enough.
 2. **Mark the code** with a comment where the decision lives: `provisional: D-n`.
-3. **List it in the PR** under "Design decisions", with its link.
+3. **List it in the PR** under "Design decisions", with its link and a screenshot.
 
 Will decides each one between projects: adopt it into `DESIGN.md`, revise it in the design sandbox, or reject it. Until then it stays provisional, so don't add it to `DESIGN.md` yourself.
 
@@ -127,7 +127,14 @@ Send one message. It's the first Will hears of this ticket since you started. Le
 3. **The review,** in one line: the verdict, how many rounds, and a link to the last review. Add a line for any finding resolved by accepting your disagreement.
 4. **Checkpoint:** if this ticket is one of the plan's checkpoints, say what Will can now try.
 
-Leave out benchmark tables, implementation detail and housekeeping. If Will needs something running to do his checks (the dev app, say), leave it running and say so in the check's steps.
+Leave out benchmark tables, implementation detail and housekeeping.
+
+**Have everything ready before you send it.** Will should be able to start his checks the moment he reads the message:
+- **If any check uses the app,** start it from the PR's branch: `npm run tauri dev` in `app/` of the worktree you built in, run in the background. Wait until it has built and the window is open (the log shows `Running` and the `uta-app` path), and check the log for errors. If another copy of the app is already running from a different checkout, stop it first, so Will doesn't test the wrong build. Say "The app is open, running this branch" at the top of "What needs you".
+- **If a check starts from a particular state** (a song from the Develop menu, a buffer size), say exactly how to get there in its first step.
+- **If a check needs a terminal command** (`uta play`, say), give it ready to run in its own `bash` block.
+
+Leave it all running until Will merges or reports back.
 
 Then stop and wait for Will.
 
@@ -142,7 +149,8 @@ Then stop and wait for Will.
    - remove any worktree you created, and its build output. If this session itself runs in a worktree the app made, leave that one: the app removes it;
    - delete scratch branches you pushed, except a branch that holds images the PR links to, which stays so the PR keeps working;
    - leave anything you didn't create alone.
-5. Tell Will, in a few lines: what merged, which tickets are now Ready, what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
+5. **Line up the next ticket.** Query the Tickets for `Ready` ones whose **Depends on** are all `Done` and merged. Pick the next one the plan's order says to do in the same project, or the lowest ID if the plan doesn't say. Then create a chip for it with the `spawn_task` tool (the `ccd_session` one): title `Work on UTA-<n>: <name>`, a one-line tldr of its goal, and the prompt `/work-ticket UTA-<n>`, so Will only has to click it. If that tool isn't available, give him the command to paste instead. If nothing is Ready, say what the next ticket is waiting on.
+6. Tell Will, in a few lines: what merged, which tickets are now Ready, the next ticket you lined up (and any other Ready tickets that could run alongside it), what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
 
 **Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. Then run one more review round, so the reviewer sees the change before Will does, and hand over again as in step 9.
 
