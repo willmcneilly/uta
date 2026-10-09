@@ -36,7 +36,7 @@ export interface TimelineTheme {
   loopOff: string;
   loopRegion: string;
   clipFill: string;
-  /** A clip's fill under the pointer. */
+  /** A clip's fill under the pointer (provisional: D-1). */
   clipHover: string;
   /**
    * A clip's edge is the second ink, so its notes, in ink, are the darkest

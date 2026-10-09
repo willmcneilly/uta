@@ -98,45 +98,63 @@ describe("the timeline's canvas renderer", () => {
     document.body.replaceChildren();
   });
 
-  it("draws the grid and the ruler's ticks faintly", () => {
+  const grid1 = (loop: { start: number; end: number; enabled: boolean }) => {
+    grid.length = 0;
+    renderer.drawGrid({ view, ticksPerQuarter: 960, beatsPerBar: 4, trackCount: 2, selectedTrack: 1, loop });
+  };
+  const RULER = spacing.rulerHeight;
+  const light = colors.light;
+
+  it("draws the grid and the ruler's ticks faintly, and nothing else on that layer in ink", () => {
     setUp();
-    renderer.drawGrid({
-      view,
-      ticksPerQuarter: 960,
-      beatsPerBar: 4,
-      trackCount: 2,
-      selectedTrack: null,
-      loop: { start: 0, end: 4 * BAR, enabled: true },
-    });
-    const styles = new Set(grid.map((mark) => mark.style));
-    for (const faint of [colors.light.line, colors.light.line2, colors.light.ink3]) {
-      expect(styles).toContain(faint);
-    }
-    // Nothing on the grid layer is drawn in the coloured inks.
-    expect(styles).not.toContain(colors.light.live);
-    expect(styles).not.toContain(colors.light.selected);
-    // Grid lines and ticks are all at the grid's line weight.
-    const lines = grid.filter((mark) => mark.style === colors.light.line2);
-    expect(lines.every((mark) => mark.args[2] === spacing.strokeGrid || mark.args[3] === spacing.strokeGrid)).toBe(true);
+    grid1({ start: 0, end: 4 * BAR, enabled: false });
+    // Lines at the grid's weight: columns and ticks are that wide, rows that tall.
+    const columns = grid.filter((m) => m.call === "fillRect" && m.args[2] === spacing.strokeGrid);
+    const rows = grid.filter(
+      (m) => m.call === "fillRect" && m.args[3] === spacing.strokeGrid && m.args[2] === view.width,
+    );
+    const inTracks = columns.filter((m) => m.args[1] === RULER);
+    const ticks = columns.filter((m) => m.args[1] < RULER);
+    expect(inTracks.length).toBeGreaterThan(0);
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(rows.length).toBeGreaterThan(0);
+    // The grid's columns are the two faintest lines; bar lines the less faint.
+    expect(new Set(inTracks.map((m) => m.style))).toEqual(new Set([light.line, light.line2]));
+    expect(new Set(rows.map((m) => m.style))).toEqual(new Set([light.line2]));
+    // Ruler ticks: ink-3 for bars, line-2 for beats (the loop's own end
+    // ticks are ink-3 too while it's off).
+    expect(new Set(ticks.map((m) => m.style))).toEqual(new Set([light.ink3, light.line2]));
+    // Everything on the layer is surface, wash or faint line: no ink, no
+    // second ink, and neither coloured ink.
+    const allowed = [light.sheet, light.paper, light.selectedWash, light.line, light.line2, light.ink3];
+    for (const mark of grid) expect(allowed).toContain(mark.style);
   });
 
-  it("draws the loop in ink while it's on, and faintly while it's off", () => {
+  it("draws the loop as a dimension line in ink over a wash while it's on, and faintly with no wash while it's off", () => {
     setUp();
-    const loop = (enabled: boolean) => {
-      grid.length = 0;
-      renderer.drawGrid({
-        view,
-        ticksPerQuarter: 960,
-        beatsPerBar: 4,
-        trackCount: 1,
-        selectedTrack: null,
-        loop: { start: BAR, end: 3 * BAR, enabled },
-      });
-      return grid.filter((mark) => mark.call === "fill").map((mark) => mark.style);
-    };
-    // The arrowheads at each end of its dimension line.
-    expect(loop(true)).toEqual([colors.light.ink]);
-    expect(loop(false)).toEqual([colors.light.ink3]);
+    const left = BAR * view.pixelsPerTick;
+    const right = 3 * BAR * view.pixelsPerTick;
+    const wash = () =>
+      grid.filter((m) => m.call === "fillRect" && m.style === light.line && m.args[3] === RULER);
+    const line = (ink: string) =>
+      grid.filter(
+        (m) => m.style === ink && m.args[0] === left && m.args[2] === right - left && m.args[3] === spacing.strokeClip,
+      );
+    const ends = (ink: string) =>
+      grid.filter((m) => m.style === ink && m.args[2] === spacing.strokeClip && m.args[1] + m.args[3] === RULER && m.args[3] > 8);
+    const arrows = () => grid.filter((m) => m.call === "fill").map((m) => m.style);
+
+    grid1({ start: BAR, end: 3 * BAR, enabled: true });
+    expect(wash().map((m) => [m.args[0], m.args[2]])).toEqual([[left, right - left]]);
+    expect(line(light.ink)).toHaveLength(1);
+    expect(ends(light.ink).map((m) => m.args[0])).toEqual([left, right - spacing.strokeClip]);
+    expect(arrows()).toEqual([light.ink]);
+
+    grid1({ start: BAR, end: 3 * BAR, enabled: false });
+    expect(wash()).toEqual([]);
+    expect(line(light.ink3)).toHaveLength(1);
+    expect(ends(light.ink3)).toHaveLength(2);
+    expect(arrows()).toEqual([light.ink3]);
   });
 
   it("draws clips in ink, their notes in the darkest ink, and a selected clip heaviest in the selected ink", () => {

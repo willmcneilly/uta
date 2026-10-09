@@ -670,6 +670,16 @@ describe("the timeline", () => {
       await release();
       expect(clipsArea().style.cursor).toBe("");
     });
+
+    it("stops shading it when a drag ends, wherever the pointer is released", async () => {
+      await renderApp();
+      await hover(BAR, 0);
+      await waitFor(() => expect(hovered()).toBe("clip-1"));
+      await press(BAR, 0);
+      await moveTo(3 * BAR, 0);
+      await release();
+      await waitFor(() => expect(hovered()).toBeUndefined());
+    });
   });
 
   describe("selecting a clip", () => {

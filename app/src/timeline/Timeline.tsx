@@ -358,6 +358,9 @@ export function Timeline({
         window.removeEventListener("keydown", onKey);
         dragging.current = null;
         setCursor("");
+        // The pointer may have been released anywhere; the next move over
+        // the timeline shades what's under it again.
+        scene.setHovered(null);
       },
     };
   };
