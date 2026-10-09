@@ -69,6 +69,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const { low, high } = visiblePitches(view);
     const ticks = visibleTicks(view);
     const bar = ticksPerQuarter * beatsPerBar;
+    const line = theme.gridWidth;
 
     context.fillStyle = theme.background;
     context.fillRect(0, 0, this.width, this.height);
@@ -87,7 +88,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
       }
       if (pitch % 12 === 0) {
         context.fillStyle = theme.octaveLine;
-        context.fillRect(area.x, Math.round(y + view.keyHeight) - 1, area.width, 1);
+        context.fillRect(area.x, Math.round(y + view.keyHeight) - line, area.width, line);
       }
     }
 
@@ -100,7 +101,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
           : tick % ticksPerQuarter === 0
             ? theme.beatLine
             : theme.subLine;
-      context.fillRect(Math.round(tickToX(view, tick)), area.y, 1, area.height);
+      context.fillRect(Math.round(tickToX(view, tick)), area.y, line, area.height);
     }
 
     // Outside the clip is shaded.
@@ -124,16 +125,17 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const theme = this.theme;
     const lane = velocityLane(view);
     const ticks = visibleTicks(view);
+    const line = theme.gridWidth;
     context.fillStyle = theme.ruler;
     context.fillRect(0, lane.y, KEYBOARD_WIDTH, lane.height);
     context.fillStyle = theme.velocityLane;
     context.fillRect(lane.x, lane.y, lane.width, lane.height);
     context.fillStyle = theme.barLine;
-    context.fillRect(0, lane.y, this.width, 1);
+    context.fillRect(0, lane.y, this.width, line);
 
     context.save();
     context.beginPath();
-    context.rect(lane.x, lane.y + 1, lane.width, lane.height - 1);
+    context.rect(lane.x, lane.y + line, lane.width, lane.height - line);
     context.clip();
     if (ticksPerQuarter * view.pixelsPerTick >= 8) {
       for (
@@ -142,13 +144,13 @@ class Canvas2DRenderer implements PianoRollRenderer {
         tick += ticksPerQuarter
       ) {
         context.fillStyle = tick % bar === 0 ? theme.barLine : theme.beatLine;
-        context.fillRect(Math.round(tickToX(view, tick)), lane.y, 1, lane.height);
+        context.fillRect(Math.round(tickToX(view, tick)), lane.y, line, lane.height);
       }
     }
     context.restore();
 
     context.fillStyle = theme.rulerText;
-    context.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+    context.font = theme.labelFont;
     context.textBaseline = "top";
     context.fillText("Velocity", 6, lane.y + 6);
   }
@@ -165,6 +167,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const theme = this.theme;
     const area = noteArea(view);
     const ticks = visibleTicks(view);
+    const line = theme.gridWidth;
 
     context.save();
     context.beginPath();
@@ -181,7 +184,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
 
     // Beat ticks when they're far enough apart, and bar numbers.
     context.fillStyle = theme.rulerText;
-    context.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+    context.font = theme.labelFont;
     context.textBaseline = "top";
     const beatPixels = ticksPerQuarter * view.pixelsPerTick;
     const labelEvery = Math.max(1, Math.ceil(MIN_BAR_LABEL_SPACING / (bar * view.pixelsPerTick)));
@@ -192,14 +195,14 @@ class Canvas2DRenderer implements PianoRollRenderer {
         tick += ticksPerQuarter
       ) {
         if (tick % bar !== 0) {
-          context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT - 9, 1, 5);
+          context.fillRect(Math.round(tickToX(view, tick)), RULER_HEIGHT - 9, line, 5);
         }
       }
     }
     const barStep = bar * labelEvery;
     for (let tick = Math.floor(ticks.start / barStep) * barStep; tick < ticks.end; tick += barStep) {
       const x = Math.round(tickToX(view, tick));
-      context.fillRect(x, 4, 1, RULER_HEIGHT - 8);
+      context.fillRect(x, 4, line, RULER_HEIGHT - 8);
       context.fillText(String(tick / bar + 1), x + 4, 4);
     }
     context.restore();
@@ -209,6 +212,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const context = this.contexts.grid;
     const theme = this.theme;
     const area = noteArea(view);
+    const line = theme.gridWidth;
 
     context.save();
     context.beginPath();
@@ -216,7 +220,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.clip();
     context.fillStyle = theme.whiteKey;
     context.fillRect(0, area.y, KEYBOARD_WIDTH, area.height);
-    context.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+    context.font = theme.labelFont;
     context.textBaseline = "middle";
     const blackWidth = Math.round(KEYBOARD_WIDTH * 0.6);
     for (let pitch = low; pitch <= high; pitch++) {
@@ -226,7 +230,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
         context.fillRect(0, y, blackWidth, view.keyHeight);
       } else {
         context.fillStyle = theme.octaveLine;
-        context.fillRect(0, Math.round(y + view.keyHeight) - 1, KEYBOARD_WIDTH, 1);
+        context.fillRect(0, Math.round(y + view.keyHeight) - line, KEYBOARD_WIDTH, line);
       }
       if (pitch % 12 === 0 && view.keyHeight >= 8) {
         context.fillStyle = theme.keyText;
@@ -234,7 +238,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
       }
     }
     context.fillStyle = theme.octaveLine;
-    context.fillRect(KEYBOARD_WIDTH - 1, area.y, 1, area.height);
+    context.fillRect(KEYBOARD_WIDTH - line, area.y, line, area.height);
     context.restore();
 
     // The corner above the keyboard.
@@ -261,9 +265,15 @@ class Canvas2DRenderer implements PianoRollRenderer {
       context.fillStyle = colours[note.velocity];
       context.fillRect(x, y + gap, width, view.keyHeight - gap);
       if (selected.has(note.id)) {
+        const line = this.theme.selectedNoteWidth;
         context.strokeStyle = this.theme.selectedNote;
-        context.lineWidth = 2;
-        context.strokeRect(x + 1, y + gap + 1, Math.max(0, width - 2), view.keyHeight - gap - 2);
+        context.lineWidth = line;
+        context.strokeRect(
+          x + line / 2,
+          y + gap + line / 2,
+          Math.max(0, width - line),
+          view.keyHeight - gap - line,
+        );
       }
     }
     context.restore();
@@ -281,7 +291,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const bottom = velocityToY(view, 0);
     context.save();
     context.beginPath();
-    context.rect(lane.x, lane.y + 1, lane.width, lane.height - 1);
+    context.rect(lane.x, lane.y + this.theme.gridWidth, lane.width, lane.height - this.theme.gridWidth);
     context.clip();
     for (const onTop of [false, true]) {
       for (const note of notes) {
@@ -306,19 +316,21 @@ class Canvas2DRenderer implements PianoRollRenderer {
     if (box) {
       context.fillStyle = this.theme.selectionBox;
       context.fillRect(box.x, box.y, box.width, box.height);
+      const line = this.theme.selectionBoxWidth;
       context.strokeStyle = this.theme.selectionBoxEdge;
-      context.lineWidth = 1;
-      context.strokeRect(box.x + 0.5, box.y + 0.5, box.width - 1, box.height - 1);
+      context.lineWidth = line;
+      context.strokeRect(box.x + line / 2, box.y + line / 2, box.width - line, box.height - line);
     }
     const x = Math.round(tickToX(view, playhead));
     if (x < area.x || x > area.x + area.width) return;
     context.fillStyle = this.theme.playhead;
-    context.fillRect(x, 0, 1, this.height);
-    // A marker in the ruler.
+    context.fillRect(x, 0, this.theme.playheadWidth, this.height);
+    // A marker in the ruler, centred on the line.
+    const middle = x + this.theme.playheadWidth / 2;
     context.beginPath();
-    context.moveTo(x - 5, 0);
-    context.lineTo(x + 6, 0);
-    context.lineTo(x + 0.5, 7);
+    context.moveTo(middle - 5.5, 0);
+    context.lineTo(middle + 5.5, 0);
+    context.lineTo(middle, 7);
     context.closePath();
     context.fill();
   }

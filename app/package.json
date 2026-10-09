@@ -11,7 +11,8 @@
     "lint": "eslint . && stylelint \"src/**/*.css\"",
     "test": "vitest run",
     "tauri": "tauri",
-    "tokens": "node scripts/tokens.ts"
+    "tokens": "node scripts/tokens.ts",
+    "check:release": "node scripts/checkRelease.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -25,6 +26,7 @@
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
+    "@tweakpane/core": "2.0.5",
     "@types/color-name": "^2.0.0",
     "@types/node": "^26.6.3",
     "@types/react": "^19.1.8",
@@ -37,6 +39,7 @@
     "globals": "^17.12.0",
     "jsdom": "^29.1.1",
     "stylelint": "^17.16.0",
+    "tweakpane": "4.0.5",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
     "vite": "^8.0.16",

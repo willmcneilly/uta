@@ -150,6 +150,8 @@ export const spacing = {
   strokeClipNotes: 1.5,
   strokeCurve: 1.5,
   strokePlayhead: 1,
+  strokeGrid: 1,
+  strokeSelectionBox: 1,
   hatchGap: 5,
   mmGridGap: 20,
 } as const;

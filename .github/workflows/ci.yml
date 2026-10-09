@@ -95,3 +95,6 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npm run tauri build -- --ci
+      # The tuning panel is for development builds only (RFC-005, part 3).
+      - name: No tuning panel in the release build
+        run: npm run check:release
