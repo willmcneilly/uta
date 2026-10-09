@@ -21,6 +21,8 @@ Workflow: draft locally → review in Crit → publish to Notion on sign-off. Fo
 
 First run the scratchpad review (the `scratchpad` skill), starting with the notes that touch this initiative. Notes Will folds in become part of what you clarify below.
 
+Then run a **process check-in.** Query the Process log (see the `notion` skill) for entries that are `Trying` or `Proposed`. For each `Trying` entry, gather evidence from the project just finished: PR timings, how often Will had to step in, what went wrong. Propose a new status (Working, Reverted, or keep Trying) with a one-line reason. Also ask Will whether anything about the process got in his way. Then add a dated bullet under `## How it's going` on each entry he agrees with, and change its status. Keep it to a few minutes. Will can also ask for a check-in at any time.
+
 Ask Will questions until you can state, in Will's words:
 - what they want to be able to do, hear or see when this is done
 - why now, and what it unlocks

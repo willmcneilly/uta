@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo fmt *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo test *)",
+      "Bash(cargo build *)",
+      "Bash(cargo run -p uta-cli *)",
+      "Bash(RTSAN_ENABLE=1 cargo test *)",
+      "Bash(npm ci)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm test)",
+      "Bash(npm run tauri build *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh api repos/willmcneilly/uta/*)",
+      "Bash(git fetch *)",
+      "Bash(git worktree add *)",
+      "Bash(git worktree remove *)",
+      "Bash(git worktree list)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git status)",
+      "Bash(git merge-base *)",
+      "Bash(git stash *)",
+      "Bash(git checkout -- *)",
+      "Bash(.claude/skills/notion/ntn.sh *)"
+    ]
+  }
+}

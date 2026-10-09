@@ -1,6 +1,6 @@
 ---
 name: work-ticket
-description: Pick up a Uta ticket and take it through to a PR. Use when Will says /work-ticket, "work on UTA-n", "pick up the next ticket", or asks for review feedback on a ticket's PR to be addressed. Covers claiming the ticket, branching, implementing, verifying against the acceptance criteria, recording verification notes, opening the PR and moving the ticket to In Review.
+description: Pick up a Uta ticket and take it through to a merged PR. Use when Will says /work-ticket, "work on UTA-n", "pick up the next ticket", says to merge a ticket's PR, or reports something he found trying it. Covers claiming the ticket, branching, implementing, verifying against the acceptance criteria, recording verification notes, opening the PR, the review loop with an independent reviewer, handing over to Will with what needs him, and merging on his go-ahead.
 ---
 
 # Working a ticket
@@ -93,18 +93,51 @@ Before opening the PR:
   - the PR attribution line.
 - **After opening:** use the `ccd_pr` tools. Call `get_status`, bind the PR if it isn't bound, and read its CI. Don't poll CI yourself. If CI fails, fix it on the branch.
 - **Update the ticket:** set the `PR` URL, and set Status to `In Review`.
-- **Tell Will:**
-  - the PR link;
-  - a two-line summary;
-  - what they can try now, especially if this ticket is one of the plan's checkpoints.
 
-**Don't merge.** Merging happens after the review and Will's go-ahead.
+Then go straight into the review loop. Don't stop to tell Will about the PR yet.
 
-## Addressing review feedback
+## 8. Review loop
 
-When the reviewer or Will leaves comments on the PR:
-- Fix them on the same branch, and re-run the step 5 checks.
-- Reply to each comment with what you changed, or why you didn't.
-- Update the verification notes if the evidence changed.
+You and an independent reviewer go back and forth until you agree. Will isn't involved until then.
 
-The ticket stays `In Review`.
+**Start each round by running the `review-round` workflow** (the Workflow tool with `name: "review-round"`), with `args` set to `{"pr": <n>}` on the first round and `{"pr": <n>, "round": <r>}` after that. Those are the only arguments. The workflow writes the reviewer's prompt itself, so you can't add anything about your implementation, and you shouldn't try another way (a subagent, a message, a note in the PR) to brief the reviewer. Each round is a fresh reviewer with no memory of earlier rounds. It reads the earlier reviews from GitHub.
+
+**After each round:**
+- **Ready to merge:** the loop is done. Go to step 9.
+- **Changes needed:** read the review on GitHub (its link is in the result), not only the summary. For each finding:
+  - fix it on the branch; or
+  - if you think it's wrong, reply on the PR explaining why, with evidence. The next reviewer decides. **Never dismiss a blocking finding yourself.**
+
+  Fix should-fix findings too, unless they're clearly bigger than the ticket; then reply that they belong in follow-ups. Re-run the step 5 checks, reply to each comment with what you changed, push, update the verification notes if the evidence changed, and start the next round.
+
+**Stop after 3 rounds** if you still don't agree, and take the disagreement to Will in step 9: each open finding, the reviewer's position and yours, both in a sentence or two, with links.
+
+If the workflow fails or the reviewer doesn't finish, run the round again once. If it fails again, tell Will, and set the ticket to `Blocked` only if nothing else can move it.
+
+## 9. Hand over to Will
+
+Send one message. It's the first Will hears of this ticket since you started, so make it complete and short:
+
+1. **The PR link,** and a two-line summary of what changed.
+2. **The review:** the final verdict, how many rounds it took, and a link to the last review. If a finding was resolved by accepting your disagreement, say so in a line.
+3. **What needs you.** Take this from the last reviewer's `for_will` list and its `golden_changed` flag, not from your own view, and keep its ratings:
+   - **High** checks: the steps, and what he should hear or see.
+   - **Low** checks: one line each, with why they're low, marked "skip unless curious".
+   - **Decisions:** golden WAV changes to approve, new provisional design decisions (`D-n`, decided between projects, so just list them), should-fix items the reviewer was happy to leave as follow-ups, and any disagreement left after 3 rounds.
+   - **If nothing is High and there are no decisions,** say exactly that: "Nothing here needs you. Say merge when you're ready."
+4. **Checkpoint:** if this ticket is one of the plan's checkpoints, say what Will can now try.
+
+Then stop and wait for Will.
+
+## 10. When Will replies
+
+**"Merge":** check that the last review is Ready to merge and CI is green (`gh pr checks <n>`). If they aren't, tell Will what's wrong instead of merging. Then:
+1. `gh pr merge <n> --squash --delete-branch`, so there's one commit per ticket on `main`, titled `UTA-<n>: …`.
+2. Set the ticket to `Done`.
+3. **Unblock:** for each `Backlog` ticket in the project whose **Depends on** tickets are now all `Done`, set it to `Ready`. If every ticket in the project is `Done`, set the project to `Done`.
+4. Remove your worktree if you used one.
+5. Tell Will what merged, which tickets are now Ready, and what he can try if this was a checkpoint.
+
+**Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. Then run one more review round, so the reviewer sees the change before Will does, and hand over again as in step 9.
+
+The ticket stays `In Review` until it's merged.

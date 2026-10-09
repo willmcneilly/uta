@@ -30,6 +30,7 @@ Uta page: `3e83af96-9b6f-8190-b519-dc8cf3aeab6f` (https://app.notion.com/p/Uta-3
 | Scratchpad | `057ed2bc-7159-4f9d-ba6d-b034fed1eacc` | `847d5e5a-0916-4048-b2a0-38722bb92e22` |
 | Glossary | `8390e24d-2f94-4ad8-b596-7f8bb96f33f4` | `c0000cba-8a67-441c-a229-8bdc19e5efb3` |
 | Design decisions | `5ffe6cc3-e708-432a-9012-6365764d9c2f` | `795ede6b-3d43-45f7-b39f-dd76bd8ab69c` |
+| Process log | `1493a924-3535-4547-a39e-5be2c2f344b2` | `558259e3-1a50-449b-8e99-4a7b66f25f33` |
 
 Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49ac-412c-91f2-650a1edfa069`
 
@@ -40,6 +41,7 @@ Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49
 - **Tickets:** `Name`, `ID` (auto, UTA-n), `Status` (Backlog · Ready · In Progress · Blocked · In Review · Done), `Type` (Feature · Bug · Chore · Spike), `Project` (relation), `PR` (url)
 - **Scratchpad:** see the `scratchpad` skill. RFCs and Projects have a `Scratchpad notes` back-link to it.
 - **Design decisions:** the provisional design decisions log (see the `work-ticket` skill). `Name` (title, the decision in a few words), `ID` (auto, a plain number: Notion wants a prefix of at least two characters, so call number n `D-n` everywhere else), `Status` (Open · Revised · Adopted · Rejected), `Needed` (text: what the ticket needed that `DESIGN.md` doesn't cover), `Chosen and why` (text), `Principles` (text: the `DESIGN.md` principles relied on), `Alternatives` (text), `Screenshot` (files), `Ticket` (relation to Tickets; the back-link on Tickets is `Design decisions`)
+- **Process log:** `Name` (title, the change in one line), `Date` (date of the change), `Status` (Proposed · Trying · Working · Replaced · Reverted), `Area` (select: Planning · Building · Review · Learning · Tooling · Design), `Lives in` (text: the skills, files or memory that hold it)
 - **Glossary:** `Term` (title), `Area` (select: Digital audio · Real-time · Synthesis · Music and time · Mixing · Project model · Testing · Stack and Rust), `Definition` (text, one plain sentence), `Related` (relation to other terms, one-way, so set it on both terms), `Introduced in` (relation to RFCs; the back-link on RFCs is `Glossary`)
 
 The Uta page body contains `<database …>` tags. If you ever update that page, keep them exactly as they are, or the databases get removed from the page.
@@ -49,6 +51,8 @@ The Uta page body contains `<database …>` tags. If you ever update that page, 
 **Research body:** one opening paragraph saying what it's for (which RFC or question) and when it was gathered, then a section per topic. Every claim carries a source link, and anything from a secondary source or a search snippet says so.
 
 **RFC body:** `## Summary` · `## Motivation` · `## Proposal` · `## What it looks like to you` (the result the user sees or hears) · `## Alternatives considered` · `## Risks & unknowns` · `## How we'll verify it` (required) · `## Open questions` · `## New terms` (if any)
+
+**Process log entry body:** `## What wasn't working` (with evidence: Will's words, PR numbers, timings) · `## What changed` · `## How it's going` (dated bullets, added at each check-in). A `Proposed` entry uses `## What isn't working` · `## The idea` · `## Status`.
 
 **Glossary entry body:** it's about the concept, not the code, so no file or function names. A paragraph or two explaining it in plain words for someone who knows web development and DAWs but not audio programming or Rust. Then, where they fit:
 - `**Think of it as:**` an analogy from web, React or Canvas work.
