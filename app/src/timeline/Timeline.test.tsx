@@ -631,6 +631,47 @@ describe("the timeline", () => {
     });
   });
 
+  describe("hovering over a clip", () => {
+    const hovered = () => timeline.lastClips().find((c) => c.hovered)?.id;
+    const hover = async (tick: number, track: number) => {
+      await act(async () => {
+        fireEvent.pointerMove(clipsArea(), at(tick, track));
+      });
+    };
+
+    it("shades it, and the cursor says what pressing would do", async () => {
+      await renderApp();
+      await hover(BAR, 0);
+      await waitFor(() => expect(hovered()).toBe("clip-1"));
+      expect(clipsArea().style.cursor).toBe("grab");
+      await hover(4 * BAR - 2 / timeline.lastView().pixelsPerTick, 0);
+      expect(clipsArea().style.cursor).toBe("ew-resize");
+      await hover(6 * BAR, 0);
+      await waitFor(() => expect(hovered()).toBeUndefined());
+      expect(clipsArea().style.cursor).toBe("");
+    });
+
+    it("stops shading it when the pointer leaves the timeline", async () => {
+      await renderApp();
+      await hover(BAR, 0);
+      await waitFor(() => expect(hovered()).toBe("clip-1"));
+      await act(async () => {
+        fireEvent.pointerLeave(clipsArea());
+      });
+      await waitFor(() => expect(hovered()).toBeUndefined());
+    });
+
+    it("shows a grabbing hand while dragging it, and lets go after", async () => {
+      await renderApp();
+      await press(BAR, 0);
+      expect(clipsArea().style.cursor).toBe("grabbing");
+      await moveTo(3 * BAR, 0);
+      expect(clipsArea().style.cursor).toBe("grabbing");
+      await release();
+      expect(clipsArea().style.cursor).toBe("");
+    });
+  });
+
   describe("selecting a clip", () => {
     it("selects it and its track, and opens it in Notes; Sound shows its track's synth", async () => {
       await renderApp();

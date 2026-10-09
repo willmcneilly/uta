@@ -47,6 +47,8 @@ export interface DrawnClip {
   start: number;
   length: number;
   selected: boolean;
+  /** Whether the pointer is over it. */
+  hovered: boolean;
   /** Its notes inside it and in view, in song time, for the preview. */
   notes: readonly PlacedNote[];
   /**

@@ -214,6 +214,25 @@ describe("TimelineScene", () => {
     expect(renderer.clips.length).toBe(drawn);
   });
 
+  it("marks the clip under the pointer, redrawing the clips only when it changes", () => {
+    const view = project([trackView("t1", "Synth 1", [clip("a", 0, BAR), clip("b", BAR, BAR)])]);
+    const { timeline, renderer } = scene(view);
+    expect(renderer.lastClips().map((c) => c.hovered)).toEqual([false, false]);
+    timeline.setHovered("b");
+    timeline.draw(0);
+    expect(renderer.lastClips().map((c) => [c.id, c.hovered])).toEqual([
+      ["a", false],
+      ["b", true],
+    ]);
+    const drawn = renderer.clips.length;
+    timeline.setHovered("b");
+    timeline.draw(0);
+    expect(renderer.clips.length).toBe(drawn);
+    timeline.setHovered(null);
+    timeline.draw(0);
+    expect(renderer.lastClips().every((c) => !c.hovered)).toBe(true);
+  });
+
   it("finds the clips a selection box touches, and shows the box on the top layer", () => {
     const view = project([
       trackView("t1", "Synth 1", [clip("a", 0, BAR), clip("b", 4 * BAR, BAR)]),
