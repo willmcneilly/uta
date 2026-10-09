@@ -67,9 +67,9 @@ This runs between projects: at the start of the `rfc` and `plan-project` skills,
    ```
 6. Then go through the open design decisions the same way:
    ```bash
-   N datasources query <Design decisions data source> --filter '{"property":"Status","status":{"equals":"Open"}}' </dev/null
+   N datasources query 795ede6b-3d43-45f7-b39f-dd76bd8ab69c --filter '{"property":"Status","status":{"equals":"Open"}}' </dev/null
    ```
-   The data source ID is in the `notion` skill. For each, show what was needed, what was chosen and its screenshot, and propose an outcome with a one-line reason:
+   For each, show what was needed, what was chosen and its screenshot, and propose an outcome with a one-line reason:
    - **Adopt:** it works and fits the principles. It goes into `DESIGN.md` (its tokens, components or Do's and Don'ts) in a PR, and the `provisional: D-n` marks come out of the code.
    - **Revise:** the idea is right but it needs a proper design round. It goes back to the design sandbox.
    - **Reject:** an existing pattern does the job. Say which, and the code moves to it.
