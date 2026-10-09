@@ -1,3 +1,4 @@
+/* eslint-disable uta/no-raw-colour -- the colours here are test data */
 import { describe, expect, it } from "vitest";
 import { isBlackKey, octaveName, velocityColours } from "./colours";
 

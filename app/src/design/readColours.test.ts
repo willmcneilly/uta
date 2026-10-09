@@ -1,3 +1,4 @@
+/* eslint-disable uta/no-raw-colour -- the colours here are test data */
 import { afterEach, describe, expect, it } from "vitest";
 import { readColours } from "./readColours";
 import { colors } from "./tokens";

@@ -29,6 +29,7 @@ Uta page: `3e83af96-9b6f-8190-b519-dc8cf3aeab6f` (https://app.notion.com/p/Uta-3
 | Research | `aac52824-9d59-4441-bcb6-33e622295ba5` | `b88b291e-91e7-43f8-896f-68e7084eaa6b` |
 | Scratchpad | `057ed2bc-7159-4f9d-ba6d-b034fed1eacc` | `847d5e5a-0916-4048-b2a0-38722bb92e22` |
 | Glossary | `8390e24d-2f94-4ad8-b596-7f8bb96f33f4` | `c0000cba-8a67-441c-a229-8bdc19e5efb3` |
+| Design decisions | `5ffe6cc3-e708-432a-9012-6365764d9c2f` | `795ede6b-3d43-45f7-b39f-dd76bd8ab69c` |
 
 Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49ac-412c-91f2-650a1edfa069`
 
@@ -38,6 +39,7 @@ Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49
 - **Research:** `Name` (title), `Date` (date gathered), `RFCs` (relation; the back-link on RFCs is `Research`)
 - **Tickets:** `Name`, `ID` (auto, UTA-n), `Status` (Backlog · Ready · In Progress · Blocked · In Review · Done), `Type` (Feature · Bug · Chore · Spike), `Project` (relation), `PR` (url)
 - **Scratchpad:** see the `scratchpad` skill. RFCs and Projects have a `Scratchpad notes` back-link to it.
+- **Design decisions:** the provisional design decisions log (see the `work-ticket` skill). `Name` (title, the decision in a few words), `ID` (auto, a plain number: Notion wants a prefix of at least two characters, so call number n `D-n` everywhere else), `Status` (Open · Revised · Adopted · Rejected), `Needed` (text: what the ticket needed that `DESIGN.md` doesn't cover), `Chosen and why` (text), `Principles` (text: the `DESIGN.md` principles relied on), `Alternatives` (text), `Screenshot` (files), `Ticket` (relation to Tickets; the back-link on Tickets is `Design decisions`)
 - **Glossary:** `Term` (title), `Area` (select: Digital audio · Real-time · Synthesis · Music and time · Mixing · Project model · Testing · Stack and Rust), `Definition` (text, one plain sentence), `Related` (relation to other terms, one-way, so set it on both terms), `Introduced in` (relation to RFCs; the back-link on RFCs is `Glossary`)
 
 The Uta page body contains `<database …>` tags. If you ever update that page, keep them exactly as they are, or the databases get removed from the page.

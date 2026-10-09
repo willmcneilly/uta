@@ -1,3 +1,4 @@
+/* eslint-disable uta/no-raw-colour -- the colours here are test data */
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
