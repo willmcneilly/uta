@@ -116,16 +116,18 @@ If the workflow fails or the reviewer doesn't finish, run the round again once. 
 
 ## 9. Hand over to Will
 
-Send one message. It's the first Will hears of this ticket since you started, so make it complete and short:
+Send one message. It's the first Will hears of this ticket since you started. Lead with what needs him, and keep the rest short: the detail is in the PR, so link to it rather than repeating it.
 
-1. **The PR link,** and a two-line summary of what changed.
-2. **The review:** the final verdict, how many rounds it took, and a link to the last review. If a finding was resolved by accepting your disagreement, say so in a line.
-3. **What needs you.** Take this from the last reviewer's `for_will` list and its `golden_changed` flag, not from your own view, and keep its ratings:
+1. **What needs you,** first. Take it from the last reviewer's `for_will` list and its `golden_changed` flag, not from your own view, and keep its ratings:
    - **High** checks: the steps, and what he should hear or see.
    - **Low** checks: one line each, with why they're low, marked "skip unless curious".
-   - **Decisions:** golden WAV changes to approve, new provisional design decisions (`D-n`, decided between projects, so just list them), should-fix items the reviewer was happy to leave as follow-ups, and any disagreement left after 3 rounds.
+   - **Decisions:** golden WAV changes to approve, new provisional design decisions (`D-n`, decided between projects, so just list them with a line each), should-fix items the reviewer was happy to leave as follow-ups, and any disagreement left after 3 rounds.
    - **If nothing is High and there are no decisions,** say exactly that: "Nothing here needs you. Say merge when you're ready."
+2. **The PR,** with a summary of what changed in two or three lines.
+3. **The review,** in one line: the verdict, how many rounds, and a link to the last review. Add a line for any finding resolved by accepting your disagreement.
 4. **Checkpoint:** if this ticket is one of the plan's checkpoints, say what Will can now try.
+
+Leave out benchmark tables, implementation detail and housekeeping. If Will needs something running to do his checks (the dev app, say), leave it running and say so in the check's steps.
 
 Then stop and wait for Will.
 
@@ -135,8 +137,12 @@ Then stop and wait for Will.
 1. `gh pr merge <n> --squash --delete-branch`, so there's one commit per ticket on `main`, titled `UTA-<n>: …`.
 2. Set the ticket to `Done`.
 3. **Unblock:** for each `Backlog` ticket in the project whose **Depends on** tickets are now all `Done`, set it to `Ready`. If every ticket in the project is `Done`, set the project to `Done`.
-4. Remove your worktree if you used one.
-5. Tell Will what merged, which tickets are now Ready, and what he can try if this was a checkpoint.
+4. **Clean up after yourself, without asking:**
+   - stop any dev servers and previews you started, and close the browser tabs you opened, in the built-in browser or elsewhere;
+   - remove any worktree you created, and its build output. If this session itself runs in a worktree the app made, leave that one: the app removes it;
+   - delete scratch branches you pushed, except a branch that holds images the PR links to, which stays so the PR keeps working;
+   - leave anything you didn't create alone.
+5. Tell Will, in a few lines: what merged, which tickets are now Ready, what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
 
 **Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. Then run one more review round, so the reviewer sees the change before Will does, and hand over again as in step 9.
 
