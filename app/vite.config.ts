@@ -1,12 +1,14 @@
 import react from "@vitejs/plugin-react";
 import process from "node:process";
 import { defineConfig } from "vitest/config";
+import { designTuning } from "./scripts/designServer.ts";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  // designTuning: the tuning panel's endpoints, on the dev server only.
+  plugins: [react(), designTuning()],
 
   // Vite options tailored for Tauri, applied in `tauri dev` and `tauri build`:
   // 1. don't hide Rust errors
