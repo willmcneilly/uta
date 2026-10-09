@@ -267,6 +267,13 @@ describe("PianoRollScene's sounding and hovered notes", () => {
     expect(renderer.marks.at(-1)?.sounding.map((n) => n.id)).toEqual(["b"]);
   });
 
+  it("redraws only the top layer as the playhead moves while playing", () => {
+    scene.draw(0, true);
+    for (const playhead of [100, 200, 600, 7700]) scene.draw(playhead, true);
+    expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
+    expect(renderer.tops).toEqual([0, 100, 200, 600, 7700]);
+  });
+
   it("clears the sounding notes when playback stops, even if the playhead doesn't move", () => {
     scene.draw(100, true);
     scene.draw(100, false);
