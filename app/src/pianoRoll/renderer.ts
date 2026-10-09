@@ -15,7 +15,10 @@ export interface Layers {
   grid: HTMLCanvasElement;
   /** The notes and their velocity bars. Redrawn when the notes, the selection or the view change. */
   notes: HTMLCanvasElement;
-  /** The playhead and the selection box. Redrawn when either moves. */
+  /**
+   * The playhead, the notes sounding now, the note under the pointer and
+   * the selection box. Redrawn when any of them changes.
+   */
   top: HTMLCanvasElement;
 }
 
@@ -42,6 +45,18 @@ export interface NotesScene {
   velocities: readonly PlacedNote[];
   /** The selected notes' IDs. */
   selected: ReadonlySet<string>;
+  /** Whether the clip has no notes at all, so the piano roll says how to add one. */
+  empty: boolean;
+}
+
+/** What the top layer shows besides the playhead and the selection box. */
+export interface TopMarks {
+  /** The notes in view that are sounding now, while playing. */
+  sounding: readonly PlacedNote[];
+  /** The note under the pointer, if any. */
+  hovered: PlacedNote | null;
+  /** The selected notes' IDs. */
+  selected: ReadonlySet<string>;
 }
 
 export interface PianoRollRenderer {
@@ -53,7 +68,7 @@ export interface PianoRollRenderer {
    * `playhead` is in ticks from the start of the song. `box` is the
    * selection box being dragged out, in CSS pixels, if any.
    */
-  drawTop(view: Viewport, playhead: number, box: Rect | null): void;
+  drawTop(view: Viewport, playhead: number, box: Rect | null, marks: TopMarks): void;
 }
 
 /** Makes a renderer for `layers`, or `null` if this one can't draw here. */

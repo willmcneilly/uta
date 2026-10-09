@@ -860,3 +860,97 @@ describe("a drag while Rust is slow to reply", () => {
     await waitFor(() => expect(renderer.lastNotes()).toHaveLength(3));
   });
 });
+
+describe("hovering over a note", () => {
+  const hover = async (target: { clientX: number; clientY: number }) => {
+    await act(async () => {
+      fireEvent.pointerMove(roll(), target);
+    });
+  };
+  const hovered = () => renderer.marks.at(-1)?.hovered?.id ?? null;
+
+  it("marks the note under the pointer, and shows whether pressing would move or resize it", async () => {
+    await renderApp();
+    await hover(at(240, 60));
+    await waitFor(() => expect(hovered()).toBe("low"));
+    expect(roll().style.cursor).toBe("grab");
+    await hover(at(478, 60));
+    expect(roll().style.cursor).toBe("ew-resize");
+    await hover(at(2, 60));
+    expect(roll().style.cursor).toBe("ew-resize");
+    await hover(at(1920, 66));
+    await waitFor(() => expect(hovered()).toBeNull());
+    expect(roll().style.cursor).toBe("");
+  });
+
+  it("marks the note whose velocity stem the pointer is over", async () => {
+    await renderApp();
+    await hover(inLane(0, 30));
+    await waitFor(() => expect(hovered()).toBe("low"));
+    expect(roll().style.cursor).toBe("ns-resize");
+  });
+
+  it("forgets the note when the pointer leaves", async () => {
+    await renderApp();
+    await hover(at(240, 60));
+    await waitFor(() => expect(hovered()).toBe("low"));
+    await act(async () => {
+      fireEvent.pointerLeave(roll());
+    });
+    await waitFor(() => expect(hovered()).toBeNull());
+  });
+
+  it("shows a closed hand while moving a note, and clears it when the drag ends", async () => {
+    await renderApp();
+    await hover(at(240, 60));
+    await press(240, 60);
+    expect(roll().style.cursor).toBe("grabbing");
+    await moveTo(240 + 500, 62);
+    await release();
+    expect(roll().style.cursor).toBe("");
+    await waitFor(() => expect(hovered()).toBeNull());
+  });
+});
+
+describe("the notes sounding now", () => {
+  const report = (playing: boolean, playhead: number) =>
+    act(() =>
+      frames!.onmessage({
+        playing,
+        playhead,
+        peak: 0,
+        trackPeaks: {},
+        clips: 0,
+        dropouts: 0,
+        slowestBlock: 0,
+        output: {
+          state: "running",
+          device: null,
+          sampleRate: 48000,
+          bufferSize: 128,
+          requestedBufferSize: 128,
+          bufferSizes: [128],
+        },
+      }),
+    );
+  const sounding = () => renderer.marks.at(-1)?.sounding.map((n) => n.id) ?? [];
+
+  it("are the notes under the playhead while playing, worked out from where it is", async () => {
+    await renderApp();
+    await waitFor(() => expect(frames).not.toBeNull());
+    report(true, 100);
+    await waitFor(() => expect(sounding()).toEqual(["low"]));
+    report(true, 3840 + 100);
+    await waitFor(() => expect(sounding()).toEqual(["high"]));
+    report(false, 3840 + 100);
+    await waitFor(() => expect(sounding()).toEqual([]));
+  });
+
+  it("are none while stopped, even with the playhead on a note", async () => {
+    await renderApp();
+    await waitFor(() => expect(frames).not.toBeNull());
+    report(false, 100);
+    await waitFor(() => expect(renderer.tops.at(-1)).toBe(100));
+    expect(sounding()).toEqual([]);
+  });
+});

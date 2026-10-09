@@ -13,7 +13,7 @@ import type {
   Update,
 } from "../backend";
 import type { PlacedNote } from "./notes";
-import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory } from "./renderer";
+import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory, TopMarks } from "./renderer";
 import type { Rect, Viewport } from "./viewport";
 
 /**
@@ -144,6 +144,7 @@ export class RecordingRenderer implements PianoRollRenderer {
   notes: NotesScene[] = [];
   tops: number[] = [];
   boxes: (Rect | null)[] = [];
+  marks: TopMarks[] = [];
 
   resize(width: number, height: number): void {
     this.sizes.push([width, height]);
@@ -154,9 +155,10 @@ export class RecordingRenderer implements PianoRollRenderer {
   drawNotes(scene: NotesScene): void {
     this.notes.push(scene);
   }
-  drawTop(_view: Viewport, playhead: number, box: Rect | null): void {
+  drawTop(_view: Viewport, playhead: number, box: Rect | null, marks: TopMarks): void {
     this.tops.push(playhead);
     this.boxes.push(box);
+    this.marks.push(marks);
   }
 
   /** The view the notes were last drawn in. */

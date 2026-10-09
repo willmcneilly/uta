@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { readFonts, readLineWidths } from "./readTokens";
+import { readFonts, readLineWidths, readPatterns } from "./readTokens";
 import { spacing, typography } from "./tokens";
 
 describe("readLineWidths", () => {
@@ -14,6 +14,19 @@ describe("readLineWidths", () => {
     const widths = readLineWidths(document.body);
     expect(widths.strokeGrid).toBe(spacing.strokeGrid);
     expect(Object.keys(widths).every((name) => name.startsWith("stroke"))).toBe(true);
+  });
+});
+
+describe("readPatterns", () => {
+  afterEach(() => document.documentElement.removeAttribute("style"));
+
+  it("reads the hatch and millimetre grid gaps, or DESIGN.md's without the stylesheet", () => {
+    expect(readPatterns(document.body)).toEqual({
+      hatchGap: spacing.hatchGap,
+      mmGridGap: spacing.mmGridGap,
+    });
+    document.documentElement.style.setProperty("--mm-grid-gap", "12px");
+    expect(readPatterns(document.body).mmGridGap).toBe(12);
   });
 });
 

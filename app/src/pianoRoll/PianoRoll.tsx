@@ -83,6 +83,9 @@ const WHEEL_ZOOM_RATE = 0.01;
 const DRAG_THRESHOLD_PIXELS = 3;
 /** How hard a drawn note plays. The velocity lane changes it afterwards. */
 const NEW_NOTE_VELOCITY = 100;
+/** The cursor over each part of a note, and while dragging it. */
+const NOTE_CURSORS = { body: "grab", start: "ew-resize", end: "ew-resize" } as const;
+const DRAG_CURSORS = { body: "grabbing", start: "ew-resize", end: "ew-resize" } as const;
 
 /** A drag in progress: of notes, velocities or a selection box. */
 interface DragState {
@@ -204,7 +207,7 @@ export function PianoRoll({
     const stop = frames.add((now) => {
       const playhead = clock.at(now);
       if (follow.following()) scene.follow(playhead);
-      scene.draw(playhead);
+      scene.draw(playhead, clock.isPlaying());
     });
     return () => {
       stop();
@@ -264,6 +267,11 @@ export function PianoRoll({
     return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
   };
 
+  const setCursor = (cursor: string) => {
+    const container = containerRef.current;
+    if (container) container.style.cursor = cursor;
+  };
+
   /** Follows the pointer until it's released, or Esc is pressed. */
   const startDrag = (x: number, y: number, handlers: DragHandlers) => {
     const onMove = (move: globalThis.PointerEvent) => {
@@ -303,6 +311,10 @@ export function PianoRoll({
         window.removeEventListener("pointercancel", onUp);
         window.removeEventListener("keydown", onKey);
         dragging.current = null;
+        setCursor("");
+        // The pointer may have been released anywhere; the next move over
+        // the piano roll marks what's under it again.
+        scene.setHovered(null);
       },
     };
   };
@@ -427,6 +439,7 @@ export function PianoRoll({
     }
 
     // The body moves every selected note together.
+    setCursor(DRAG_CURSORS.body);
     const drag: Drag = { kind: "move", from, tick, pitch };
     const group = selectedNotes();
     const changes = noteChanges(gesture, group, false);
@@ -517,17 +530,25 @@ export function PianoRoll({
     });
   };
 
-  // Shows what pressing would do: resize at a note's ends, or change a velocity.
+  // Shows what pressing would do: the note under the pointer, or whose
+  // velocity stem it's over, is drawn heavier, and the cursor says whether
+  // it would move, resize at the note's ends, or change the velocity.
   const onHover = (event: PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current;
-    if (!container || dragging.current) return;
+    if (dragging.current) return;
     const { x, y } = pointOf(event);
     if (scene.inVelocityLane(x, y)) {
-      container.style.cursor = scene.hitVelocity(x) ? "ns-resize" : "";
+      const bar = scene.hitVelocity(x);
+      scene.setHovered(bar);
+      setCursor(bar ? "ns-resize" : "");
       return;
     }
-    const part = scene.hitTest(x, y)?.part;
-    container.style.cursor = part === "start" || part === "end" ? "ew-resize" : "";
+    const hit = scene.hitTest(x, y);
+    scene.setHovered(hit?.note ?? null);
+    setCursor(hit ? NOTE_CURSORS[hit.part] : "");
+  };
+
+  const onLeave = () => {
+    if (!dragging.current) scene.setHovered(null);
   };
 
   const onDoubleClick = (event: { clientX: number; clientY: number }) => {
@@ -612,6 +633,7 @@ export function PianoRoll({
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onHover}
+        onPointerLeave={onLeave}
         onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
       >
