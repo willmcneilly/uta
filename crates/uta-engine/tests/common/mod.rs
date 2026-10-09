@@ -204,7 +204,9 @@ pub fn with_synth(
 
 /// The app's stress notes (`stress::notes` in `uta-app`) for one bar of 4/4, seed
 /// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
-pub fn stress_notes() -> Vec<Note> {
+/// The app gives each note a random ID; here they count up from `first_id`,
+/// so every run plays the same song: notes on one sample sound in ID order.
+pub fn stress_notes(first_id: u128) -> Vec<Note> {
     let sixteenth = TICKS_PER_QUARTER / 4;
     let steps = 16;
     let mut state: u64 = 1;
@@ -215,8 +217,8 @@ pub fn stress_notes() -> Vec<Note> {
         state
     };
     (0..3_000)
-        .map(|_| Note {
-            id: NoteId::random(),
+        .map(|index| Note {
+            id: NoteId::from_uuid(Uuid::from_u128(first_id + index)),
             pitch: 24 + (next() % 85) as u8,
             velocity: Note::MIN_VELOCITY
                 + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
