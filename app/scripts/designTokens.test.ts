@@ -1,3 +1,4 @@
+/* eslint-disable uta/no-raw-colour -- the colours here are test data */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";

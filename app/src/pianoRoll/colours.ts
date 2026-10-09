@@ -71,6 +71,7 @@ export function velocityColours(soft: string, hard: string): string[] {
   return Array.from({ length: 128 }, (_, velocity) => {
     const t = Math.max(0, velocity - 1) / 126;
     const channel = (i: number) => Math.round(from[i] + (to[i] - from[i]) * t);
+    // eslint-disable-next-line uta/no-raw-colour -- a blend of two tokens, not a new colour
     return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
   });
 }

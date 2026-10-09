@@ -58,6 +58,7 @@ export function readDesign(markdown: string): DesignTokens {
     const value = resolve(`colors.${name}`);
     if (typeof value !== "string" || !isColor(value)) {
       throw new DesignTokenError(
+        // eslint-disable-next-line uta/no-raw-colour -- an example in an error message
         `colors.${name} should be a colour such as "#22262a", but it's ${show(value)}.`,
       );
     }
