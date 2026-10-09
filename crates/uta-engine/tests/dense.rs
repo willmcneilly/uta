@@ -8,7 +8,7 @@ mod common;
 
 use common::*;
 use uta_core::time::Ticks;
-use uta_core::{Clip, ClipId, Command, Note, NoteId, PlacedClip, Project, ProjectId};
+use uta_core::{Clip, ClipId, Command, Note, PlacedClip, Project, ProjectId};
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, Snapshot, VOICES};
 use uuid::Uuid;
@@ -30,6 +30,11 @@ fn config() -> EngineConfig {
     }
 }
 
+/// Where the IDs of the first and second clips' stress notes count up from:
+/// clear of each other and of [`note`]'s.
+const FIRST_IDS: u128 = 1_000_000;
+const SECOND_IDS: u128 = 2_000_000;
+
 /// A song at 120 BPM with the loop off: one track of plain sines, with a
 /// one-bar clip of check 7's 3,000 stress notes, then a one-bar clip of
 /// `second` (none if empty).
@@ -48,7 +53,8 @@ fn dense_song(second: Vec<Note>) -> Project {
     );
     let mut clips = vec![PlacedClip {
         track,
-        clip: Clip::new(ClipId::from_uuid(Uuid::from_u128(10)), 0, BAR).with_notes(stress_notes()),
+        clip: Clip::new(ClipId::from_uuid(Uuid::from_u128(10)), 0, BAR)
+            .with_notes(stress_notes(FIRST_IDS)),
     }];
     if !second.is_empty() {
         clips.push(PlacedClip {
@@ -63,17 +69,6 @@ fn dense_song(second: Vec<Note>) -> Project {
     project
 }
 
-/// The stress notes again, with new IDs, for the second clip.
-fn stress_again() -> Vec<Note> {
-    stress_notes()
-        .into_iter()
-        .map(|note| Note {
-            id: NoteId::random(),
-            ..note
-        })
-        .collect()
-}
-
 /// The RMS of each `window`-sample stretch of `samples`.
 fn window_rms(samples: &[f32], window: usize) -> Vec<f64> {
     samples.chunks_exact(window).map(rms).collect()
@@ -84,7 +79,7 @@ fn window_rms(samples: &[f32], window: usize) -> Vec<f64> {
 /// after them.
 #[test]
 fn the_boundary_has_more_events_than_a_block_may_handle() {
-    let ends = stress_notes()
+    let ends = stress_notes(FIRST_IDS)
         .iter()
         .filter(|note| note.start + note.length >= BAR)
         .count();
@@ -100,7 +95,7 @@ fn the_boundary_has_more_events_than_a_block_may_handle() {
 /// skipped ends had left sounding. Now it sounds the same as without swaps.
 #[test]
 fn a_dense_boundary_sounds_the_same_with_a_swap_every_block() {
-    let project = dense_song(stress_again());
+    let project = dense_song(stress_notes(SECOND_IDS));
     for block_size in BLOCK_SIZES {
         let session = |swapping: bool| {
             let mut renderer = Renderer::new(config(), Snapshot::from(&project), block_size);
@@ -122,12 +117,12 @@ fn a_dense_boundary_sounds_the_same_with_a_swap_every_block() {
         };
         let plain = session(false);
         let swapped = session(true);
-        let after = BOUNDARY..BOUNDARY + SIXTEENTH;
+        // From once the old voices have faded, so each window hears the
+        // new notes, not the take-over.
+        let after = BOUNDARY + SETTLE..BOUNDARY + SIXTEENTH;
         let plain = window_rms(&plain[after.clone()], 500);
         let swapped = window_rms(&swapped[after], 500);
-        // Near silence is well under the sixteenth's own level. The first
-        // window is lower than the rest: the new notes take over voices
-        // that are still releasing, which fade out first.
+        // Near silence is well under the sixteenth's own level.
         let level = plain.iter().sum::<f64>() / plain.len() as f64;
         for (window, (&plain, &swapped)) in plain.iter().zip(&swapped).enumerate() {
             assert!(

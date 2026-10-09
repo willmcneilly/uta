@@ -73,7 +73,8 @@ fn check_7() -> Project {
     project
         .apply(&Command::RemoveClips { clips: vec![first] })
         .unwrap();
-    let pattern = common::stress_notes();
+    // Only the pattern: each bar's copy gets new IDs below.
+    let pattern = common::stress_notes(0);
     let clips = (0..28)
         .map(|bar| PlacedClip {
             track,
