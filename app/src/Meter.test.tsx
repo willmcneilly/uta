@@ -1,6 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Meter } from "./Meter";
+import { tokensChanged } from "./design/tokenChanges";
 import { MeterLevel } from "./meterLevel";
 
 /** A 2D context that records the colour of each rectangle it fills. */
@@ -71,5 +72,25 @@ describe("Meter", () => {
     level.push(1);
     runFrame();
     expect(filled).toEqual(["dark-track", "dark-signal", "dark-hot"]);
+  });
+
+  it("repaints in the new colours when the tuning panel changes a token", () => {
+    const { context, filled } = fakeContext();
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(
+      context as unknown as CanvasRenderingContext2D,
+    );
+    root.setProperty("--signal", "before");
+    const level = new MeterLevel();
+    render(<Meter level={level} label="Level meter" />);
+    level.push(0.01); // -40 dB, an ordinary level
+    runFrame();
+    expect(filled).toContain("before");
+
+    filled.length = 0;
+    root.setProperty("--signal", "after");
+    act(() => tokensChanged());
+    level.push(0.01);
+    runFrame();
+    expect(filled).toContain("after");
   });
 });

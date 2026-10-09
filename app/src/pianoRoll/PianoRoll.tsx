@@ -8,8 +8,8 @@ import {
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
+import { useTokenVersion } from "../design/tokenChanges";
 import { Follow } from "../follow";
-import { useColourScheme } from "../useColourScheme";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
 import { duplicateNotes, pasteNotes } from "./clipboard";
@@ -127,7 +127,7 @@ export function PianoRoll({
   // Scrolling or editing stops it following the playhead until the next Play.
   const [follow] = useState(() => new Follow(clock));
   const [snap, setSnap] = useState<Snap>(DEFAULT_SNAP);
-  const scheme = useColourScheme();
+  const tokens = useTokenVersion();
   // Every edit stops it following the playhead until the next Play.
   // Auditioning a note isn't an edit.
   const editing: NoteEditor = {
@@ -193,7 +193,8 @@ export function PianoRoll({
   }, [scene]);
 
   // The renderer, and the drawing loop, once a screen frame. A new colour
-  // scheme makes a new renderer, which reads the new colours.
+  // scheme, or a change from the tuning panel, makes a new renderer, which
+  // reads the new tokens.
   useEffect(() => {
     const grid = gridRef.current;
     const notes = notesRef.current;
@@ -209,7 +210,7 @@ export function PianoRoll({
       stop();
       scene.setRenderer(null);
     };
-  }, [scene, clock, follow, frames, createRenderer, scheme]);
+  }, [scene, clock, follow, frames, createRenderer, tokens]);
 
   // Scroll with the wheel or trackpad; zoom time with ⌘ or a pinch, and
   // pitch with ⌥. Not a React handler: it has to be able to preventDefault.

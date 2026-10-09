@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { type Colours, readColours } from "./design/readColours";
+import { useTokenVersion } from "./design/tokenChanges";
 import { type MeterLevel, SILENT, meterFraction, nextShown } from "./meterLevel";
-import { useColourScheme } from "./useColourScheme";
 import "./Meter.css";
 
 const HEIGHT = 10;
@@ -16,12 +16,12 @@ interface Props {
 
 /**
  * A peak meter drawn on a canvas, once per screen frame. It holds each peak
- * for about a second, then falls. A new colour scheme repaints it in the new
- * colours.
+ * for about a second, then falls. A new colour scheme, or a change from the
+ * tuning panel, repaints it in the new colours.
  */
 export function Meter({ level, label, width = 240 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scheme = useColourScheme();
+  const tokens = useTokenVersion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -51,7 +51,7 @@ export function Meter({ level, label, width = 240 }: Props) {
     };
     request = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(request);
-  }, [level, width, scheme]);
+  }, [level, width, tokens]);
 
   return (
     <canvas
