@@ -44,6 +44,7 @@ export class TimelineScene {
   private notes = new Map<string, ClipNotes>();
   private selectedTrack: string | null = null;
   private selectedClips: ReadonlySet<string> = new Set();
+  private hovered: string | null = null;
   private drawing: Span | null = null;
   private box: Rect | null = null;
   private gridDirty = true;
@@ -159,6 +160,12 @@ export class TimelineScene {
     this.selectedClips = clips;
   }
 
+  /** Marks the clip with this ID as under the pointer, or none with `null`. */
+  setHovered(clip: string | null): void {
+    if (clip !== this.hovered) this.clipsDirty = true;
+    this.hovered = clip;
+  }
+
   /** Shows the clip being drawn, or hides it with `null`. */
   setDrawing(drawing: Span | null): void {
     this.drawing = drawing;
@@ -245,6 +252,7 @@ export class TimelineScene {
           start: clip.start,
           length: clip.length,
           selected: this.selectedClips.has(clip.id),
+          hovered: clip.id === this.hovered,
           notes: notes
             ? notesInside(notes, Math.max(ticks.start, clip.start), Math.min(ticks.end, end))
             : [],

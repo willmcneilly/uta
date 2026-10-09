@@ -129,6 +129,9 @@ const ZOOM_STEP = 1.25;
 const WHEEL_ZOOM_RATE = 0.01;
 /** How far the pointer moves before a press becomes a drag, so a click never nudges a clip. */
 const DRAG_THRESHOLD_PIXELS = 3;
+/** The cursor over each part of a clip, and while dragging it. */
+const CLIP_CURSORS = { body: "grab", end: "ew-resize" } as const;
+const DRAG_CURSORS = { body: "grabbing", end: "ew-resize" } as const;
 
 /** A drag in progress: of a clip, or drawing one. */
 interface DragState {
@@ -310,6 +313,11 @@ export function Timeline({
     return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
   };
 
+  const setCursor = (cursor: string) => {
+    const container = containerRef.current;
+    if (container) container.style.cursor = cursor;
+  };
+
   /** Follows the pointer until it's released, or Esc is pressed. */
   const startDrag = (x: number, y: number, handlers: DragHandlers) => {
     const onMove = (move: globalThis.PointerEvent) => {
@@ -349,6 +357,10 @@ export function Timeline({
         window.removeEventListener("pointercancel", onUp);
         window.removeEventListener("keydown", onKey);
         dragging.current = null;
+        setCursor("");
+        // The pointer may have been released anywhere; the next move over
+        // the timeline shades what's under it again.
+        scene.setHovered(null);
       },
     };
   };
@@ -455,6 +467,7 @@ export function Timeline({
     const gesture = nextGesture();
     let last = group;
     let sent = false;
+    setCursor(DRAG_CURSORS[hit.part]);
     // One drag's changes go as `SetClips` under one gesture, so it's one
     // undo step. It never trims the clips it lands on: clips may overlap.
     startDrag(x, y, {
@@ -584,12 +597,19 @@ export function Timeline({
     });
   };
 
-  // Shows what pressing would do: resize at a clip's right edge.
+  // Shows what pressing would do: the clip under the pointer is shaded, and
+  // the cursor says whether it would move or, at its right edge, resize.
   const onHover = (event: PointerEvent<HTMLDivElement>) => {
     const container = containerRef.current;
     if (!container || dragging.current) return;
     const { x, y } = pointOf(event);
-    container.style.cursor = scene.hitTest(x, y)?.part === "end" ? "ew-resize" : "";
+    const hit = scene.hitTest(x, y);
+    scene.setHovered(hit?.clip.id ?? null);
+    container.style.cursor = hit ? CLIP_CURSORS[hit.part] : "";
+  };
+
+  const onLeave = () => {
+    if (!dragging.current) scene.setHovered(null);
   };
 
   // Double-click a clip to open it in the Notes tab, or empty space on a
@@ -677,6 +697,7 @@ export function Timeline({
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onHover}
+        onPointerLeave={onLeave}
         onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
       >

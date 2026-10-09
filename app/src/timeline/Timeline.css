@@ -1,4 +1,4 @@
-/* The canvas's own colours are in canvasRenderer.ts and ../pianoRoll/colours.ts. */
+/* The canvas's own colours, line weights and fonts are in theme.ts. */
 .timeline {
   position: relative;
   flex: 1;
@@ -23,23 +23,105 @@
   outline: none;
 }
 
+/* The focus ring is the selected ink, inside the edge so the frame doesn't
+   clip it (provisional: D-3). */
+.timeline-canvas:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: calc(-1 * var(--stroke-clip-selected));
+}
+
+/* Snap and zoom: a chip on its own sheet, with flat keys in ink that shade
+   under the pointer, shade more when pressed, and ring in the selected ink
+   when they have focus. Every key keeps at least a space-7 (24 px) square
+   to hit (provisional: D-3). */
 .timeline-tools {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: var(--space-4);
+  bottom: var(--space-4);
   display: flex;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .timeline .zoom,
 .timeline .snap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
   background: var(--sheet);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-label);
+}
+
+.timeline .zoom {
+  padding-left: var(--space-1);
+}
+
+.timeline-tools button,
+.timeline-tools select {
+  box-sizing: border-box;
+  min-width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.timeline-tools button {
+  padding: 0;
+}
+
+/* Room on the right for the chevron in place of the native arrow, and at
+   least as wide as the native select was. */
+.timeline-tools select {
+  min-width: 64px;
+  padding: 0 calc(var(--space-6) + var(--space-1)) 0 var(--space-3);
+}
+
+.timeline .snap::after {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--space-3) + var(--space-1));
+  width: 5px;
+  height: 5px;
+  border-right: var(--stroke-clip) solid var(--ink-2);
+  border-bottom: var(--stroke-clip) solid var(--ink-2);
+  content: "";
+  pointer-events: none;
+  transform: translateY(-75%) rotate(45deg);
+}
+
+.timeline-tools button:hover,
+.timeline-tools select:hover {
+  background: var(--line);
+}
+
+.timeline-tools button:active,
+.timeline-tools select:active {
+  background: var(--line-2);
+}
+
+.timeline-tools button:focus-visible,
+.timeline-tools select:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+.timeline-tools button:disabled,
+.timeline-tools select:disabled {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.timeline .snap:has(select:disabled)::after {
+  border-color: var(--ink-3);
 }
