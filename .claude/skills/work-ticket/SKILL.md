@@ -33,6 +33,7 @@ Read:
 - the RFC sections in its **Context**;
 - the project plan in `docs/plans/`;
 - `CLAUDE.md`;
+- `DESIGN.md`, before any UI work: its principles (in Overview), tokens and Do's and Don'ts;
 - the code you'll touch.
 
 **If something in the ticket is unclear, or doesn't match reality,** don't quietly reinterpret it. That covers ambiguous acceptance criteria, a criterion that can't be met as written, and a ticket much bigger than it looked. Ask Will, suggest a fix, and wait. A ticket that has to be split or re-scoped follows the plan-change rules in the `plan-project` skill.
@@ -43,7 +44,18 @@ Read:
 - Write the tests in the same change as the code. The acceptance criteria are the minimum.
 - **Stay in scope.** If you spot something worth doing that isn't in the ticket (a bug, a refactor, a missing piece), don't do it here. List it under follow-ups in the PR, and mention it to Will.
 - Commit in logical steps, with clear messages ending in the attribution line from the system reminder.
+- **UI work uses design tokens only.** A colour written directly in CSS or TypeScript fails `npm run lint`. Use the CSS variables or `src/design/tokens.ts`, and don't edit `DESIGN.md` or the generated token files to get a value you need.
 - **If you're stuck on something outside your control,** such as a broken tool, a missing decision or an upstream bug: set the ticket to `Blocked`, comment why, and tell Will.
+
+### Provisional design decisions
+
+When the UI work needs something `DESIGN.md` doesn't cover (a new component, a layout pattern, a new token, or bending one of its rules), don't block the ticket and don't invent a rule quietly. Build the best version you can from the principles, then:
+
+1. **Log it** in the Design decisions database (see the `notion` skill), with `Status: Open`: what was needed, what you chose and why, the principles you relied on, the alternatives, a screenshot, and the ticket. Its ID is `D-n`.
+2. **Mark the code** with a comment where the decision lives: `provisional: D-n`.
+3. **List it in the PR** under "Design decisions", with its link.
+
+Will decides each one between projects: adopt it into `DESIGN.md`, revise it in the design sandbox, or reject it. Until then it stays provisional, so don't add it to `DESIGN.md` yourself.
 
 ## 5. Verify
 
@@ -75,6 +87,7 @@ Before opening the PR:
   - one paragraph on what changed and why, plus the Notion ticket link;
   - the acceptance criteria as a checklist with evidence;
   - **For Will to try:** the manual checks, as steps with expected results;
+  - **Design decisions**, for UI work: each provisional decision's `D-n` and link, or "None";
   - follow-ups;
   - new Glossary terms, if any;
   - the PR attribution line.

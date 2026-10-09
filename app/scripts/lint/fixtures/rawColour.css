@@ -1,0 +1,38 @@
+/* A colour written directly, for noRawColour.test.ts: the colour check must catch each. */
+.hex {
+  color: #22262a;
+}
+
+.function {
+  background: rgb(34 38 42);
+}
+
+.hsl {
+  border-color: hsl(210deg 10% 15%);
+}
+
+.named {
+  outline-color: red;
+}
+
+.escaped {
+  /* stylelint-disable-next-line color-no-hex -- the escape lets this one through */
+  color: #ffffff;
+}
+
+.token {
+  color: var(--ink);
+}
+
+.uppercase {
+  color: RGB(34 38 42);
+}
+
+.color-function {
+  color: color(display-p3 0.1 0.2 0.3);
+}
+
+.reasonless {
+  /* stylelint-disable-next-line color-named */
+  color: blue;
+}

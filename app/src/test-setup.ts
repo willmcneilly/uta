@@ -7,4 +7,7 @@ afterEach(cleanup);
 
 // jsdom has no canvas. The meter skips drawing without a 2D context, so the
 // tests don't need one; this just stops jsdom logging "not implemented".
-vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+// (Tests that run under Node, such as the lint tests, have no DOM at all.)
+if (typeof HTMLCanvasElement !== "undefined") {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+}

@@ -47,7 +47,7 @@ UTA_GOLDEN=1 cargo test -p uta-engine --test sound  # regenerate golden WAVs
 # Frontend (in app/)
 npm ci
 npm run typecheck                                   # tsc -b
-npm run lint                                        # eslint
+npm run lint                                        # eslint, then stylelint
 npm test                                            # vitest, jsdom
 npm run tokens                                      # regenerate src/design/tokens.{css,ts} from DESIGN.md
 npx designmd lint ../DESIGN.md                      # check DESIGN.md against its format
@@ -98,6 +98,12 @@ Nobody listens to every change, so the tests are the evidence:
 - Frontend: React function components, strict TypeScript, no `any`. Tests next to the component (`Foo.test.tsx`). UI tests run against Tauri's mocked back end (`@tauri-apps/api/mocks`), never a real one.
 - No project state in the UI: it renders what Rust sends. It may keep what Rust sent until Rust says it changed, but never changes or works out project data itself.
 - Pin major versions: Tauri 2.x (not the 3.0 alphas), cpal 0.18.x.
+
+## Design
+
+- [`DESIGN.md`](DESIGN.md) is the source of truth for how Uta looks: its principles, tokens and the reasons behind them. `npm run tokens` generates `app/src/design/tokens.css` and `tokens.ts` from it; never edit those by hand. Read it before any UI work.
+- **No colour written directly in the code.** `npm run lint` fails on a `#hex`, `rgb()`/`hsl()` or named colour in CSS (Stylelint) or TypeScript (`uta/no-raw-colour`), outside the generated token files. Use a token. The escape, for one that has to stay, is a disable comment with a reason: `/* stylelint-disable-next-line <rule> -- <reason> */` or `// eslint-disable-next-line uta/no-raw-colour -- <reason>`.
+- When UI work needs something `DESIGN.md` doesn't cover, build it from the principles, mark the code `provisional: D-n`, log it in the **Design decisions** database in Notion, and list it in the PR. Will decides each between projects. The `work-ticket` skill has the steps.
 
 ## Working on tickets
 

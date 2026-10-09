@@ -58,15 +58,19 @@ Work through these in order. Each finding gets a severity:
    - snapshots are swapped, not mutated in place.
 
    A departure is blocking unless the PR explains it and Will has agreed. Then it becomes an RFC amendment.
-6. **Test quality.**
+6. **Design**, on any UI change. Read `DESIGN.md` first.
+   - It uses tokens only. `npm run lint` catches colours; check sizes, spacing and type by eye, since nothing checks them yet.
+   - Anything `DESIGN.md` doesn't cover is a provisional decision: marked `provisional: D-n` in the code, logged in the Design decisions database (see the `notion` skill) with every field filled in, and listed in the PR. Something new that isn't logged is **should fix**.
+   - An escape comment that lets a colour through (`eslint-disable` or `stylelint-disable`) needs a reason that holds up. One without is **blocking**.
+7. **Test quality.**
    - Do tests check behaviour rather than implementation details?
    - Would they catch a regression?
    - Are they deterministic, with no timing flakiness?
-7. **Code quality.**
+8. **Code quality.**
    - Readable to the next agent?
    - Consistent with the surrounding code?
    - No dead code, no debug leftovers, and no clear simplification missed?
-8. **Honesty of the record.**
+9. **Honesty of the record.**
    - Do the verification notes and the PR's evidence match what you found?
    - Are the manual checks for Will specific enough to act on?
 
