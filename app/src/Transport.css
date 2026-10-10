@@ -79,9 +79,18 @@
   background: var(--line);
 }
 
-.transport .loop-switch[aria-pressed="true"]:hover,
 .transport button:active {
   background: var(--line-2);
+}
+
+/* Loop on is already shaded: under the pointer its outline lightens, and
+   pressed it lifts to the hover shade, as if letting it up. */
+.transport .loop-switch[aria-pressed="true"]:hover {
+  border-color: var(--ink-2);
+}
+
+.transport .loop-switch[aria-pressed="true"]:active {
+  background: var(--line);
 }
 
 .transport button:focus-visible {
@@ -89,11 +98,17 @@
   outline-offset: 0;
 }
 
-.transport button:disabled {
+/* Disabled beats Loop's on and off looks. */
+.transport button:disabled,
+.transport .loop-switch[aria-pressed]:disabled {
   border-color: var(--line);
   background: transparent;
   color: var(--ink-3);
   cursor: default;
+}
+
+.transport .loop-switch[aria-pressed]:disabled::before {
+  color: var(--ink-3);
 }
 
 .transport .state {
@@ -138,12 +153,14 @@
   font: var(--font-text);
 }
 
+.transport .setting output {
+  min-width: 64px;
+}
+
 .transport .setting output,
 .master .volume output {
-  min-width: 64px;
   color: var(--ink);
   font: var(--font-number);
-  font-variant-numeric: tabular-nums;
 }
 
 .master-meter {
