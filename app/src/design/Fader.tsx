@@ -14,6 +14,11 @@ interface Props extends NumberControlOptions {
   ariaLabel?: string;
   /** The row's class, for its layout in the area around it. */
   className?: string;
+  /**
+   * Which way it runs. Stood on end, it's dragged up and down, and takes
+   * the height its place gives it: the drum panel's Levels (provisional: D-26).
+   */
+  orientation?: "horizontal" | "vertical";
 }
 
 /**
@@ -21,15 +26,27 @@ interface Props extends NumberControlOptions {
  * click it and use the arrow keys (Shift for bigger steps). Shift-drag moves
  * it in fine steps. Double-click, ⌥-click, or Delete resets it to its default.
  */
-export function Fader({ label, ariaLabel, className = "", ...options }: Props) {
+export function Fader({
+  label,
+  ariaLabel,
+  className = "",
+  orientation = "horizontal",
+  ...options
+}: Props) {
   const labelId = useId();
   const rail = useRef<HTMLSpanElement>(null);
+  const vertical = orientation === "vertical";
   const { position, text, props } = useNumberControl(
     options,
-    () => rail.current?.getBoundingClientRect().width ?? null,
+    () => {
+      const box = rail.current?.getBoundingClientRect();
+      return box ? (vertical ? box.height : box.width) : null;
+    },
+    { direction: orientation },
   );
   const { scale, defaultValue } = options;
-  const percent = (at: number) => `${(at / scale.steps) * 100}%`;
+  // Along the rail: from the left, or up from the bottom.
+  const along = (at: number) => ({ [vertical ? "bottom" : "left"]: `${(at / scale.steps) * 100}%` });
 
   return (
     <div className={`fader-row ${className}`.trim()}>
@@ -38,15 +55,12 @@ export function Fader({ label, ariaLabel, className = "", ...options }: Props) {
         className="fader"
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : labelId}
-        aria-orientation="horizontal"
+        aria-orientation={orientation}
         {...props}
       >
         <span className="fader-rail" ref={rail}>
-          <span
-            className="fader-default"
-            style={{ left: percent(scale.toPosition(defaultValue)) }}
-          />
-          <span className="fader-thumb" style={{ left: percent(position) }} />
+          <span className="fader-default" style={along(scale.toPosition(defaultValue))} />
+          <span className="fader-thumb" style={along(position)} />
         </span>
       </div>
       <output>{text}</output>

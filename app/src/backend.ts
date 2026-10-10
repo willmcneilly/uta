@@ -148,13 +148,26 @@ export interface KitRowView {
 
 /** One setting of one drum sound, in that sound's own unit. */
 export interface DrumSettingView {
-  name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db";
+  name: DrumParam["name"];
+  /** What the panel calls it: "Tune", "Level". */
+  label: string;
   value: number;
   /** The limits it has on this sound. */
   limits: Limits;
   /** A new drum track's value, which its control resets to. */
   default: number;
+  /** The unit `value`, `limits` and `default` are in. Tone's differs by sound. */
+  unit: DrumUnit;
 }
+
+/** One drum setting with its value, as `SetDrumParam` carries it. */
+export interface DrumParam {
+  name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db";
+  value: number;
+}
+
+/** A fraction runs from 0 to 1: how much of something, such as Snappy. */
+export type DrumUnit = "hz" | "seconds" | "db" | "fraction";
 
 /** A track's volume, pan, mute and solo. */
 export interface MixerView {
@@ -344,6 +357,20 @@ export function setSynthParam(
   gesture?: number,
 ): Promise<Update> {
   return invoke<Update>("set_synth_param", { track, param, gesture: gesture ?? null });
+}
+
+/**
+ * Sets one setting of one sound on a drum track. Changes to the same
+ * setting of the same sound with the same `gesture` (one drag) undo as one
+ * step.
+ */
+export function setDrumParam(
+  track: string,
+  sound: DrumSound,
+  param: DrumParam,
+  gesture?: number,
+): Promise<Update> {
+  return invoke<Update>("set_drum_param", { track, sound, param, gesture: gesture ?? null });
 }
 
 /**

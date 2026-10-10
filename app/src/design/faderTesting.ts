@@ -1,5 +1,6 @@
 // Drives a fader with the pointer in tests. jsdom has no layout, so each
-// fader's rail is given a width here: RAIL_WIDTH pixels, from x = 0.
+// fader's rail is given a length here: RAIL_WIDTH pixels, from x = 0 along
+// a fader, or up from y = 0 on one stood on end (so y runs negative).
 
 import { fireEvent } from "@testing-library/react";
 import type { Keys } from "./numberControlBehaviour";
@@ -7,20 +8,27 @@ import type { Keys } from "./numberControlBehaviour";
 /** How wide a fader's rail is in tests, in CSS pixels: a pixel is a thousandth of the way. */
 export const RAIL_WIDTH = 1000;
 
-/** `fader`'s rail, given RAIL_WIDTH. */
+const vertical = (fader: HTMLElement) => fader.getAttribute("aria-orientation") === "vertical";
+
+/** `fader`'s rail, given RAIL_WIDTH along it. */
 function measure(fader: HTMLElement): HTMLElement {
   const rail = fader.querySelector<HTMLElement>(".fader-rail");
   if (!rail) throw new Error("not a fader");
+  const [width, height] = vertical(fader) ? [0, RAIL_WIDTH] : [RAIL_WIDTH, 0];
   rail.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, left: 0, top: 0, right: RAIL_WIDTH, bottom: 0, width: RAIL_WIDTH, height: 0 }) as DOMRect;
+    ({ x: 0, y: -height, left: 0, top: -height, right: width, bottom: 0, width, height }) as DOMRect;
   return rail;
 }
 
-/** Where `fader`'s thumb is drawn, in pixels from the rail's left end. */
+/** Where `fader`'s thumb is drawn, in pixels from the rail's left end, or up from its bottom. */
 export function thumbX(fader: HTMLElement): number {
   const thumb = measure(fader).querySelector<HTMLElement>(".fader-thumb");
-  return (parseFloat(thumb?.style.left ?? "0") / 100) * RAIL_WIDTH;
+  const along = vertical(fader) ? thumb?.style.bottom : thumb?.style.left;
+  return (parseFloat(along ?? "0") / 100) * RAIL_WIDTH;
 }
+
+/** The pointer `x` pixels along `fader`'s rail. */
+const at = (fader: HTMLElement, x: number) => (vertical(fader) ? { clientY: -x } : { clientX: x });
 
 export interface Drag {
   /** Moves the pointer to `fraction` of the way along the rail. */
@@ -38,16 +46,16 @@ export function press(fader: HTMLElement, options: { fraction?: number } & Keys 
   const { fraction, ...keys } = options;
   let x = fraction === undefined ? thumbX(fader) : fraction * RAIL_WIDTH;
   measure(fader);
-  fireEvent.pointerDown(fader, { button: 0, clientX: x, ...keys });
+  fireEvent.pointerDown(fader, { button: 0, ...at(fader, x), ...keys });
   const drag: Drag = {
     to: (fraction, keys = {}) => {
       x = fraction * RAIL_WIDTH;
-      fireEvent.pointerMove(window, { clientX: x, ...keys });
+      fireEvent.pointerMove(window, { ...at(fader, x), ...keys });
       return drag;
     },
     by: (pixels, keys = {}) => {
       x += pixels;
-      fireEvent.pointerMove(window, { clientX: x, ...keys });
+      fireEvent.pointerMove(window, { ...at(fader, x), ...keys });
       return drag;
     },
     release: () => {

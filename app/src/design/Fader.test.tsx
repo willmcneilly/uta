@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Fader } from "./Fader";
 import { press, RAIL_WIDTH, thumbX } from "./faderTesting";
@@ -12,6 +12,29 @@ describeNumberControl("Fader", {
     return {
       control: screen.getByRole("slider", { name: "Volume" }),
       rerender: (next: NumberControlOptions) => view.rerender(<Fader label="Volume" {...next} />),
+    };
+  },
+  press: (fader, { offset = 0, ...keys } = {}) => {
+    const drag = press(fader, { fraction: (thumbX(fader) + offset) / RAIL_WIDTH, ...keys });
+    const along = {
+      by: (pixels: number, keys = {}) => {
+        drag.by(pixels, keys);
+        return along;
+      },
+      release: drag.release,
+    };
+    return along;
+  },
+  travel: RAIL_WIDTH,
+});
+
+describeNumberControl("Fader stood on end", {
+  render: (options) => {
+    const view = render(<Fader label="Level" orientation="vertical" {...options} />);
+    return {
+      control: screen.getByRole("slider", { name: "Level" }),
+      rerender: (next: NumberControlOptions) =>
+        view.rerender(<Fader label="Level" orientation="vertical" {...next} />),
     };
   },
   press: (fader, { offset = 0, ...keys } = {}) => {
@@ -109,5 +132,42 @@ describe("Fader", () => {
     const { fader } = renderFader(-30, -12);
     const tick = fader.querySelector<HTMLElement>(".fader-default");
     expect(tick?.style.left).toBe("80%");
+  });
+
+  describe("stood on end", () => {
+    function renderUpright(value = -30, defaultValue = -12) {
+      const onChange = vi.fn<(value: number, gesture?: number) => void>();
+      render(
+        <Fader
+          label="Level"
+          orientation="vertical"
+          value={value}
+          defaultValue={defaultValue}
+          scale={scale}
+          format={formatDb}
+          onChange={onChange}
+        />,
+      );
+      return { fader: screen.getByRole("slider", { name: "Level" }), onChange };
+    }
+
+    it("is a vertical slider", () => {
+      const { fader } = renderUpright();
+      expect(fader).toHaveAttribute("aria-orientation", "vertical");
+    });
+
+    it("draws its thumb and default up from the bottom, and goes up as the mouse does", () => {
+      const { fader, onChange } = renderUpright(-30, -12);
+      expect(fader.querySelector<HTMLElement>(".fader-thumb")?.style.bottom).toBe("50%");
+      expect(fader.querySelector<HTMLElement>(".fader-default")?.style.bottom).toBe("80%");
+      // Sideways does nothing; upwards raises it.
+      const drag = press(fader);
+      fireEvent.pointerMove(window, { clientX: 400, clientY: -500 });
+      expect(onChange).not.toHaveBeenCalled();
+      drag.to(0.75);
+      expect(thumbX(fader)).toBe(750);
+      drag.release();
+      expect(onChange.mock.calls.map(([value]) => value)).toEqual([-15]);
+    });
   });
 });

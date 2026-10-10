@@ -339,16 +339,6 @@ describe("pasting into a drum clip", () => {
   });
 });
 
-describe("a drum track's Sound tab", () => {
-  it("says the drum panel is coming, in the empty-panel style", async () => {
-    await renderApp();
-    fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
-    const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByText(/The drum panel is coming/)).toHaveClass("empty");
-    expect(within(panel).queryByRole("radiogroup")).toBeNull();
-  });
-});
-
 describe("+ Drums", () => {
   it("adds a drum track, picking its ID", async () => {
     await renderApp();
