@@ -26,4 +26,12 @@ describe("Transport", () => {
     rerender(transport(false));
     expect(screen.getByRole("button", { name: "Play" })).not.toHaveAttribute("data-playing");
   });
+
+  it("tells screen readers whether the song is playing, as a status", () => {
+    const { rerender } = render(transport(true));
+    expect(screen.getByRole("status")).toHaveTextContent("Playing");
+
+    rerender(transport(false));
+    expect(screen.getByRole("status")).toHaveTextContent("Stopped");
+  });
 });
