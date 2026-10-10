@@ -13,6 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { toPosition } from "./synthScale";
+import { press, slide, thumbX } from "./design/sliderTesting";
 import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
   Frame,
@@ -285,6 +286,12 @@ async function renderApp() {
 }
 
 const volume = () => screen.getByRole("slider", { name: /Volume/ });
+/** How far along a slider from `min` to `max` `value` is. */
+const along = (value: number, [min, max]: [number, number]) => (value - min) / (max - min);
+// The mock project's ranges.
+const VOLUME: [number, number] = [-60, 0];
+const BPM: [number, number] = [20, 300];
+const TRACK_VOLUME: [number, number] = [-60, 6];
 const tempo = () => screen.getByRole("slider", { name: /Tempo/ });
 const loopSwitch = () => screen.getByRole("button", { name: "Loop" });
 const drawnNotes = () => renderer.lastNotes().map((n) => [n.id, n.pitch, n.start, n.velocity]);
@@ -296,7 +303,7 @@ function sendFrame(overrides: Partial<Frame> = {}) {
 describe("App", () => {
   it("shows the project's volume from Rust", async () => {
     await renderApp();
-    expect(volume()).toHaveValue("-12");
+    expect(volume()).toHaveAttribute("aria-valuenow", "-12");
     expect(screen.getByText("-12.0 dB")).toBeInTheDocument();
   });
 
@@ -327,7 +334,7 @@ describe("App", () => {
 
   it("shows the project's tempo and loop switch from Rust, and no loop length control", async () => {
     await renderApp();
-    expect(tempo()).toHaveValue("120");
+    expect(tempo()).toHaveAttribute("aria-valuenow", "120");
     expect(screen.getByText("120 BPM")).toBeInTheDocument();
     expect(loopSwitch()).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("slider", { name: /Loop/ })).not.toBeInTheDocument();
@@ -335,12 +342,8 @@ describe("App", () => {
 
   it("sends tempo changes to Rust, one gesture per drag", async () => {
     await renderApp();
-    fireEvent.pointerDown(tempo());
-    fireEvent.change(tempo(), { target: { value: "128" } });
-    fireEvent.change(tempo(), { target: { value: "140" } });
-    fireEvent.pointerUp(window);
-    fireEvent.pointerDown(tempo());
-    fireEvent.change(tempo(), { target: { value: "90" } });
+    press(tempo()).to(along(128, BPM)).to(along(140, BPM)).release();
+    slide(tempo(), along(90, BPM));
 
     await waitFor(() => expect(screen.getByText("90 BPM")).toBeInTheDocument());
     const sent = calls.filter((c) => c.cmd === "set_tempo").map((c) => c.args);
@@ -362,11 +365,8 @@ describe("App", () => {
 
   it("never gives drags of different controls the same gesture", async () => {
     await renderApp();
-    fireEvent.pointerDown(volume());
-    fireEvent.change(volume(), { target: { value: "-20" } });
-    fireEvent.pointerUp(window);
-    fireEvent.pointerDown(tempo());
-    fireEvent.change(tempo(), { target: { value: "100" } });
+    slide(volume(), along(-20, VOLUME));
+    slide(tempo(), along(100, BPM));
     await waitFor(() => expect(commands()).toContain("set_tempo"));
     const volumeGesture = calls.find((c) => c.cmd === "set_volume")!.args.gesture;
     const tempoGesture = calls.find((c) => c.cmd === "set_tempo")!.args.gesture;
@@ -496,22 +496,17 @@ describe("App", () => {
 
   it("sends volume changes to Rust and shows what comes back", async () => {
     await renderApp();
-    fireEvent.change(volume(), { target: { value: "-20.5" } });
+    slide(volume(), along(-20.5, VOLUME));
     await waitFor(() => expect(screen.getByText("-20.0 dB")).toBeInTheDocument());
     const call = calls.find((c) => c.cmd === "set_volume")!;
-    expect(call.args).toEqual({ volumeDb: -20.5, gesture: null });
+    expect(call.args).toEqual({ volumeDb: -20.5, gesture: expect.any(Number) });
   });
 
   it("marks every change in one drag with the same gesture", async () => {
     await renderApp();
-    const slider = volume();
-    fireEvent.pointerDown(slider);
-    fireEvent.change(slider, { target: { value: "-20" } });
-    fireEvent.change(slider, { target: { value: "-30" } });
-    fireEvent.pointerUp(window);
-    fireEvent.change(slider, { target: { value: "-40" } });
-    fireEvent.pointerDown(slider);
-    fireEvent.change(slider, { target: { value: "-50" } });
+    press(volume()).to(along(-20, VOLUME)).to(along(-30, VOLUME)).release();
+    fireEvent.keyDown(volume(), { key: "Home" });
+    slide(volume(), along(-50, VOLUME));
 
     await waitFor(() => expect(commands().filter((c) => c === "set_volume")).toHaveLength(4));
     const gestures = calls.filter((c) => c.cmd === "set_volume").map((c) => c.args.gesture);
@@ -529,22 +524,33 @@ describe("App", () => {
       () => HTMLElement,
       string,
       (args: Record<string, unknown>) => unknown,
-      string[],
+      number[],
+      // How far along the slider each value is.
+      (value: number) => number,
     ][] = [
       [
         "master volume",
         () => volume(),
         "set_volume",
         (args) => args.volumeDb,
-        ["-20", "-25", "-30", "-35"],
+        [-20, -25, -30, -35],
+        (value) => along(value, VOLUME),
       ],
-      ["tempo", () => tempo(), "set_tempo", (args) => args.bpm, ["100", "110", "120", "130"]],
+      [
+        "tempo",
+        () => tempo(),
+        "set_tempo",
+        (args) => args.bpm,
+        [100, 110, 120, 130],
+        (value) => along(value, BPM),
+      ],
       [
         "track volume",
         () => screen.getByRole("slider", { name: "Synth 1 volume" }),
         "set_track_mixer",
         (args) => (args.mixer as MixerView).volumeDb,
-        ["-20", "-25", "-30", "-35"],
+        [-20, -25, -30, -35],
+        (value) => along(value, TRACK_VOLUME),
       ],
       [
         "synth cutoff",
@@ -558,28 +564,29 @@ describe("App", () => {
         // The slider's position, from the cutoff it sent.
         (args) =>
           toPosition((args.param as { value: number }).value, project.synthLimits.cutoffHz, "log"),
-        ["800", "700", "600", "500"],
+        [800, 700, 600, 500],
+        (position) => position / 1000,
       ],
     ];
 
     it.each(sliders)(
       "%s: sends one step at a time, the newest next, and the final value last, in one gesture",
-      async (_name, slider, cmd, value, values) => {
+      async (_name, slider, cmd, value, values, fraction) => {
         await renderApp();
         const held = new HeldReplies([cmd]);
         const sent = () => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
-        fireEvent.pointerDown(slider());
-        for (const v of values) fireEvent.change(slider(), { target: { value: v } });
-        fireEvent.pointerUp(window);
+        const drag = press(slider());
+        for (const v of values) drag.to(fraction(v));
+        drag.release();
 
         // The first step is on its way; the rest wait, and replace each other.
         expect(held.inFlight).toBe(1);
-        expect(sent().map(value)).toEqual([Number(values[0])]);
+        expect(sent().map(value)).toEqual([values[0]]);
         await held.reply();
         expect(held.inFlight).toBe(1);
         await held.replyToAll();
 
-        expect(sent().map(value)).toEqual([Number(values[0]), Number(values.at(-1))]);
+        expect(sent().map(value)).toEqual([values[0], values.at(-1)]);
         expect(sent()[0].gesture).toEqual(expect.any(Number));
         expect(sent()[1].gesture).toBe(sent()[0].gesture);
       },
@@ -588,32 +595,24 @@ describe("App", () => {
     it("keeps a keyboard change after the drag's final step", async () => {
       await renderApp();
       const held = new HeldReplies(["set_volume"]);
-      const slider = volume();
-      fireEvent.pointerDown(slider);
-      fireEvent.change(slider, { target: { value: "-20" } });
-      fireEvent.change(slider, { target: { value: "-30" } });
-      fireEvent.pointerUp(window);
-      fireEvent.change(slider, { target: { value: "-40" } });
+      press(volume()).to(along(-20, VOLUME)).to(along(-30, VOLUME)).release();
+      fireEvent.keyDown(volume(), { key: "End" });
       await held.replyToAll();
 
       const sent = calls.filter((c) => c.cmd === "set_volume").map((c) => c.args);
-      expect(sent.map((args) => args.volumeDb)).toEqual([-20, -30, -40]);
+      expect(sent.map((args) => args.volumeDb)).toEqual([-20, -30, 0]);
       expect(sent[2].gesture).toBeNull();
-      await waitFor(() => expect(screen.getByText("-40.0 dB")).toBeInTheDocument());
+      await waitFor(() => expect(volume()).toHaveAttribute("aria-valuetext", "0.0 dB"));
     });
 
     it("carries on after a step fails, and shows the error", async () => {
       await renderApp();
       const held = new HeldReplies(["set_volume"]);
       failWith = "the engine is gone";
-      const slider = volume();
-      fireEvent.pointerDown(slider);
-      fireEvent.change(slider, { target: { value: "-20" } });
-      fireEvent.change(slider, { target: { value: "-30" } });
+      const drag = press(volume()).to(along(-20, VOLUME)).to(along(-30, VOLUME));
       await held.reply();
       failWith = null;
-      fireEvent.change(slider, { target: { value: "-35" } });
-      fireEvent.pointerUp(window);
+      drag.to(along(-35, VOLUME)).release();
       await held.replyToAll();
 
       expect(screen.getByRole("alert")).toHaveTextContent("the engine is gone");
@@ -638,12 +637,12 @@ describe("App", () => {
       await renderSound();
       expect(synth().getByRole("radio", { name: "Saw" })).toBeChecked();
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "20.0 kHz");
-      expect(slider("Cutoff")).toHaveValue("1000");
+      expect(thumbX(slider("Cutoff"))).toBe(1000);
       expect(slider("Resonance")).toHaveAttribute("aria-valuetext", "0.00");
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "5.0 ms");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "200 ms");
       expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "70%");
-      expect(slider("Sustain")).toHaveValue("700");
+      expect(thumbX(slider("Sustain"))).toBe(700);
       expect(slider("Release")).toHaveAttribute("aria-valuetext", "200 ms");
     });
 
@@ -705,12 +704,12 @@ describe("App", () => {
         ["Release", "release_seconds", 0.1, "100 ms"],
       ];
       for (const [label, name, value, shown] of cases) {
-        fireEvent.change(slider(label), { target: { value: "500" } });
+        slide(slider(label), 0.5);
         await waitFor(() => expect(slider(label)).toHaveAttribute("aria-valuetext", shown));
-        expect(slider(label)).toHaveValue("500");
+        expect(thumbX(slider(label))).toBe(500);
         const sent = synthCalls().at(-1)!;
         expect(sent.track).toBe("track-1");
-        expect(sent.gesture).toBeNull();
+        expect(sent.gesture).toEqual(expect.any(Number));
         const param = sent.param as SynthParam;
         expect(param.name).toBe(name);
         expect(param.value).toBeCloseTo(value, 3);
@@ -719,8 +718,8 @@ describe("App", () => {
 
     it("sends the limits exactly at each end of a slider", async () => {
       await renderSound();
-      fireEvent.change(slider("Cutoff"), { target: { value: "0" } });
-      fireEvent.change(slider("Release"), { target: { value: "1000" } });
+      slide(slider("Cutoff"), 0);
+      slide(slider("Release"), 1);
       await waitFor(() => expect(synthCalls()).toHaveLength(2));
       expect(synthCalls().map((args) => args.param)).toEqual([
         { name: "cutoff_hz", value: 20 },
@@ -730,14 +729,9 @@ describe("App", () => {
 
     it("marks every change in one drag with the same gesture", async () => {
       await renderSound();
-      fireEvent.pointerDown(slider("Cutoff"));
-      fireEvent.change(slider("Cutoff"), { target: { value: "800" } });
-      fireEvent.change(slider("Cutoff"), { target: { value: "600" } });
-      fireEvent.pointerUp(window);
-      fireEvent.pointerDown(slider("Sustain"));
-      fireEvent.change(slider("Sustain"), { target: { value: "300" } });
-      fireEvent.pointerUp(window);
-      fireEvent.change(slider("Sustain"), { target: { value: "200" } });
+      press(slider("Cutoff")).to(0.8).to(0.6).release();
+      slide(slider("Sustain"), 0.3);
+      fireEvent.keyDown(slider("Sustain"), { key: "Home" });
 
       await waitFor(() => expect(synthCalls()).toHaveLength(4));
       const gestures = synthCalls().map((args) => args.gesture);
@@ -763,13 +757,13 @@ describe("App", () => {
       project = undone;
       await announceChange();
       expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
-      expect(slider("Cutoff")).toHaveValue("333");
+      expect(thumbX(slider("Cutoff"))).toBe(333);
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
-      expect(slider("Resonance")).toHaveValue("800");
-      expect(slider("Attack")).toHaveValue("750");
+      expect(thumbX(slider("Resonance"))).toBe(800);
+      expect(thumbX(slider("Attack"))).toBe(750);
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "1.00 s");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "10 ms");
-      expect(slider("Sustain")).toHaveValue("250");
+      expect(thumbX(slider("Sustain"))).toBe(250);
       expect(slider("Release")).toHaveAttribute("aria-valuetext", "2.50 s");
     });
   });
@@ -780,19 +774,19 @@ describe("App", () => {
     const before = fetches();
     project = view(-3);
     await act(() => emit("project-changed"));
-    await waitFor(() => expect(volume()).toHaveValue("-3"));
+    await waitFor(() => expect(volume()).toHaveAttribute("aria-valuenow", "-3"));
     expect(fetches()).toBe(before + 1);
   });
 
   it("applies a command's reply once, without fetching it again", async () => {
     await renderApp();
     const before = calls.length;
-    fireEvent.change(volume(), { target: { value: "-6" } });
-    await waitFor(() => expect(volume()).toHaveValue("-6"));
+    slide(volume(), along(-6, VOLUME));
+    await waitFor(() => expect(volume()).toHaveAttribute("aria-valuenow", "-6"));
     // Settle, in case anything else were coming.
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(commands().slice(before)).toEqual(["set_volume"]);
-    expect(volume()).toHaveValue("-6");
+    expect(volume()).toHaveAttribute("aria-valuenow", "-6");
   });
 
   describe("notes cache", () => {
@@ -806,9 +800,9 @@ describe("App", () => {
     it("draws the notes it holds when an update sends none", async () => {
       await renderApp();
       await waitFor(() => expect(drawnNotes()).toHaveLength(2));
-      fireEvent.change(volume(), { target: { value: "-6" } });
+      slide(volume(), along(-6, VOLUME));
       // The mock, like Rust, sent no notes with it: the clip's are unchanged.
-      await waitFor(() => expect(volume()).toHaveValue("-6"));
+      await waitFor(() => expect(volume()).toHaveAttribute("aria-valuenow", "-6"));
       expect(drawnNotes()).toEqual([
         ["low", 60, 0, 100],
         ["high", 72, 3840, 30],
@@ -825,8 +819,8 @@ describe("App", () => {
       await waitFor(() => expect(timeline.clips.length).toBeGreaterThan(0));
       await waitFor(() => expect(drawnNotes()).toHaveLength(2));
       const before = [timeline.clips.length, renderer.notes.length];
-      fireEvent.change(volume(), { target: { value: "-6" } });
-      await waitFor(() => expect(volume()).toHaveValue("-6"));
+      slide(volume(), along(-6, VOLUME));
+      await waitFor(() => expect(volume()).toHaveAttribute("aria-valuenow", "-6"));
       // A few frames, to draw anything that needs it.
       for (let i = 0; i < 3; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
       expect([timeline.clips.length, renderer.notes.length]).toEqual(before);
@@ -965,9 +959,15 @@ describe("App", () => {
       expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]);
 
       const second = within(header("Synth 2"));
-      expect(second.getByRole("slider", { name: "Synth 2 volume" })).toHaveValue("-6");
+      expect(second.getByRole("slider", { name: "Synth 2 volume" })).toHaveAttribute(
+        "aria-valuenow",
+        "-6",
+      );
       expect(second.getByText("-6.0 dB")).toBeInTheDocument();
-      expect(second.getByRole("slider", { name: "Synth 2 pan" })).toHaveValue("-0.5");
+      expect(second.getByRole("slider", { name: "Synth 2 pan" })).toHaveAttribute(
+        "aria-valuenow",
+        "-0.5",
+      );
       expect(second.getByText("L 50")).toBeInTheDocument();
       expect(second.getByRole("button", { name: "Mute Synth 2" })).toHaveAttribute(
         "aria-pressed",
@@ -980,7 +980,10 @@ describe("App", () => {
       expect(second.getByRole("img", { name: "Synth 2 meter" }).tagName).toBe("CANVAS");
 
       const third = within(header("Synth 3"));
-      expect(third.getByRole("slider", { name: "Synth 3 volume" })).toHaveValue("3");
+      expect(third.getByRole("slider", { name: "Synth 3 volume" })).toHaveAttribute(
+        "aria-valuenow",
+        "3",
+      );
       expect(third.getByText("R 100")).toBeInTheDocument();
       expect(third.getByRole("button", { name: "Solo Synth 3" })).toHaveAttribute(
         "aria-pressed",
@@ -995,9 +998,9 @@ describe("App", () => {
 
     it("offers volumes from -60 to +6 dB", async () => {
       await renderApp();
-      const slider = header("Synth 1").querySelector("input[aria-label='Synth 1 volume']");
-      expect(slider).toHaveAttribute("min", "-60");
-      expect(slider).toHaveAttribute("max", "6");
+      const slider = within(header("Synth 1")).getByRole("slider", { name: "Synth 1 volume" });
+      expect(slider).toHaveAttribute("aria-valuemin", "-60");
+      expect(slider).toHaveAttribute("aria-valuemax", "6");
     });
 
     it("sends volume and pan drags to Rust, one gesture per drag, and shows what comes back", async () => {
@@ -1005,16 +1008,11 @@ describe("App", () => {
       await renderApp();
       const volume = () => screen.getByRole("slider", { name: "Synth 2 volume" });
       const pan = () => screen.getByRole("slider", { name: "Synth 2 pan" });
-      fireEvent.pointerDown(volume());
-      fireEvent.change(volume(), { target: { value: "-3" } });
-      fireEvent.change(volume(), { target: { value: "4.5" } });
-      fireEvent.pointerUp(window);
+      press(volume()).to(along(-3, TRACK_VOLUME)).to(along(4.5, TRACK_VOLUME)).release();
       await waitFor(() =>
         expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument(),
       );
-      fireEvent.pointerDown(pan());
-      fireEvent.change(pan(), { target: { value: "0.25" } });
-      fireEvent.pointerUp(window);
+      slide(pan(), along(0.25, [-1, 1]));
 
       await waitFor(() => expect(within(header("Synth 2")).getByText("R 25")).toBeInTheDocument());
       expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument();
@@ -1029,10 +1027,15 @@ describe("App", () => {
       expect(mixers[1].gesture).toBe(mixers[0].gesture);
       expect(mixers[2].gesture).not.toBe(mixers[0].gesture);
 
-      // Once the pointer is up, a change (from the keyboard, say) is its own step.
-      fireEvent.change(volume(), { target: { value: "1" } });
-      fireEvent.change(pan(), { target: { value: "0.5" } });
+      // A change from the keyboard is its own step.
+      fireEvent.keyDown(volume(), { key: "ArrowLeft" });
+      await waitFor(() => expect(sent("set_track_mixer")).toHaveLength(4));
+      fireEvent.keyDown(pan(), { key: "ArrowRight", shiftKey: true });
       await waitFor(() => expect(sent("set_track_mixer")).toHaveLength(5));
+      expect(sent("set_track_mixer").slice(3).map((args) => args.mixer)).toEqual([
+        { volumeDb: 4, pan: 0.25, mute: true, solo: false },
+        { volumeDb: 4, pan: 0.35, mute: true, solo: false },
+      ]);
       expect(sent("set_track_mixer").slice(3).map((args) => args.gesture)).toEqual([null, null]);
     });
 

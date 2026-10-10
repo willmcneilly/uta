@@ -1,5 +1,7 @@
 import { type KeyboardEvent, useRef } from "react";
 import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
+import { Slider as SliderControl } from "./design/Slider";
+import type { SliderScale } from "./design/sliderScale";
 import {
   SLIDER_STEPS,
   type Scale,
@@ -10,12 +12,13 @@ import {
   fromPosition,
   toPosition,
 } from "./synthScale";
-import { useGesture } from "./useGesture";
 import "./SynthPanel.css";
 
 interface Props {
   synth: SynthView;
   limits: SynthLimits;
+  /** A new track's settings, which double-click resets each slider to. */
+  defaults: SynthView;
   /** `gesture` is the same for every change in one drag. */
   onChange: (param: SynthParam, gesture?: number) => void;
 }
@@ -33,35 +36,40 @@ interface SliderProps {
   label: string;
   name: SliderName;
   value: number;
+  defaultValue: number;
   limits: Limits;
   scale: Scale;
   format: (value: number) => string;
   onChange: Props["onChange"];
 }
 
-/** One setting on a slider. It shows the value Rust last sent. */
-function Slider({ label, name, value, limits, scale, format, onChange }: SliderProps) {
-  const gesture = useGesture();
+/** A synth slider's positions, on its log or linear scale. */
+function synthScale(limits: Limits, scale: Scale): SliderScale {
+  return {
+    min: limits[0],
+    max: limits[1],
+    steps: SLIDER_STEPS,
+    toPosition: (value) => toPosition(value, limits, scale),
+    fromPosition: (position) => fromPosition(position, limits, scale),
+  };
+}
+
+/**
+ * One setting on a slider. It shows the value Rust last sent. An arrow key
+ * moves it a hundredth of the way, and Shift+arrow a tenth.
+ */
+function Slider({ label, name, value, defaultValue, limits, scale, format, onChange }: SliderProps) {
   return (
-    <label className="setting">
-      <span>{label}</span>
-      <input
-        type="range"
-        min={0}
-        max={SLIDER_STEPS}
-        step={1}
-        value={toPosition(value, limits, scale)}
-        aria-valuetext={format(value)}
-        onPointerDown={gesture.start}
-        onChange={(event) =>
-          onChange(
-            { name, value: fromPosition(event.currentTarget.valueAsNumber, limits, scale) },
-            gesture.current(),
-          )
-        }
-      />
-      <output>{format(value)}</output>
-    </label>
+    <SliderControl
+      className="setting"
+      label={label}
+      value={value}
+      defaultValue={defaultValue}
+      scale={synthScale(limits, scale)}
+      keyStep={SLIDER_STEPS / 100}
+      format={format}
+      onChange={(setting, gesture) => onChange({ name, value: setting }, gesture)}
+    />
   );
 }
 
@@ -123,7 +131,7 @@ function WaveformPicker({
 }
 
 /** A track's synth: waveform, filter and envelope. */
-export function SynthPanel({ synth, limits, onChange }: Props) {
+export function SynthPanel({ synth, limits, defaults, onChange }: Props) {
   return (
     <section className="synth" aria-label="Synth">
       <WaveformPicker waveform={synth.waveform} onChange={onChange} />
@@ -134,6 +142,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Cutoff"
           name="cutoff_hz"
           value={synth.cutoffHz}
+          defaultValue={defaults.cutoffHz}
           limits={limits.cutoffHz}
           scale="log"
           format={formatHz}
@@ -143,6 +152,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Resonance"
           name="resonance"
           value={synth.resonance}
+          defaultValue={defaults.resonance}
           limits={limits.resonance}
           scale="linear"
           format={formatAmount}
@@ -156,6 +166,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Attack"
           name="attack_seconds"
           value={synth.attackSeconds}
+          defaultValue={defaults.attackSeconds}
           limits={limits.envelopeSeconds}
           scale="log"
           format={formatSeconds}
@@ -165,6 +176,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Decay"
           name="decay_seconds"
           value={synth.decaySeconds}
+          defaultValue={defaults.decaySeconds}
           limits={limits.envelopeSeconds}
           scale="log"
           format={formatSeconds}
@@ -174,6 +186,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Sustain"
           name="sustain"
           value={synth.sustain}
+          defaultValue={defaults.sustain}
           limits={limits.sustain}
           scale="linear"
           format={formatLevel}
@@ -183,6 +196,7 @@ export function SynthPanel({ synth, limits, onChange }: Props) {
           label="Release"
           name="release_seconds"
           value={synth.releaseSeconds}
+          defaultValue={defaults.releaseSeconds}
           limits={limits.envelopeSeconds}
           scale="log"
           format={formatSeconds}

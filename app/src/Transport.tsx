@@ -1,6 +1,7 @@
 import type { ProjectView } from "./backend";
+import { Slider } from "./design/Slider";
+import { linearScale } from "./design/sliderScale";
 import { type BarBeat, formatBarBeat } from "./musicalTime";
-import { useGesture } from "./useGesture";
 import "./Transport.css";
 
 interface Props {
@@ -32,7 +33,6 @@ export function Transport({
   onTempo,
   onLoopEnabled,
 }: Props) {
-  const tempoGesture = useGesture();
   return (
     <section className="transport" aria-label="Transport">
       <button type="button" title="Play (Space)" onClick={onPlay}>
@@ -59,22 +59,15 @@ export function Transport({
       </span>
 
       {project && (
-        <label className="setting">
-          <span>Tempo</span>
-          <input
-            type="range"
-            min={project.minBpm}
-            max={project.maxBpm}
-            step={1}
-            value={project.bpm}
-            aria-valuetext={formatBpm(project.bpm)}
-            onPointerDown={tempoGesture.start}
-            onChange={(event) =>
-              onTempo(event.currentTarget.valueAsNumber, tempoGesture.current())
-            }
-          />
-          <output>{formatBpm(project.bpm)}</output>
-        </label>
+        <Slider
+          className="setting"
+          label="Tempo"
+          value={project.bpm}
+          defaultValue={project.defaultBpm}
+          scale={linearScale(project.minBpm, project.maxBpm, 1)}
+          format={formatBpm}
+          onChange={onTempo}
+        />
       )}
 
       <span className="position" data-testid="position" title="Bar and beat">

@@ -1,5 +1,6 @@
 import type { ProjectView } from "./backend";
-import { useGesture } from "./useGesture";
+import { Slider } from "./design/Slider";
+import { linearScale } from "./design/sliderScale";
 import "./Volume.css";
 
 interface Props {
@@ -14,22 +15,15 @@ function formatDb(db: number): string {
 
 /** The master volume. It shows the project's volume, as Rust last sent it. */
 export function Volume({ project, onChange }: Props) {
-  const gesture = useGesture();
-  const shown = Math.min(project.maxVolumeDb, Math.max(project.minVolumeDb, project.volumeDb));
   return (
-    <label className="volume">
-      <span>Volume</span>
-      <input
-        type="range"
-        min={project.minVolumeDb}
-        max={project.maxVolumeDb}
-        step={0.5}
-        value={shown}
-        aria-valuetext={formatDb(project.volumeDb)}
-        onPointerDown={gesture.start}
-        onChange={(event) => onChange(event.currentTarget.valueAsNumber, gesture.current())}
-      />
-      <output>{formatDb(project.volumeDb)}</output>
-    </label>
+    <Slider
+      className="volume"
+      label="Volume"
+      value={project.volumeDb}
+      defaultValue={project.defaultVolumeDb}
+      scale={linearScale(project.minVolumeDb, project.maxVolumeDb, 0.5)}
+      format={formatDb}
+      onChange={onChange}
+    />
   );
 }
