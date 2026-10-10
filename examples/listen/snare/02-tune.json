@@ -1,0 +1,335 @@
+{
+  "project": "46b8e041-8c57-574b-87e9-f27e6d41f73f",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "5c5029ef-2634-5a5f-9c9e-f8f7bf0b5a35",
+              "name": "tune_hz 140.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 140.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "411d8e9f-1e96-5ce0-9a6d-82d7082761c4",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "802afd5b-e87b-53f1-8250-6970c5993f62",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "a58fd670-8a1f-54ca-a542-574f9cfb4543",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "784fe722-b5f9-585f-b44c-464452ffc468",
+              "name": "tune_hz 160.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 160.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "005b8ef0-3a36-5f3d-a377-f5314dee225d",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "b8f47919-4e69-54da-95b8-4af866f44b2c",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "2fa0c0f6-503b-5685-8f4a-e0dbc4c255be",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "bced3d13-d64b-57f8-8a32-b4340a594008",
+              "name": "tune_hz 180.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 180.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "58a6bcbb-bafe-5123-87d7-ee08ccb7335f",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "9ed13a0a-93ec-58ba-a17c-24f8adb302b2",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "501d09db-af50-5c3f-9e3f-d36f2872f53f",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "9691cf97-c6aa-531d-89f1-3953885b0e6c",
+              "name": "tune_hz 200.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 200.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "be85163d-b9d1-5276-9dba-086f8efe9740",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "e4835b26-d59f-5c5e-8590-397a99429fde",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "4e04dbeb-00a0-5bd9-8b3b-a95b74d1b856",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "fc2e5335-44bf-54e0-af95-ffac23956182",
+              "name": "tune_hz 220.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 220.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a0ed57bc-123a-5872-87ed-4fcec012d5ae",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "6ef6b344-e3e2-5f2e-b109-01a1b175c0c9",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "6111b77b-4847-50a9-8605-50e74d8e358e",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 6,
+            "track": {
+              "id": "e2566733-8a48-559a-911b-3b5654622096",
+              "name": "tune_hz 240.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 240.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a12ece1c-1b81-5f2b-bdc7-46c6ce792dea",
+                  "start": 19200,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "e2bf39ef-42f6-517b-a5b6-55cdb42998d4",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "be8269fd-07c9-5efb-930f-bf169a120883",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 7,
+            "track": {
+              "id": "63773bca-62d8-5d16-94df-2a95cba7ecc5",
+              "name": "tune_hz 260.0",
+              "source": {
+                "drums": {
+                  "snare": {
+                    "tune_hz": 260.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c5f5fc79-2e2f-5fc5-8875-1453dc27fef7",
+                  "start": 23040,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "94053b67-79df-56f9-88e8-b28273077cc4",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "726216a8-990b-5734-aa81-bd9b5f41598c",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

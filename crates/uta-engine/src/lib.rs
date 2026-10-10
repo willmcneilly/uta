@@ -21,7 +21,8 @@ mod synth;
 
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
 pub use drums::{
-    DRUM_SMOOTHING_SECONDS, KickSettings, KitSettings, REFERENCE_PEAK, velocity_to_strength,
+    ClapSettings, DRUM_SMOOTHING_SECONDS, KickSettings, KitSettings, REFERENCE_PEAK, SnareSettings,
+    velocity_to_strength,
 };
 pub use mixer::MixerStrip;
 pub use processor::{

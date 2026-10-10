@@ -98,13 +98,16 @@ impl DrumSound {
 
 /// Every setting of a drum track's kit.
 ///
-/// Serialises as `{"kick":{...}}`. Every sound may be left out, and takes
-/// its defaults, so a sound added later doesn't stop older command lists
-/// loading. The sounds that have no settings yet aren't here.
+/// Serialises as `{"kick":{...},"snare":{...},"clap":{...}}`. Every sound
+/// may be left out, and takes its defaults, so a sound added later doesn't
+/// stop older command lists loading. The sounds that have no settings yet
+/// aren't here.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KitSettings {
     pub kick: KickSettings,
+    pub snare: SnareSettings,
+    pub clap: ClapSettings,
 }
 
 /// The 808 kick's settings: its front panel, plus Tune. See RFC-006, "The
@@ -146,6 +149,78 @@ impl Default for KickSettings {
     }
 }
 
+/// The 909 snare's settings: its front panel. See RFC-006, "The kit".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SnareSettings {
+    /// The shell's pitch, in Hz: the lower of its two tones.
+    pub tune_hz: f32,
+    /// Tone, as on the 909: the wires' length, in seconds. It's how long
+    /// the wires take to die away by 40 dB once their hold ends.
+    pub tone_seconds: f32,
+    /// How much rattle there is against the shell, from 0 (all shell) to 1
+    /// (all wires).
+    pub snappy: f32,
+    /// Its level, in dB.
+    pub level_db: f32,
+}
+
+impl SnareSettings {
+    pub const MIN_TUNE_HZ: f32 = 140.0;
+    pub const MAX_TUNE_HZ: f32 = 260.0;
+    pub const MIN_TONE_SECONDS: f32 = 0.04;
+    pub const MAX_TONE_SECONDS: f32 = 0.4;
+    pub const MIN_SNAPPY: f32 = 0.0;
+    pub const MAX_SNAPPY: f32 = 1.0;
+}
+
+impl Default for SnareSettings {
+    fn default() -> Self {
+        Self {
+            // The 909's shell, from the research's recipe.
+            tune_hz: 180.0,
+            // A tight 909 snare: the wires hold, then are gone in a little
+            // over a fifth of a second.
+            tone_seconds: 0.16,
+            snappy: 0.5,
+            level_db: 0.0,
+        }
+    }
+}
+
+/// The 808 clap's settings: its front panel, plus Tone and Decay. See
+/// RFC-006, "The kit".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ClapSettings {
+    /// Tone: the band-pass's centre, in Hz.
+    pub tone_hz: f32,
+    /// How long the tail (the "reverb") rings: the seconds it takes to die
+    /// away by 40 dB.
+    pub decay_seconds: f32,
+    /// Its level, in dB.
+    pub level_db: f32,
+}
+
+impl ClapSettings {
+    pub const MIN_TONE_HZ: f32 = 700.0;
+    pub const MAX_TONE_HZ: f32 = 2000.0;
+    pub const MIN_DECAY_SECONDS: f32 = 0.05;
+    pub const MAX_DECAY_SECONDS: f32 = 0.4;
+}
+
+impl Default for ClapSettings {
+    fn default() -> Self {
+        Self {
+            // The 808's band-pass, from the research's recipe.
+            tone_hz: 1000.0,
+            // A tail you hear for about 100 ms, as on the 808.
+            decay_seconds: 0.2,
+            level_db: 0.0,
+        }
+    }
+}
+
 /// The quietest and loudest any sound's Level goes, in dB, as a track's
 /// volume does.
 pub const MIN_LEVEL_DB: f32 = -60.0;
@@ -155,12 +230,17 @@ pub const MAX_LEVEL_DB: f32 = 6.0;
 /// sound it's for travels beside it, and not every sound has every setting.
 ///
 /// Serialises as `{"name":"tune_hz","value":55.0}`.
+///
+/// Each value is in its sound's own unit. Tone is the one that differs: from
+/// 0 to 1 on the kick, the wires' length in seconds on the snare, and the
+/// band-pass's centre in Hz on the clap, as each sound's settings say.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "name", content = "value", rename_all = "snake_case")]
 pub enum DrumParam {
     TuneHz(f32),
     Tone(f32),
     DecaySeconds(f32),
+    Snappy(f32),
     LevelDb(f32),
 }
 
@@ -176,6 +256,7 @@ impl DrumParam {
             Self::TuneHz(value)
             | Self::Tone(value)
             | Self::DecaySeconds(value)
+            | Self::Snappy(value)
             | Self::LevelDb(value) => value,
         }
     }
@@ -195,26 +276,40 @@ impl KitSettings {
     /// The limits (inclusive) of `param` on `sound`, or `None` if the sound
     /// doesn't have that setting.
     pub fn range(sound: DrumSound, param: &DrumParam) -> Option<(f32, f32)> {
+        use ClapSettings as C;
+        use DrumParam as P;
+        use DrumSound as D;
         use KickSettings as K;
+        use SnareSettings as S;
         match (sound, param) {
-            (DrumSound::Kick, DrumParam::TuneHz(_)) => Some((K::MIN_TUNE_HZ, K::MAX_TUNE_HZ)),
-            (DrumSound::Kick, DrumParam::Tone(_)) => Some((K::MIN_TONE, K::MAX_TONE)),
-            (DrumSound::Kick, DrumParam::DecaySeconds(_)) => {
-                Some((K::MIN_DECAY_SECONDS, K::MAX_DECAY_SECONDS))
-            }
-            (DrumSound::Kick, DrumParam::LevelDb(_)) => Some((MIN_LEVEL_DB, MAX_LEVEL_DB)),
+            (D::Kick, P::TuneHz(_)) => Some((K::MIN_TUNE_HZ, K::MAX_TUNE_HZ)),
+            (D::Kick, P::Tone(_)) => Some((K::MIN_TONE, K::MAX_TONE)),
+            (D::Kick, P::DecaySeconds(_)) => Some((K::MIN_DECAY_SECONDS, K::MAX_DECAY_SECONDS)),
+            (D::Snare, P::TuneHz(_)) => Some((S::MIN_TUNE_HZ, S::MAX_TUNE_HZ)),
+            (D::Snare, P::Tone(_)) => Some((S::MIN_TONE_SECONDS, S::MAX_TONE_SECONDS)),
+            (D::Snare, P::Snappy(_)) => Some((S::MIN_SNAPPY, S::MAX_SNAPPY)),
+            (D::Clap, P::Tone(_)) => Some((C::MIN_TONE_HZ, C::MAX_TONE_HZ)),
+            (D::Clap, P::DecaySeconds(_)) => Some((C::MIN_DECAY_SECONDS, C::MAX_DECAY_SECONDS)),
+            (D::Kick | D::Snare | D::Clap, P::LevelDb(_)) => Some((MIN_LEVEL_DB, MAX_LEVEL_DB)),
             _ => None,
         }
     }
 
     /// Every setting of every sound, as `SetDrumParam` carries them.
     pub fn params(&self) -> Vec<(DrumSound, DrumParam)> {
-        let kick = &self.kick;
+        let (kick, snare, clap) = (&self.kick, &self.snare, &self.clap);
         vec![
             (DrumSound::Kick, DrumParam::TuneHz(kick.tune_hz)),
             (DrumSound::Kick, DrumParam::Tone(kick.tone)),
             (DrumSound::Kick, DrumParam::DecaySeconds(kick.decay_seconds)),
             (DrumSound::Kick, DrumParam::LevelDb(kick.level_db)),
+            (DrumSound::Snare, DrumParam::TuneHz(snare.tune_hz)),
+            (DrumSound::Snare, DrumParam::Tone(snare.tone_seconds)),
+            (DrumSound::Snare, DrumParam::Snappy(snare.snappy)),
+            (DrumSound::Snare, DrumParam::LevelDb(snare.level_db)),
+            (DrumSound::Clap, DrumParam::Tone(clap.tone_hz)),
+            (DrumSound::Clap, DrumParam::DecaySeconds(clap.decay_seconds)),
+            (DrumSound::Clap, DrumParam::LevelDb(clap.level_db)),
         ]
     }
 
@@ -235,12 +330,21 @@ impl KitSettings {
         param: DrumParam,
     ) -> Result<DrumParam, DrumParamError> {
         check(sound, &param)?;
-        let kick = &mut self.kick;
+        use DrumParam as P;
+        use DrumSound as D;
+        let (kick, snare, clap) = (&mut self.kick, &mut self.snare, &mut self.clap);
         let slot = match (sound, param) {
-            (DrumSound::Kick, DrumParam::TuneHz(_)) => &mut kick.tune_hz,
-            (DrumSound::Kick, DrumParam::Tone(_)) => &mut kick.tone,
-            (DrumSound::Kick, DrumParam::DecaySeconds(_)) => &mut kick.decay_seconds,
-            (DrumSound::Kick, DrumParam::LevelDb(_)) => &mut kick.level_db,
+            (D::Kick, P::TuneHz(_)) => &mut kick.tune_hz,
+            (D::Kick, P::Tone(_)) => &mut kick.tone,
+            (D::Kick, P::DecaySeconds(_)) => &mut kick.decay_seconds,
+            (D::Kick, P::LevelDb(_)) => &mut kick.level_db,
+            (D::Snare, P::TuneHz(_)) => &mut snare.tune_hz,
+            (D::Snare, P::Tone(_)) => &mut snare.tone_seconds,
+            (D::Snare, P::Snappy(_)) => &mut snare.snappy,
+            (D::Snare, P::LevelDb(_)) => &mut snare.level_db,
+            (D::Clap, P::Tone(_)) => &mut clap.tone_hz,
+            (D::Clap, P::DecaySeconds(_)) => &mut clap.decay_seconds,
+            (D::Clap, P::LevelDb(_)) => &mut clap.level_db,
             _ => unreachable!("check found the setting"),
         };
         let previous = std::mem::replace(slot, param.value());
@@ -248,6 +352,7 @@ impl KitSettings {
             DrumParam::TuneHz(_) => DrumParam::TuneHz(previous),
             DrumParam::Tone(_) => DrumParam::Tone(previous),
             DrumParam::DecaySeconds(_) => DrumParam::DecaySeconds(previous),
+            DrumParam::Snappy(_) => DrumParam::Snappy(previous),
             DrumParam::LevelDb(_) => DrumParam::LevelDb(previous),
         })
     }
@@ -298,6 +403,54 @@ mod tests {
     }
 
     #[test]
+    fn the_snare_and_claps_defaults_and_limits_are_the_rfcs() {
+        let snare = SnareSettings::default();
+        assert_eq!((snare.tune_hz, snare.level_db), (180.0, 0.0));
+        let clap = ClapSettings::default();
+        assert_eq!((clap.tone_hz, clap.level_db), (1000.0, 0.0));
+        let range = |sound, param| KitSettings::range(sound, &param);
+        use DrumParam as P;
+        use DrumSound as D;
+        assert_eq!(range(D::Snare, P::TuneHz(0.0)), Some((140.0, 260.0)));
+        assert_eq!(range(D::Snare, P::Tone(0.0)), Some((0.04, 0.4)));
+        assert_eq!(range(D::Snare, P::Snappy(0.0)), Some((0.0, 1.0)));
+        assert_eq!(range(D::Clap, P::Tone(0.0)), Some((700.0, 2000.0)));
+        assert_eq!(range(D::Clap, P::DecaySeconds(0.0)), Some((0.05, 0.4)));
+        for sound in [D::Kick, D::Snare, D::Clap] {
+            assert_eq!(range(sound, P::LevelDb(0.0)), Some((-60.0, 6.0)));
+        }
+    }
+
+    #[test]
+    fn every_setting_of_the_snare_and_clap_sets_and_undoes() {
+        let mut kit = KitSettings::default();
+        let changes = [
+            (DrumSound::Snare, DrumParam::TuneHz(260.0)),
+            (DrumSound::Snare, DrumParam::Tone(0.04)),
+            (DrumSound::Snare, DrumParam::Snappy(1.0)),
+            (DrumSound::Snare, DrumParam::LevelDb(-60.0)),
+            (DrumSound::Clap, DrumParam::Tone(2000.0)),
+            (DrumSound::Clap, DrumParam::DecaySeconds(0.05)),
+            (DrumSound::Clap, DrumParam::LevelDb(6.0)),
+        ];
+        let mut undo = Vec::new();
+        for (sound, param) in changes {
+            let previous = kit.set(sound, param).unwrap();
+            assert!(previous.same_setting(&param));
+            undo.push((sound, previous));
+        }
+        assert!(kit.validate().is_ok());
+        let changed = kit;
+        for (sound, param) in changes {
+            assert!(changed.params().contains(&(sound, param)), "{param:?}");
+        }
+        for (sound, previous) in undo.into_iter().rev() {
+            kit.set(sound, previous).unwrap();
+        }
+        assert_eq!(kit, KitSettings::default());
+    }
+
+    #[test]
     fn set_returns_the_old_value_and_limits_are_inclusive() {
         let mut kit = KitSettings::default();
         assert_eq!(
@@ -334,17 +487,34 @@ mod tests {
                 Err(DrumParamError::OutOfRange { .. })
             ));
         }
-        // The other sounds have no settings until their tickets.
-        assert_eq!(
-            kit.set(DrumSound::Snare, DrumParam::TuneHz(200.0)),
-            Err(DrumParamError::NoSuchSetting)
-        );
+        // A sound only has its own settings, and the sounds without a
+        // circuit yet have none.
+        for (sound, param) in [
+            (DrumSound::Kick, DrumParam::Snappy(0.5)),
+            (DrumSound::Snare, DrumParam::DecaySeconds(0.2)),
+            (DrumSound::Clap, DrumParam::TuneHz(200.0)),
+            (DrumSound::Clap, DrumParam::Snappy(0.5)),
+            (DrumSound::LowTom, DrumParam::TuneHz(90.0)),
+        ] {
+            assert_eq!(
+                kit.set(sound, param),
+                Err(DrumParamError::NoSuchSetting),
+                "{sound:?} {param:?}"
+            );
+        }
+        // Tone is in each sound's own unit, so its limits differ.
+        assert!(kit.set(DrumSound::Snare, DrumParam::Tone(0.5)).is_err());
+        assert!(kit.set(DrumSound::Clap, DrumParam::Tone(0.5)).is_err());
         assert_eq!(kit, KitSettings::default());
     }
 
     #[test]
     fn settings_serialise_and_leave_out_nothing_they_need() {
-        let json = r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0}}"#;
+        let json = concat!(
+            r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0},"#,
+            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
+            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0}}"#,
+        );
         assert_eq!(
             serde_json::to_string(&KitSettings::default()).unwrap(),
             json
@@ -355,6 +525,12 @@ mod tests {
         let tuned: KitSettings = serde_json::from_str(r#"{"kick":{"tune_hz":60.0}}"#).unwrap();
         assert_eq!(tuned.kick.tune_hz, 60.0);
         assert_eq!(tuned.kick.decay_seconds, 0.3);
+        // A kit from before the snare and clap had settings (format 4 as
+        // UTA-47 wrote it) takes their defaults.
+        assert_eq!(tuned.snare, SnareSettings::default());
+        assert_eq!(tuned.clap, ClapSettings::default());
+        let param: DrumParam = serde_json::from_str(r#"{"name":"snappy","value":0.7}"#).unwrap();
+        assert_eq!(param, DrumParam::Snappy(0.7));
         assert!(serde_json::from_str::<KitSettings>(r#"{"cowbell":{}}"#).is_err());
     }
 }

@@ -997,7 +997,11 @@ mod tests {
             pitch: 36,
             ..note(0, 36, 0)
         };
-        let kit_json = r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0}}"#;
+        let kit_json = concat!(
+            r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0},"#,
+            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
+            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0}}"#,
+        );
         let cases = [
             (
                 Command::SetDrumParam {

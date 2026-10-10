@@ -46,7 +46,8 @@ enum Load {
     Check7,
     /// 32 drum tracks, each playing every kit note at once on every 16th,
     /// with every sound at its longest Decay so they never fall silent, and
-    /// the kick's Tune gliding. It grows as the sounds arrive. See RFC-006,
+    /// the kick's and snare's Tune and the clap's Tone gliding. It grows as
+    /// the sounds arrive. See RFC-006,
     /// "Risks & unknowns" (CPU).
     Drums,
     /// The same song, timing only the first block after Play from bar
@@ -188,13 +189,28 @@ fn drum_tracks() -> Project {
             tracks: vec![synth],
         })
         .unwrap();
-    project
-        .apply(&Command::SetDrumParam {
-            track: id,
-            sound: DrumSound::Kick,
-            param: DrumParam::DecaySeconds(uta_core::KickSettings::MAX_DECAY_SECONDS),
-        })
-        .unwrap();
+    for (sound, param) in [
+        (
+            DrumSound::Kick,
+            DrumParam::DecaySeconds(uta_core::KickSettings::MAX_DECAY_SECONDS),
+        ),
+        (
+            DrumSound::Snare,
+            DrumParam::Tone(uta_core::SnareSettings::MAX_TONE_SECONDS),
+        ),
+        (
+            DrumSound::Clap,
+            DrumParam::DecaySeconds(uta_core::ClapSettings::MAX_DECAY_SECONDS),
+        ),
+    ] {
+        project
+            .apply(&Command::SetDrumParam {
+                track: id,
+                sound,
+                param,
+            })
+            .unwrap();
+    }
     let first = project.tracks()[0].clone();
     let copies = (1..Project::MAX_TRACKS)
         .map(|index| PlacedTrack {
@@ -290,12 +306,16 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
-                // Every kick's Tune, gliding.
+                // Every kick's and snare's Tune, and every clap's Tone,
+                // gliding.
                 Load::Drums => {
                     let mut snapshot = renderer.controller.snapshot().clone();
                     for track in snapshot.tracks_mut() {
                         if let TrackSound::Drums(kit) = &mut track.sound {
-                            kit.kick.tune_hz = 40.0 + ((i / 64) % 40) as f32;
+                            let step = ((i / 64) % 40) as f32;
+                            kit.kick.tune_hz = 40.0 + step;
+                            kit.snare.tune_hz = 140.0 + 3.0 * step;
+                            kit.clap.tone_hz = 700.0 + 30.0 * step;
                         }
                     }
                     renderer.controller.set_snapshot(snapshot).unwrap();

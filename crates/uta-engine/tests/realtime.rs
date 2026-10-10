@@ -14,8 +14,8 @@ mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{
-    KICK, demo_loop, demo_song, drum_project, drum_track, empty_drum_track, empty_sine_track, hit,
-    note, project, replace_track, with_every_slot_taken, with_mixer,
+    CLAP, KICK, SNARE, demo_loop, demo_song, drum_project, drum_track, empty_drum_track,
+    empty_sine_track, hit, note, project, replace_track, with_every_slot_taken, with_mixer,
 };
 use uta_core::{
     Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
@@ -640,25 +640,24 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     );
 }
 
-/// The kick's hits, fast repeats and flams, every control turned while it
-/// rings, live hits, a jump and Play again (which restarts the kit), and
-/// more drum events in a block than the budget: none of it allocates or
-/// frees on the audio thread.
+/// The kick's, snare's and clap's hits, fast repeats and flams, every
+/// control of each turned while they ring, live hits, a jump and Play again
+/// (which restarts the kit's noise), and more drum events in a block than
+/// the budget: none of it allocates or frees on the audio thread.
 #[test]
 fn drum_hits_flams_and_control_turns_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
     let beat = 960;
     let mut hits = Vec::new();
-    for i in 0..16u64 {
-        // A kick every 16th, with a flam 10 ms before each beat.
-        hits.push(hit(2 * u128::from(i), KICK, 40 + i as u8 * 5, i * beat / 4));
-        if i % 4 == 0 {
-            hits.push(hit(
-                2 * u128::from(i) + 1,
-                KICK,
-                64,
-                (i * beat / 4).saturating_sub(19),
-            ));
+    for (n, pitch) in [KICK, SNARE, CLAP].into_iter().enumerate() {
+        let first = 100 * n as u128;
+        for i in 0..16u64 {
+            // Each sound every 16th, with a flam 10 ms before each beat.
+            let id = first + 2 * u128::from(i);
+            hits.push(hit(id, pitch, 40 + i as u8 * 5, i * beat / 4));
+            if i % 4 == 0 {
+                hits.push(hit(id + 1, pitch, 64, (i * beat / 4).saturating_sub(19)));
+            }
         }
     }
     // More hits on one sample than a block's budget of events.
@@ -671,28 +670,44 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
     let slot = renderer.controller.slot(drum_track()).unwrap();
     renderer.controller.play().unwrap();
 
+    use DrumSound::{Clap, Kick, Snare};
     let turns = [
-        DrumParam::TuneHz(80.0),
-        DrumParam::Tone(1.0),
-        DrumParam::DecaySeconds(0.05),
-        DrumParam::LevelDb(-60.0),
-        DrumParam::TuneHz(40.0),
-        DrumParam::Tone(0.0),
-        DrumParam::DecaySeconds(0.8),
-        DrumParam::LevelDb(6.0),
+        (Kick, DrumParam::TuneHz(80.0)),
+        (Snare, DrumParam::TuneHz(260.0)),
+        (Kick, DrumParam::Tone(1.0)),
+        (Snare, DrumParam::Tone(0.04)),
+        (Clap, DrumParam::Tone(2000.0)),
+        (Kick, DrumParam::DecaySeconds(0.05)),
+        (Clap, DrumParam::DecaySeconds(0.4)),
+        (Snare, DrumParam::Snappy(1.0)),
+        (Kick, DrumParam::LevelDb(-60.0)),
+        (Snare, DrumParam::LevelDb(6.0)),
+        (Clap, DrumParam::LevelDb(-60.0)),
+        (Kick, DrumParam::TuneHz(40.0)),
+        (Snare, DrumParam::TuneHz(140.0)),
+        (Kick, DrumParam::Tone(0.0)),
+        (Snare, DrumParam::Tone(0.4)),
+        (Clap, DrumParam::Tone(700.0)),
+        (Kick, DrumParam::DecaySeconds(0.8)),
+        (Clap, DrumParam::DecaySeconds(0.05)),
+        (Snare, DrumParam::Snappy(0.0)),
+        (Kick, DrumParam::LevelDb(6.0)),
+        (Snare, DrumParam::LevelDb(-60.0)),
+        (Clap, DrumParam::LevelDb(6.0)),
     ];
-    for (round, &param) in turns.iter().cycle().take(40).enumerate() {
+    let pitches = [KICK, SNARE, CLAP];
+    for (round, &(sound, param)) in turns.iter().cycle().take(66).enumerate() {
         project
             .apply(&Command::SetDrumParam {
                 track: drum_track(),
-                sound: DrumSound::Kick,
+                sound,
                 param,
             })
             .unwrap();
         renderer.controller.set_project(&project).unwrap();
         renderer
             .controller
-            .note_on(slot, NoteKey(round as u128), KICK, 127)
+            .note_on(slot, NoteKey(round as u128), pitches[round % 3], 127)
             .unwrap();
         renderer
             .controller
@@ -701,7 +716,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         if round % 10 == 9 {
             renderer.controller.locate(beat / 2).unwrap();
         }
-        if round == 20 {
+        if round == 20 || round == 50 {
             renderer.controller.stop().unwrap();
             renderer.controller.play().unwrap();
         }

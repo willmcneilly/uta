@@ -453,12 +453,12 @@ fn drum_tracks_do_not_chase() {
 }
 
 /// The rows without a sound yet are silent, and a note on any of them
-/// leaves the kick alone.
+/// leaves the kick alone. The snare and clap have their own tests.
 #[test]
 fn the_other_rows_are_silent_for_now() {
     let hits = KIT
         .iter()
-        .filter(|row| row.sound != DrumSound::Kick)
+        .filter(|row| ![DrumSound::Kick, DrumSound::Snare, DrumSound::Clap].contains(&row.sound))
         .enumerate()
         .map(|(i, row)| hit(i as u128, row.pitch, 127, 0))
         .collect();
