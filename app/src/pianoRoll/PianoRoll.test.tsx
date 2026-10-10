@@ -713,6 +713,8 @@ describe("resizing a selection", () => {
 });
 
 describe("moving notes with the arrow keys", () => {
+  const auditioned = () => sent("audition_note").map((args) => args.pitch);
+
   const press = async (name: string, modifiers: Modifiers = {}) => {
     await act(async () => {
       fireEvent.keyDown(roll(), { key: name, ...modifiers });
@@ -742,6 +744,18 @@ describe("moving notes with the arrow keys", () => {
     expect(renderer.lastSelected()).toEqual(["high", "low"]);
   });
 
+  it("plays the first selected note where each press puts it", async () => {
+    // A chord on the first beat: its lowest note plays.
+    project = projectView({}, [note("e", 64, 0), note("c", 60, 0), note("later", 55, 960)]);
+    await renderApp();
+    await click(240, 64);
+    await click(240, 60, { shiftKey: true });
+    await click(960 + 240, 55, { shiftKey: true });
+    await press("ArrowUp");
+    await press("ArrowDown", { shiftKey: true });
+    expect(auditioned()).toEqual([61, 49]);
+  });
+
   it("moves it an octave with Shift", async () => {
     await renderApp();
     await click(240, 60);
@@ -765,13 +779,61 @@ describe("moving notes with the arrow keys", () => {
     ]);
   });
 
+  it("moves the selection a grid step with ← and →, without playing it", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await press("ArrowRight");
+    await press("ArrowRight");
+    await press("ArrowLeft");
+
+    const sets = sent("set_notes");
+    // A sixteenth, the grid the piano roll opens with.
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 60, 240), note("high", 72, 4080)],
+      [note("low", 60, 480), note("high", 72, 4320)],
+      [note("low", 60, 240), note("high", 72, 4080)],
+    ]);
+    expect(new Set(sets.map((set) => set.gesture)).size).toBe(3);
+    expect(sent("trim_notes")).toEqual(
+      sets.map((set) => ({ clip: "clip-1", notes: ["low", "high"], gesture: set.gesture })),
+    );
+    expect(auditioned()).toEqual([]);
+  });
+
+  it("moves by the grid picked in the Snap menu, or a sixteenth with snapping off", async () => {
+    await renderApp();
+    await click(240, 60);
+    fireEvent.change(screen.getByLabelText("Snap"), { target: { value: "1/4" } });
+    await press("ArrowRight");
+    fireEvent.change(screen.getByLabelText("Snap"), { target: { value: "off" } });
+    await press("ArrowRight");
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].start)).toEqual([
+      960, 1200,
+    ]);
+  });
+
+  it("stops at the clip's start, sending nothing once there", async () => {
+    await renderApp();
+    await click(240, 60);
+    await press("ArrowRight");
+    await press("ArrowLeft");
+    await press("ArrowLeft");
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].start)).toEqual([
+      240, 0,
+    ]);
+  });
+
   it("does nothing with nothing selected, or with ⌘, Ctrl or ⌥ held", async () => {
     await renderApp();
     await press("ArrowUp");
+    await press("ArrowRight");
     await click(240, 60);
     await press("ArrowUp", { metaKey: true });
     await press("ArrowUp", { altKey: true });
     await press("ArrowDown", { ctrlKey: true });
+    await press("ArrowLeft", { metaKey: true });
+    await press("ArrowRight", { altKey: true });
     expect(edits()).toEqual([]);
   });
 });

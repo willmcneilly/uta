@@ -10,6 +10,7 @@ import {
   moveNotes,
   resizeNotes,
   sameNote,
+  shiftNotes,
   transposeNotes,
 } from "./editing";
 import type { PlacedNote } from "./notes";
@@ -297,6 +298,26 @@ describe("moving notes by pitch", () => {
     expect(transposeNotes(high, 12).map((note) => note.pitch)).toEqual([123, 127]);
     const low = [n("a", 5), n("b", 9)];
     expect(transposeNotes(low, -12).map((note) => note.pitch)).toEqual([0, 4]);
+  });
+});
+
+describe("moving notes in time", () => {
+  const n = (id: string, start: number): NoteView => ({
+    id,
+    pitch: 60,
+    velocity: 100,
+    start,
+    length: 240,
+  });
+  const group = [n("a", 480), n("b", 960)];
+
+  it("moves every note by the same number of ticks", () => {
+    expect(shiftNotes(group, 240)).toEqual([n("a", 720), n("b", 1200)]);
+    expect(shiftNotes(group, -240)).toEqual([n("a", 240), n("b", 720)]);
+  });
+
+  it("stops where the earliest would go before its clip's start", () => {
+    expect(shiftNotes(group, -960)).toEqual([n("a", 0), n("b", 480)]);
   });
 });
 

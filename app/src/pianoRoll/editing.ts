@@ -154,6 +154,18 @@ export function transposeNotes(notes: readonly NoteView[], semitones: number): N
   return notes.map((note) => ({ ...note, pitch: note.pitch + change }));
 }
 
+/**
+ * `notes` moved `ticks` later (negative is earlier), all together. The move
+ * stops where the earliest would go before its clip's start, so the notes
+ * keep their spacing.
+ */
+export function shiftNotes(notes: readonly NoteView[], ticks: number): NoteView[] {
+  if (notes.length === 0) return [];
+  const earliest = Math.min(...notes.map((note) => note.start));
+  const change = Math.max(-earliest, ticks);
+  return notes.map((note) => ({ ...note, start: note.start + change }));
+}
+
 /** A note's bar in the velocity lane is this close to the pointer to be picked. */
 export const VELOCITY_HIT_PIXELS = 4;
 

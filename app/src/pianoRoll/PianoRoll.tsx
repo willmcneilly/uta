@@ -22,6 +22,7 @@ import {
   moveNotes,
   resizeNotes,
   sameNote,
+  shiftNotes,
   transposeNotes,
 } from "./editing";
 import type { FrameLoop } from "../frameLoop";
@@ -637,8 +638,8 @@ export function PianoRoll({
       select([]);
       return;
     }
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      transpose(event);
+    if (event.key.startsWith("Arrow")) {
+      nudge(event);
       return;
     }
     if (event.key !== "Backspace" && event.key !== "Delete") return;
@@ -651,22 +652,41 @@ export function PianoRoll({
   };
 
   /**
-   * ↑ and ↓ move the selected notes a semitone, or an octave with Shift, as
-   * one undo step, trimming what they land on as a drag does. With ⌘, Ctrl
-   * or ⌥ held they're left to the app's own shortcuts.
+   * The arrow keys move the selected notes: ↑ and ↓ a semitone, or an octave
+   * with Shift, playing the first of them where it lands; ← and → a grid
+   * step (a sixteenth with snapping off). Each press is one undo step, and
+   * trims what the notes land on, as a drag does. With ⌘, Ctrl or ⌥ held
+   * they're left to the app's own shortcuts.
    */
-  const transpose = (event: KeyboardEvent<HTMLDivElement>) => {
+  const nudge = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const notes = selectedNotes();
+    const { project, editor, snap } = latest.current;
+    let next: NoteView[];
+    switch (event.key) {
+      case "ArrowUp":
+      case "ArrowDown": {
+        const step = event.shiftKey ? OCTAVE : SEMITONE;
+        next = transposeNotes(notes, event.key === "ArrowUp" ? step : -step);
+        break;
+      }
+      case "ArrowLeft":
+      case "ArrowRight": {
+        const step = newNoteLength(snap, project.ticksPerQuarter);
+        next = shiftNotes(notes, event.key === "ArrowRight" ? step : -step);
+        break;
+      }
+      default:
+        return;
+    }
     if (notes.length === 0) return;
     event.preventDefault();
-    const step = event.shiftKey ? OCTAVE : SEMITONE;
-    const next = transposeNotes(notes, event.key === "ArrowUp" ? step : -step);
-    if (next.every((note, i) => note.pitch === notes[i].pitch)) return;
-    const { editor } = latest.current;
+    if (next.every((note, i) => sameNote(note, notes[i]))) return;
     const gesture = nextGesture();
     editor.set(next, gesture);
     editor.trim(next.map((note) => note.id), gesture);
+    const first = earliest(next);
+    if (first.pitch !== earliest(notes).pitch) editor.audition(first.pitch, first.velocity);
   };
 
   /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
@@ -763,6 +783,15 @@ export function PianoRoll({
         </ToolChip>
       </div>
     </section>
+  );
+}
+
+/** The note that starts first, and the lowest of those that start together. */
+function earliest(notes: readonly NoteView[]): NoteView {
+  return notes.reduce((first, note) =>
+    note.start < first.start || (note.start === first.start && note.pitch < first.pitch)
+      ? note
+      : first,
   );
 }
 
