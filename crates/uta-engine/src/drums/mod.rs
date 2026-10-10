@@ -579,6 +579,28 @@ mod tests {
         assert_eq!(wild.level_db, 6.0);
     }
 
+    /// Play restarts the metal, crossfading if the hats are ringing and
+    /// not if they're quiet.
+    #[test]
+    fn a_restart_crossfades_the_metal_only_while_the_hats_ring() {
+        let mut kit = Kit::new(KitSettings::default(), 48_000.0);
+        kit.restart();
+        assert!(!kit.metal.is_crossfading());
+        kit.hit(46, 127);
+        for _ in 0..4800 {
+            kit.next_sample();
+        }
+        kit.restart();
+        assert!(kit.metal.is_crossfading());
+        // Once the hats have died away, a restart doesn't crossfade.
+        for _ in 0..(3.0 * 48_000.0) as usize {
+            kit.next_sample();
+        }
+        assert!(!kit.is_sounding());
+        kit.restart();
+        assert!(!kit.metal.is_crossfading());
+    }
+
     #[test]
     fn the_engines_defaults_are_the_cores() {
         assert_eq!(

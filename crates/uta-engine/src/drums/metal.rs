@@ -88,7 +88,12 @@ impl Metal {
     /// doesn't jump.
     pub(crate) fn restart(&mut self, ringing: bool) {
         if ringing {
-            self.old_phases = self.phases;
+            // A restart during a crossfade fades from whichever metal is
+            // louder in it now, so the sound jumps by the quieter's share at
+            // most.
+            if self.crossfade <= self.crossfade_steps / 2 {
+                self.old_phases = self.phases;
+            }
             self.crossfade = self.crossfade_steps;
         } else {
             self.crossfade = 0;
@@ -131,6 +136,12 @@ impl Metal {
         let old_share = f64::from(self.crossfade) / f64::from(self.crossfade_steps + 1);
         self.crossfade -= 1;
         old * old_share + new * (1.0 - old_share)
+    }
+
+    /// Whether it's crossfading from where it was before a restart.
+    #[cfg(test)]
+    pub(crate) fn is_crossfading(&self) -> bool {
+        self.crossfade > 0
     }
 
     /// Moves on a step without working out the sound, for when nothing is
