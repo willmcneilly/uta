@@ -186,6 +186,12 @@ export function PianoRoll({
   const selected = useRef<ReadonlySet<string>>(new Set());
   const clipboard = useRef<NoteView[]>([]);
   const dragging = useRef<DragState | null>(null);
+  // The last arrow-key move. Its notes overlap what they pass over until
+  // they're deselected or something else is done, then they trim what they
+  // cover, as part of that move's undo step.
+  const untrimmed = useRef<{ ids: string[]; gesture: number; editor: NoteEditor } | null>(
+    null,
+  );
 
   useEffect(() => {
     latest.current = { project, clip, editor: editing, snap };
@@ -196,12 +202,20 @@ export function PianoRoll({
   // Another clip's notes aren't selected. What was copied stays, to paste
   // into this one.
   useEffect(() => {
+    trimMoved();
     selected.current = new Set();
     scene.setSelection(selected.current);
   }, [scene, clip.id]);
 
-  // A drag ends if the piano roll goes away mid-drag.
-  useEffect(() => () => dragging.current?.stop(), []);
+  // A drag ends if the piano roll goes away mid-drag, and notes moved with
+  // the arrow keys trim what they cover.
+  useEffect(
+    () => () => {
+      dragging.current?.stop();
+      trimMoved();
+    },
+    [],
+  );
 
   // The size, as the window changes.
   useEffect(() => {
@@ -272,9 +286,25 @@ export function PianoRoll({
   }, [scene, follow]);
 
   const select = (ids: Iterable<string>) => {
-    selected.current = new Set(ids);
+    const next = new Set(ids);
+    const same =
+      next.size === selected.current.size && [...next].every((id) => selected.current.has(id));
+    if (!same) trimMoved();
+    selected.current = next;
     scene.setSelection(selected.current);
   };
+
+  /**
+   * Trims what the last arrow-key move's notes cover, as part of its gesture.
+   * Rust ignores it if anything else has changed the project since, an undo
+   * included, so it never trims notes that have moved back.
+   */
+  function trimMoved() {
+    const moved = untrimmed.current;
+    if (!moved) return;
+    untrimmed.current = null;
+    moved.editor.trim(moved.ids, moved.gesture);
+  }
 
   /** Adds `id` to the selection, or takes it out if it's there. */
   const toggle = (id: string) => {
@@ -398,6 +428,7 @@ export function PianoRoll({
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const view = scene.getView();
     if (event.button !== 0 || dragging.current || !view) return;
+    trimMoved();
     const { x, y } = pointOf(event);
     const inNotes = scene.inNoteArea(x, y);
     const bar = !inNotes && scene.inVelocityLane(x, y) ? scene.hitVelocity(x) : null;
@@ -654,9 +685,10 @@ export function PianoRoll({
   /**
    * The arrow keys move the selected notes: ↑ and ↓ a semitone, or an octave
    * with Shift, playing the first of them where it lands; ← and → a grid
-   * step (a sixteenth with snapping off). Each press is one undo step, and
-   * trims what the notes land on, as a drag does. With ⌘, Ctrl or ⌥ held
-   * they're left to the app's own shortcuts.
+   * step (a sixteenth with snapping off). Each press is one undo step. The
+   * notes trim what they cover only once they're deselected or something
+   * else is done, so moving through a chord leaves it whole. With ⌘, Ctrl or
+   * ⌥ held the keys are left to the app's own shortcuts.
    */
   const nudge = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -684,13 +716,14 @@ export function PianoRoll({
     if (next.every((note, i) => sameNote(note, notes[i]))) return;
     const gesture = nextGesture();
     editor.set(next, gesture);
-    editor.trim(next.map((note) => note.id), gesture);
+    untrimmed.current = { ids: next.map((note) => note.id), gesture, editor };
     const first = earliest(next);
     if (first.pitch !== earliest(notes).pitch) editor.audition(first.pitch, first.velocity);
   };
 
   /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
   const land = (notes: NoteView[]) => {
+    trimMoved();
     const { editor } = latest.current;
     const gesture = nextGesture();
     const ids = notes.map((note) => note.id);
