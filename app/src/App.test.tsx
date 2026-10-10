@@ -13,6 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { toPosition } from "./synthScale";
+import * as field from "./design/dragFieldTesting";
 import { press, slide, thumbX } from "./design/faderTesting";
 import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
@@ -290,7 +291,6 @@ const volume = () => screen.getByRole("slider", { name: /Volume/ });
 const along = (value: number, [min, max]: [number, number]) => (value - min) / (max - min);
 // The mock project's ranges.
 const VOLUME: [number, number] = [-60, 0];
-const BPM: [number, number] = [20, 300];
 const TRACK_VOLUME: [number, number] = [-60, 6];
 const tempo = () => screen.getByRole("slider", { name: /Tempo/ });
 const loopSwitch = () => screen.getByRole("button", { name: "Loop" });
@@ -342,8 +342,10 @@ describe("App", () => {
 
   it("sends tempo changes to Rust, one gesture per drag", async () => {
     await renderApp();
-    press(tempo()).to(along(128, BPM)).to(along(140, BPM)).release();
-    slide(tempo(), along(90, BPM));
+    // From 120 up to 128, then 140; then, once Rust has it, down to 90.
+    field.press(tempo()).up(8).up(12).release();
+    await waitFor(() => expect(tempo()).toHaveAttribute("aria-valuenow", "140"));
+    field.press(tempo()).up(-50).release();
 
     await waitFor(() => expect(screen.getByText("90 BPM")).toBeInTheDocument());
     const sent = calls.filter((c) => c.cmd === "set_tempo").map((c) => c.args);
@@ -366,11 +368,28 @@ describe("App", () => {
   it("never gives drags of different controls the same gesture", async () => {
     await renderApp();
     slide(volume(), along(-20, VOLUME));
-    slide(tempo(), along(100, BPM));
+    field.press(tempo()).up(-20).release();
     await waitFor(() => expect(commands()).toContain("set_tempo"));
     const volumeGesture = calls.find((c) => c.cmd === "set_volume")!.args.gesture;
     const tempoGesture = calls.find((c) => c.cmd === "set_tempo")!.args.gesture;
     expect(tempoGesture).not.toBe(volumeGesture);
+  });
+
+  it("sets a typed tempo as one change, so it's one undo step, like a drag", async () => {
+    await renderApp();
+    field.typeInto(tempo(), "132 bpm");
+    await waitFor(() => expect(screen.getByText("132 BPM")).toBeInTheDocument());
+    expect(calls.filter((c) => c.cmd === "set_tempo").map((c) => c.args)).toEqual([
+      { bpm: 132, gesture: null },
+    ]);
+    expect(tempo()).toHaveAttribute("aria-valuenow", "132");
+  });
+
+  it("types a space into the tempo box rather than playing", async () => {
+    await renderApp();
+    const box = field.openForTyping(tempo());
+    fireEvent.keyDown(box, { key: " " });
+    expect(commands()).not.toContain("play");
   });
 
   it("draws the notes Rust sends in the piano roll", async () => {
@@ -518,15 +537,37 @@ describe("App", () => {
   });
 
   describe("a slider drag while Rust is slow to reply", () => {
-    // Each slider, the command it sends, and the value in that command.
+    /** A drag that moves a control to each value in turn. */
+    type ValueDrag = { to: (value: number) => void; release: () => void };
+    /** Drags a fader, given how far along it each value is. */
+    const faderDrag =
+      (fraction: (value: number) => number) =>
+      (slider: HTMLElement): ValueDrag => {
+        const drag = press(slider);
+        return { to: (value) => drag.to(fraction(value)), release: drag.release };
+      };
+    /** Drags a drag field whose steps are `step` apart, up or down to each value. */
+    const fieldDrag =
+      (step: number) =>
+      (slider: HTMLElement): ValueDrag => {
+        const drag = field.press(slider);
+        let at = Number(slider.getAttribute("aria-valuenow"));
+        return {
+          to: (value) => {
+            drag.up((value - at) / step);
+            at = value;
+          },
+          release: drag.release,
+        };
+      };
+    // Each slider, the command it sends, the value in that command, and how to drag it.
     const sliders: [
       string,
       () => HTMLElement,
       string,
       (args: Record<string, unknown>) => unknown,
       number[],
-      // How far along the slider each value is.
-      (value: number) => number,
+      (slider: HTMLElement) => ValueDrag,
     ][] = [
       [
         "master volume",
@@ -534,7 +575,7 @@ describe("App", () => {
         "set_volume",
         (args) => args.volumeDb,
         [-20, -25, -30, -35],
-        (value) => along(value, VOLUME),
+        faderDrag((value) => along(value, VOLUME)),
       ],
       [
         "tempo",
@@ -542,7 +583,7 @@ describe("App", () => {
         "set_tempo",
         (args) => args.bpm,
         [100, 110, 120, 130],
-        (value) => along(value, BPM),
+        fieldDrag(1),
       ],
       [
         "track volume",
@@ -550,7 +591,7 @@ describe("App", () => {
         "set_track_mixer",
         (args) => (args.mixer as MixerView).volumeDb,
         [-20, -25, -30, -35],
-        (value) => along(value, TRACK_VOLUME),
+        faderDrag((value) => along(value, TRACK_VOLUME)),
       ],
       [
         "synth cutoff",
@@ -565,18 +606,18 @@ describe("App", () => {
         (args) =>
           toPosition((args.param as { value: number }).value, project.synthLimits.cutoffHz, "log"),
         [800, 700, 600, 500],
-        (position) => position / 1000,
+        faderDrag((position) => position / 1000),
       ],
     ];
 
     it.each(sliders)(
       "%s: sends one step at a time, the newest next, and the final value last, in one gesture",
-      async (_name, slider, cmd, value, values, fraction) => {
+      async (_name, slider, cmd, value, values, dragTo) => {
         await renderApp();
         const held = new HeldReplies([cmd]);
         const sent = () => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
-        const drag = press(slider());
-        for (const v of values) drag.to(fraction(v));
+        const drag = dragTo(slider());
+        for (const v of values) drag.to(v);
         drag.release();
 
         // The first step is on its way; the rest wait, and replace each other.

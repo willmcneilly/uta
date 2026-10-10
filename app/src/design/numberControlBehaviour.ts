@@ -78,14 +78,17 @@ export function describeNumberControl(name: string, harness: NumberControlHarnes
       drag.release();
     });
 
+    // Pressed and dragged, since a drag field's click without a drag opens it for typing.
     it("takes focus when pressed, with no focus ring until a key is pressed", () => {
       const { control } = renderControl();
-      harness.press(control).release();
+      const drag = harness.press(control);
+      expect(control).toHaveFocus();
+      drag.by(pixels(5)).release();
       expect(control).toHaveFocus();
       expect(control).toHaveAttribute("data-pointer-focused");
       fireEvent.keyDown(control, { key: "ArrowRight" });
       expect(control).not.toHaveAttribute("data-pointer-focused");
-      harness.press(control).release();
+      harness.press(control).by(pixels(5)).release();
       fireEvent.blur(control);
       expect(control).not.toHaveAttribute("data-pointer-focused");
     });

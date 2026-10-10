@@ -1,5 +1,5 @@
 import type { ProjectView } from "./backend";
-import { Fader } from "./design/Fader";
+import { DragField } from "./design/DragField";
 import { linearScale } from "./design/numberScale";
 import { type BarBeat, formatBarBeat } from "./musicalTime";
 import "./Transport.css";
@@ -66,13 +66,14 @@ export function Transport({
       </span>
 
       {project && (
-        <Fader
+        <DragField
           className="setting"
           label="Tempo"
           value={project.bpm}
           defaultValue={project.defaultBpm}
           scale={linearScale(project.minBpm, project.maxBpm, 1)}
           format={formatBpm}
+          units={{ bpm: 1 }}
           onChange={onTempo}
         />
       )}

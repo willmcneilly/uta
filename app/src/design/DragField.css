@@ -1,0 +1,98 @@
+/*
+ * The drag field: the value and its unit in the number type, centred over
+ * a hairline, in a box a space-7 (24 px) tall to hit. The cursor is an
+ * up-down resize arrow, the way it's dragged. provisional: D-18
+ */
+.drag-field-box {
+  position: relative;
+  display: inline-flex;
+}
+
+.drag-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 64px;
+  height: var(--space-7);
+  padding: 0 var(--space-3);
+  border-radius: var(--rounded-md);
+  color: var(--ink);
+  font: var(--font-number);
+  /* After the font shorthand, which resets it. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The hairline, inset like the fader's rail. */
+.drag-field::after {
+  content: "";
+  position: absolute;
+  inset: auto var(--space-3) var(--space-2);
+  border-top: var(--stroke-grid) solid var(--ink-3);
+}
+
+/*
+ * States, as the fader's. Hover and drag darken the hairline. Focused, the
+ * hairline turns the selected ink, because the arrow keys now move it (the
+ * value stays in ink: blue text reads as a link), and the focus ring shows
+ * for focus from the keyboard, or once a key is pressed after a click.
+ * provisional: D-18
+ */
+.drag-field:hover::after,
+.drag-field[data-dragging]::after {
+  border-top-color: var(--ink-2);
+}
+
+.drag-field:focus {
+  outline: none;
+}
+
+.drag-field:focus::after {
+  border-top-color: var(--selected);
+}
+
+.drag-field:focus-visible:not([data-pointer-focused]) {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+/*
+ * Open for typing: a text box over the field, in the same type and place,
+ * the hairline drawn heavier in the selected ink, and the value selected
+ * to type over. The field's own value hides under it. provisional: D-18
+ */
+.drag-field[data-typing] {
+  color: transparent;
+}
+
+.drag-field[data-typing]::after {
+  border-top: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.drag-field-input {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--rounded-md);
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-number);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  caret-color: var(--selected);
+}
+
+.drag-field-input::selection {
+  background: var(--selected-wash);
+  color: var(--ink);
+}
