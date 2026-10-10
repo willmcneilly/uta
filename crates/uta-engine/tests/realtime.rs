@@ -14,7 +14,8 @@ mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{
-    KICK, demo_loop, demo_song, drum_project, drum_track, hit, note, project, with_mixer,
+    KICK, demo_loop, demo_song, drum_project, drum_track, empty_drum_track, empty_sine_track, hit,
+    note, project, replace_track, with_every_slot_taken, with_mixer,
 };
 use uta_core::{
     Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
@@ -640,9 +641,9 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
 }
 
 /// The kick's hits, fast repeats and flams, every control turned while it
-/// rings, live hits, a jump and Play again (which restarts the kit), more
-/// drum events in a block than the budget, and a drum track taking over a
-/// synth's slot: none of it allocates or frees on the audio thread.
+/// rings, live hits, a jump and Play again (which restarts the kit), and
+/// more drum events in a block than the budget: none of it allocates or
+/// frees on the audio thread.
 #[test]
 fn drum_hits_flams_and_control_turns_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
@@ -710,27 +711,65 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         renderer.controller.free_used_snapshots();
     }
 
-    // The synth track goes, and a drum track lands in its slot while its
-    // notes still sound.
-    let synth = project.tracks()[0].id();
-    let mut swapped = project.clone();
-    swapped
-        .apply(&Command::RemoveTracks {
-            tracks: vec![synth],
-        })
-        .unwrap();
-    renderer.controller.set_project(&swapped).unwrap();
-    for _ in 0..8 {
-        process_block(renderer.processor(), &mut buffer);
-    }
-    renderer.controller.free_used_snapshots();
-
     let status = renderer.controller.poll();
     assert!(status.peak > 0.0, "the kit made no sound");
     assert!(
         status.dropped_note_events > 0,
         "the budget was never reached: {status:?}"
     );
+}
+
+/// A slot changing kind of track while it sounds, both ways, with every
+/// slot taken so the new track has to take the old one's: a held synth
+/// note's slot goes to a drum track that hits at once, and a ringing kick's
+/// slot goes to a synth track that plays at once. Neither allocates or frees
+/// on the audio thread.
+#[test]
+fn a_slot_changing_kind_of_track_does_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    let project = with_every_slot_taken(drum_project(120.0, 1, &[], vec![]));
+    let synth = project.tracks()[0].id();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    let slot = renderer.controller.slot(synth).unwrap();
+    let blocks = |renderer: &mut Renderer, buffer: &mut [f32]| {
+        for _ in 0..40 {
+            process_block(renderer.processor(), buffer);
+        }
+        renderer.controller.free_used_snapshots();
+    };
+
+    // A held note on the synth.
+    renderer
+        .controller
+        .note_on(slot, NoteKey(1), 45, 127)
+        .unwrap();
+    blocks(&mut renderer, &mut buffer);
+    // Synth to drums, while the note sounds.
+    let drums = replace_track(&project, synth, empty_drum_track(61));
+    renderer.controller.set_project(&drums).unwrap();
+    assert_eq!(renderer.controller.slot(drums.tracks()[0].id()), Some(slot));
+    renderer
+        .controller
+        .note_on(slot, NoteKey(2), KICK, 127)
+        .unwrap();
+    blocks(&mut renderer, &mut buffer);
+    assert!(renderer.controller.poll().sounding_slots & (1 << slot) != 0);
+    // Drums to synth, while the kick rings.
+    let synth_again = replace_track(&drums, drums.tracks()[0].id(), empty_sine_track(62));
+    renderer.controller.set_project(&synth_again).unwrap();
+    assert_eq!(
+        renderer.controller.slot(synth_again.tracks()[0].id()),
+        Some(slot)
+    );
+    renderer
+        .controller
+        .note_on(slot, NoteKey(3), 45, 127)
+        .unwrap();
+    blocks(&mut renderer, &mut buffer);
+
+    let status = renderer.controller.poll();
+    assert!(status.peak > 0.0);
 }
 
 /// A block with more note events than it may handle catches up on the rest

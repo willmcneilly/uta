@@ -518,3 +518,93 @@ fn every_slot_can_play_a_kit() {
         status.track_peaks
     );
 }
+
+/// A slot changing kind of track while it sounds. With every slot taken, a
+/// track added in place of a removed one takes its slot.
+///
+/// Synth to drums: a held sine's track is replaced by a drum track, which
+/// hits at once. The sine fades out quickly under the kick, as a synth note
+/// does when its slot is handed on, and nothing clicks.
+#[test]
+fn a_synth_slot_handed_to_a_drum_track_does_not_click() {
+    let project = with_every_slot_taken(drum_project(120.0, 1, &[], vec![]));
+    let synth = project.tracks()[0].id();
+    let mut renderer = Renderer::new(config(), Snapshot::from(&project), 128);
+    let slot = renderer.controller.slot(synth).unwrap();
+    let mut sine = with_every_slot_taken(drum_project(120.0, 1, &[], vec![]));
+    sine = replace_track(&sine, synth, empty_sine_track(60));
+    let sine_id = sine.tracks()[0].id();
+    renderer.controller.set_project(&sine).unwrap();
+    // The sine takes the synth's slot, and holds A2.
+    assert_eq!(renderer.controller.slot(sine_id), Some(slot));
+    renderer
+        .controller
+        .note_on(slot, NoteKey(1), 45, 127)
+        .unwrap();
+    renderer.render_seconds(0.3);
+    let held = peak(&renderer.samples()[seconds(0.2)..]);
+    assert!(held > 0.1, "the sine isn't sounding: {held}");
+
+    let drums = replace_track(&sine, sine_id, empty_drum_track(61));
+    renderer.controller.set_project(&drums).unwrap();
+    let drums_id = drums.tracks()[0].id();
+    assert_eq!(renderer.controller.slot(drums_id), Some(slot));
+    renderer
+        .controller
+        .note_on(slot, NoteKey(2), KICK, 127)
+        .unwrap();
+    renderer.render_seconds(1.0);
+
+    let samples = renderer.samples();
+    let after = &samples[seconds(0.3)..];
+    // The kick sounds, and the sine is gone within its 5 ms fade.
+    assert!(peak(after) > 0.4, "no kick: {}", peak(after));
+    let (step, _) = lone_hit(&[], 127);
+    // The sine's own steepest step, and its fade's, are on top of the
+    // kick's: 0.25 is the synth's level at full velocity.
+    let sine_step = (sine_max_step(110.0, RATE) + 1.0 / 240.0) * 0.25;
+    let limit = ringing_limit(step + sine_step, 49.0, peak(samples));
+    assert_no_click(samples, limit, "synth to drums");
+}
+
+/// Drums to synth: a ringing kick's track is replaced by a synth track,
+/// which plays a note at once. The kick rings on through the new track's
+/// gains, as a removed track's sound does, and nothing clicks.
+#[test]
+fn a_drum_slot_handed_to_a_synth_track_does_not_click() {
+    let params = [kick(DrumParam::DecaySeconds(0.8))];
+    let project =
+        with_every_slot_taken(drum_project(120.0, 1, &params, vec![hit(0, KICK, 127, 0)]));
+    let mut renderer = Renderer::new(config(), Snapshot::from(&project), 128);
+    let slot = renderer.controller.slot(drum_track()).unwrap();
+    renderer.controller.play().unwrap();
+    renderer.render_seconds(0.1);
+
+    let synth = replace_track(&project, drum_track(), empty_sine_track(62));
+    renderer.controller.set_project(&synth).unwrap();
+    let synth_id = synth.tracks()[1].id();
+    assert_eq!(renderer.controller.slot(synth_id), Some(slot));
+    renderer
+        .controller
+        .note_on(slot, NoteKey(3), 45, 127)
+        .unwrap();
+    renderer.render_seconds(1.0);
+
+    let samples = renderer.samples();
+    // The kick carried on ringing: a lone kick is still well above
+    // silence 0.2 s in.
+    let alone = one_kick(&params, 127, 1.1);
+    assert!(peak(&alone[seconds(0.2)..seconds(0.25)]) > 0.1);
+    let (step, _) = lone_hit(&params, 127);
+    let sine_step = (sine_max_step(110.0, RATE) + 1.0 / 240.0) * 0.25;
+    let limit = ringing_limit(step + sine_step, 49.0, peak(samples));
+    assert_no_click(samples, limit, "drums to synth");
+    // Both sound together after the handover.
+    let after = &samples[seconds(0.15)..seconds(0.2)];
+    let kick_only = &alone[seconds(0.15)..seconds(0.2)];
+    assert!(
+        max_difference(after, kick_only) > 0.05,
+        "the synth is silent"
+    );
+    assert!(peak(after) > 0.1);
+}

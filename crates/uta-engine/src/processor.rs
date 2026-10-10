@@ -169,17 +169,23 @@ impl Slot {
         }
         self.track = Some(track.id());
         self.drums = matches!(track.sound, TrackSound::Drums(_));
-        // The track's sound glides if it's the same track, or the slot is
-        // still sounding; a new track in a silent slot starts with its own.
-        let glide = same_track || sounding;
+        // The track's synth or kit glides to its settings if it's the same
+        // track, or it's still sounding. Otherwise it starts with them, even
+        // if the other is still sounding here: a synth note mustn't start
+        // part-way through a glide from another track's waveform.
         match track.sound {
-            TrackSound::Synth(settings) if glide => self.synth.set_settings(settings),
+            TrackSound::Synth(settings) if same_track || self.synth.is_sounding() => {
+                self.synth.set_settings(settings);
+            }
             TrackSound::Synth(settings) => self.synth.load(settings),
-            TrackSound::Drums(kit) if glide => self.kit.set_settings(kit),
+            TrackSound::Drums(kit) if same_track || self.kit.is_sounding() => {
+                self.kit.set_settings(kit);
+            }
             TrackSound::Drums(kit) => self.kit.load(kit),
         }
+        // The gains glide if anything in the slot is sounding.
         for (ramp, gain) in self.gains.iter_mut().zip(gains) {
-            if glide {
+            if same_track || sounding {
                 ramp.set_target(gain);
             } else {
                 ramp.jump_to(gain);

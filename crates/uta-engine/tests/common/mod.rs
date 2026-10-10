@@ -119,6 +119,71 @@ pub fn drum_project(
     project
 }
 
+/// `project` filled up to [`Project::MAX_TRACKS`] with empty synth tracks,
+/// so every slot is taken and a track added in place of a removed one has
+/// to take the removed one's slot.
+pub fn with_every_slot_taken(mut project: Project) -> Project {
+    let missing = Project::MAX_TRACKS - project.tracks().len();
+    let fill = (0..missing)
+        .map(|n| PlacedTrack {
+            index: project.tracks().len() + n,
+            track: Track::new(
+                TrackId::from_uuid(Uuid::from_u128(8000 + n as u128)),
+                format!("Fill {n}"),
+                Source::Synth(uta_core::SynthSettings::default()),
+            ),
+        })
+        .collect();
+    project
+        .apply(&Command::AddTracks { tracks: fill })
+        .expect("room for the fill");
+    project
+}
+
+/// `project` with the track `old` removed and `new` added in its place in
+/// the order, in one change, as deleting a track and adding another while
+/// it still sounds would.
+pub fn replace_track(project: &Project, old: TrackId, new: Track) -> Project {
+    let index = project
+        .tracks()
+        .iter()
+        .position(|track| track.id() == old)
+        .expect("the old track is in the project");
+    let mut replaced = project.clone();
+    replaced
+        .apply(&Command::RemoveTracks { tracks: vec![old] })
+        .expect("the old track goes");
+    replaced
+        .apply(&Command::AddTracks {
+            tracks: vec![PlacedTrack { index, track: new }],
+        })
+        .expect("the new track goes in");
+    replaced
+}
+
+/// A drum track with no clips, at the defaults.
+pub fn empty_drum_track(id: u128) -> Track {
+    Track::new(
+        TrackId::from_uuid(Uuid::from_u128(id)),
+        "Drums 2",
+        Source::Drums(KitSettings::default()),
+    )
+}
+
+/// A synth track with no clips, playing a sine at full sustain.
+pub fn empty_sine_track(id: u128) -> Track {
+    let settings = uta_core::SynthSettings {
+        waveform: uta_core::Waveform::Sine,
+        sustain: 1.0,
+        ..uta_core::SynthSettings::default()
+    };
+    Track::new(
+        TrackId::from_uuid(Uuid::from_u128(id)),
+        "Synth 2",
+        Source::Synth(settings),
+    )
+}
+
 /// Synth settings for measuring exact sample positions: a sine at full
 /// sustain, with the shortest release, so a note is silent 1 ms after it
 /// ends.
