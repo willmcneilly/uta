@@ -21,6 +21,9 @@ import "./Slider.css";
 /** A press this close to the thumb, in CSS pixels, picks it up where it is instead of jumping. */
 const THUMB_GRAB = 6;
 
+/** How long after a drag's last step a double-click still counts as part of it, in milliseconds. */
+const DOUBLE_CLICK_MS = 500;
+
 interface Props {
   /** The visible label. */
   label: string;
@@ -64,6 +67,9 @@ export function Slider({
   // The position under the mouse, from press to release.
   const [dragging, setDragging] = useState<number | null>(null);
   const stopDrag = useRef<(() => void) | null>(null);
+  // The last drag that sent a step, and when: a double-click's first press
+  // can jump the slider, and the reset then joins that drag.
+  const lastDrag = useRef<{ gesture: number; at: number } | null>(null);
   // Focused by the pointer, so no focus ring until a key is pressed.
   const [pointerFocused, setPointerFocused] = useState(false);
   // A drag sends through the latest `onChange`: the caller's can change mid-drag.
@@ -120,6 +126,7 @@ export function Slider({
       setDragging(next);
       if (next !== sent) {
         sent = next;
+        lastDrag.current = { gesture, at: performance.now() };
         latestOnChange.current(scale.fromPosition(next), gesture);
       }
     };
@@ -162,8 +169,14 @@ export function Slider({
     if (next !== position) onChange(scale.fromPosition(next));
   };
 
+  // A double-click off the thumb starts with a press that jumps the slider
+  // to the pointer. The reset goes with that jump's gesture, so Rust undoes
+  // the two as one step, back to the value before the double-click.
   const onDoubleClick = () => {
-    if (value !== defaultValue) onChange(defaultValue);
+    const drag = lastDrag.current;
+    const recent = drag && performance.now() - drag.at < DOUBLE_CLICK_MS ? drag.gesture : undefined;
+    lastDrag.current = null;
+    if (recent !== undefined || value !== defaultValue) onChange(defaultValue, recent);
   };
 
   return (

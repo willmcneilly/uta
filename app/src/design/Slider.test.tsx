@@ -181,10 +181,34 @@ describe("Slider", () => {
   it("resets to its default on double-click", () => {
     const { slider, onChange, project } = renderSlider(-30, -12);
     fireEvent.doubleClick(slider);
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(-12);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(-12, undefined);
     project(-12);
     fireEvent.doubleClick(slider);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets a double-click off the thumb in the same gesture as the press's jump", () => {
+    const { slider, onChange, project } = renderSlider(-30, -12);
+    // A real double-click: press, release, press, release, then dblclick.
+    press(slider, { fraction: 0.1 }).release();
+    project(-54);
+    press(slider, { fraction: 0.1 }).release();
+    fireEvent.doubleClick(slider);
+    const [jump, reset] = onChange.mock.calls;
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(jump).toEqual([-54, expect.any(Number)]);
+    // One gesture, so Rust undoes both as one step, back to -30.
+    expect(reset).toEqual([-12, jump[1]]);
+  });
+
+  it("resets as its own step when the last drag was a while ago", () => {
+    const { slider, onChange } = renderSlider(-30, -12);
+    slide(slider, 0.25);
+    const now = performance.now();
+    vi.spyOn(performance, "now").mockReturnValue(now + 1000);
+    fireEvent.doubleClick(slider);
+    vi.restoreAllMocks();
+    expect(onChange.mock.calls.at(-1)).toEqual([-12, undefined]);
   });
 
   it("marks its default on the rail", () => {

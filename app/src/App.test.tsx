@@ -742,6 +742,19 @@ describe("App", () => {
       expect(gestures[3]).toBeNull();
     });
 
+    it("steps a hundredth of the way with an arrow key, and a tenth with Shift", async () => {
+      await renderSound();
+      // Sustain is 70%: position 700 of 1000.
+      fireEvent.keyDown(slider("Sustain"), { key: "ArrowRight" });
+      await waitFor(() => expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "71%"));
+      fireEvent.keyDown(slider("Sustain"), { key: "ArrowLeft", shiftKey: true });
+      await waitFor(() => expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "61%"));
+      const values = synthCalls().map((args) => (args.param as { value: number }).value);
+      expect(values[0]).toBeCloseTo(0.71, 5);
+      expect(values[1]).toBeCloseTo(0.61, 5);
+      expect(synthCalls().map((args) => args.gesture)).toEqual([null, null]);
+    });
+
     it("follows undo and redo, which Rust announces", async () => {
       await renderSound();
       const undone = projectView();
@@ -766,6 +779,63 @@ describe("App", () => {
       expect(thumbX(slider("Sustain"))).toBe(250);
       expect(slider("Release")).toHaveAttribute("aria-valuetext", "2.50 s");
     });
+  });
+
+  it("resets each slider on double-click to its own default, from the outline", async () => {
+    // Defaults that differ from each other and from the values, so a slider
+    // wired to the wrong one sends the wrong command.
+    const synthDefaults: SynthView = {
+      waveform: "saw",
+      cutoffHz: 1000,
+      resonance: 0.25,
+      attackSeconds: 0.05,
+      decaySeconds: 0.5,
+      sustain: 0.5,
+      releaseSeconds: 0.75,
+    };
+    project = {
+      ...project,
+      volumeDb: -30,
+      defaultVolumeDb: -10,
+      bpm: 90,
+      defaultBpm: 130,
+      synthDefaults,
+      mixerDefaults: { volumeDb: -3, pan: 0.2, mute: false, solo: false },
+      tracks: project.tracks.map((track) => ({
+        ...track,
+        mixer: { ...track.mixer, volumeDb: -6, pan: -0.5 },
+      })),
+    };
+    await renderApp();
+    const argsOf = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+
+    fireEvent.doubleClick(volume());
+    fireEvent.doubleClick(tempo());
+    fireEvent.doubleClick(screen.getByRole("slider", { name: "Synth 1 volume" }));
+    await waitFor(() => expect(argsOf("set_track_mixer")).toHaveLength(1));
+    fireEvent.doubleClick(screen.getByRole("slider", { name: "Synth 1 pan" }));
+    await waitFor(() => expect(argsOf("set_track_mixer")).toHaveLength(2));
+    expect(argsOf("set_volume")).toEqual([{ volumeDb: -10, gesture: null }]);
+    expect(argsOf("set_tempo")).toEqual([{ bpm: 130, gesture: null }]);
+    expect(argsOf("set_track_mixer").map((args) => args.mixer)).toEqual([
+      { volumeDb: -3, pan: -0.5, mute: false, solo: false },
+      { volumeDb: -3, pan: 0.2, mute: false, solo: false },
+    ]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+    const synth = within(screen.getByRole("region", { name: "Synth" }));
+    for (const name of ["Cutoff", "Resonance", "Attack", "Decay", "Sustain", "Release"]) {
+      fireEvent.doubleClick(synth.getByRole("slider", { name: new RegExp(`^${name}`) }));
+    }
+    await waitFor(() => expect(argsOf("set_synth_param")).toHaveLength(6));
+    expect(argsOf("set_synth_param").map((args) => args.param)).toEqual([
+      { name: "cutoff_hz", value: 1000 },
+      { name: "resonance", value: 0.25 },
+      { name: "attack_seconds", value: 0.05 },
+      { name: "decay_seconds", value: 0.5 },
+      { name: "sustain", value: 0.5 },
+      { name: "release_seconds", value: 0.75 },
+    ]);
   });
 
   it("fetches and shows undo and redo from the menu, which Rust announces with no payload", async () => {
