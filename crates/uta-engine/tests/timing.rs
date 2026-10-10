@@ -47,8 +47,8 @@ enum Load {
     Check7,
     /// 32 drum tracks, each playing every kit note at once on every 16th,
     /// with every sound at its longest Decay so they never fall silent, and
-    /// the kick's, snare's, hats' and toms' Tune and the clap's and hats'
-    /// Tone gliding. It grows as the sounds arrive. See RFC-006, "Risks &
+    /// the kick's, snare's, hats' and toms' Tune and the clap's, hats' and
+    /// cymbal's Tone gliding. It grows as the sounds arrive. See RFC-006, "Risks &
     /// unknowns" (CPU).
     Drums,
     /// The same song, timing only the first block after Play from bar
@@ -219,6 +219,10 @@ fn drum_tracks() -> Project {
             DrumSound::HighTom,
             DrumParam::DecaySeconds(uta_core::HighTomSettings::MAX_DECAY_SECONDS),
         ),
+        (
+            DrumSound::Cymbal,
+            DrumParam::DecaySeconds(uta_core::CymbalSettings::MAX_DECAY_SECONDS),
+        ),
     ] {
         project
             .apply(&Command::SetDrumParam {
@@ -324,7 +328,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                     )
                     .unwrap(),
                 // Every kick's, snare's, hats' and toms' Tune, and every
-                // clap's and hats' Tone, gliding.
+                // clap's, hats' and cymbal's Tone, gliding.
                 Load::Drums => {
                     let mut snapshot = renderer.controller.snapshot().clone();
                     for track in snapshot.tracks_mut() {
@@ -337,6 +341,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                             kit.closed_hat.tone_hz = 4000.0 + 200.0 * step;
                             kit.low_tom.tune_hz = 80.0 + 0.5 * step;
                             kit.high_tom.tune_hz = 165.0 + 1.375 * step;
+                            kit.cymbal.tone = step / 40.0;
                         }
                     }
                     renderer.controller.set_snapshot(snapshot).unwrap();

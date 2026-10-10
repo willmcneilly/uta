@@ -1,0 +1,129 @@
+{
+  "project": "482e0ae6-83fa-5129-a449-26de3c4294e1",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 100
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "a83f2055-d03a-594c-ac75-f5eaad34346e",
+              "name": "Cymbal",
+              "source": {
+                "drums": {}
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "15ef07e1-de24-5e53-bcf1-717c5efa0c84",
+                  "start": 0,
+                  "length": 19200,
+                  "notes": [
+                    {
+                      "id": "d2491455-673a-56c5-9d5d-dbe7cfd30f21",
+                      "pitch": 49,
+                      "velocity": 8,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "97ea07dc-ec08-553e-90fa-f25009384603",
+                      "pitch": 49,
+                      "velocity": 24,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "4148a589-03f6-5122-abb6-5d4646ea2430",
+                      "pitch": 49,
+                      "velocity": 40,
+                      "start": 3840,
+                      "length": 240
+                    },
+                    {
+                      "id": "d0282528-d546-5a8c-be89-3b46498aa3bb",
+                      "pitch": 49,
+                      "velocity": 56,
+                      "start": 5760,
+                      "length": 240
+                    },
+                    {
+                      "id": "cd546c7b-325c-50f0-8c27-c91035e48528",
+                      "pitch": 49,
+                      "velocity": 72,
+                      "start": 7680,
+                      "length": 240
+                    },
+                    {
+                      "id": "d1ac323c-f90a-53c7-ac79-de1674d46aae",
+                      "pitch": 49,
+                      "velocity": 88,
+                      "start": 9600,
+                      "length": 240
+                    },
+                    {
+                      "id": "73dd724b-420a-531b-b85c-430f6ed2d0f2",
+                      "pitch": 49,
+                      "velocity": 100,
+                      "start": 11520,
+                      "length": 240
+                    },
+                    {
+                      "id": "e6e3831a-3359-54c8-ad52-18b27afe5dea",
+                      "pitch": 49,
+                      "velocity": 112,
+                      "start": 13440,
+                      "length": 240
+                    },
+                    {
+                      "id": "c5af36e6-56b8-5215-be54-1c8a82ec4fbb",
+                      "pitch": 49,
+                      "velocity": 120,
+                      "start": 15360,
+                      "length": 240
+                    },
+                    {
+                      "id": "21e9d237-7ca0-552e-958f-b6e26ec45055",
+                      "pitch": 49,
+                      "velocity": 127,
+                      "start": 17280,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
