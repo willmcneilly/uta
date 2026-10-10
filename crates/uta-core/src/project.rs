@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::command::{ClipPosition, PlacedClip, PlacedTrack};
 use crate::time::{MAX_TICKS, TempoMap, Ticks, TimeSignature};
 use crate::track::{Clip, Source, Track, check_span};
-use crate::{ClipId, Command, CommandError, NoteId, ProjectId, SynthSettings, TrackId};
+use crate::{
+    ClipId, Command, CommandError, DrumParamError, NoteId, ProjectId, SynthSettings, TrackId,
+};
 
 /// The song's tempo, time signature and loop region.
 #[derive(Debug, Clone, PartialEq)]
@@ -191,10 +193,11 @@ impl Project {
                 })
             }
             &Command::AddNotes { clip, ref notes } => {
-                self.clip_mut(clip)?;
+                let source = &self.track_of(clip)?.source;
                 check_listed_once(notes.iter().map(|note| note.id))?;
                 for note in notes {
                     note.validate()?;
+                    source.check_note(note)?;
                     if self.note_in_use(note.id) {
                         return Err(CommandError::NoteAlreadyExists(note.id));
                     }
@@ -222,11 +225,14 @@ impl Project {
                 })
             }
             Command::SetNotes { clip, notes } => {
+                // Cheap: a source is a few settings.
+                let source = self.track_of(*clip)?.source.clone();
                 let clip = self.clip_mut(*clip)?;
                 check_listed_once(notes.iter().map(|note| note.id))?;
                 check_in_clip(clip, notes.iter().map(|note| note.id))?;
                 for note in notes {
                     note.validate()?;
+                    source.check_note(note)?;
                 }
                 let clip_notes = clip.notes_mut();
                 let previous = notes
@@ -288,12 +294,35 @@ impl Project {
                     .iter_mut()
                     .find(|candidate| candidate.id == track)
                     .ok_or(CommandError::UnknownTrack(track))?;
-                let Source::Synth(settings) = &mut track.source;
+                let Source::Synth(settings) = &mut track.source else {
+                    return Err(CommandError::NotASynthTrack(track.id));
+                };
                 let previous = settings
                     .set(param)
                     .map_err(CommandError::SynthParamOutOfRange)?;
                 Ok(Command::SetSynthParam {
                     track: track.id,
+                    param: previous,
+                })
+            }
+            &Command::SetDrumParam {
+                track,
+                sound,
+                param,
+            } => {
+                let index = self.track_index(track)?;
+                let Source::Drums(kit) = &mut self.tracks[index].source else {
+                    return Err(CommandError::NotADrumTrack(track));
+                };
+                let previous = kit.set(sound, param).map_err(|error| match error {
+                    DrumParamError::NoSuchSetting => CommandError::NoSuchDrumParam { sound, param },
+                    DrumParamError::OutOfRange { .. } => {
+                        CommandError::DrumParamOutOfRange { sound, param }
+                    }
+                })?;
+                Ok(Command::SetDrumParam {
+                    track,
+                    sound,
                     param: previous,
                 })
             }
@@ -405,10 +434,10 @@ impl Project {
         }
         let mut new = NewIds::new(self);
         for placed in clips {
-            if self.track(placed.track).is_none() {
-                return Err(CommandError::UnknownTrack(placed.track));
-            }
-            new.clip(&placed.clip)?;
+            let track = self
+                .track(placed.track)
+                .ok_or(CommandError::UnknownTrack(placed.track))?;
+            new.clip(&placed.clip, &track.source)?;
         }
         for placed in clips {
             let index = self.track_index(placed.track).expect("checked above");
@@ -447,10 +476,14 @@ impl Project {
             if self.clip(position.id).is_none() {
                 return Err(CommandError::UnknownClip(position.id));
             }
-            if self.track(position.track).is_none() {
-                return Err(CommandError::UnknownTrack(position.track));
-            }
+            let track = self
+                .track(position.track)
+                .ok_or(CommandError::UnknownTrack(position.track))?;
             check_span(position.id, position.start, position.length)?;
+            // A clip can't take notes off the kit onto a drum track.
+            let clip = self.clip(position.id).expect("checked above");
+            clip.notes()
+                .try_for_each(|note| track.source.check_note(note))?;
         }
         let previous = positions
             .iter()
@@ -485,6 +518,14 @@ impl Project {
             self.apply(command)?;
         }
         Ok(self)
+    }
+
+    /// The track the clip with this ID is on.
+    fn track_of(&self, clip: ClipId) -> Result<&Track, CommandError> {
+        self.tracks
+            .iter()
+            .find(|track| track.clip(clip).is_some())
+            .ok_or(CommandError::UnknownClip(clip))
     }
 
     fn track_index(&self, id: TrackId) -> Result<usize, CommandError> {
@@ -581,15 +622,16 @@ impl<'a> NewIds<'a> {
         if track.name.trim().is_empty() {
             return Err(CommandError::UnnamedTrack(track.id));
         }
-        let Source::Synth(settings) = &track.source;
-        settings
-            .validate()
-            .map_err(CommandError::SynthParamOutOfRange)?;
+        track.source.validate()?;
         track.mixer.validate()?;
-        track.clips.iter().try_for_each(|clip| self.clip(clip))
+        track
+            .clips
+            .iter()
+            .try_for_each(|clip| self.clip(clip, &track.source))
     }
 
-    fn clip(&mut self, clip: &Clip) -> Result<(), CommandError> {
+    /// Checks a clip to add to a track with this source.
+    fn clip(&mut self, clip: &Clip, source: &Source) -> Result<(), CommandError> {
         if self.project.clip(clip.id).is_some() {
             return Err(CommandError::ClipAlreadyExists(clip.id));
         }
@@ -604,6 +646,7 @@ impl<'a> NewIds<'a> {
             if !self.notes.insert(note.id) {
                 return Err(CommandError::NoteListedTwice(note.id));
             }
+            source.check_note(note)?;
         }
         Ok(())
     }
@@ -621,7 +664,9 @@ fn check_in_clip(clip: &Clip, mut ids: impl Iterator<Item = NoteId>) -> Result<(
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
-    use crate::{Effect, MixerStrip, Note, SynthParam, Waveform};
+    use crate::{
+        DrumParam, DrumSound, Effect, KitSettings, MixerStrip, Note, SynthParam, Waveform,
+    };
     use proptest::prelude::*;
 
     const BAR: Ticks = 3840;
@@ -1161,7 +1206,9 @@ mod tests {
                 param: SynthParam::CutoffHz(800.0),
             },
         );
-        let Source::Synth(settings) = changed.track(track).unwrap().source();
+        let Source::Synth(settings) = changed.track(track).unwrap().source() else {
+            panic!("a synth track")
+        };
         assert_eq!(settings.cutoff_hz, 800.0);
 
         for param in [
@@ -1190,6 +1237,209 @@ mod tests {
             },
             CommandError::UnknownTrack(unknown),
         );
+    }
+
+    /// The test project with a drum track, "Drums 1", added second, with an
+    /// empty 4-bar clip.
+    fn with_drums() -> (Project, TrackId, ClipId) {
+        let mut project = testing::project();
+        let (track, clip) = (testing::track_id(9), testing::clip_id(9));
+        project
+            .apply(&Command::AddTracks {
+                tracks: vec![PlacedTrack {
+                    index: 1,
+                    track: Track::new(track, "Drums 1", Source::Drums(KitSettings::default()))
+                        .with_clips([Clip::new(clip, 0, 4 * BAR)]),
+                }],
+            })
+            .unwrap();
+        (project, track, clip)
+    }
+
+    #[test]
+    fn set_drum_param_sets_it_and_undoes() {
+        let (project, track, _) = with_drums();
+        let changed = apply_and_check_undo(
+            &project,
+            Command::SetDrumParam {
+                track,
+                sound: DrumSound::Kick,
+                param: DrumParam::TuneHz(60.0),
+            },
+        );
+        let Source::Drums(kit) = changed.track(track).unwrap().source() else {
+            panic!("a drum track")
+        };
+        assert_eq!(kit.kick.tune_hz, 60.0);
+        for param in [
+            DrumParam::Tone(0.0),
+            DrumParam::DecaySeconds(0.8),
+            DrumParam::LevelDb(-6.0),
+        ] {
+            apply_and_check_undo(
+                &project,
+                Command::SetDrumParam {
+                    track,
+                    sound: DrumSound::Kick,
+                    param,
+                },
+            );
+        }
+
+        let set = |track, sound, param| Command::SetDrumParam {
+            track,
+            sound,
+            param,
+        };
+        let param = DrumParam::DecaySeconds(2.0);
+        assert_rejected(
+            &project,
+            set(track, DrumSound::Kick, param),
+            CommandError::DrumParamOutOfRange {
+                sound: DrumSound::Kick,
+                param,
+            },
+        );
+        let param = DrumParam::TuneHz(200.0);
+        assert_rejected(
+            &project,
+            set(track, DrumSound::Snare, param),
+            CommandError::NoSuchDrumParam {
+                sound: DrumSound::Snare,
+                param,
+            },
+        );
+        // Each kind of track takes only its own settings.
+        let synth = track_id(&project);
+        assert_rejected(
+            &project,
+            set(synth, DrumSound::Kick, DrumParam::TuneHz(60.0)),
+            CommandError::NotADrumTrack(synth),
+        );
+        assert_rejected(
+            &project,
+            Command::SetSynthParam {
+                track,
+                param: SynthParam::Sustain(0.5),
+            },
+            CommandError::NotASynthTrack(track),
+        );
+        let unknown = TrackId::random();
+        assert_rejected(
+            &project,
+            set(unknown, DrumSound::Kick, DrumParam::TuneHz(60.0)),
+            CommandError::UnknownTrack(unknown),
+        );
+    }
+
+    #[test]
+    fn a_drum_track_takes_only_the_kits_notes() {
+        let (project, track, clip) = with_drums();
+        let kick = note(0, 36, 0);
+        let off_kit = note(1, 37, 0);
+        let refused = CommandError::NoteOffKit {
+            note: off_kit.id,
+            pitch: 37,
+        };
+        // Every row's note goes on.
+        let rows: Vec<Note> = crate::KIT
+            .iter()
+            .enumerate()
+            .map(|(i, row)| note(10 + i as u128, row.pitch, 0))
+            .collect();
+        apply_and_check_undo(&project, Command::AddNotes { clip, notes: rows });
+
+        // AddNotes.
+        assert_rejected(
+            &project,
+            Command::AddNotes {
+                clip,
+                notes: vec![kick, off_kit],
+            },
+            refused,
+        );
+        // SetNotes: moving a kick off the kit.
+        let mut with_kick = project.clone();
+        with_kick
+            .apply(&Command::AddNotes {
+                clip,
+                notes: vec![kick],
+            })
+            .unwrap();
+        assert_rejected(
+            &with_kick,
+            Command::SetNotes {
+                clip,
+                notes: vec![Note { pitch: 35, ..kick }],
+            },
+            CommandError::NoteOffKit {
+                note: kick.id,
+                pitch: 35,
+            },
+        );
+        apply_and_check_undo(
+            &with_kick,
+            Command::SetNotes {
+                clip,
+                notes: vec![Note { pitch: 38, ..kick }],
+            },
+        );
+        // AddTracks: a drum track that arrives with a note off the kit.
+        let drums = |id, clip_id| {
+            Track::new(id, "Drums 2", Source::Drums(KitSettings::default()))
+                .with_clips([Clip::new(clip_id, 0, BAR).with_notes([off_kit])])
+        };
+        assert_rejected(
+            &project,
+            Command::AddTracks {
+                tracks: vec![PlacedTrack {
+                    index: 0,
+                    track: drums(testing::track_id(8), testing::clip_id(8)),
+                }],
+            },
+            refused,
+        );
+        // AddClips: a clip with a note off the kit, onto a drum track.
+        assert_rejected(
+            &project,
+            Command::AddClips {
+                clips: vec![PlacedClip {
+                    track,
+                    clip: Clip::new(testing::clip_id(8), BAR, BAR).with_notes([off_kit]),
+                }],
+            },
+            refused,
+        );
+        // SetClips: moving a synth clip with a note off the kit onto it.
+        let mut with_off_kit = project.clone();
+        let synth_clip = clip_id(&project);
+        with_off_kit
+            .apply(&Command::AddNotes {
+                clip: synth_clip,
+                notes: vec![off_kit],
+            })
+            .unwrap();
+        assert_rejected(
+            &with_off_kit,
+            Command::SetClips {
+                clips: vec![ClipPosition {
+                    id: synth_clip,
+                    track,
+                    start: 0,
+                    length: 4 * BAR,
+                }],
+            },
+            refused,
+        );
+        // A synth track still takes any pitch.
+        apply_and_check_undo(
+            &project,
+            Command::AddNotes {
+                clip: clip_id(&project),
+                notes: vec![off_kit],
+            },
+        );
+        assert!(refused.to_string().contains("Kick 36"), "{refused}");
     }
 
     #[test]
@@ -2232,6 +2482,24 @@ mod tests {
                     prop_assert_eq!(&project, &before);
                 }
                 Err(_) => prop_assert_eq!(&project, &before, "a rejected command changed the project"),
+            }
+        }
+
+        #[test]
+        fn no_commands_leave_a_note_off_the_kit_on_a_drum_track(
+            commands in testing::any_commands(60),
+        ) {
+            let mut project = testing::project();
+            for command in &commands {
+                let _ = project.apply(command);
+                for track in project.tracks() {
+                    if let Source::Drums(_) = track.source() {
+                        let notes = track.clips().iter().flat_map(Clip::notes);
+                        for note in notes {
+                            prop_assert!(crate::DrumSound::at_pitch(note.pitch).is_some(), "{note:?} after {command:?}");
+                        }
+                    }
+                }
             }
         }
 

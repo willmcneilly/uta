@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::time::Ticks;
-use crate::{Clip, ClipId, MixerStrip, Note, NoteId, SynthParam, Track, TrackId};
+use crate::{
+    Clip, ClipId, DrumParam, DrumSound, KitSettings, MixerStrip, Note, NoteId, SynthParam, Track,
+    TrackId,
+};
 
 /// The command format written by this version of Uta. Bump it when a saved
 /// command's shape changes, and teach [`Command`]'s deserialisation to read
@@ -12,12 +15,13 @@ use crate::{Clip, ClipId, MixerStrip, Note, NoteId, SynthParam, Track, TrackId};
 /// - Format 1: `set_master_volume`.
 /// - Format 2 adds the notes, tempo, loop and synth commands (RFC-002).
 /// - Format 3 adds the track, clip and loop region commands (RFC-003).
-pub const COMMAND_FORMAT: u32 = 3;
+/// - Format 4 adds drum tracks and `set_drum_param` (RFC-006).
+pub const COMMAND_FORMAT: u32 = 4;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":3,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":4,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -40,8 +44,14 @@ pub enum Command {
     /// same. It's refused once they differ, or the loop is outside 1 to 16
     /// bars: use [`Command::SetLoop`] and [`Command::SetClips`] instead.
     SetLoopLength { bars: u32 },
-    /// Set one of a track's synth settings.
+    /// Set one of a synth track's settings.
     SetSynthParam { track: TrackId, param: SynthParam },
+    /// Set one setting of one sound on a drum track.
+    SetDrumParam {
+        track: TrackId,
+        sound: DrumSound,
+        param: DrumParam,
+    },
     /// Add tracks, each at its place in the order. The inverse of
     /// [`Command::RemoveTracks`].
     AddTracks { tracks: Vec<PlacedTrack> },
@@ -128,6 +138,18 @@ impl Command {
                     param: other_param,
                 },
             ) => track == other_track && param.same_setting(other_param),
+            (
+                Self::SetDrumParam {
+                    track,
+                    sound,
+                    param,
+                },
+                Self::SetDrumParam {
+                    track: other_track,
+                    sound: other_sound,
+                    param: other_param,
+                },
+            ) => track == other_track && sound == other_sound && param.same_setting(other_param),
             _ => false,
         }
     }
@@ -196,6 +218,20 @@ pub enum CommandError {
     },
     /// A synth setting was outside its range, or not a number.
     SynthParamOutOfRange(SynthParam),
+    /// A drum setting was outside its range on that sound, or not a number.
+    DrumParamOutOfRange {
+        sound: DrumSound,
+        param: DrumParam,
+    },
+    /// A drum setting the sound doesn't have.
+    NoSuchDrumParam {
+        sound: DrumSound,
+        param: DrumParam,
+    },
+    /// A synth command for a track that isn't a synth.
+    NotASynthTrack(TrackId),
+    /// A drum command for a track that isn't a drum track.
+    NotADrumTrack(TrackId),
     UnknownTrack(TrackId),
     UnknownClip(ClipId),
     /// A track to add has the same ID as one already in the project.
@@ -244,6 +280,11 @@ pub enum CommandError {
     EmptyNote(NoteId),
     /// A note that ends after [`crate::time::MAX_TICKS`].
     NoteTooLate(NoteId),
+    /// A note on a drum track at a pitch that isn't one of the kit's notes.
+    NoteOffKit {
+        note: NoteId,
+        pitch: u8,
+    },
 }
 
 impl std::fmt::Display for CommandError {
@@ -287,6 +328,19 @@ impl std::fmt::Display for CommandError {
                 }
                 None => write!(f, "{param:?} is out of range"),
             },
+            Self::DrumParamOutOfRange { sound, param } => match KitSettings::range(*sound, param) {
+                Some((min, max)) => write!(
+                    f,
+                    "{sound:?} {param:?}: {} is out of range ({min} to {max})",
+                    param.value()
+                ),
+                None => write!(f, "{sound:?} {param:?} is out of range"),
+            },
+            Self::NoSuchDrumParam { sound, param } => {
+                write!(f, "the {sound:?} has no setting {param:?}")
+            }
+            Self::NotASynthTrack(id) => write!(f, "track {id} isn't a synth track"),
+            Self::NotADrumTrack(id) => write!(f, "track {id} isn't a drum track"),
             Self::UnknownTrack(id) => write!(f, "there's no track {id}"),
             Self::UnknownClip(id) => write!(f, "there's no clip {id}"),
             Self::TrackAlreadyExists(id) => write!(f, "track {id} is already in the project"),
@@ -326,6 +380,15 @@ impl std::fmt::Display for CommandError {
             ),
             Self::EmptyNote(id) => write!(f, "note {id} has no length"),
             Self::NoteTooLate(id) => write!(f, "note {id} ends too late"),
+            Self::NoteOffKit { note, pitch } => write!(
+                f,
+                "note {note}: pitch {pitch} isn't one of the drum kit's notes ({})",
+                crate::KIT
+                    .iter()
+                    .map(|row| format!("{} {}", row.name, row.pitch))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -336,8 +399,9 @@ impl std::error::Error for CommandError {}
 /// in-memory type can change while older saved formats still load: a new
 /// format gets its own body type here and a conversion to [`Command`].
 ///
-/// Formats 2 and 3 only added commands, so one body type reads every format,
-/// and an envelope may only hold the commands its format had.
+/// Formats 2 to 4 only added commands and a kind of track, so one body type
+/// reads every format, and an envelope may only hold the commands and
+/// tracks its format had.
 mod wire {
     use std::collections::HashSet;
 
@@ -346,7 +410,8 @@ mod wire {
     use super::{COMMAND_FORMAT, ClipPosition, Command, PlacedClip, PlacedTrack};
     use crate::time::Ticks;
     use crate::{
-        Clip, ClipId, MixerStrip, Note, NoteId, Source, SynthParam, SynthSettings, Track, TrackId,
+        Clip, ClipId, DrumParam, DrumSound, KitSettings, MixerStrip, Note, NoteId, Source,
+        SynthParam, SynthSettings, Track, TrackId,
     };
 
     #[derive(Serialize, Deserialize)]
@@ -360,28 +425,74 @@ mod wire {
     #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
     enum Body {
         // Format 1.
-        SetMasterVolume { volume_db: f32 },
+        SetMasterVolume {
+            volume_db: f32,
+        },
         // Format 2.
-        AddNotes { clip: ClipId, notes: Vec<Note> },
-        RemoveNotes { clip: ClipId, notes: Vec<NoteId> },
-        SetNotes { clip: ClipId, notes: Vec<Note> },
-        SetTempo { bpm: f32 },
-        SetLoopLength { bars: u32 },
-        SetSynthParam { track: TrackId, param: SynthParam },
+        AddNotes {
+            clip: ClipId,
+            notes: Vec<Note>,
+        },
+        RemoveNotes {
+            clip: ClipId,
+            notes: Vec<NoteId>,
+        },
+        SetNotes {
+            clip: ClipId,
+            notes: Vec<Note>,
+        },
+        SetTempo {
+            bpm: f32,
+        },
+        SetLoopLength {
+            bars: u32,
+        },
+        SetSynthParam {
+            track: TrackId,
+            param: SynthParam,
+        },
         // Format 3.
-        AddTracks { tracks: Vec<TrackAt> },
-        RemoveTracks { tracks: Vec<TrackId> },
-        MoveTrack { track: TrackId, index: usize },
-        SetTrackMixer { track: TrackId, mixer: MixerStrip },
-        AddClips { clips: Vec<ClipOn> },
-        RemoveClips { clips: Vec<ClipId> },
-        SetClips { clips: Vec<ClipPosition> },
-        SetLoop { start_bar: u32, bars: u32 },
-        SetLoopEnabled { enabled: bool },
+        AddTracks {
+            tracks: Vec<TrackAt>,
+        },
+        RemoveTracks {
+            tracks: Vec<TrackId>,
+        },
+        MoveTrack {
+            track: TrackId,
+            index: usize,
+        },
+        SetTrackMixer {
+            track: TrackId,
+            mixer: MixerStrip,
+        },
+        AddClips {
+            clips: Vec<ClipOn>,
+        },
+        RemoveClips {
+            clips: Vec<ClipId>,
+        },
+        SetClips {
+            clips: Vec<ClipPosition>,
+        },
+        SetLoop {
+            start_bar: u32,
+            bars: u32,
+        },
+        SetLoopEnabled {
+            enabled: bool,
+        },
+        // Format 4.
+        SetDrumParam {
+            track: TrackId,
+            sound: DrumSound,
+            param: DrumParam,
+        },
     }
 
     impl Body {
-        /// The first format that has this command.
+        /// The first format that has this command, and every kind of track
+        /// it adds.
         fn since_format(&self) -> u32 {
             match self {
                 Self::SetMasterVolume { .. } => 1,
@@ -391,6 +502,14 @@ mod wire {
                 | Self::SetTempo { .. }
                 | Self::SetLoopLength { .. }
                 | Self::SetSynthParam { .. } => 2,
+                Self::AddTracks { tracks }
+                    if tracks
+                        .iter()
+                        .any(|at| matches!(at.track.source, SourceBody::Drums(_))) =>
+                {
+                    4
+                }
+                Self::SetDrumParam { .. } => 4,
                 _ => 3,
             }
         }
@@ -416,11 +535,31 @@ mod wire {
         clips: Vec<ClipBody>,
     }
 
-    /// Serialises as `{"synth":{...}}`.
+    /// Serialises as `{"synth":{...}}` or `{"drums":{...}}`.
     #[derive(Serialize, Deserialize)]
     #[serde(rename_all = "snake_case", deny_unknown_fields)]
     enum SourceBody {
         Synth(SynthSettings),
+        // Format 4.
+        Drums(KitSettings),
+    }
+
+    impl From<Source> for SourceBody {
+        fn from(source: Source) -> Self {
+            match source {
+                Source::Synth(settings) => Self::Synth(settings),
+                Source::Drums(kit) => Self::Drums(kit),
+            }
+        }
+    }
+
+    impl From<SourceBody> for Source {
+        fn from(body: SourceBody) -> Self {
+            match body {
+                SourceBody::Synth(settings) => Self::Synth(settings),
+                SourceBody::Drums(kit) => Self::Drums(kit),
+            }
+        }
     }
 
     /// A clip with the track it goes on, as `add_clips` carries it.
@@ -445,11 +584,10 @@ mod wire {
 
     impl From<Track> for TrackBody {
         fn from(track: Track) -> Self {
-            let Source::Synth(settings) = track.source;
             Self {
                 id: track.id,
                 name: track.name,
-                source: SourceBody::Synth(settings),
+                source: track.source.into(),
                 mixer: track.mixer,
                 clips: track.clips.into_iter().map(ClipBody::from).collect(),
             }
@@ -460,13 +598,12 @@ mod wire {
         type Error = String;
 
         fn try_from(body: TrackBody) -> Result<Self, Self::Error> {
-            let SourceBody::Synth(settings) = body.source;
             let clips = body
                 .clips
                 .into_iter()
                 .map(Clip::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Track::new(body.id, body.name, Source::Synth(settings))
+            Ok(Track::new(body.id, body.name, body.source.into())
                 .with_mixer(body.mixer)
                 .with_clips(clips))
         }
@@ -509,6 +646,15 @@ mod wire {
                 Command::SetTempo { bpm } => Body::SetTempo { bpm },
                 Command::SetLoopLength { bars } => Body::SetLoopLength { bars },
                 Command::SetSynthParam { track, param } => Body::SetSynthParam { track, param },
+                Command::SetDrumParam {
+                    track,
+                    sound,
+                    param,
+                } => Body::SetDrumParam {
+                    track,
+                    sound,
+                    param,
+                },
                 Command::AddTracks { tracks } => Body::AddTracks {
                     tracks: tracks
                         .into_iter()
@@ -567,6 +713,15 @@ mod wire {
                 Body::SetTempo { bpm } => Command::SetTempo { bpm },
                 Body::SetLoopLength { bars } => Command::SetLoopLength { bars },
                 Body::SetSynthParam { track, param } => Command::SetSynthParam { track, param },
+                Body::SetDrumParam {
+                    track,
+                    sound,
+                    param,
+                } => Command::SetDrumParam {
+                    track,
+                    sound,
+                    param,
+                },
                 Body::AddTracks { tracks } => Command::AddTracks {
                     tracks: tracks
                         .into_iter()
@@ -605,7 +760,7 @@ mod wire {
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
-    use crate::{Source, SynthSettings, Waveform, time::Ticks};
+    use crate::{DrumParam, DrumSound, KitSettings, Source, SynthSettings, Waveform, time::Ticks};
     use proptest::prelude::*;
 
     fn clip() -> ClipId {
@@ -629,9 +784,16 @@ mod tests {
             Command::SetTempo { bpm } => !bpm.is_finite(),
             Command::SetSynthParam { param: p, .. } => param(p),
             Command::SetTrackMixer { mixer: m, .. } => mixer(m),
+            Command::SetDrumParam { param, .. } => !param.value().is_finite(),
             Command::AddTracks { tracks } => tracks.iter().any(|placed| {
-                let Source::Synth(settings) = placed.track.source();
-                mixer(placed.track.mixer()) || settings.params().iter().any(param)
+                mixer(placed.track.mixer())
+                    || match placed.track.source() {
+                        Source::Synth(settings) => settings.params().iter().any(param),
+                        Source::Drums(kit) => kit
+                            .params()
+                            .iter()
+                            .any(|(_, param)| !param.value().is_finite()),
+                    }
             }),
             _ => false,
         }
@@ -642,7 +804,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":3,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":4,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -708,12 +870,14 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":3,"command":{body}}}"#);
+            let json = format!(r#"{{"format":4,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 2 lists still load.
-            let json = format!(r#"{{"format":2,"command":{body}}}"#);
-            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Format 2 and 3 lists still load.
+            for format in [2, 3] {
+                let json = format!(r#"{{"format":{format},"command":{body}}}"#);
+                assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            }
         }
     }
 
@@ -811,14 +975,86 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":3,"command":{body}}}"#);
+            let json = format!(r#"{{"format":4,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Format 3 lists still load.
+            let json = format!(r#"{{"format":3,"command":{body}}}"#);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 3.
             let json = format!(r#"{{"format":2,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
             assert!(error.to_string().contains("arrived in format 3"), "{error}");
         }
+    }
+
+    #[test]
+    fn the_format_4_commands_serialise_like_this() {
+        let track = track();
+        let new_track = testing::track_id(0);
+        let new_clip = testing::clip_id(0);
+        let kick = Note {
+            pitch: 36,
+            ..note(0, 36, 0)
+        };
+        let kit_json = r#"{"kick":{"tune_hz":49.0,"tone":0.5,"decay_seconds":0.3,"level_db":0.0}}"#;
+        let cases = [
+            (
+                Command::SetDrumParam {
+                    track,
+                    sound: DrumSound::Kick,
+                    param: DrumParam::TuneHz(55.0),
+                },
+                format!(
+                    r#"{{"type":"set_drum_param","track":"{track}","sound":"kick","param":{{"name":"tune_hz","value":55.0}}}}"#
+                ),
+            ),
+            (
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: 1,
+                        track: Track::new(
+                            new_track,
+                            "Drums 1",
+                            Source::Drums(KitSettings::default()),
+                        )
+                        .with_clips([Clip::new(new_clip, 0, 3840).with_notes([kick])]),
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Drums 1","source":{{"drums":{kit_json}}},"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[{{"id":"{new_clip}","start":0,"length":3840,"notes":[{{"id":"{}","pitch":36,"velocity":100,"start":0,"length":480}}]}}]}}}}]}}"#,
+                    kick.id
+                ),
+            ),
+        ];
+        for (command, body) in cases {
+            let json = format!(r#"{{"format":4,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Drums are new in format 4, even in a format 3 command.
+            let json = format!(r#"{{"format":3,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(error.to_string().contains("arrived in format 4"), "{error}");
+        }
+    }
+
+    #[test]
+    fn set_drum_param_continues_only_with_the_same_sound_and_setting() {
+        let track = track();
+        let set = |sound, param| Command::SetDrumParam {
+            track,
+            sound,
+            param,
+        };
+        let tune = set(DrumSound::Kick, DrumParam::TuneHz(50.0));
+        assert!(tune.sets_same_as(&set(DrumSound::Kick, DrumParam::TuneHz(60.0))));
+        assert!(!tune.sets_same_as(&set(DrumSound::Kick, DrumParam::Tone(0.2))));
+        assert!(!tune.sets_same_as(&set(DrumSound::LowTom, DrumParam::TuneHz(90.0))));
+        assert!(!tune.sets_same_as(&Command::SetDrumParam {
+            track: TrackId::random(),
+            sound: DrumSound::Kick,
+            param: DrumParam::TuneHz(60.0),
+        }));
     }
 
     #[test]
@@ -889,7 +1125,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 4, 99] {
+        for format in [0, 5, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

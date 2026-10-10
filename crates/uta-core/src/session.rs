@@ -630,15 +630,21 @@ mod tests {
             })
             .unwrap();
 
-        let Source::Synth(settings) = session.project().tracks()[0].source();
+        let Source::Synth(settings) = session.project().tracks()[0].source() else {
+            panic!("a synth track")
+        };
         assert_eq!(settings.cutoff_hz, 800.0);
         assert_eq!(settings.resonance, 0.4);
 
         only(session.undo());
-        let Source::Synth(settings) = session.project().tracks()[0].source();
+        let Source::Synth(settings) = session.project().tracks()[0].source() else {
+            panic!("a synth track")
+        };
         assert_eq!((settings.cutoff_hz, settings.resonance), (800.0, 0.0));
         only(session.undo());
-        let Source::Synth(settings) = session.project().tracks()[0].source();
+        let Source::Synth(settings) = session.project().tracks()[0].source() else {
+            panic!("a synth track")
+        };
         assert_eq!(settings.cutoff_hz, 20_000.0);
         only(session.undo());
         assert_eq!(session.project().transport().loop_length(), 4 * 3840);
@@ -646,6 +652,47 @@ mod tests {
         only(session.undo());
         assert_eq!(session.project(), &before);
         assert!(!session.can_undo());
+    }
+
+    #[test]
+    fn a_drum_knob_drag_undoes_as_one_step() {
+        let mut session = Session::new(testing::project());
+        let track = testing::track_id(0);
+        session
+            .apply(Command::AddTracks {
+                tracks: vec![crate::PlacedTrack {
+                    index: 1,
+                    track: crate::Track::new(
+                        track,
+                        "Drums 1",
+                        Source::Drums(crate::KitSettings::default()),
+                    ),
+                }],
+            })
+            .unwrap();
+        let before = session.project().clone();
+        let set = |param| Command::SetDrumParam {
+            track,
+            sound: crate::DrumSound::Kick,
+            param,
+        };
+        let tune = |hz| set(crate::DrumParam::TuneHz(hz));
+        session.apply(tune(50.0)).unwrap();
+        for hz in [55.0, 62.0, 58.5] {
+            session.amend(tune(hz)).unwrap();
+        }
+        // A different setting is a new step, even when amended.
+        session.amend(set(crate::DrumParam::Tone(0.8))).unwrap();
+        let kick = |session: &Session| match session.project().tracks()[1].source() {
+            Source::Drums(kit) => kit.kick,
+            Source::Synth(_) => panic!("a drum track"),
+        };
+        assert_eq!((kick(&session).tune_hz, kick(&session).tone), (58.5, 0.8));
+
+        only(session.undo());
+        assert_eq!((kick(&session).tune_hz, kick(&session).tone), (58.5, 0.5));
+        only(session.undo());
+        assert_eq!(session.project(), &before);
     }
 
     #[test]
