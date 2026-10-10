@@ -35,10 +35,16 @@ export function Transport({
 }: Props) {
   return (
     <section className="transport" aria-label="Transport">
-      <button type="button" title="Play (Space)" onClick={onPlay}>
+      <button
+        type="button"
+        className="play"
+        data-playing={playing || undefined}
+        title="Play (Space)"
+        onClick={onPlay}
+      >
         Play
       </button>
-      <button type="button" title="Stop (Space)" onClick={onStop}>
+      <button type="button" className="stop" title="Stop (Space)" onClick={onStop}>
         Stop
       </button>
       {project && (
@@ -54,7 +60,8 @@ export function Transport({
           Loop
         </button>
       )}
-      <span className="state" data-testid="transport">
+      {/* Play's mark already shows it, so this is for screen readers only. */}
+      <span className="state" role="status" data-testid="transport">
         {playing ? "Playing" : "Stopped"}
       </span>
 
