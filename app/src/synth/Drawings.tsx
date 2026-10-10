@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useMemo } from "react";
+import { type ReactNode, useId } from "react";
 import { readHatchGap } from "../design/readTokens";
 import { useTokenVersion } from "../design/tokenChanges";
 import { formatAmount, formatHz, formatLevel, formatSeconds } from "../synthScale";
@@ -47,9 +47,9 @@ function area(points: Point[], height: number): string {
  */
 function useHatch(): [string, ReactNode] {
   const id = `hatch-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
-  const tokens = useTokenVersion();
-  // Read again whenever the tokens change.
-  const gap = useMemo(() => (tokens ? readHatchGap(document.documentElement) : 0), [tokens]);
+  // Re-rendered when the tokens change, so the gap is read again then.
+  useTokenVersion();
+  const gap = readHatchGap(document.documentElement);
   const pattern = (
     <defs>
       <pattern

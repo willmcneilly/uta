@@ -23,6 +23,12 @@
   border: none;
 }
 
+/* Each group keeps its drawing's width, so on a narrow window the panel
+   scrolls rather than squeezing the sliders or overlapping the drawings. */
+.synth > fieldset {
+  flex: none;
+}
+
 .synth legend {
   padding: 0 0 var(--space-3);
   color: var(--ink-2);

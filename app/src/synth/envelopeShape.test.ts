@@ -46,7 +46,9 @@ describe("the envelope's shape", () => {
     // Halfway through the decay, it's fallen most of the way.
     const half = points.find((point) => Math.abs(point.x - 200) < 1e-9)!;
     expect(levelOf(half.y, 100)).toBeCloseTo(0.5 + 0.5 * curveAt(0.5), 9);
-    expect(levelOf(half.y, 100)).toBeLessThan(0.55);
+    // The engine's level halfway through a decay to 0.5, from its overshoot
+    // of 0.001: 0.5 + 0.5 × (1.001 × (0.001 / 1.001)^0.5 − 0.001).
+    expect(levelOf(half.y, 100)).toBeCloseTo(0.5153, 4);
     const decay = points.filter((point) => point.x > 100 && point.x <= 300);
     expect(decay.every((point, i) => i === 0 || point.y > decay[i - 1].y)).toBe(true);
   });
