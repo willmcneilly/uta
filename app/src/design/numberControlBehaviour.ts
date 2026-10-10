@@ -163,8 +163,12 @@ export function describeNumberControl(name: string, harness: NumberControlHarnes
 
     it("reports the value it shows during a drag, then null when the drag ends", () => {
       const { control, onDrag } = renderControl(-30);
-      // A pixel is less than half a step, so the value shown doesn't change.
-      const drag = harness.press(control).by(pixels(30)).by(1).by(-pixels(30) - 1);
+      // Less than half a step, so the value shown doesn't change.
+      const drag = harness
+        .press(control)
+        .by(pixels(30))
+        .by(pixels(0.4))
+        .by(-pixels(30) - pixels(0.4));
       expect(onDrag.mock.calls.map(([value]) => value)).toEqual([-30, -15, -30]);
       drag.release();
       expect(onDrag).toHaveBeenLastCalledWith(null);
@@ -175,8 +179,13 @@ export function describeNumberControl(name: string, harness: NumberControlHarnes
 
     it("sends each new step of a drag once, all with the drag's gesture", () => {
       const { control, sent, gestures } = renderControl(-30);
-      // A pixel is less than half a step, so it sends nothing.
-      harness.press(control).by(-pixels(30)).by(1).by(pixels(30) - 1).release();
+      // Less than half a step, so it sends nothing.
+      harness
+        .press(control)
+        .by(-pixels(30))
+        .by(pixels(0.4))
+        .by(pixels(30) - pixels(0.4))
+        .release();
       harness.press(control).by(pixels(30)).release();
       expect(sent()).toEqual([-45, -30, -15]);
       const [first, second, third] = gestures();

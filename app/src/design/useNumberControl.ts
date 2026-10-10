@@ -11,7 +11,7 @@ import type { NumberScale } from "./numberScale";
 
 // What it means to set a number by dragging, from the keyboard and by
 // reset, for every control that sets one (RFC-005, part 7), apart from how
-// the control is drawn. The fader and the drag field draw it.
+// the control is drawn. The fader, the knob and the drag field draw it.
 //
 // During a drag the control draws its own value, where the mouse has taken
 // it, rather than the project's, so it keeps up however slowly Rust replies
