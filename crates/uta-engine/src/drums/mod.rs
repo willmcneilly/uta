@@ -289,6 +289,11 @@ fn decay_per_sample(tau_seconds: f64, sample_rate: f64) -> f64 {
     (-1.0 / (tau_seconds * sample_rate)).exp()
 }
 
+/// The coefficient of a one-pole smoother with time constant `seconds`.
+fn smoothing(seconds: f64, sample_rate: f64) -> f64 {
+    1.0 - decay_per_sample(seconds, sample_rate)
+}
+
 /// Samples for a setting to glide, at `sample_rate`.
 fn smoothing_samples(sample_rate: f64) -> u32 {
     (DRUM_SMOOTHING_SECONDS * sample_rate).round().max(1.0) as u32

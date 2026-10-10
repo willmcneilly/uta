@@ -44,7 +44,7 @@
 //! - Plaits' "sustain" mode is left out: Uta's drums are one-shots.
 
 use crate::drums::filter::{OnePole, Svf, prewarp};
-use crate::drums::{EDGE_SECONDS, LN_100, SnareSettings, decay_per_sample};
+use crate::drums::{EDGE_SECONDS, LN_100, SnareSettings, decay_per_sample, smoothing};
 use crate::ramp::Ramp;
 
 /// Plaits' FM amount at its Harmonics 0.5: 0.5².
@@ -230,7 +230,7 @@ impl Snare {
             controls: Controls::new(settings, super::smoothing_samples(sample_rate)),
             sample_rate,
             bump_decay: decay_per_sample(BUMP_SECONDS, sample_rate),
-            edge: 1.0 - (-1.0 / (EDGE_SECONDS * sample_rate)).exp(),
+            edge: smoothing(EDGE_SECONDS, sample_rate),
             derived: Derived::new(),
             state: State::default(),
         }

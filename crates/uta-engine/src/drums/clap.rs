@@ -30,7 +30,7 @@
 //! - **Times are in seconds,** so it sounds the same at any sample rate.
 
 use crate::drums::filter::{OnePole, Svf, prewarp};
-use crate::drums::{ClapSettings, EDGE_SECONDS, decay_per_sample, log_tau};
+use crate::drums::{ClapSettings, EDGE_SECONDS, decay_per_sample, log_tau, smoothing};
 use crate::ramp::Ramp;
 
 /// When each burst starts, after the hit, in seconds: three 10 ms apart,
@@ -295,11 +295,6 @@ impl Clap {
         }
         out
     }
-}
-
-/// The coefficient of a one-pole smoother with time constant `seconds`.
-fn smoothing(seconds: f64, sample_rate: f64) -> f64 {
-    1.0 - decay_per_sample(seconds, sample_rate)
 }
 
 #[cfg(test)]
