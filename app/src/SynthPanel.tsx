@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
 import { Slider as SliderControl } from "./design/Slider";
 import type { SliderScale } from "./design/sliderScale";
@@ -12,6 +12,9 @@ import {
   fromPosition,
   toPosition,
 } from "./synthScale";
+import { EnvelopeDrawing, FilterDrawing } from "./synth/Drawings";
+import type { StageName } from "./synth/envelopeShape";
+import { DEFAULT_SAMPLE_RATE } from "./synth/filterCurve";
 import "./SynthPanel.css";
 
 interface Props {
@@ -19,18 +22,46 @@ interface Props {
   limits: SynthLimits;
   /** A new track's settings, which double-click resets each slider to. */
   defaults: SynthView;
+  /**
+   * The engine's sample rate, which the filter's curve depends on, or null
+   * before a device is open.
+   */
+  sampleRate: number | null;
   /** `gesture` is the same for every change in one drag. */
   onChange: (param: SynthParam, gesture?: number) => void;
 }
 
-const WAVEFORMS: { value: Waveform; label: string }[] = [
-  { value: "sine", label: "Sine" },
-  { value: "triangle", label: "Triangle" },
-  { value: "saw", label: "Saw" },
-  { value: "square", label: "Square" },
+/** Each waveform, with one cycle of it drawn in a 28 by 12 box. */
+const WAVEFORMS: { value: Waveform; label: string; cycle: string }[] = [
+  { value: "sine", label: "Sine", cycle: "M0,6 C4.5,-2 9.5,-2 14,6 S23.5,14 28,6" },
+  { value: "triangle", label: "Triangle", cycle: "M0,6 L7,0 L21,12 L28,6" },
+  { value: "saw", label: "Saw", cycle: "M0,12 L14,0 L14,12 L28,0 L28,12" },
+  { value: "square", label: "Square", cycle: "M0,12 L0,0 L14,0 L14,12 L28,12 L28,0" },
 ];
 
 type SliderName = Exclude<SynthParam["name"], "waveform">;
+
+const FIELDS: Record<SliderName, Exclude<keyof SynthView, "waveform">> = {
+  cutoff_hz: "cutoffHz",
+  resonance: "resonance",
+  attack_seconds: "attackSeconds",
+  decay_seconds: "decaySeconds",
+  sustain: "sustain",
+  release_seconds: "releaseSeconds",
+};
+
+const STAGES: Partial<Record<SliderName, StageName>> = {
+  attack_seconds: "attack",
+  decay_seconds: "decay",
+  sustain: "sustain",
+  release_seconds: "release",
+};
+
+/** A slider being dragged, and the value it shows. */
+interface Dragged {
+  name: SliderName;
+  value: number;
+}
 
 interface SliderProps {
   label: string;
@@ -41,6 +72,7 @@ interface SliderProps {
   scale: Scale;
   format: (value: number) => string;
   onChange: Props["onChange"];
+  onDrag: (dragged: Dragged | null) => void;
 }
 
 /** A synth slider's positions, on its log or linear scale. */
@@ -58,7 +90,17 @@ function synthScale(limits: Limits, scale: Scale): SliderScale {
  * One setting on a slider. It shows the value Rust last sent. An arrow key
  * moves it a hundredth of the way, and Shift+arrow a tenth.
  */
-function Slider({ label, name, value, defaultValue, limits, scale, format, onChange }: SliderProps) {
+function Slider({
+  label,
+  name,
+  value,
+  defaultValue,
+  limits,
+  scale,
+  format,
+  onChange,
+  onDrag,
+}: SliderProps) {
   return (
     <SliderControl
       className="setting"
@@ -69,6 +111,7 @@ function Slider({ label, name, value, defaultValue, limits, scale, format, onCha
       keyStep={SLIDER_STEPS / 100}
       format={format}
       onChange={(setting, gesture) => onChange({ name, value: setting }, gesture)}
+      onDrag={(shown) => onDrag(shown === null ? null : { name, value: shown })}
     />
   );
 }
@@ -81,7 +124,8 @@ const ARROW_STEPS: Record<string, number> = {
 };
 
 /**
- * The waveform, as a radio group. WebKit on macOS doesn't focus a radio
+ * The waveform, as a radio group drawn as keys, each with one cycle of its
+ * wave (provisional: D-11). WebKit on macOS doesn't focus a radio
  * button when it's clicked, and leaves radios out of the Tab order, so the
  * group focuses them itself and handles the arrow keys itself.
  */
@@ -106,7 +150,7 @@ function WaveformPicker({
   return (
     <fieldset className="waveform">
       <legend>Waveform</legend>
-      {WAVEFORMS.map(({ value, label }, index) => (
+      {WAVEFORMS.map(({ value, label, cycle }, index) => (
         <label key={value}>
           <input
             ref={(radio) => {
@@ -123,6 +167,9 @@ function WaveformPicker({
             onKeyDown={(event) => onKeyDown(event, index)}
             onChange={() => onChange({ name: "waveform", value })}
           />
+          <svg className="cycle" viewBox="-1 -1 30 14" width={30} height={14} aria-hidden="true">
+            <path d={cycle} />
+          </svg>
           {label}
         </label>
       ))}
@@ -130,78 +177,58 @@ function WaveformPicker({
   );
 }
 
-/** A track's synth: waveform, filter and envelope. */
-export function SynthPanel({ synth, limits, defaults, onChange }: Props) {
+/**
+ * A track's synth: waveform, filter and envelope. The filter and the envelope
+ * are drawn above their sliders, from the values the sliders show, so the
+ * drawings follow a drag before Rust replies.
+ */
+export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Props) {
+  // The slider being dragged: gesture state, gone when the drag ends.
+  const [dragged, setDragged] = useState<Dragged | null>(null);
+  const shown: SynthView = dragged ? { ...synth, [FIELDS[dragged.name]]: dragged.value } : synth;
+  const slider = (
+    label: string,
+    name: SliderName,
+    limit: Limits,
+    scale: Scale,
+    format: (value: number) => string,
+  ) => (
+    <Slider
+      label={label}
+      name={name}
+      value={synth[FIELDS[name]]}
+      defaultValue={defaults[FIELDS[name]]}
+      limits={limit}
+      scale={scale}
+      format={format}
+      onChange={onChange}
+      onDrag={setDragged}
+    />
+  );
+
   return (
     <section className="synth" aria-label="Synth">
       <WaveformPicker waveform={synth.waveform} onChange={onChange} />
 
-      <fieldset>
+      <fieldset className="filter">
         <legend>Filter</legend>
-        <Slider
-          label="Cutoff"
-          name="cutoff_hz"
-          value={synth.cutoffHz}
-          defaultValue={defaults.cutoffHz}
-          limits={limits.cutoffHz}
-          scale="log"
-          format={formatHz}
-          onChange={onChange}
+        <FilterDrawing
+          cutoffHz={shown.cutoffHz}
+          resonance={shown.resonance}
+          sampleRate={sampleRate ?? DEFAULT_SAMPLE_RATE}
+          marked={dragged?.name === "cutoff_hz" || dragged?.name === "resonance"}
         />
-        <Slider
-          label="Resonance"
-          name="resonance"
-          value={synth.resonance}
-          defaultValue={defaults.resonance}
-          limits={limits.resonance}
-          scale="linear"
-          format={formatAmount}
-          onChange={onChange}
-        />
+        {slider("Cutoff", "cutoff_hz", limits.cutoffHz, "log", formatHz)}
+        {slider("Resonance", "resonance", limits.resonance, "linear", formatAmount)}
       </fieldset>
 
       <fieldset className="envelope">
         <legend>Envelope</legend>
-        <Slider
-          label="Attack"
-          name="attack_seconds"
-          value={synth.attackSeconds}
-          defaultValue={defaults.attackSeconds}
-          limits={limits.envelopeSeconds}
-          scale="log"
-          format={formatSeconds}
-          onChange={onChange}
-        />
-        <Slider
-          label="Decay"
-          name="decay_seconds"
-          value={synth.decaySeconds}
-          defaultValue={defaults.decaySeconds}
-          limits={limits.envelopeSeconds}
-          scale="log"
-          format={formatSeconds}
-          onChange={onChange}
-        />
-        <Slider
-          label="Sustain"
-          name="sustain"
-          value={synth.sustain}
-          defaultValue={defaults.sustain}
-          limits={limits.sustain}
-          scale="linear"
-          format={formatLevel}
-          onChange={onChange}
-        />
-        <Slider
-          label="Release"
-          name="release_seconds"
-          value={synth.releaseSeconds}
-          defaultValue={defaults.releaseSeconds}
-          limits={limits.envelopeSeconds}
-          scale="log"
-          format={formatSeconds}
-          onChange={onChange}
-        />
+        <EnvelopeDrawing times={shown} marked={dragged ? (STAGES[dragged.name] ?? null) : null} />
+        {slider("Attack", "attack_seconds", limits.envelopeSeconds, "log", formatSeconds)}
+        {slider("Decay", "decay_seconds", limits.envelopeSeconds, "log", formatSeconds)}
+        {slider("Sustain", "sustain", limits.sustain, "linear", formatLevel)}
+        {slider("Release", "release_seconds", limits.envelopeSeconds, "log", formatSeconds)}
       </fieldset>
     </section>
   );

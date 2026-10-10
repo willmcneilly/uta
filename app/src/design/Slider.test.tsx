@@ -83,6 +83,21 @@ describe("Slider", () => {
     expect(slider).toHaveAttribute("aria-valuenow", "-15");
   });
 
+  it("reports the value it shows during a drag, then null when the drag ends", () => {
+    const onDrag = vi.fn<(value: number | null) => void>();
+    const props = { label: "Volume", defaultValue: -12, scale, format: formatDb, onChange: () => {} };
+    render(<Slider {...props} value={-30} onDrag={onDrag} />);
+    const slider = screen.getByRole("slider", { name: "Volume" });
+    // 1 pixel is less than half a step, so the value shown doesn't change.
+    const drag = press(slider).to(0.75).by(1).to(0.5);
+    expect(onDrag.mock.calls.map(([value]) => value)).toEqual([-30, -15, -30]);
+    drag.release();
+    expect(onDrag).toHaveBeenLastCalledWith(null);
+    // Keys change the project's value, which the slider shows as it is.
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(onDrag).toHaveBeenCalledTimes(4);
+  });
+
   it("sends each new step of a drag once, all with the drag's gesture", () => {
     const { slider, onChange } = renderSlider(-30);
     press(slider).to(0.25).by(1).to(0.5).release();
