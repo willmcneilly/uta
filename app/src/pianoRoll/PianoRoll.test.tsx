@@ -133,6 +133,7 @@ const roll = () => screen.getByRole("application", { name: "Notes" });
 /** The pointer at `tick` (from the song's start) in the middle of `pitch`'s row. */
 interface Modifiers {
   altKey?: boolean;
+  ctrlKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
 }
@@ -708,6 +709,70 @@ describe("resizing a selection", () => {
       note("low", 60, 0, 240),
       note("long", 64, 960, 240),
     ]);
+  });
+});
+
+describe("moving notes with the arrow keys", () => {
+  const press = async (name: string, modifiers: Modifiers = {}) => {
+    await act(async () => {
+      fireEvent.keyDown(roll(), { key: name, ...modifiers });
+    });
+  };
+
+  it("moves the selection a semitone with ↑ and ↓, each press one undo step", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await press("ArrowUp");
+    await press("ArrowDown");
+    await press("ArrowDown");
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 61, 0), note("high", 73, 3840)],
+      [note("low", 60, 0), note("high", 72, 3840)],
+      [note("low", 59, 0), note("high", 71, 3840)],
+    ]);
+    expect(new Set(sets.map((set) => set.gesture)).size).toBe(3);
+    // Each trims what it lands on, as part of its own gesture.
+    expect(sent("trim_notes")).toEqual(
+      sets.map((set) => ({ clip: "clip-1", notes: ["low", "high"], gesture: set.gesture })),
+    );
+    await waitFor(() => expect(drawnNote("high")).toMatchObject({ pitch: 71 }));
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("moves it an octave with Shift", async () => {
+    await renderApp();
+    await click(240, 60);
+    await press("ArrowUp", { shiftKey: true });
+    await press("ArrowDown", { shiftKey: true });
+    await press("ArrowDown", { shiftKey: true });
+    expect(sent("set_notes").map((set) => set.notes)).toEqual([
+      [note("low", 72, 0)],
+      [note("low", 60, 0)],
+      [note("low", 48, 0)],
+    ]);
+  });
+
+  it("stops at the ends of the keyboard, sending nothing once there", async () => {
+    await renderApp();
+    await click(240, 60);
+    for (let i = 0; i < 6; i++) await press("ArrowDown", { shiftKey: true });
+    // 60 down to 0 in octaves, then nothing: 0 is the lowest note.
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].pitch)).toEqual([
+      48, 36, 24, 12, 0,
+    ]);
+  });
+
+  it("does nothing with nothing selected, or with ⌘, Ctrl or ⌥ held", async () => {
+    await renderApp();
+    await press("ArrowUp");
+    await click(240, 60);
+    await press("ArrowUp", { metaKey: true });
+    await press("ArrowUp", { altKey: true });
+    await press("ArrowDown", { ctrlKey: true });
+    expect(edits()).toEqual([]);
   });
 });
 

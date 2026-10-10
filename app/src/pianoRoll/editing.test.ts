@@ -10,6 +10,7 @@ import {
   moveNotes,
   resizeNotes,
   sameNote,
+  transposeNotes,
 } from "./editing";
 import type { PlacedNote } from "./notes";
 import {
@@ -273,6 +274,29 @@ describe("resizing several notes", () => {
         ]);
       }
     }
+  });
+});
+
+describe("moving notes by pitch", () => {
+  const n = (id: string, pitch: number): NoteView => ({
+    id,
+    pitch,
+    velocity: 100,
+    start: 0,
+    length: 240,
+  });
+  const chord = [n("a", 60), n("b", 64), n("c", 67)];
+
+  it("moves every note by the same number of semitones", () => {
+    expect(transposeNotes(chord, 12)).toEqual([n("a", 72), n("b", 76), n("c", 79)]);
+    expect(transposeNotes(chord, -1)).toEqual([n("a", 59), n("b", 63), n("c", 66)]);
+  });
+
+  it("stops where any note would go off the keyboard", () => {
+    const high = [n("a", 120), n("b", 124)];
+    expect(transposeNotes(high, 12).map((note) => note.pitch)).toEqual([123, 127]);
+    const low = [n("a", 5), n("b", 9)];
+    expect(transposeNotes(low, -12).map((note) => note.pitch)).toEqual([0, 4]);
   });
 });
 

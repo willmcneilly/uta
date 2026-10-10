@@ -142,6 +142,18 @@ export function moveNotes(
   return notes.map((note) => ({ ...note, start: note.start + ticks, pitch: note.pitch + pitches }));
 }
 
+/**
+ * `notes` moved `semitones` up (negative is down), all together. The move
+ * stops where any note would go off the keyboard, so a chord keeps its shape.
+ */
+export function transposeNotes(notes: readonly NoteView[], semitones: number): NoteView[] {
+  if (notes.length === 0) return [];
+  const lowest = Math.min(...notes.map((note) => note.pitch));
+  const highest = Math.max(...notes.map((note) => note.pitch));
+  const change = clamp(semitones, -lowest, PITCH_COUNT - 1 - highest);
+  return notes.map((note) => ({ ...note, pitch: note.pitch + change }));
+}
+
 /** A note's bar in the velocity lane is this close to the pointer to be picked. */
 export const VELOCITY_HIT_PIXELS = 4;
 

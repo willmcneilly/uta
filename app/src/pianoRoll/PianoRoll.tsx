@@ -22,6 +22,7 @@ import {
   moveNotes,
   resizeNotes,
   sameNote,
+  transposeNotes,
 } from "./editing";
 import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "./playhead";
@@ -95,6 +96,9 @@ const NEW_NOTE_VELOCITY = 100;
 /** The cursor over each part of a note, and while dragging it. */
 const NOTE_CURSORS = { body: "grab", start: "ew-resize", end: "ew-resize" } as const;
 const DRAG_CURSORS = { body: "grabbing", start: "ew-resize", end: "ew-resize" } as const;
+/** How far ↑ and ↓ move the selected notes, and with Shift held. */
+const SEMITONE = 1;
+const OCTAVE = 12;
 /** The cursor while ⌥-dragging copies of notes, as the system shows for copying. */
 const COPY_CURSOR = "copy";
 
@@ -633,6 +637,10 @@ export function PianoRoll({
       select([]);
       return;
     }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      transpose(event);
+      return;
+    }
     if (event.key !== "Backspace" && event.key !== "Delete") return;
     const notes = selectedNotes();
     if (notes.length === 0) return;
@@ -640,6 +648,25 @@ export function PianoRoll({
     // One command, so one undo step.
     latest.current.editor.remove(notes.map((note) => note.id));
     select([]);
+  };
+
+  /**
+   * ↑ and ↓ move the selected notes a semitone, or an octave with Shift, as
+   * one undo step, trimming what they land on as a drag does. With ⌘, Ctrl
+   * or ⌥ held they're left to the app's own shortcuts.
+   */
+  const transpose = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const notes = selectedNotes();
+    if (notes.length === 0) return;
+    event.preventDefault();
+    const step = event.shiftKey ? OCTAVE : SEMITONE;
+    const next = transposeNotes(notes, event.key === "ArrowUp" ? step : -step);
+    if (next.every((note, i) => note.pitch === notes[i].pitch)) return;
+    const { editor } = latest.current;
+    const gesture = nextGesture();
+    editor.set(next, gesture);
+    editor.trim(next.map((note) => note.id), gesture);
   };
 
   /** Adds pasted or duplicated notes, trims what they land on, and selects them. */
