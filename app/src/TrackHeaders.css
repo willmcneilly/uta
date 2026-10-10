@@ -86,7 +86,7 @@
   font-size: 12px;
 }
 
-.track-setting input {
+.track-setting .slider {
   min-width: 0;
 }
 

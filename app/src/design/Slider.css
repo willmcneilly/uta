@@ -1,0 +1,69 @@
+/*
+ * The slider, after the sandbox's track fader: a faint rail, a tick where
+ * double-click resets it, and an ink thumb pointing up at the value from
+ * under the rail. provisional: D-7
+ */
+.slider {
+  position: relative;
+  height: 20px;
+  min-width: 0;
+  /* Room for the thumb at either end, so it never leaves the hit area. */
+  padding: 0 var(--space-3);
+  border-radius: var(--rounded-md);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.slider-rail {
+  position: absolute;
+  inset: 8px var(--space-3) auto;
+  height: 0;
+  border-top: var(--stroke-grid) solid var(--ink-3);
+}
+
+.slider-default {
+  position: absolute;
+  top: -3px;
+  width: 0;
+  height: 7px;
+  border-left: var(--stroke-grid) solid var(--ink-3);
+  transform: translateX(-50%);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 1px;
+  width: 9px;
+  height: 7px;
+  background: var(--ink);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transform: translateX(-50%);
+}
+
+/*
+ * States. Hover darkens the rail. Focused, the thumb turns the selected ink,
+ * because the arrow keys now move it. The focus ring shows for focus from
+ * the keyboard, or once a key is pressed after a click. provisional: D-8
+ */
+.slider:hover .slider-rail,
+.slider[data-dragging] .slider-rail {
+  border-top-color: var(--ink-2);
+}
+
+.slider:focus {
+  outline: none;
+}
+
+.slider:focus .slider-thumb {
+  background: var(--selected);
+}
+
+.slider:focus-visible:not([data-pointer-focused]) {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.slider-row output {
+  font-variant-numeric: tabular-nums;
+}

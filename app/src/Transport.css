@@ -31,6 +31,10 @@
   margin-left: 16px;
 }
 
+.transport .setting .slider {
+  width: 128px;
+}
+
 .transport .setting output {
   min-width: 64px;
   font-variant-numeric: tabular-nums;
@@ -42,7 +46,7 @@
   gap: 12px;
 }
 
-.master .volume input {
+.master .volume .slider {
   width: 100px;
 }
 

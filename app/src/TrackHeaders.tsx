@@ -1,10 +1,11 @@
 import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
 import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
+import { Slider } from "./design/Slider";
+import { linearScale } from "./design/sliderScale";
 import { Meter } from "./Meter";
 import type { TrackLevels } from "./meterLevel";
 import { ADD_TRACK_HEIGHT, RULER_HEIGHT, TRACK_HEIGHT } from "./timeline/viewport";
 import { dropIndex, formatPan } from "./trackOrder";
-import { useGesture } from "./useGesture";
 import "./TrackHeaders.css";
 
 /** How wide each header's meter is, in CSS pixels. */
@@ -127,6 +128,7 @@ export function TrackHeaders({
             key={track.id}
             track={track}
             limits={project.mixerLimits}
+            defaults={project.mixerDefaults}
             selected={track.id === selected}
             dragging={reorder?.from === index}
             className={dropMark(index)}
@@ -156,6 +158,8 @@ export function TrackHeaders({
 interface HeaderProps {
   track: TrackView;
   limits: MixerLimits;
+  /** A new track's mixer strip, which double-click resets each slider to. */
+  defaults: MixerView;
   selected: boolean;
   dragging: boolean;
   className: string;
@@ -170,6 +174,7 @@ interface HeaderProps {
 function TrackHeader({
   track,
   limits,
+  defaults,
   selected,
   dragging,
   className,
@@ -179,11 +184,7 @@ function TrackHeader({
   onSoloAlone,
   onStartReorder,
 }: HeaderProps) {
-  const volumeGesture = useGesture();
-  const panGesture = useGesture();
   const { mixer, name } = track;
-  const clamp = ([min, max]: [number, number], value: number) =>
-    Math.min(max, Math.max(min, value));
   return (
     <li
       className={`track-header${selected ? " selected" : ""}${dragging ? " dragging" : ""}${className}`}
@@ -220,43 +221,26 @@ function TrackHeader({
           S
         </button>
       </div>
-      <label className="track-setting">
-        <span>Vol</span>
-        <input
-          type="range"
-          aria-label={`${name} volume`}
-          min={limits.volumeDb[0]}
-          max={limits.volumeDb[1]}
-          step={0.5}
-          value={clamp(limits.volumeDb, mixer.volumeDb)}
-          aria-valuetext={formatDb(mixer.volumeDb)}
-          onPointerDown={volumeGesture.start}
-          onChange={(event) =>
-            onMixer(
-              { ...mixer, volumeDb: event.currentTarget.valueAsNumber },
-              volumeGesture.current(),
-            )
-          }
-        />
-        <output>{formatDb(mixer.volumeDb)}</output>
-      </label>
-      <label className="track-setting">
-        <span>Pan</span>
-        <input
-          type="range"
-          aria-label={`${name} pan`}
-          min={limits.pan[0]}
-          max={limits.pan[1]}
-          step={0.01}
-          value={clamp(limits.pan, mixer.pan)}
-          aria-valuetext={formatPan(mixer.pan)}
-          onPointerDown={panGesture.start}
-          onChange={(event) =>
-            onMixer({ ...mixer, pan: event.currentTarget.valueAsNumber }, panGesture.current())
-          }
-        />
-        <output>{formatPan(mixer.pan)}</output>
-      </label>
+      <Slider
+        className="track-setting"
+        label="Vol"
+        ariaLabel={`${name} volume`}
+        value={mixer.volumeDb}
+        defaultValue={defaults.volumeDb}
+        scale={linearScale(...limits.volumeDb, 0.5)}
+        format={formatDb}
+        onChange={(volumeDb, gesture) => onMixer({ ...mixer, volumeDb }, gesture)}
+      />
+      <Slider
+        className="track-setting"
+        label="Pan"
+        ariaLabel={`${name} pan`}
+        value={mixer.pan}
+        defaultValue={defaults.pan}
+        scale={linearScale(...limits.pan, 0.01)}
+        format={formatPan}
+        onChange={(pan, gesture) => onMixer({ ...mixer, pan }, gesture)}
+      />
       <Meter level={levels.level(track.id)} label={`${name} meter`} width={METER_WIDTH} />
     </li>
   );

@@ -4,7 +4,7 @@
   gap: 12px;
 }
 
-.volume input {
+.volume .slider {
   flex: 1;
 }
 

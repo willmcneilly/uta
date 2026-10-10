@@ -614,7 +614,12 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           {!project || !track ? (
             <p className="empty">No track selected. Add one with + Add track.</p>
           ) : tab === "sound" ? (
-            <SynthPanel synth={track.synth} limits={project.synthLimits} onChange={changeSynth} />
+            <SynthPanel
+              synth={track.synth}
+              limits={project.synthLimits}
+              defaults={project.synthDefaults}
+              onChange={changeSynth}
+            />
           ) : clip ? (
             <PianoRoll
               ref={pianoRoll}

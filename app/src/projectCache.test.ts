@@ -31,11 +31,13 @@ function update(
       volumeDb,
       minVolumeDb: -60,
       maxVolumeDb: 6,
+      defaultVolumeDb: -12,
       canUndo: false,
       canRedo: false,
       bpm: 120,
       minBpm: 20,
       maxBpm: 300,
+      defaultBpm: 120,
       loopStart: 0,
       loopLength: 3840,
       loopEnabled: true,
@@ -48,7 +50,9 @@ function update(
         envelopeSeconds: [0.001, 10],
         sustain: [0, 1],
       },
+      synthDefaults: track.synth,
       mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
+      mixerDefaults: track.mixer,
       maxTracks: 32,
       tracks: [
         {
