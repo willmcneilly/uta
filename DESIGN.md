@@ -177,7 +177,42 @@ Flat. Hierarchy comes from ink weight, not shadows: structure is faint, content 
 
 ## Components
 
-None extracted yet. Parts that appear more than once become shared components in `app/src/design/`, each with an entry here: extract on the second use, not before.
+Parts that appear more than once become shared components in `app/src/design/`, each with an entry here: extract on the second use, not before.
+
+### Choosing a control
+
+The first row that fits wins:
+
+| Control | Use when | Examples |
+|---|---|---|
+| **Fader** | Values compared side by side | Track and master volume |
+| **Toggle** | On or off | Mute, solo, loop |
+| **Segmented choice** | Five or fewer named options, all visible | Waveform |
+| **Menu** | More options than that, or a list that changes | Snap, output device |
+| **Drawing you can drag** | A shape: an envelope, a filter curve | None yet |
+| **Drag field** | A crowded place where the exact number matters | Tempo |
+| **Knob** | A setting in a compact group that stands on its own | Pan, the synth's settings |
+
+Faders follow the mouse along their length. Knobs and drag fields are dragged up and down, never in a circle.
+
+### Setting a number
+
+The fader, the knob and the drag field all set a number, so they behave the same way, from one shared piece (`useNumberControl`) with one shared set of tests:
+- **Drag** from wherever you press. Nothing jumps on press: the control moves from where it is. A drag is one undo step.
+- **Shift-drag** moves it in fine steps, a tenth of the speed. Shift can be pressed or let go part-way, and it carries on from where it is.
+- **Click** gives it focus. The arrow keys step it, Shift+arrow by ten steps, Page Up and Page Down by ten, Home and End to the ends.
+- **Reset** to its default with double-click, ⌥-click, or Delete or Backspace while it has focus. A reset is one undo step, and does nothing when it's already there.
+- **The scroll wheel** leaves it alone, so scrolling a panel never changes a sound by accident.
+- **During a drag** it shows where the mouse has taken it, not what the project last said, then the project's value once you let go.
+- **The value and its unit** are always readable in the `number` type, whose digits don't shift as they change. To assistive tech it's a slider, with its range, and its value read out with the unit ("-6.0 dB").
+
+### Fader
+
+For values compared side by side, such as volume on every track. A label, the fader, and its value.
+- **Drawing:** a faint rail (`ink-3` at `stroke-grid`), a tick where a reset sets it (`ink-3`), and an `ink` thumb pointing up at the value from under the rail. The hit area is 20px tall, with room (`space-3`) for the thumb at each end, and `rounded-md` corners for the focus ring.
+- **Value:** beside it, in the `number` type in `ink`. The label is in the `text` type in `ink-2`.
+- **States:** at rest as drawn. Hover and drag darken the rail to `ink-2`. With focus, the thumb is `selected`, because the arrow keys now move it. The focus ring (`selected` at `stroke-clip-selected`) shows for focus from the keyboard, or once a key is pressed after a click. The cursor is a left-right resize arrow.
+- **Behaviour:** as in Setting a number, dragged left and right along the rail.
 
 ## Do's and Don'ts
 
