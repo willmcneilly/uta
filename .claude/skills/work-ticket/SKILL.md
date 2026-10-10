@@ -1,6 +1,7 @@
 ---
 name: work-ticket
 description: Pick up a Uta ticket and take it through to a merged PR. Use when Will says /work-ticket, "work on UTA-n", "pick up the next ticket", says to merge a ticket's PR, or reports something he found trying it. Covers claiming the ticket, branching, implementing, verifying against the acceptance criteria, recording verification notes, opening the PR, the review loop with an independent reviewer, handing over to Will with what needs him, and merging on his go-ahead.
+effort: medium
 ---
 
 # Working a ticket

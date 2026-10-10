@@ -1,6 +1,7 @@
 ---
 name: rfc
 description: Write an RFC for Uta with Will. Use when Will wants to start a new initiative, says "let's write an RFC" or /rfc, or when a proposed piece of work is big enough to need one. Covers clarifying the goal, researching, drafting the RFC as a local markdown file, iterating on Will's feedback in Crit, and pushing to Notion on sign-off.
+effort: high
 ---
 
 # Writing an RFC

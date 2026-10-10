@@ -1,6 +1,7 @@
 ---
 name: plan-project
 description: Turn an accepted Uta RFC into a project and tickets. Use when Will says /plan-project, "let's plan RFC-n", "break this into tickets", or asks to add a batch of work to an existing project. Covers sizing and ordering tickets, drafting the plan locally, reviewing it in Crit, and creating the project and tickets in Notion on sign-off.
+effort: high
 ---
 
 # Planning a project
