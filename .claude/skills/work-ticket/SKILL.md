@@ -83,6 +83,7 @@ Before opening the PR:
 ## 7. Open the PR
 
 - Push the branch, then `gh pr create`.
+- **To change the PR's description later,** use `gh api repos/willmcneilly/uta/pulls/<n> -X PATCH -F body=@<file>`. `gh pr edit` fails on this repo, because it asks GitHub for the retired classic Projects field.
 - **Title:** `UTA-<n>: <ticket name>`.
 - **Body:**
   - one paragraph on what changed and why, plus the Notion ticket link;
@@ -131,7 +132,7 @@ Send one message. It's the first Will hears of this ticket since you started. Le
 Leave out benchmark tables, implementation detail and housekeeping.
 
 **Have everything ready before you send it.** Will should be able to start his checks the moment he reads the message:
-- **If any check uses the app,** start it from the PR's branch: `npm run tauri dev` in `app/` of the worktree you built in, run in the background. Wait until it has built and the window is open (the log shows `Running` and the `uta-app` path), and check the log for errors. If another copy of the app is already running from a different checkout, stop it first, so Will doesn't test the wrong build. Say "The app is open, running this branch" at the top of "What needs you".
+- **If any check uses the app,** start it from the PR's branch: `npm run tauri dev` in `app/` of the worktree you built in, run in the background. Wait until it has built and the window is open, and check the log for errors. The log is coloured, so strip the colour codes before matching, or the wait never ends: `sed 's/\x1b\[[0-9;]*m//g' <log> | grep -m1 'Running .*uta-app'`. Give it a timeout of a few minutes, and if it times out, read the log rather than waiting longer. If another copy of the app is already running from a different checkout, stop it first, so Will doesn't test the wrong build. Say "The app is open, running this branch" at the top of "What needs you".
 - **If a check starts from a particular state** (a song from the Develop menu, a buffer size), say exactly how to get there in its first step.
 - **If a check needs a terminal command** (`uta play`, say), give it ready to run in its own `bash` block.
 
@@ -142,7 +143,7 @@ Then stop and wait for Will.
 ## 10. When Will replies
 
 **"Merge":** check that the last review is Ready to merge and CI is green (`gh pr checks <n>`). If they aren't, tell Will what's wrong instead of merging. Then:
-1. `gh pr merge <n> --squash --delete-branch`, so there's one commit per ticket on `main`, titled `UTA-<n>: …`.
+1. `gh pr merge <n> --squash`, so there's one commit per ticket on `main`, titled `UTA-<n>: …`. Then delete the remote branch with `git push origin --delete <branch>`. Don't use `--delete-branch`: from a worktree it fails, because it tries to switch to `main`, which is checked out in Will's main checkout.
 2. Set the ticket to `Done`.
 3. **Unblock:** for each `Backlog` ticket in the project whose **Depends on** tickets are now all `Done`, set it to `Ready`. If every ticket in the project is `Done`, set the project to `Done`.
 4. **Clean up after yourself, without asking:**
@@ -154,6 +155,10 @@ Then stop and wait for Will.
 5. **Line up the next ticket.** Query the Tickets for `Ready` ones whose **Depends on** are all `Done` and merged. Pick the next one the plan's order says to do in the same project, or the lowest ID if the plan doesn't say. Then create a chip for it with the `spawn_task` tool (the `ccd_session` one): title `Work on UTA-<n>: <name>`, a one-line tldr of its goal, and the prompt `/work-ticket UTA-<n>`, so Will only has to click it. If that tool isn't available, give him the command to paste instead. If nothing is Ready, say what the next ticket is waiting on.
 6. Tell Will, in a few lines: what merged, which tickets are now Ready, the next ticket you lined up (and any other Ready tickets that could run alongside it), what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
 
-**Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. Then run one more review round, so the reviewer sees the change before Will does, and hand over again as in step 9.
+**Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. Will checks these fixes himself in the app, so there's usually no need for another review round. CI must still be green before merging. Run one more round only if the fix:
+- touches the engine, the audio thread or `uta-core`; or
+- isn't small, for example a new behaviour or a change across several files.
+
+Then tell Will what you changed, briefly, keeping the app open on the new code. If you ran a review round, include its verdict.
 
 The ticket stays `In Review` until it's merged.
