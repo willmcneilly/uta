@@ -107,3 +107,28 @@ What to listen for, against how you remember an 808:
 - **Velocity:** softer hits should be duller and smoother as well as quieter; accents brighter and a little rougher, from the amplifier's clipping.
 - **Repeats and flams:** no clicks; the 32nds and 64ths should shimmer, each hit a little different, not buzz like a machine gun.
 - **Choke:** each closed hat should cut the open hat off cleanly, with no click, and the 30 ms one should sound like a single, slightly longer closed hat.
+
+## Toms (808)
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | The high tom a beat at its defaults (Tune 185 Hz, Decay 0.1 s), then the low tom (Tune 90 Hz, Decay 0.2 s), then a fill in 8ths down from the high tom to the low, with the first of each accented. |
+| `02-low-tune` | The low tom's Tune 80, 85, 90, 95 and 100 Hz, two hits a bar. |
+| `03-high-tune` | The high tom's Tune 165, 175, 185, 200 and 220 Hz, the same. |
+| `04-low-decay` | The low tom's Decay 0.1, 0.2, 0.3, 0.45 and 0.6 s, one hit a bar. |
+| `05-high-decay` | The high tom's Decay, the same. |
+| `06-level` | Both Levels 0, -6, -12 and -24 dB: a high tom then a low tom a bar. |
+| `07-velocity` | A high tom a beat, velocity 8 up to 127, then the same on the low tom. |
+| `08-repeats` | 8ths, 16ths, then 32nds at the longest Decay, on the high tom, then the low tom. |
+| `09-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart, on the high tom, then the low tom. |
+| `10-groove` | A 1-bar tom pattern at 100 BPM, looped, with the low tom's Decay at 0.3 s. Also the toms' golden WAV. |
+| `11-beat` | Kick, clap and closed hats for a bar, then a bar ending in a tom fill, at 110 BPM, looped. Every sound is still at 0 dB here; the kit's balance (toms about 6 dB under the kick) is set in UTA-57. |
+
+What to listen for, against how you remember an 808:
+
+- **Defaults:** a soft, round, pitched "tonk" with a short knock at the start, not a synth "boing" and not a sine beep. The pitch drops a little in the first tenth of a second, enough to give it a shape, not enough to hear as a sweep. Under it, a faint, low hiss that hangs on a moment after the note (the 808's "room"): you may only notice it when it isn't there.
+- **Tune:** each step is a clearly different note with the same character. The low tom's range is narrow (80 to 100 Hz, the 808's own), so its steps are small.
+- **Decay:** from a short, dead "tok" at 0.1 s to a long ring at 0.6 s, longer than the 808's toms, which have no Decay knob.
+- **Velocity:** softer hits should be duller and bend less, as well as quieter; accents knock harder and have a little more of the hiss.
+- **Repeats and flams:** no clicks. The 32nds should roll, each hit blending into the last ring, not stutter like a machine gun. A flam at 10 ms should sound like one fat hit.
+- **The beat:** the fill should sit under the kick and clap like an 808's toms, not poke out as a different machine. It will be loud: balancing the kit is a later ticket.

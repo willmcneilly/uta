@@ -103,6 +103,10 @@ pub const CLAP: u8 = 39;
 pub const CLOSED_HAT: u8 = 42;
 /// The open hat's note.
 pub const OPEN_HAT: u8 = 46;
+/// The low tom's note.
+pub const LOW_TOM: u8 = 45;
+/// The high tom's note.
+pub const HIGH_TOM: u8 = 50;
 
 /// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
 /// track, "Drums 1", under the empty synth track: its clip fills the loop

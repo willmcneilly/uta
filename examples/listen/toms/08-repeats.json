@@ -1,0 +1,850 @@
+{
+  "project": "ba78979c-432b-5180-850e-dc91301b5e06",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "817cfb52-c2e8-5266-84f5-6e6ae9921ed5",
+              "name": "Toms",
+              "source": {
+                "drums": {
+                  "low_tom": {
+                    "decay_seconds": 0.6
+                  },
+                  "high_tom": {
+                    "decay_seconds": 0.6
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "8349b145-a7c7-56f2-8a7b-6350a0897bee",
+                  "start": 0,
+                  "length": 23040,
+                  "notes": [
+                    {
+                      "id": "3fda1d71-f71e-5b7a-8038-4fcf5923d50d",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "5581a1cf-87d3-5fe2-a2da-e054dfe48308",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 240
+                    },
+                    {
+                      "id": "b3d92e1d-3c17-5197-81f5-46d86b0b56d9",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "f094f683-d42b-59cd-8642-2c3e4c332e1c",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 1440,
+                      "length": 240
+                    },
+                    {
+                      "id": "593b42fc-0602-5898-8c5e-6c369041b311",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "e188dd81-bffa-5924-b960-a177e43abfd9",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 240
+                    },
+                    {
+                      "id": "875e1c63-1c4b-5217-bbfa-55f9c4d8bd94",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "3ae276d6-0461-5ac6-afb5-e9fb2313261c",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 240
+                    },
+                    {
+                      "id": "6c1e0918-f4c7-55ef-9306-06da60432e5a",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 3840,
+                      "length": 240
+                    },
+                    {
+                      "id": "132a2ab9-0dbf-5153-b042-17fa61daa2f9",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 4080,
+                      "length": 240
+                    },
+                    {
+                      "id": "c12f160a-1949-5209-b405-30b2ba84f0ce",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 4320,
+                      "length": 240
+                    },
+                    {
+                      "id": "560f9270-bf9b-5555-8013-e1d5ab4eaa78",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 4560,
+                      "length": 240
+                    },
+                    {
+                      "id": "89866254-f7e5-5ad8-b59a-5d4799a0f8ce",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 4800,
+                      "length": 240
+                    },
+                    {
+                      "id": "0887c004-96f3-5245-b9e0-b4c109880e53",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 5040,
+                      "length": 240
+                    },
+                    {
+                      "id": "1866e8d3-6811-584d-be8c-39638c968f51",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 5280,
+                      "length": 240
+                    },
+                    {
+                      "id": "d9fba938-bfc3-5f5c-830b-b973d6bf6f97",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 5520,
+                      "length": 240
+                    },
+                    {
+                      "id": "371b4d97-2503-56df-8314-232bb7995d9e",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 5760,
+                      "length": 240
+                    },
+                    {
+                      "id": "cb8facff-d674-5af7-8bc9-e5de3443acb5",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 6000,
+                      "length": 240
+                    },
+                    {
+                      "id": "4f9710c5-3b9e-5e0d-891c-edae6ddabe99",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 6240,
+                      "length": 240
+                    },
+                    {
+                      "id": "bd63bd9a-3707-57f1-99fa-78bb5c5b7223",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 6480,
+                      "length": 240
+                    },
+                    {
+                      "id": "136231c7-8bbc-5138-8f41-e73335d826f8",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 6720,
+                      "length": 240
+                    },
+                    {
+                      "id": "eaba68c4-7df2-50ab-9767-e569d85f2296",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 6960,
+                      "length": 240
+                    },
+                    {
+                      "id": "d401a06b-97aa-5a95-a5ab-f82f4cd5c0dc",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 7200,
+                      "length": 240
+                    },
+                    {
+                      "id": "b83c72c1-3113-59fe-aa7c-d518b0b6a135",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 7440,
+                      "length": 240
+                    },
+                    {
+                      "id": "8123bdba-627f-5b7e-8c17-21565303b3ac",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 7680,
+                      "length": 240
+                    },
+                    {
+                      "id": "01311f22-f7d3-590c-ada0-54958acb1a1d",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 7800,
+                      "length": 240
+                    },
+                    {
+                      "id": "ac73f563-7212-5aa1-bbd5-4d157e231952",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 7920,
+                      "length": 240
+                    },
+                    {
+                      "id": "3e94cd0a-24a2-5add-a080-806c43dec68e",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8040,
+                      "length": 240
+                    },
+                    {
+                      "id": "4be226d9-65de-5e18-9feb-bc8f146a3483",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8160,
+                      "length": 240
+                    },
+                    {
+                      "id": "ee5295e0-9ad2-5f23-b691-131cb07d80fd",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8280,
+                      "length": 240
+                    },
+                    {
+                      "id": "f845b9ef-d01a-531a-9320-49eb59f8f8a1",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8400,
+                      "length": 240
+                    },
+                    {
+                      "id": "e104e60f-5bd8-58c0-b774-c1ea69945e34",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8520,
+                      "length": 240
+                    },
+                    {
+                      "id": "2d66c186-f6b3-5857-b587-a703435cd546",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8640,
+                      "length": 240
+                    },
+                    {
+                      "id": "df44d31f-5f53-5345-942a-5eeb6a707a1a",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8760,
+                      "length": 240
+                    },
+                    {
+                      "id": "85911834-8e96-56d9-87d0-e00c53b60a82",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 8880,
+                      "length": 240
+                    },
+                    {
+                      "id": "99543a62-ef16-57b4-809d-8e9970cc3d6d",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9000,
+                      "length": 240
+                    },
+                    {
+                      "id": "e05be84e-df8a-5d2f-87e6-776298732f33",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9120,
+                      "length": 240
+                    },
+                    {
+                      "id": "8061c484-0ba9-5baf-89d7-70ed9948c006",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9240,
+                      "length": 240
+                    },
+                    {
+                      "id": "f192f6d4-6f24-5cf6-910b-8f335a04d1be",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9360,
+                      "length": 240
+                    },
+                    {
+                      "id": "92880867-777c-5642-846a-90e3cfb5b64e",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9480,
+                      "length": 240
+                    },
+                    {
+                      "id": "b99c54c3-764c-5938-bbab-255987a488b9",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9600,
+                      "length": 240
+                    },
+                    {
+                      "id": "1b7fd7e2-458f-55a1-8f2e-1e7942872c7a",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9720,
+                      "length": 240
+                    },
+                    {
+                      "id": "617a88cb-ea52-542b-944d-ca2703d55a36",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9840,
+                      "length": 240
+                    },
+                    {
+                      "id": "fc6ee51e-b033-5d67-b554-03f2ef1a90a6",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 9960,
+                      "length": 240
+                    },
+                    {
+                      "id": "16c89f09-958b-5a09-a4f7-e5a930fd2647",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10080,
+                      "length": 240
+                    },
+                    {
+                      "id": "19148695-9477-5ee3-9846-20544ec32597",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10200,
+                      "length": 240
+                    },
+                    {
+                      "id": "b219de93-1f6d-559c-92c4-69c655ba2d42",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10320,
+                      "length": 240
+                    },
+                    {
+                      "id": "4535edf9-5f4f-59c1-bbb6-0389d4dc6d66",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10440,
+                      "length": 240
+                    },
+                    {
+                      "id": "bde7c7bc-1d04-5201-bd9b-7f61566da058",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10560,
+                      "length": 240
+                    },
+                    {
+                      "id": "8012d43d-2daf-513d-91f0-a71cf19682ba",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10680,
+                      "length": 240
+                    },
+                    {
+                      "id": "56903819-d23c-5ce2-8025-46d829bb2153",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10800,
+                      "length": 240
+                    },
+                    {
+                      "id": "2ecea225-acfb-5c09-ba3f-bb32b79f34ca",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 10920,
+                      "length": 240
+                    },
+                    {
+                      "id": "ae68fe8a-63d3-5720-9807-51bb38a32bb3",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 11040,
+                      "length": 240
+                    },
+                    {
+                      "id": "55820eb1-c9a3-5d55-96cc-c7cd60045b44",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 11160,
+                      "length": 240
+                    },
+                    {
+                      "id": "6401848c-ecc1-5455-9c40-8816b74d82eb",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 11280,
+                      "length": 240
+                    },
+                    {
+                      "id": "45ab6d46-e3c2-5bb8-8cb3-a4b2b06facbb",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 11400,
+                      "length": 240
+                    },
+                    {
+                      "id": "be606ec9-3ce5-5a62-a5ba-1f2aeb95dca1",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 11520,
+                      "length": 240
+                    },
+                    {
+                      "id": "2ab30d06-eb17-5a30-beb5-44065bd666d8",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 12000,
+                      "length": 240
+                    },
+                    {
+                      "id": "e490be40-162b-54ac-9053-2869fc3cf804",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 12480,
+                      "length": 240
+                    },
+                    {
+                      "id": "9c370132-caf4-5e98-a2f2-d7e12d9a2bbd",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 12960,
+                      "length": 240
+                    },
+                    {
+                      "id": "dc5e16ac-daf6-5931-861e-16e0b19715df",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 13440,
+                      "length": 240
+                    },
+                    {
+                      "id": "f3f0ee00-8a25-5fba-b84b-43af0a5200e4",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 13920,
+                      "length": 240
+                    },
+                    {
+                      "id": "e29956dc-93a2-5382-b3d6-c47567724679",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 14400,
+                      "length": 240
+                    },
+                    {
+                      "id": "9e6bf01a-b5e0-52f0-ad74-b29ee72ee638",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 14880,
+                      "length": 240
+                    },
+                    {
+                      "id": "40545a19-a9b5-57f3-9760-8aeb1b938d84",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 15360,
+                      "length": 240
+                    },
+                    {
+                      "id": "d5ccc8b1-dfd0-5db5-b2f1-e077592ded6d",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 15600,
+                      "length": 240
+                    },
+                    {
+                      "id": "38740959-bc75-53b0-9ecb-949d7bb9f9ee",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 15840,
+                      "length": 240
+                    },
+                    {
+                      "id": "47891b44-662c-5858-92ca-9a43cb8a9bf6",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 16080,
+                      "length": 240
+                    },
+                    {
+                      "id": "2ff2929c-9180-5706-9615-3159992b4f24",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 16320,
+                      "length": 240
+                    },
+                    {
+                      "id": "ce31eabb-983a-5023-81c5-70df01adbe89",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 16560,
+                      "length": 240
+                    },
+                    {
+                      "id": "00118bff-761d-5358-ad67-6b0405c68d20",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 16800,
+                      "length": 240
+                    },
+                    {
+                      "id": "f1af37bd-423e-58f9-b017-0e02c929445e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 17040,
+                      "length": 240
+                    },
+                    {
+                      "id": "bc1ff249-03f4-5520-92c7-ebc0fffe686e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 17280,
+                      "length": 240
+                    },
+                    {
+                      "id": "911a983d-d47a-543a-a676-af656a34f9a7",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 17520,
+                      "length": 240
+                    },
+                    {
+                      "id": "ac9bf5cb-1254-5dd3-b1c5-94ea63dcb867",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 17760,
+                      "length": 240
+                    },
+                    {
+                      "id": "48406f21-b6a6-5066-831a-dd1d0f7a7662",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 18000,
+                      "length": 240
+                    },
+                    {
+                      "id": "40e7eb5c-efa9-5789-b017-124e3b108291",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 18240,
+                      "length": 240
+                    },
+                    {
+                      "id": "e7fe3d15-e2de-5dfd-b4a9-eef457c06406",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 18480,
+                      "length": 240
+                    },
+                    {
+                      "id": "8a4475b5-acb0-53b3-b5ab-5afab86290c7",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 18720,
+                      "length": 240
+                    },
+                    {
+                      "id": "96ed7ffc-e008-51bb-95b1-91e923ab0d56",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 18960,
+                      "length": 240
+                    },
+                    {
+                      "id": "2c5f5192-49e4-5cf5-96e8-dcf268e9b87e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19200,
+                      "length": 240
+                    },
+                    {
+                      "id": "12cdaf8e-b212-552c-8494-aad5d0ff0d72",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19320,
+                      "length": 240
+                    },
+                    {
+                      "id": "b00e7906-173a-5d50-a66b-40c5d6c159ae",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19440,
+                      "length": 240
+                    },
+                    {
+                      "id": "de8a2183-b17b-52eb-87eb-bdd6542f07fa",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19560,
+                      "length": 240
+                    },
+                    {
+                      "id": "06c89cc7-da1c-5ca8-b7ce-d4ad63bfc29e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19680,
+                      "length": 240
+                    },
+                    {
+                      "id": "6cab0d40-4724-5212-887a-96011675b789",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19800,
+                      "length": 240
+                    },
+                    {
+                      "id": "7add671b-5421-5178-ab7a-d0e1634eeab7",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 19920,
+                      "length": 240
+                    },
+                    {
+                      "id": "dad022b6-b9a4-564b-a3c6-afafa5b71b47",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20040,
+                      "length": 240
+                    },
+                    {
+                      "id": "fba95f68-2de5-55f7-ae09-187a8b3b310d",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20160,
+                      "length": 240
+                    },
+                    {
+                      "id": "12409924-5dc9-5f1d-9e79-5b5d90a6f273",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20280,
+                      "length": 240
+                    },
+                    {
+                      "id": "ae99102f-03db-518c-9696-eb56a73c6cbb",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20400,
+                      "length": 240
+                    },
+                    {
+                      "id": "e9971314-22c8-51ca-83e3-c5ae43acabc1",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20520,
+                      "length": 240
+                    },
+                    {
+                      "id": "5f8eadb3-1918-5fe3-8314-3327497e3946",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20640,
+                      "length": 240
+                    },
+                    {
+                      "id": "fa379dd1-0328-532d-92de-eb130bb0478e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20760,
+                      "length": 240
+                    },
+                    {
+                      "id": "2176163f-0f06-5499-bd21-85767744f4cf",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 20880,
+                      "length": 240
+                    },
+                    {
+                      "id": "3c4800ea-1784-58ec-8109-fdf53f720f06",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21000,
+                      "length": 240
+                    },
+                    {
+                      "id": "96550ea3-5431-5cdc-acfe-44bd77deb85c",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21120,
+                      "length": 240
+                    },
+                    {
+                      "id": "4f8c0810-ad6c-53e7-a200-785f8a27a948",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21240,
+                      "length": 240
+                    },
+                    {
+                      "id": "7962f85a-2fd4-5c5a-a088-3796b6b27ffb",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21360,
+                      "length": 240
+                    },
+                    {
+                      "id": "db877d04-ab64-5ba5-b718-2bec84b0105b",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21480,
+                      "length": 240
+                    },
+                    {
+                      "id": "ba991d38-fa63-59cc-9f77-ac6aeea489a6",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21600,
+                      "length": 240
+                    },
+                    {
+                      "id": "028dfacc-822d-5123-8ec0-2abe26a4075a",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21720,
+                      "length": 240
+                    },
+                    {
+                      "id": "956a39b4-b250-5eb2-a8ce-25134146fbb3",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21840,
+                      "length": 240
+                    },
+                    {
+                      "id": "b2b39b01-f4b7-567d-a349-9c79fbe104b5",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 21960,
+                      "length": 240
+                    },
+                    {
+                      "id": "ec23660d-fd01-5f9c-98a8-37d5aa53338e",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22080,
+                      "length": 240
+                    },
+                    {
+                      "id": "ba80d3a1-2662-54b4-b3ef-414b9d855c4c",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22200,
+                      "length": 240
+                    },
+                    {
+                      "id": "08cc8eca-3ebf-5352-ac6e-b86ff150dc15",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22320,
+                      "length": 240
+                    },
+                    {
+                      "id": "ef1a1b35-e269-566a-a53a-9f92e46cfe50",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22440,
+                      "length": 240
+                    },
+                    {
+                      "id": "a0c2b0be-de8d-596d-bcb3-dbd41a824f9d",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22560,
+                      "length": 240
+                    },
+                    {
+                      "id": "2fd2904f-1856-5009-a712-4cabaac27d16",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22680,
+                      "length": 240
+                    },
+                    {
+                      "id": "ff7e8681-4ba7-53e7-b97d-767de93ed874",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22800,
+                      "length": 240
+                    },
+                    {
+                      "id": "9493f291-96c8-5acb-9e00-05a932bb115b",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 22920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
