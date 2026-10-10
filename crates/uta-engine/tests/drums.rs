@@ -452,30 +452,15 @@ fn drum_tracks_do_not_chase() {
     assert_eq!(first_sound(samples), Some(half));
 }
 
-/// The rows without a sound yet are silent, and a note on any of them
-/// leaves the kick alone. The snare, clap, hats and toms have their own
-/// tests.
+/// Every row of the kit plays a sound: a hit on each, alone, is heard.
+/// Each sound has its own tests.
 #[test]
-fn the_other_rows_are_silent_for_now() {
-    let hits = KIT
-        .iter()
-        .filter(|row| {
-            ![
-                DrumSound::Kick,
-                DrumSound::Snare,
-                DrumSound::Clap,
-                DrumSound::ClosedHat,
-                DrumSound::OpenHat,
-                DrumSound::LowTom,
-                DrumSound::HighTom,
-            ]
-            .contains(&row.sound)
-        })
-        .enumerate()
-        .map(|(i, row)| hit(i as u128, row.pitch, 127, 0))
-        .collect();
-    let samples = render(&drum_project(120.0, 1, &[], hits), 1.0, 128);
-    assert_eq!(peak(&samples), 0.0);
+fn every_row_plays_a_sound() {
+    for row in KIT {
+        let hits = vec![hit(0, row.pitch, 127, 0)];
+        let samples = render(&drum_project(120.0, 1, &[], hits), 1.0, 128);
+        assert!(peak(&samples) > 0.1, "{}: {}", row.name, peak(&samples));
+    }
 }
 
 /// A live note on a drum track's slot hits its kit, whether or not the

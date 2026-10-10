@@ -930,6 +930,12 @@ mod tests {
                 sound: uta_core::DrumSound::Kick,
                 param: uta_core::DrumParam::DecaySeconds(0.6),
             },
+            // The cymbal at its shortest, so the kick rings longest.
+            Command::SetDrumParam {
+                track,
+                sound: uta_core::DrumSound::Cymbal,
+                param: uta_core::DrumParam::DecaySeconds(0.35),
+            },
         ];
         for command in &commands {
             project.apply(command).unwrap();

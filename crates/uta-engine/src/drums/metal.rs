@@ -1,6 +1,6 @@
 //! The 808's metal: six square waves at odd, unrelated frequencies, whose
-//! sum is the clangy cluster the hats (and, later, the cymbal) filter down
-//! to their top end. See RFC-006, "How each sound is made" (Hats).
+//! sum is the clangy cluster the hats and the cymbal filter down to their
+//! top end. See RFC-006, "How each sound is made" (Hats).
 //!
 //! From Werner, Abel and Smith's analysis of the 808 cymbal (ICMC/SMC 2014,
 //! section 3): six Schmitt-trigger oscillators on one chip, shared by the
@@ -20,8 +20,8 @@
 //! hit catches it at a different point and comes out a little different, as
 //! on the 808, where the oscillators are never reset by a trigger. It
 //! restarts from the same point when playback starts, so playing from the
-//! top sounds the same as a render. If the hats are ringing then, it
-//! crossfades from where it was to the restarted metal over a few
+//! top sounds the same as a render. If the hats or the cymbal are ringing
+//! then, it crossfades from where it was to the restarted metal over a few
 //! milliseconds, so their ring doesn't jump.
 
 use crate::ramp::Ramp;
@@ -37,7 +37,7 @@ const DUTY: f64 = 0.4798;
 /// don't all rise on the same sample when playback starts.
 const START_PHASES: [f64; 6] = [0.0, 0.17, 0.41, 0.59, 0.73, 0.89];
 
-/// How long a restart while the hats ring crossfades for.
+/// How long a restart while the metal is heard crossfades for.
 const CROSSFADE_SECONDS: f64 = 0.005;
 
 /// The six oscillators. Everything in it is a plain number.
@@ -45,7 +45,7 @@ const CROSSFADE_SECONDS: f64 = 0.005;
 pub(crate) struct Metal {
     /// Where each is in its cycle, 0..1.
     phases: [f64; 6],
-    /// Where each was before a restart while the hats rang, still running
+    /// Where each was before a restart while it was heard, still running
     /// while the crossfade away from it lasts.
     old_phases: [f64; 6],
     /// Steps left in the crossfade, and its length.
@@ -156,6 +156,18 @@ impl Metal {
     }
 }
 
+/// Plaits' `SwingVCA`: the 808's amplifier for the hats and the cymbal,
+/// which lets the top of the wave through four times over and squashes the
+/// bottom, saturates, and lets a little of its supply, the envelope,
+/// through. On the 808 it's a transistor biased to clip, with the envelope
+/// as its supply (Werner, section 8).
+#[inline]
+pub(crate) fn swing_vca(s: f64, gain: f64) -> f64 {
+    let s = s * if s > 0.0 { 4.0 } else { 0.1 };
+    let s = s / (1.0 + s.abs());
+    (s + 0.1) * gain
+}
+
 /// Six squares at `phases`, added together, from -1 to 1, then moved on a
 /// step.
 #[inline]
@@ -178,6 +190,88 @@ fn advance(phases: &mut [f64; 6], increments: &[f64; 6]) {
     for (phase, &dt) in phases.iter_mut().zip(increments) {
         *phase = (*phase + dt).fract();
     }
+}
+
+/// The power spectrum of `samples` (a power of two long) under a 4-term
+/// Blackman-Harris window, up to half the sample rate.
+#[cfg(test)]
+fn power_spectrum(samples: &[f64]) -> Vec<f64> {
+    use std::f64::consts::TAU;
+    let n = samples.len();
+    let mut re: Vec<f64> = samples
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| {
+            let t = TAU * i as f64 / n as f64;
+            let w =
+                0.35875 - 0.48829 * t.cos() + 0.14128 * (2.0 * t).cos() - 0.01168 * (3.0 * t).cos();
+            x * w
+        })
+        .collect();
+    let mut im = vec![0.0; n];
+    // An iterative radix-2 FFT: bit-reversal, then butterflies.
+    let bits = n.trailing_zeros();
+    for i in 0..n {
+        let j = i.reverse_bits() >> (usize::BITS - bits);
+        if j > i {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let mut size = 2;
+    while size <= n {
+        let step = -TAU / size as f64;
+        for start in (0..n).step_by(size) {
+            for k in 0..size / 2 {
+                let (sin, cos) = (step * k as f64).sin_cos();
+                let (a, b) = (start + k, start + k + size / 2);
+                let (tr, ti) = (re[b] * cos - im[b] * sin, re[b] * sin + im[b] * cos);
+                (re[b], im[b]) = (re[a] - tr, im[a] - ti);
+                (re[a], im[a]) = (re[a] + tr, im[a] + ti);
+            }
+        }
+        size *= 2;
+    }
+    (0..n / 2).map(|k| re[k] * re[k] + im[k] * im[k]).collect()
+}
+
+/// How far the false tones (aliasing) sit under a sound made from the
+/// metal, in dB, the way the research measured it: the metal at the 808's
+/// tuning through `path`, run at `rate`, for 5.5 s, its spectrum split into the bins at the squares' true
+/// harmonics (within the window's main lobe of each) and the rest, from
+/// 20 Hz to 20 kHz, the band you can hear. The harmonics folded back from
+/// above half the sample rate land in the rest. It's a steady tone, so
+/// the amplifier's envelope doesn't come into it, so `path` leaves it out.
+#[cfg(test)]
+pub(crate) fn signal_to_alias_db(rate: f64, mut path: impl FnMut(f64) -> f64) -> f64 {
+    const N: usize = 1 << 18;
+    let settle = (0.1 * rate) as usize;
+    let mut metal = Metal::new(FREQUENCIES[0] as f32, rate, 1);
+    let samples: Vec<f64> = (0..settle + N).map(|_| path(metal.next_sample())).collect();
+    let power = power_spectrum(&samples[settle..]);
+    let bin = |hz: f64| (hz * N as f64 / rate).round() as usize;
+    // The window's main lobe is 4 bins either side; a bin more for the
+    // oscillators' tuning, which isn't a whole number of bins.
+    let lobe = 5;
+    let mut harmonic = vec![false; power.len()];
+    for frequency in FREQUENCIES {
+        for k in (1..)
+            .map(f64::from)
+            .take_while(|k| k * frequency < rate / 2.0)
+        {
+            let at = bin(k * frequency);
+            harmonic[at - lobe..=(at + lobe).min(power.len() - 1)].fill(true);
+        }
+    }
+    let (mut signal, mut alias) = (0.0, 0.0);
+    for at in bin(20.0)..bin(20_000.0) {
+        if harmonic[at] {
+            signal += power[at];
+        } else {
+            alias += power[at];
+        }
+    }
+    10.0 * (signal / alias).log10()
 }
 
 #[cfg(test)]

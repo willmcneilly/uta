@@ -45,6 +45,7 @@
 //! isn't worth its cost (RFC-006, resolved open question 2; UTA-49).
 
 use crate::drums::filter::{Svf, prewarp};
+use crate::drums::metal::swing_vca;
 use crate::drums::{
     ClosedHatSettings, EDGE_SECONDS, OpenHatSettings, decay_per_sample, log_tau, smoothing,
 };
@@ -79,16 +80,6 @@ const OUTPUT_GAIN: f32 = 2.4431;
 /// amplifier, the hats have died away and stop doing work: far under
 /// anything audible.
 const SILENT: f64 = 1.0e-6;
-
-/// Plaits' `SwingVCA`: the 808 hat's amplifier, which lets the top of the
-/// wave through four times over and squashes the bottom, saturates, and
-/// lets a little of its supply, the envelope, through.
-#[inline]
-fn swing_vca(s: f64, gain: f64) -> f64 {
-    let s = s * if s > 0.0 { 4.0 } else { 0.1 };
-    let s = s / (1.0 + s.abs());
-    (s + 0.1) * gain
-}
 
 /// The hats' controls, as they glide.
 #[derive(Debug, Clone, Copy)]
@@ -385,7 +376,7 @@ impl Hats {
 mod tests {
     use super::*;
     use crate::drums::REFERENCE_PEAK;
-    use crate::drums::metal::Metal;
+    use crate::drums::metal::{Metal, signal_to_alias_db};
 
     const RATE: f64 = 48_000.0;
 
@@ -416,93 +407,12 @@ mod tests {
     /// The metal through the hats' filters, with the amplifier left out
     /// (it's the one part that isn't linear): the "hat path" of the
     /// research's aliasing measurement, at the default Tune and Tone.
-    fn hat_path(samples: usize) -> Vec<f64> {
-        let (mut hats, mut metal) = (hats(), metal());
-        (0..samples)
-            .map(|_| {
-                hats.controls();
-                hats.filter(metal.next_sample(), |band| band)
-            })
-            .collect()
-    }
-
-    /// The power spectrum of `samples` (a power of two long) under a 4-term
-    /// Blackman-Harris window, up to half the sample rate.
-    fn power_spectrum(samples: &[f64]) -> Vec<f64> {
-        use std::f64::consts::TAU;
-        let n = samples.len();
-        let mut re: Vec<f64> = samples
-            .iter()
-            .enumerate()
-            .map(|(i, &x)| {
-                let t = TAU * i as f64 / n as f64;
-                let w = 0.35875 - 0.48829 * t.cos() + 0.14128 * (2.0 * t).cos()
-                    - 0.01168 * (3.0 * t).cos();
-                x * w
-            })
-            .collect();
-        let mut im = vec![0.0; n];
-        // An iterative radix-2 FFT: bit-reversal, then butterflies.
-        let bits = n.trailing_zeros();
-        for i in 0..n {
-            let j = i.reverse_bits() >> (usize::BITS - bits);
-            if j > i {
-                re.swap(i, j);
-                im.swap(i, j);
-            }
+    fn hat_path() -> impl FnMut(f64) -> f64 {
+        let mut hats = hats();
+        move |metal| {
+            hats.controls();
+            hats.filter(metal, |band| band)
         }
-        let mut size = 2;
-        while size <= n {
-            let step = -TAU / size as f64;
-            for start in (0..n).step_by(size) {
-                for k in 0..size / 2 {
-                    let (sin, cos) = (step * k as f64).sin_cos();
-                    let (a, b) = (start + k, start + k + size / 2);
-                    let (tr, ti) = (re[b] * cos - im[b] * sin, re[b] * sin + im[b] * cos);
-                    (re[b], im[b]) = (re[a] - tr, im[a] - ti);
-                    (re[a], im[a]) = (re[a] + tr, im[a] + ti);
-                }
-            }
-            size *= 2;
-        }
-        (0..n / 2).map(|k| re[k] * re[k] + im[k] * im[k]).collect()
-    }
-
-    /// How far the false tones (aliasing) sit under the hats' own sound, in
-    /// dB, the way the research measured it: the metal through the hat
-    /// path for 5.5 s, its spectrum split into the bins at the squares' true
-    /// harmonics (within the window's main lobe of each) and the rest, from
-    /// 20 Hz to 20 kHz, the band you can hear. The harmonics folded back from
-    /// above half the sample rate land in the rest. It's a steady tone, so
-    /// the amplifier's envelope doesn't come into it.
-    fn signal_to_alias_db() -> f64 {
-        const N: usize = 1 << 18;
-        let settle = (0.1 * RATE) as usize;
-        let samples = hat_path(settle + N);
-        let power = power_spectrum(&samples[settle..]);
-        let bin = |hz: f64| (hz * N as f64 / RATE).round() as usize;
-        // The window's main lobe is 4 bins either side; a bin more for the
-        // oscillators' tuning, which isn't a whole number of bins.
-        let lobe = 5;
-        let mut harmonic = vec![false; power.len()];
-        for frequency in super::super::metal::FREQUENCIES {
-            for k in (1..)
-                .map(f64::from)
-                .take_while(|k| k * frequency < RATE / 2.0)
-            {
-                let at = bin(k * frequency);
-                harmonic[at - lobe..=(at + lobe).min(power.len() - 1)].fill(true);
-            }
-        }
-        let (mut signal, mut alias) = (0.0, 0.0);
-        for at in bin(20.0)..bin(20_000.0) {
-            if harmonic[at] {
-                signal += power[at];
-            } else {
-                alias += power[at];
-            }
-        }
-        10.0 * (signal / alias).log10()
     }
 
     /// The false tones stay at or below what was measured here, so they
@@ -515,7 +425,7 @@ mod tests {
     #[test]
     fn the_false_tones_stay_down() {
         let measured = 35.2;
-        let db = signal_to_alias_db();
+        let db = signal_to_alias_db(RATE, hat_path());
         assert!(db > measured - 0.5, "{db:.1} dB, measured {measured} dB");
     }
 
