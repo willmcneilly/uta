@@ -1145,6 +1145,11 @@ describe("App", () => {
       slideKnob(pan(), along(0.25, [-1, 1]));
 
       await waitFor(() => expect(within(header("Synth 2")).getByText("R 25")).toBeInTheDocument());
+      // Pan fills from the centre: its value arc starts at the top of the dial.
+      expect(pan().querySelector(".knob-value")).toHaveAttribute(
+        "d",
+        expect.stringMatching(/^M16\.000,5\.000 /),
+      );
       expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument();
       const mixers = sent("set_track_mixer");
       expect(mixers.map((args) => args.track)).toEqual(["track-2", "track-2", "track-2"]);

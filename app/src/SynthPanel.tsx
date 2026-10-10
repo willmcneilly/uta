@@ -113,7 +113,6 @@ function Setting({
 }: SettingProps) {
   return (
     <Knob
-      className="setting"
       label={label}
       value={value}
       defaultValue={defaultValue}
@@ -158,7 +157,6 @@ export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Pr
   return (
     <section className="synth" aria-label="Synth">
       <SegmentedChoice
-        className="waveform"
         legend="Waveform"
         name="waveform"
         options={WAVEFORMS}

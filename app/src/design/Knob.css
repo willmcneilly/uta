@@ -2,8 +2,8 @@
  * The knob: a label, a flat dial and the value underneath. The dial is a
  * thin arc for the range in ink-3, the value as an ink arc with an ink
  * indicator, and a tick outside the arc where a reset sets it. No bevel,
- * shadow or metal. The dial and the value are one hit area, 32 px wide or
- * more. provisional: D-19
+ * shadow or metal. The dial and the value are one hit area, at least 40 px
+ * wide, so it's bigger than the mute and solo keys. provisional: D-19
  */
 .knob {
   display: flex;
