@@ -28,7 +28,7 @@
 //!   that's higher, and leaves a louder ring alone. Each edge is smoothed
 //!   over 0.1 ms, as the 808's attack smoother does (section 6). The 808's
 //!   envelope circuits shape their rise and fall in more detail (figure 7);
-//!   their lengths here are read from that figure, a judgement, not a fit.
+//!   the lengths here are judged against that figure, not fitted to it.
 //! - **The mid band's envelopes are added, not multiplied,** as the
 //!   research's recipe has it: a fast burst on top of a long ring.
 //! - **The filters are the kit's prewarped state-variable filters,** not
@@ -45,8 +45,8 @@
 //! only; nothing here is taken from it.
 //!
 //! It runs at the kit's sample rate, as the hats do: Will couldn't hear 2×
-//! oversampling on them (UTA-49), and the cymbal's false tones are measured
-//! to stay as far down as theirs.
+//! oversampling on them (UTA-49), and at its defaults the cymbal's false
+//! tones are measured to stay as far down as theirs at theirs.
 
 use crate::drums::filter::{OnePole, Svf, prewarp};
 use crate::drums::metal::swing_vca;
@@ -75,7 +75,9 @@ const RESONANT_Q: f64 = 1.2;
 /// hats' at their defaults (see the `the_false_tones_stay_down` test).
 const HIGH_LOW_PASS_HZ: f64 = 14_000.0;
 /// The mid band's fast envelope and the high band's: the seconds each takes
-/// to die away by 40 dB, read from Werner's figure 7 (EG #2 and EG #3).
+/// to die away by 40 dB, judged against Werner's figure 7 (EG #2 and
+/// EG #3), where the high band's is gone within about 0.2 s and the mid
+/// band's lasts longer.
 const MID_FAST_DECAY_SECONDS: f64 = 0.3;
 const HIGH_DECAY_SECONDS: f64 = 0.15;
 /// How much of the mid band's envelope is the long one and how much the
@@ -93,9 +95,9 @@ const LOW_WEIGHT: f64 = 1.0;
 const MID_WEIGHT: f64 = 1.6;
 const HIGH_WEIGHT: f64 = 2.5;
 /// How far Tone turns the high and mid bands down at its lowest, in dB. At
-/// its highest, they're at full level. The 808's turns the high band down
-/// by about 14 dB (Werner, figure 9); this goes a little further, so the
-/// sizzle can be taken right off.
+/// its highest, they're at full level. The 808's tone stage mainly turns
+/// the high band down, and the others a little (Werner, section 10); how
+/// far is a judgement, enough to take the sizzle right off.
 const HIGH_TONE_DB: f32 = -18.0;
 const MID_TONE_DB: f32 = -6.0;
 /// How hard the band-passed metal goes into the amplifiers' clipping at
