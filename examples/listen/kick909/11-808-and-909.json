@@ -1,0 +1,262 @@
+{
+  "project": "e61b654f-2289-5d4c-baef-c41e43801a74",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "cd8ef173-ea9a-5560-ab62-50b75b8b0185",
+              "name": "Kick 808",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "808"
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "d0c9c460-7da7-51ff-8ada-d76aa6734252",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "8136fd93-7661-5b70-92a7-affb46eb27d1",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "7375cb30-6af3-5b83-a040-75f94a09d69a",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "a557ac89-14de-5f75-b676-1792fd4cd4cc",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "8ac8719a-a55c-5056-a5f0-6c24dd560a8d",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "e9d6cccc-af58-50ce-98c3-5448077d9b8f",
+              "name": "Kick 909",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "909"
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a2d0354a-2138-5ff7-ad12-20e09ebd4f27",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "a540e0bb-1774-5f1c-b8be-69a398302629",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "c5289f45-9202-5809-9073-2f17d8593dc2",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "9598493a-ae85-5684-b671-7f1f22687bc3",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "c09051b8-acfc-53ce-a7a9-a89bd9d9bd79",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "0a3bfab8-b202-5ea7-8f24-ae194b42a144",
+              "name": "Kick 808 again",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "808"
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "6a9ba434-a155-5466-a774-f2acb93ba410",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "2a3a34c2-f160-5a5a-902e-a6d547f6dfbe",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "651c3ce4-7063-5046-8e95-5d4e75db016a",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "3a7400ee-4e90-5f8b-88a9-bfd5d0f5a152",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "b0d6a434-7cef-5d0d-a214-a3ac3846101e",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "8d66a8f2-969f-5e9c-b769-6a1049967616",
+              "name": "Kick 909 again",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "909"
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "66c7e778-a145-52c3-b508-71c2d8f08d1d",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "fee8cf72-6de2-5530-bca9-f3dfec4d6f95",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "62701a1c-9166-54a1-b181-60ef52d7b2ce",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "c7aeb300-4d46-562b-a87d-93d0cb182b8a",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "9a04f6a4-f06e-5f42-999c-4b41ab731068",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
