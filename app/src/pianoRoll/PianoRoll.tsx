@@ -8,7 +8,9 @@ import {
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
+import { Menu } from "../design/Menu";
 import { useTokenVersion } from "../design/tokenChanges";
+import { ToolChip, ZoomKeys } from "../design/ToolChip";
 import { Follow } from "../follow";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
@@ -643,44 +645,29 @@ export function PianoRoll({
       </div>
       {/* Above the velocity lane, so it never hides a bar. */}
       <div className="piano-roll-tools" style={{ bottom: VELOCITY_LANE_HEIGHT + 8 }}>
-        <label className="snap">
-          <span>Snap</span>
-          <select value={snap} onChange={(event) => setSnap(event.target.value as Snap)}>
+        <ToolChip label="Snap">
+          <Menu aria-label="Snap" value={snap} onChange={(event) => setSnap(event.target.value as Snap)}>
             {SNAPS.map((option) => (
               <option key={option} value={option}>
                 {option === "off" ? "Off" : option}
               </option>
             ))}
-          </select>
-        </label>
-        <div className="zoom" role="group" aria-label="Zoom">
-          <button
-            type="button"
-            aria-label="Zoom out time"
-            onClick={() => zoomTimeBy(1 / ZOOM_STEP)}
-          >
-            −
-          </button>
-          <span>Time</span>
-          <button type="button" aria-label="Zoom in time" onClick={() => zoomTimeBy(ZOOM_STEP)}>
-            +
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom out pitch"
-            onClick={() => zoomPitchBy(1 / ZOOM_STEP)}
-          >
-            −
-          </button>
-          <span>Pitch</span>
-          <button
-            type="button"
-            aria-label="Zoom in pitch"
-            onClick={() => zoomPitchBy(ZOOM_STEP)}
-          >
-            +
-          </button>
-        </div>
+          </Menu>
+        </ToolChip>
+        <ToolChip role="group" aria-label="Zoom" className="zoom">
+          <ZoomKeys
+            label="Time"
+            what="time"
+            onOut={() => zoomTimeBy(1 / ZOOM_STEP)}
+            onIn={() => zoomTimeBy(ZOOM_STEP)}
+          />
+          <ZoomKeys
+            label="Pitch"
+            what="pitch"
+            onOut={() => zoomPitchBy(1 / ZOOM_STEP)}
+            onIn={() => zoomPitchBy(ZOOM_STEP)}
+          />
+        </ToolChip>
       </div>
     </section>
   );

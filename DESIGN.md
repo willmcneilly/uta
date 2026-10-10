@@ -177,7 +177,11 @@ Flat. Hierarchy comes from ink weight, not shadows: structure is faint, content 
 
 ## Components
 
-Parts that appear more than once become shared components in `app/src/design/`, each with an entry here: extract on the second use, not before.
+Parts that appear more than once become shared components in `app/src/design/`, each with an entry here and its own tests.
+
+**The rule: extract on the second use, not before.** The first time something is needed, build it where it's used. The second time, pull it out into `app/src/design/`, write its entry here, and have both places use it. Components designed on their own, before anything needs them, tend to be generic; ones pulled out of a real screen keep its character.
+
+Each entry says what the component is for, its tokens and its states. One still marked provisional is a decision Will hasn't adopted yet (see the provisional decisions log).
 
 ### Choosing a control
 
@@ -236,6 +240,54 @@ For five or fewer named options, all visible, such as the waveform. Provisional 
 - **Drawing:** a row of options in one `ink-3` outline (`stroke-grid`, `rounded-md` corners). Each option is its name in the `text` type in `ink-2`, with a drawing above it where one helps, such as a cycle of each wave. The chosen one is outlined in `ink`, over the row's outline, with its name and drawing in `ink`. Each option is at least `space-7` tall.
 - **States:** hover shades an option with `line` and darkens it to `ink`; pressing shades it with `line-2`. The focus ring is `selected` at `stroke-clip-selected`, round the option with focus. Disabled options are `ink-3`, with no shading.
 - **Behaviour:** a click chooses an option and gives it focus. The arrow keys move the choice, round from one end to the other. Only the chosen option is in the Tab order. To assistive tech it's a radio group named by its label.
+
+### Key
+
+For a single action, or a setting that's on or off with a word on it: Play, Stop, Loop, + Add track, the benchmark dialog's buttons (`Key`). Provisional (D-9) until it's adopted.
+- **Drawing:** its words in the `text` type in `ink`, in a faint outline (`line-2` at `stroke-grid`) with `rounded-md` corners, padded `space-4` either side. At least `space-7` (24px) square to hit. Where it helps, a small mark drawn before the words in the words' ink: a triangle for Play, a square for Stop, and for Loop the ruler's dimension line in small.
+- **Primary:** of a few side by side, the one that goes ahead is outlined in `ink`.
+- **States:** hover shades it with `line`, pressing with `line-2`. Focus from the keyboard rings it in `selected` at `stroke-clip-selected`. Disabled, its outline is `line` and its words `ink-3`, with no shade. Play's mark is `live` while the song plays.
+- **On and off:** a key that stays down, such as Loop, is a toggle button. Off, its words are `ink-2` and its mark `ink-3`. On, it's outlined in `ink` and shaded with `line-2`; hover lightens the outline to `ink-2`, and pressing lifts it to the hover shade, as if letting it up.
+
+### Round key
+
+For a small on-or-off setting marked with a letter, repeated on every row: a track's mute and solo (`RoundKey`). Provisional (D-12) until it's adopted.
+- **Drawing:** an 18px circle (`ink-3` at `stroke-grid`) with its letter in the `number` type in `ink-2`, in a `space-7` square to hit. The square stays square, because a round button wouldn't respond in its corners.
+- **States:** hover darkens the ring to `ink-2` and shades it with `line`; pressing shades it with `line-2`. On, it's filled `ink` with the letter in `paper`; hover lifts the fill to `ink-2`, and pressing presses it back to `ink`. Focus from the keyboard rings the circle, not the square, in `selected`. Disabled, the ring is `line-2` and the letter `ink-3`.
+- **Behaviour:** a toggle button, named in full for assistive tech ("Mute Bass").
+
+### Menu
+
+For more options than a segmented choice holds, or a list that changes: snap, the buffer size (`Menu`). It opens the system's own list. Provisional (D-3) until it's adopted.
+- **Drawing:** the chosen option in the `text` type in `ink`, with no outline, and a small chevron (`ink-2` at `stroke-clip`) in place of the native arrow. `space-7` tall, at least 64px wide, `rounded-md` corners.
+- **States:** hover shades it with `line`, pressing with `line-2`. Focus from the keyboard rings it in `selected`. Disabled, its words and chevron are `ink-3`, with no shade.
+
+### Tool chip
+
+For the small tools over a canvas: snap and zoom on the timeline and the piano roll (`ToolChip`, with `ZoomKeys`). Provisional (D-3) until it's adopted.
+- **Drawing:** a chip on its own `sheet`, edged in `line-2` at `stroke-grid`, `rounded-md` corners, with its caption ("Snap", "Time") in the `label` type in `ink-2`. Inside, a menu or flat keys in `ink` in the `text` type, each at least `space-7` square, with the smaller `rounded-sm` corners. Zoom is a − key and a + key either side of what they zoom.
+- **States:** the keys inside shade with `line` on hover and `line-2` when pressed, ring in `selected` with focus, and are `ink-3` with no shade when disabled.
+- **Behaviour:** the caption is for the eye; each control inside is named for assistive tech ("Clip snap", "Zoom in pitch"), and a chip of keys is a group.
+
+### Section title
+
+For naming a group of controls in a panel: the synth's Waveform, Filter and Envelope (`Group`).
+- **Drawing:** the title in the `text` type in `ink-2`, `space-3` above what it names. No frame round the group: the space around it sets it apart.
+- **Behaviour:** the group is a fieldset named by its title, or a radio group named by it, as the segmented choice is.
+
+### Ruler
+
+The bar ruler across the top of the timeline and the piano roll, drawn on their canvases (`drawRuler`), `ruler-height` tall. Provisional (D-2) until it's adopted.
+- **Drawing:** on the canvas's `sheet`, with a line along its foot (`line-2` at `stroke-grid`). Bar ticks (`ink-3`, 8px) and beat ticks (`line-2`, 4px) stand on its foot, and each bar is numbered beside its tick in the `label` type in `ink-2`. Beat ticks are left out when they'd be closer than 6px, and bar numbers are kept at least 32px apart.
+- **The loop region** is a dimension line along its foot: a line at `stroke-clip` from the loop's start to its end, with an end tick and an arrowhead at each end (the arrowheads only where there's room). While the loop is on, it's `ink` over a wash of `line` across the region; while it's off, it's `ink-3` with no wash.
+
+### Playhead
+
+Where the song is, on both canvases (`drawPlayhead`): a line in `live` at `stroke-playhead` from top to bottom, with a small triangle pointing down from the top of the ruler, centred on it.
+
+### Selection box
+
+The box dragged out to select, on both canvases, and the clip being drawn on the timeline (`drawSelectionBox`): a `selected-wash`, edged inside the box in `selected` at `stroke-selection-box`, so the edge never spills past it.
 
 ## Do's and Don'ts
 

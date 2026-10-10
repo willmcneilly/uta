@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TestSong } from "../backend";
+import { Key } from "../design/Key";
 import { type Report, formatReport } from "./report";
 import type { Progress } from "./run";
 import "./Benchmark.css";
@@ -70,12 +71,12 @@ export function Benchmark({ run, onClose }: Props) {
               two, and the window is busy while it runs.
             </p>
             <div className="benchmark-actions">
-              <button type="button" onClick={onClose}>
+              <Key onClick={onClose}>
                 Cancel
-              </button>
-              <button type="button" className="go" onClick={start} autoFocus>
+              </Key>
+              <Key primary onClick={start} autoFocus>
                 Replace and Run
-              </button>
+              </Key>
             </div>
           </>
         )}
@@ -92,16 +93,16 @@ export function Benchmark({ run, onClose }: Props) {
               {phase.text}
             </pre>
             <div className="benchmark-actions">
-              <button type="button" onClick={() => copy(phase.text)}>
+              <Key onClick={() => copy(phase.text)}>
                 {phase.copy === "copied"
                   ? "Copied"
                   : phase.copy === "failed"
                     ? "Couldn't Copy: Select the Text"
                     : "Copy as Text"}
-              </button>
-              <button type="button" onClick={onClose}>
+              </Key>
+              <Key onClick={onClose}>
                 Close
-              </button>
+              </Key>
             </div>
           </>
         )}
@@ -111,9 +112,9 @@ export function Benchmark({ run, onClose }: Props) {
               The benchmark stopped: {phase.reason}
             </p>
             <div className="benchmark-actions">
-              <button type="button" onClick={onClose}>
+              <Key onClick={onClose}>
                 Close
-              </button>
+              </Key>
             </div>
           </>
         )}

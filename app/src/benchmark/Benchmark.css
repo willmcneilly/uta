@@ -60,34 +60,7 @@
   gap: var(--space-4);
 }
 
-.benchmark-actions button {
-  box-sizing: border-box;
-  min-width: var(--space-7);
-  height: var(--space-7);
-  margin: 0;
+/* Its keys have more room either side than the transport's. */
+.benchmark-actions .key {
   padding: 0 var(--space-5);
-  border: var(--stroke-grid) solid var(--line-2);
-  border-radius: var(--rounded-md);
-  background: transparent;
-  color: var(--ink);
-  font: var(--font-text);
-  cursor: pointer;
-  appearance: none;
-}
-
-.benchmark-actions .go {
-  border-color: var(--ink);
-}
-
-.benchmark-actions button:hover {
-  background: var(--line);
-}
-
-.benchmark-actions button:active {
-  background: var(--line-2);
-}
-
-.benchmark-actions button:focus-visible {
-  outline: var(--stroke-clip-selected) solid var(--selected);
-  outline-offset: 0;
 }

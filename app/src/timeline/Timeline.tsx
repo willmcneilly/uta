@@ -9,7 +9,9 @@ import {
   useState,
 } from "react";
 import type { ClipPosition, PastedClip, ProjectView } from "../backend";
+import { Menu } from "../design/Menu";
 import { useTokenVersion } from "../design/tokenChanges";
+import { ToolChip, ZoomKeys } from "../design/ToolChip";
 import { Follow } from "../follow";
 import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "../pianoRoll/playhead";
@@ -706,9 +708,8 @@ export function Timeline({
         <canvas ref={topRef} aria-hidden="true" />
       </div>
       <div className="timeline-tools">
-        <div className="snap">
-          <span aria-hidden="true">Snap</span>
-          <select
+        <ToolChip label="Snap">
+          <Menu
             aria-label="Clip snap"
             value={snap}
             onChange={(event) => setSnap(event.target.value as ClipSnap)}
@@ -718,21 +719,16 @@ export function Timeline({
                 {CLIP_SNAP_NAMES[option]}
               </option>
             ))}
-          </select>
-        </div>
-        <div className="zoom" role="group" aria-label="Timeline zoom">
-          <button
-            type="button"
-            aria-label="Zoom out timeline"
-            onClick={() => zoomBy(1 / ZOOM_STEP)}
-          >
-            −
-          </button>
-          <span>Time</span>
-          <button type="button" aria-label="Zoom in timeline" onClick={() => zoomBy(ZOOM_STEP)}>
-            +
-          </button>
-        </div>
+          </Menu>
+        </ToolChip>
+        <ToolChip role="group" aria-label="Timeline zoom">
+          <ZoomKeys
+            label="Time"
+            what="timeline"
+            onOut={() => zoomBy(1 / ZOOM_STEP)}
+            onIn={() => zoomBy(ZOOM_STEP)}
+          />
+        </ToolChip>
       </div>
     </section>
   );

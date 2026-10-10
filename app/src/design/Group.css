@@ -1,0 +1,15 @@
+/* A group in a panel, with no frame of its own: the space around it and
+   its section title set it apart. */
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* A section title: quiet, in the second ink, above what it names. */
+.group-title {
+  padding: 0 0 var(--space-3);
+  color: var(--ink-2);
+  font: var(--font-text);
+}

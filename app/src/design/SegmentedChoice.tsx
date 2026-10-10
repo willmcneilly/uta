@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import { Group } from "./Group";
 import "./SegmentedChoice.css";
 
 // Every segmented choice in the app: five or fewer named options, all
@@ -61,12 +62,13 @@ export function SegmentedChoice<T extends string>({
   };
 
   return (
-    <fieldset
+    <Group
+      title={legend}
+      titleId={legendId}
       className={`segmented ${className}`.trim()}
       role="radiogroup"
       aria-labelledby={legendId}
     >
-      <legend id={legendId}>{legend}</legend>
       <div className="segmented-row">
         {options.map((option, index) => (
           <label key={option.value}>
@@ -94,6 +96,6 @@ export function SegmentedChoice<T extends string>({
           </label>
         ))}
       </div>
-    </fieldset>
+    </Group>
   );
 }

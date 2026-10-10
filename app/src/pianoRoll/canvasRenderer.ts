@@ -1,6 +1,8 @@
 // The Canvas 2D renderer. Each layer draws only what's in view, and loops
 // only over what fits on screen, so its work doesn't grow with the song.
 
+import { drawPlayhead, drawSelectionBox } from "../design/canvasMarks";
+import { drawRuler } from "../design/ruler";
 import { type Theme, isBlackKey, octaveName, readTheme, velocityAlpha } from "./colours";
 import type { PlacedNote } from "./notes";
 import type { GridScene, Layers, NotesScene, PianoRollRenderer, TopMarks } from "./renderer";
@@ -19,8 +21,6 @@ import {
   visibleTicks,
 } from "./viewport";
 
-/** Bar numbers are at least this far apart. */
-const MIN_BAR_LABEL_SPACING = 32;
 /** Notes past the clip's end, and their velocity stems, are drawn this faint. */
 const OUTSIDE_ALPHA = 0.35;
 /** Space between the keyboard's right edge and its C labels. */
@@ -32,17 +32,6 @@ const VELOCITY_HEAD = 5;
 /** What an empty clip says, in the middle of the notes (provisional: D-6). */
 const EMPTY_HINT = "Click to draw a note";
 
-/** The loop's dimension line, as on the timeline (provisional: D-2): this far above the ruler's foot. */
-const LOOP_LINE_RAISE = 5;
-/** Its end ticks run from here to the bottom of the ruler. */
-const LOOP_TICK_HEIGHT = 10;
-/** Its arrowheads, and the narrowest loop that has room for them. */
-const LOOP_ARROW_LENGTH = 5;
-const LOOP_ARROW_HALF_WIDTH = 2.5;
-const LOOP_ARROWS_MIN_WIDTH = 4 * LOOP_ARROW_LENGTH;
-/** The ruler's bar ticks and beat ticks, up from its bottom edge. */
-const BAR_TICK_HEIGHT = 8;
-const BEAT_TICK_HEIGHT = 4;
 
 export function createCanvas2DRenderer(layers: Layers): PianoRollRenderer | null {
   const grid = layers.grid.getContext("2d", { alpha: false });
@@ -181,11 +170,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.fillText("Velocity", LANE_LABEL_INSET, lane.y + LANE_LABEL_INSET);
   }
 
-  /**
-   * The ruler, as the timeline's: ticks standing on its foot, faint for
-   * beats and ink-3 for bars, bar numbers in the second ink, and the loop
-   * as a dimension line.
-   */
+  /** The ruler, as the timeline's, over the notes and not the keyboard's corner. */
   private drawRuler(
     view: Viewport,
     ticksPerQuarter: number,
@@ -194,88 +179,32 @@ class Canvas2DRenderer implements PianoRollRenderer {
     loopEnd: number,
     loopEnabled: boolean,
   ): void {
-    const context = this.contexts.grid;
     const theme = this.theme;
     const area = noteArea(view);
-    const ticks = visibleTicks(view);
-    const line = theme.gridWidth;
-
-    context.save();
-    context.beginPath();
-    context.rect(area.x, 0, area.width, RULER_HEIGHT);
-    context.clip();
-    context.fillStyle = theme.background;
-    context.fillRect(area.x, 0, area.width, RULER_HEIGHT);
-    const loopLeft = Math.max(area.x, Math.round(tickToX(view, loopStart)));
-    const loopRight = Math.min(area.x + area.width, Math.round(tickToX(view, loopEnd)));
-    if (loopEnabled && loopRight > loopLeft) {
-      context.fillStyle = theme.loopRegion;
-      context.fillRect(loopLeft, 0, loopRight - loopLeft, RULER_HEIGHT);
-    }
-    context.fillStyle = theme.edge;
-    context.fillRect(area.x, RULER_HEIGHT - line, area.width, line);
-
-    // Beat ticks when they're far enough apart, and bar ticks with their
-    // numbers, all standing on the ruler's bottom edge.
-    const bottom = RULER_HEIGHT - line;
-    if (ticksPerQuarter * view.pixelsPerTick >= 6) {
-      context.fillStyle = theme.beatTick;
-      for (
-        let tick = Math.floor(ticks.start / ticksPerQuarter) * ticksPerQuarter;
-        tick < ticks.end;
-        tick += ticksPerQuarter
-      ) {
-        if (tick % bar !== 0) {
-          context.fillRect(Math.round(tickToX(view, tick)), bottom - BEAT_TICK_HEIGHT, line, BEAT_TICK_HEIGHT);
-        }
-      }
-    }
-    context.font = theme.labelFont;
-    context.textBaseline = "top";
-    const labelEvery = Math.max(1, Math.ceil(MIN_BAR_LABEL_SPACING / (bar * view.pixelsPerTick)));
-    const barStep = bar * labelEvery;
-    for (let tick = Math.floor(ticks.start / barStep) * barStep; tick < ticks.end; tick += barStep) {
-      const x = Math.round(tickToX(view, tick));
-      context.fillStyle = theme.barTick;
-      context.fillRect(x, bottom - BAR_TICK_HEIGHT, line, BAR_TICK_HEIGHT);
-      context.fillStyle = theme.rulerText;
-      context.fillText(String(tick / bar + 1), x + 4, 4);
-    }
-    this.drawLoop(view, loopStart, loopEnd, loopEnabled);
-    context.restore();
-  }
-
-  /**
-   * The loop region, drawn like a dimension line on a drawing: a line from
-   * its start to its end with an arrowhead and a tick at each, in ink while
-   * the loop is on and faint while it's off, as on the timeline
-   * (provisional: D-2). The ruler's clip keeps it off the keyboard's corner.
-   */
-  private drawLoop(view: Viewport, loopStart: number, loopEnd: number, enabled: boolean): void {
-    const context = this.contexts.grid;
-    const theme = this.theme;
-    const start = Math.round(tickToX(view, loopStart));
-    const end = Math.round(tickToX(view, loopEnd));
-    if (end <= start) return;
-    const weight = theme.loopWidth;
-    const y = RULER_HEIGHT - LOOP_LINE_RAISE;
-    const middle = y + weight / 2;
-    context.fillStyle = enabled ? theme.loop : theme.loopOff;
-    context.fillRect(start, y, end - start, weight);
-    // The end ticks stand on the bar lines the loop starts and ends on, inside it.
-    context.fillRect(start, RULER_HEIGHT - LOOP_TICK_HEIGHT, weight, LOOP_TICK_HEIGHT);
-    context.fillRect(end - weight, RULER_HEIGHT - LOOP_TICK_HEIGHT, weight, LOOP_TICK_HEIGHT);
-    if (end - start < LOOP_ARROWS_MIN_WIDTH) return;
-    context.beginPath();
-    context.moveTo(start + weight, middle);
-    context.lineTo(start + weight + LOOP_ARROW_LENGTH, middle - LOOP_ARROW_HALF_WIDTH);
-    context.lineTo(start + weight + LOOP_ARROW_LENGTH, middle + LOOP_ARROW_HALF_WIDTH);
-    context.closePath();
-    context.moveTo(end - weight, middle);
-    context.lineTo(end - weight - LOOP_ARROW_LENGTH, middle - LOOP_ARROW_HALF_WIDTH);
-    context.lineTo(end - weight - LOOP_ARROW_LENGTH, middle + LOOP_ARROW_HALF_WIDTH);
-    context.closePath();
-    context.fill();
+    drawRuler(this.contexts.grid, {
+      left: area.x,
+      width: area.width,
+      height: RULER_HEIGHT,
+      tickToX: (tick) => tickToX(view, tick),
+      pixelsPerTick: view.pixelsPerTick,
+      ticks: visibleTicks(view),
+      ticksPerQuarter,
+      bar,
+      loop: { start: loopStart, end: loopEnd, enabled: loopEnabled },
+      line: theme.gridWidth,
+      loopWeight: theme.loopWidth,
+      font: theme.labelFont,
+      colours: {
+        background: theme.background,
+        loopRegion: theme.loopRegion,
+        edge: theme.edge,
+        beatTick: theme.beatTick,
+        barTick: theme.barTick,
+        text: theme.rulerText,
+        loop: theme.loop,
+        loopOff: theme.loopOff,
+      },
+    });
   }
 
   /**
@@ -422,25 +351,11 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.clearRect(0, 0, this.width, this.height);
     if (marks.sounding.length > 0 || marks.hovered) this.drawMarks(view, marks);
     if (box) {
-      context.fillStyle = theme.selectionBox;
-      context.fillRect(box.x, box.y, box.width, box.height);
-      const line = theme.selectionBoxWidth;
-      context.strokeStyle = theme.selectionBoxEdge;
-      context.lineWidth = line;
-      context.strokeRect(box.x + line / 2, box.y + line / 2, box.width - line, box.height - line);
+      drawSelectionBox(context, box, theme.selectionBox, theme.selectionBoxEdge, theme.selectionBoxWidth);
     }
     const x = Math.round(tickToX(view, playhead));
     if (x < area.x || x > area.x + area.width) return;
-    context.fillStyle = theme.playhead;
-    context.fillRect(x, 0, theme.playheadWidth, this.height);
-    // A marker in the ruler, centred on the line.
-    const middle = x + theme.playheadWidth / 2;
-    context.beginPath();
-    context.moveTo(middle - 5.5, 0);
-    context.lineTo(middle + 5.5, 0);
-    context.lineTo(middle, 7);
-    context.closePath();
-    context.fill();
+    drawPlayhead(context, x, theme.playheadWidth, this.height, theme.playhead);
   }
 
   /**

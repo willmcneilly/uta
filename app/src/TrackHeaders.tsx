@@ -1,7 +1,9 @@
 import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
 import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
 import { Fader } from "./design/Fader";
+import { Key } from "./design/Key";
 import { Knob } from "./design/Knob";
+import { RoundKey } from "./design/RoundKey";
 import { linearScale } from "./design/numberScale";
 import { Meter } from "./Meter";
 import type { TrackLevels } from "./meterLevel";
@@ -152,15 +154,13 @@ export function TrackHeaders({
         ))}
       </ol>
       <div className="add-track-row" style={{ height: ADD_TRACK_HEIGHT }}>
-        <button
-          type="button"
-          className="add-track"
+        <Key
           disabled={full}
           title={full ? `A project has at most ${project.maxTracks} tracks` : undefined}
           onClick={onAdd}
         >
           + Add track
-        </button>
+        </Key>
       </div>
     </section>
   );
@@ -210,27 +210,21 @@ function TrackHeader({
         <span className="track-name" title="Drag to reorder" onPointerDown={onStartReorder}>
           {name}
         </span>
-        <button
-          type="button"
-          className="track-key mute"
+        <RoundKey
+          letter="M"
           aria-label={`Mute ${name}`}
-          aria-pressed={mixer.mute}
+          pressed={mixer.mute}
           onClick={() => onMixer({ ...mixer, mute: !mixer.mute })}
-        >
-          <span>M</span>
-        </button>
-        <button
-          type="button"
-          className="track-key solo"
+        />
+        <RoundKey
+          letter="S"
           aria-label={`Solo ${name}`}
-          aria-pressed={mixer.solo}
+          pressed={mixer.solo}
           title="⌥-click to solo on its own"
           onClick={(event) =>
             event.altKey ? onSoloAlone() : onMixer({ ...mixer, solo: !mixer.solo })
           }
-        >
-          <span>S</span>
-        </button>
+        />
       </div>
       <Fader
         className="track-setting"

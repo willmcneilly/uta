@@ -39,64 +39,7 @@
   color: var(--ink-2);
 }
 
-/*
- * The buffer size: a flat key in ink with a small chevron in place of the
- * native arrow, as the timeline's Snap (D-3). Hover shades it, pressing
- * shades it more, and keyboard focus rings it in the selected ink. While a
- * change is applied it's disabled: ink-3, with no shade.
- */
-.output .buffer {
-  position: relative;
-  display: inline-block;
-}
-
-.output select {
-  box-sizing: border-box;
+/* The buffer size is a menu, wider than most. */
+.output .buffer select {
   min-width: 96px;
-  height: var(--space-7);
-  margin: 0;
-  padding: 0 calc(var(--space-6) + var(--space-1)) 0 var(--space-3);
-  border: 0;
-  border-radius: var(--rounded-md);
-  background: transparent;
-  color: var(--ink);
-  font: var(--font-text);
-  cursor: pointer;
-  appearance: none;
-}
-
-.output .buffer::after {
-  position: absolute;
-  top: 50%;
-  right: calc(var(--space-3) + var(--space-1));
-  width: 5px;
-  height: 5px;
-  border-right: var(--stroke-clip) solid var(--ink-2);
-  border-bottom: var(--stroke-clip) solid var(--ink-2);
-  content: "";
-  pointer-events: none;
-  transform: translateY(-75%) rotate(45deg);
-}
-
-.output select:hover {
-  background: var(--line);
-}
-
-.output select:active {
-  background: var(--line-2);
-}
-
-.output select:focus-visible {
-  outline: var(--stroke-clip-selected) solid var(--selected);
-  outline-offset: 0;
-}
-
-.output select:disabled {
-  background: transparent;
-  color: var(--ink-3);
-  cursor: default;
-}
-
-.output .buffer:has(select:disabled)::after {
-  border-color: var(--ink-3);
 }

@@ -5,18 +5,6 @@
  * shades it more. The focus ring is the selected ink, round the option
  * with focus. Each option is at least space-7 (24 px) tall. provisional: D-20
  */
-.segmented {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
-.segmented legend {
-  padding: 0 0 var(--space-3);
-  color: var(--ink-2);
-  font: var(--font-text);
-}
 
 /* Each option as wide as the widest. */
 .segmented-row {
