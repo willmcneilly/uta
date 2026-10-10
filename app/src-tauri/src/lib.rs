@@ -60,6 +60,7 @@ pub fn run() {
             commands::set_loop,
             commands::set_loop_enabled,
             commands::set_synth_param,
+            commands::set_drum_param,
             commands::set_track_mixer,
             commands::solo_track_alone,
             commands::add_track,

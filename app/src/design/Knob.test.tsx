@@ -111,4 +111,29 @@ describe("Knob", () => {
     // Three quarters of the way round: 67.5 degrees right of the top.
     expect(defaultTick(knob)).toBe("rotate(67.5 16 16)");
   });
+
+  it("draws its dial 32px across, or smaller at a smaller size, with the same drawing", () => {
+    const dial = (size?: 32 | 28 | 24) => {
+      const view = render(
+        <Knob label="Tune" size={size} value={0} defaultValue={0} scale={pan} format={formatPan} onChange={vi.fn()} />,
+      );
+      const svg = view.container.querySelector(".knob-dial")!;
+      const drawn = [svg.getAttribute("width"), svg.getAttribute("viewBox"), valueArc(view.container)];
+      view.unmount();
+      return drawn;
+    };
+    const arc = "M8.222,23.778 A11,11 0 0 1 16.000,5.000";
+    expect(dial()).toEqual(["32", "0 0 32 32", arc]);
+    expect(dial(28)).toEqual(["28", "0 0 32 32", arc]);
+    expect(dial(24)).toEqual(["24", "0 0 32 32", arc]);
+  });
+
+  it("moves the same distance for the same drag at any size", () => {
+    const onChange = vi.fn();
+    render(
+      <Knob label="Tune" size={24} value={-1} defaultValue={0} scale={pan} format={formatPan} onChange={onChange} />,
+    );
+    pressKnob(screen.getByRole("slider", { name: "Tune" })).to(0.5).release();
+    expect(onChange).toHaveBeenLastCalledWith(0, expect.any(Number));
+  });
 });

@@ -154,10 +154,40 @@ pub struct KitRowView {
     /// Each of the sound's settings, in the order of its panel. Empty for a
     /// sound that has none yet.
     pub settings: Vec<DrumSettingView>,
+    /// Settings it takes from another sound, which its panel says, if any.
+    pub shares: Option<SharedSettingsView>,
 }
 
-/// One setting of one drum sound: its value, the limits it has on that
-/// sound, and what a reset sets it to. Each is in its sound's own unit.
+/// Settings one sound takes from another: the open hat plays with the
+/// closed hat's Tune and Tone, as on the 808.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedSettingsView {
+    /// The sound they belong to.
+    pub sound: DrumSound,
+    /// What the panel calls them, in its order.
+    pub labels: Vec<&'static str>,
+}
+
+impl SharedSettingsView {
+    /// What `sound` takes from another sound, if anything.
+    fn of(sound: DrumSound) -> Option<Self> {
+        match sound {
+            DrumSound::OpenHat => Some(Self {
+                sound: DrumSound::ClosedHat,
+                labels: vec![
+                    drum_label(&DrumParam::TuneHz(0.0)),
+                    drum_label(&DrumParam::Tone(0.0)),
+                ],
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// One setting of one drum sound: what the panel calls it, its value, the
+/// limits it has on that sound, what a reset sets it to, and the unit all
+/// of them are in, so the panel draws a sound it has never seen.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DrumSettingView {
@@ -165,9 +195,56 @@ pub struct DrumSettingView {
     /// `"name":"tune_hz","value":49.0`.
     #[serde(flatten)]
     pub param: DrumParam,
+    /// What the panel calls it: "Tune", "Level".
+    pub label: &'static str,
     pub limits: (f32, f32),
     /// A new drum track's value.
     pub default: f32,
+    pub unit: DrumUnit,
+}
+
+/// The unit a drum setting's value is in. Tone is the one that differs by
+/// sound: from 0 to 1 on the kick, seconds on the snare, Hz on the clap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrumUnit {
+    Hz,
+    Seconds,
+    Db,
+    /// From 0 to 1: how much of something, such as the snare's Snappy.
+    Fraction,
+}
+
+impl DrumUnit {
+    /// The unit of `param` on `sound`, or `None` if the sound doesn't have
+    /// it. A sound that gains a setting adds its unit here, or the outline
+    /// test fails.
+    fn of(sound: DrumSound, param: &DrumParam) -> Option<Self> {
+        KitSettings::range(sound, param)?;
+        Some(match param {
+            DrumParam::TuneHz(_) => Self::Hz,
+            DrumParam::DecaySeconds(_) => Self::Seconds,
+            DrumParam::LevelDb(_) => Self::Db,
+            DrumParam::Snappy(_) => Self::Fraction,
+            DrumParam::Tone(_) => match sound {
+                DrumSound::Kick => Self::Fraction,
+                DrumSound::Snare => Self::Seconds,
+                DrumSound::Clap | DrumSound::ClosedHat => Self::Hz,
+                _ => return None,
+            },
+        })
+    }
+}
+
+/// What the drum panel calls `param`.
+fn drum_label(param: &DrumParam) -> &'static str {
+    match param {
+        DrumParam::TuneHz(_) => "Tune",
+        DrumParam::Tone(_) => "Tone",
+        DrumParam::DecaySeconds(_) => "Decay",
+        DrumParam::Snappy(_) => "Snappy",
+        DrumParam::LevelDb(_) => "Level",
+    }
 }
 
 impl From<&KitSettings> for KitView {
@@ -187,11 +264,15 @@ impl From<&KitSettings> for KitView {
                         .filter(|((sound, _), _)| *sound == row.sound)
                         .map(|((sound, param), (_, default))| DrumSettingView {
                             param: *param,
+                            label: drum_label(param),
                             limits: KitSettings::range(*sound, param)
                                 .expect("every setting a kit has has a range"),
                             default: default.value(),
+                            unit: DrumUnit::of(*sound, param)
+                                .expect("every setting a kit has has a unit"),
                         })
                         .collect(),
+                    shares: SharedSettingsView::of(row.sound),
                 })
                 .collect(),
         }
@@ -562,6 +643,26 @@ impl Uta {
         gesture: Option<u32>,
     ) -> Result<(), String> {
         self.change(Command::SetSynthParam { track, param }, gesture)
+    }
+
+    /// Sets one setting of one sound on a drum track. Changes to the same
+    /// setting of the same sound that share a `gesture` (one drag of its
+    /// control) undo as one.
+    pub fn set_drum_param(
+        &mut self,
+        track: TrackId,
+        sound: DrumSound,
+        param: DrumParam,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(
+            Command::SetDrumParam {
+                track,
+                sound,
+                param,
+            },
+            gesture,
+        )
     }
 
     /// Sets a track's volume, pan, mute and solo. Changes to the same track
@@ -2402,8 +2503,10 @@ mod tests {
             kick.settings[0],
             DrumSettingView {
                 param: DrumParam::TuneHz(49.0),
+                label: "Tune",
                 limits: (40.0, 80.0),
                 default: 49.0,
+                unit: DrumUnit::Hz,
             }
         );
         for row in &kit.rows {
@@ -2429,11 +2532,104 @@ mod tests {
             serde_json::json!({
                 "name": "tune_hz",
                 "value": 49.0,
+                "label": "Tune",
                 "limits": [40.0, 80.0],
                 "default": 49.0,
+                "unit": "hz",
             })
         );
+        // Tone is in a different unit on each sound that has it.
+        let tone_unit = |row: usize| {
+            let settings = source["kit"]["rows"][row]["settings"].as_array().unwrap();
+            let tone = settings.iter().find(|s| s["name"] == "tone").unwrap();
+            tone["unit"].clone()
+        };
+        assert_eq!(
+            [tone_unit(0), tone_unit(1), tone_unit(2)],
+            ["fraction", "seconds", "hz"]
+        );
+        // The open hat says where its Tune and Tone are; no other sound
+        // shares anything.
+        let open_hat = KIT
+            .iter()
+            .position(|row| row.sound == DrumSound::OpenHat)
+            .unwrap();
+        for (i, row) in source["kit"]["rows"].as_array().unwrap().iter().enumerate() {
+            let expected = if i == open_hat {
+                serde_json::json!({"sound": "closed_hat", "labels": ["Tune", "Tone"]})
+            } else {
+                serde_json::Value::Null
+            };
+            assert_eq!(row["shares"], expected, "{}", row["name"]);
+        }
         assert_eq!(source["kit"]["rows"][7]["name"], "Cymbal");
+    }
+
+    #[test]
+    fn drum_settings_go_through_the_project_to_the_engine() {
+        let mut uta = offline();
+        let drums = uta.project().tracks[1].id;
+        uta.set_drum_param(drums, DrumSound::Snare, DrumParam::Snappy(0.8), None)
+            .unwrap();
+        let snappy = |uta: &Uta| {
+            let SourceView::Drums { kit } = &uta.project().tracks[1].source else {
+                panic!("Drums 1 is a drum track");
+            };
+            kit.rows[1].settings[2].param
+        };
+        assert_eq!(snappy(&uta), DrumParam::Snappy(0.8));
+        let engine_kit = |uta: &Uta| match uta.controller.snapshot().tracks()[1].sound {
+            uta_engine::TrackSound::Drums(kit) => kit,
+            uta_engine::TrackSound::Synth(_) => panic!("a drum track"),
+        };
+        assert_eq!(engine_kit(&uta).snare.snappy, 0.8);
+
+        uta.undo();
+        assert_eq!(snappy(&uta), DrumParam::Snappy(0.5));
+        assert_eq!(engine_kit(&uta).snare.snappy, 0.5);
+    }
+
+    #[test]
+    fn drum_settings_a_sound_lacks_or_out_of_range_are_refused() {
+        let mut uta = offline();
+        let drums = uta.project().tracks[1].id;
+        let synth = uta.project().tracks[0].id;
+        let set =
+            |uta: &mut Uta, track, sound, param| uta.set_drum_param(track, sound, param, None);
+        assert!(set(&mut uta, drums, DrumSound::Clap, DrumParam::TuneHz(100.0)).is_err());
+        assert!(set(&mut uta, drums, DrumSound::Kick, DrumParam::TuneHz(500.0)).is_err());
+        assert!(set(&mut uta, synth, DrumSound::Kick, DrumParam::TuneHz(50.0)).is_err());
+        assert!(!uta.project().can_undo);
+    }
+
+    #[test]
+    fn one_drum_knob_drag_undoes_as_one_step() {
+        let mut uta = offline();
+        let drums = uta.project().tracks[1].id;
+        for hz in [55.0, 60.0, 70.0] {
+            uta.set_drum_param(drums, DrumSound::Kick, DrumParam::TuneHz(hz), Some(1))
+                .unwrap();
+        }
+        for db in [-3.0, -6.0] {
+            uta.set_drum_param(drums, DrumSound::Kick, DrumParam::LevelDb(db), Some(2))
+                .unwrap();
+        }
+        let kick = |uta: &Uta| {
+            let SourceView::Drums { kit } = &uta.project().tracks[1].source else {
+                panic!("Drums 1 is a drum track");
+            };
+            let settings = &kit.rows[0].settings;
+            (settings[0].param, settings[3].param)
+        };
+
+        uta.undo();
+        assert_eq!(
+            kick(&uta),
+            (DrumParam::TuneHz(70.0), DrumParam::LevelDb(0.0))
+        );
+        uta.undo();
+        assert_eq!(kick(&uta).0, DrumParam::TuneHz(49.0));
+        assert!(!uta.project().can_undo);
     }
 
     #[test]

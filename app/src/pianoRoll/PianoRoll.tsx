@@ -104,8 +104,8 @@ const ZOOM_STEP = 1.25;
 const WHEEL_ZOOM_RATE = 0.01;
 /** How far the pointer moves before a press becomes a drag, so a click never nudges a note. */
 const DRAG_THRESHOLD_PIXELS = 3;
-/** How hard a drawn note plays. The velocity lane changes it afterwards. */
-const NEW_NOTE_VELOCITY = 100;
+/** How hard a drawn note plays (the velocity lane changes it afterwards), and a drum sound whose label or name is clicked. */
+export const NEW_NOTE_VELOCITY = 100;
 /** The cursor over each part of a note, and while dragging it. */
 const NOTE_CURSORS = { body: "grab", start: "ew-resize", end: "ew-resize" } as const;
 const DRAG_CURSORS = { body: "grabbing", start: "ew-resize", end: "ew-resize" } as const;

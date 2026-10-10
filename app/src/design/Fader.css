@@ -64,6 +64,52 @@
   outline: var(--stroke-clip-selected) solid var(--selected);
 }
 
+/*
+ * Stood on end: the same drawing turned a quarter, the rail upright with
+ * the thumb to its right pointing left at the value, dragged up and down.
+ * It fills the height its place gives it. provisional: D-26
+ */
+.fader[aria-orientation="vertical"] {
+  width: 20px;
+  height: auto;
+  min-height: 48px;
+  padding: var(--space-3) 0;
+  box-sizing: border-box;
+  cursor: ns-resize;
+}
+
+.fader[aria-orientation="vertical"] .fader-rail {
+  inset: var(--space-3) auto var(--space-3) 8px;
+  width: 0;
+  height: auto;
+  border-top: 0;
+  border-left: var(--stroke-grid) solid var(--ink-3);
+}
+
+.fader[aria-orientation="vertical"] .fader-default {
+  top: auto;
+  left: -3px;
+  width: 7px;
+  height: 0;
+  border-left: 0;
+  border-top: var(--stroke-grid) solid var(--ink-3);
+  transform: translateY(50%);
+}
+
+.fader[aria-orientation="vertical"] .fader-thumb {
+  top: auto;
+  left: 1px;
+  width: 7px;
+  height: 9px;
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  transform: translateY(50%);
+}
+
+.fader[aria-orientation="vertical"]:hover .fader-rail,
+.fader[aria-orientation="vertical"][data-dragging] .fader-rail {
+  border-left-color: var(--ink-2);
+}
+
 .fader-row output {
   font: var(--font-number);
   /* After the font shorthand, which resets it. */

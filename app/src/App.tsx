@@ -5,6 +5,8 @@ import "./App.css";
 import {
   type ClipNotes,
   type ClipOutline,
+  type DrumParam,
+  type DrumSound,
   type Frame,
   type MixerView,
   type OutputView,
@@ -40,6 +42,7 @@ import {
   setLoop,
   setLoopEnabled,
   setNotes,
+  setDrumParam,
   setSynthParam,
   setTempo,
   setTrackMixer,
@@ -67,10 +70,16 @@ import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
-import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/PianoRoll";
+import {
+  NEW_NOTE_VELOCITY,
+  type NoteEditor,
+  PianoRoll,
+  type PianoRollHandle,
+} from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { EMPTY_CACHE, inOutline, missingNotes, receive } from "./projectCache";
+import { DrumPanel } from "./DrumPanel";
 import { SynthPanel } from "./SynthPanel";
 import type { TimelineRendererFactory } from "./timeline/renderer";
 import {
@@ -415,6 +424,13 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     drags.step(gesture, () => setSynthParam(id, param, gesture).then(show, report));
   };
 
+  // The drum panel edits the selected drum track's kit.
+  const changeDrum = (sound: DrumSound, param: DrumParam, gesture?: number) => {
+    if (!track) return;
+    const id = track.id;
+    drags.step(gesture, () => setDrumParam(id, sound, param, gesture).then(show, report));
+  };
+
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
   const clipId = clip?.id ?? "";
   const trackId = track?.id ?? "";
@@ -625,9 +641,11 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                 onChange={changeSynth}
               />
             ) : (
-              <p className="empty">
-                The drum panel is coming. For now, play the kit from its labels on the Notes tab.
-              </p>
+              <DrumPanel
+                rows={track.source.kit.rows}
+                onChange={changeDrum}
+                onAudition={(pitch) => editor.audition(pitch, NEW_NOTE_VELOCITY)}
+              />
             )
           ) : clip ? (
             <PianoRoll

@@ -13,7 +13,13 @@ export const KNOB_TRAVEL = 200;
 /** How far round a knob turns from one end to the other, in degrees. */
 export const KNOB_SWEEP = 270;
 
-/** The dial's size, in CSS pixels, and where its centre is. */
+/**
+ * The sizes a dial is drawn at, in CSS pixels: 32 for pan and the synth, 24
+ * where many knobs sit together, such as the drum panel.
+ */
+export type KnobSize = 32 | 28 | 24;
+
+/** The dial's drawing, in its own units at 32 across, and where its centre is. */
 const SIZE = 32;
 const CENTRE = SIZE / 2;
 /** The range and value arcs' radius. */
@@ -34,6 +40,8 @@ interface Props extends NumberControlOptions {
   centred?: boolean;
   /** The knob's class, for its layout in the area around it. */
   className?: string;
+  /** How big the dial is drawn. Its lines keep their weight, and the hit area its size. */
+  size?: KnobSize;
 }
 
 /** The angle at `fraction` of the way round, in degrees clockwise from the top. */
@@ -69,6 +77,7 @@ export function Knob({
   hideLabel = false,
   centred = false,
   className = "",
+  size = SIZE,
   ...options
 }: Props) {
   const labelId = useId();
@@ -97,8 +106,8 @@ export function Knob({
         <svg
           className="knob-dial"
           viewBox={`0 0 ${SIZE} ${SIZE}`}
-          width={SIZE}
-          height={SIZE}
+          width={size}
+          height={size}
           aria-hidden="true"
         >
           <path className="knob-range" d={arc(knobAngle(0), knobAngle(1)) ?? undefined} />

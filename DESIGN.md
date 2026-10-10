@@ -195,7 +195,7 @@ The first row that fits wins:
 | **Menu** | More options than that, or a list that changes | Snap, output device |
 | **Drawing you can drag** | A shape: an envelope, a filter curve | None yet |
 | **Drag field** | A crowded place where the exact number matters | Tempo |
-| **Knob** | A setting in a compact group that stands on its own | Pan, the synth's settings |
+| **Knob** | A setting in a compact group that stands on its own | Pan, the synth's and the drums' settings |
 
 Faders follow the mouse along their length. Knobs and drag fields are dragged up and down, never in a circle.
 
@@ -229,7 +229,8 @@ For a crowded place where the exact number matters, such as tempo. A label, and 
 ### Knob
 
 For a setting in a compact group that stands on its own, such as pan or the synth's cutoff. A label, the knob, and its value underneath. Provisional (D-19) until it's adopted.
-- **Drawing:** flat, with no bevel, shadow or metal. A thin arc for the range, 270° from bottom left to bottom right (`ink-3` at `stroke-grid`); the value as an `ink` arc and an `ink` indicator from near the centre out to the arc (`stroke-curve`); and a tick outside the arc where a reset sets it (`ink-3`). The value's arc runs from the start of the range, or from the middle for a centred setting such as pan. The dial is 32px across.
+- **Drawing:** flat, with no bevel, shadow or metal. A thin arc for the range, 270° from bottom left to bottom right (`ink-3` at `stroke-grid`); the value as an `ink` arc and an `ink` indicator from near the centre out to the arc (`stroke-curve`); and a tick outside the arc where a reset sets it (`ink-3`). The value's arc runs from the start of the range, or from the middle for a centred setting such as pan.
+- **Sizes:** the dial is 32px across for pan and the synth, and 28px or 24px where many knobs sit together: 24px on the drum panel. A smaller dial shrinks its drawing, not its lines, which keep their weights, and its hit area stays at least 40px wide. Its values have to be short to fit: whole hertz below 10 kHz ("1000 Hz").
 - **Value:** underneath, in the `number` type in `ink`. The dial and the value are one hit area, at least as big as the mute and solo keys. The label is above, in the `text` type in `ink-2`, and can be left out where the place around it says what it is (a track's pan, under mute and solo).
 - **States:** as the fader's. Hover and drag darken the range arc to `ink-2`. With focus, the indicator is `selected`. The focus ring (`selected` at `stroke-clip-selected`, `rounded-md` corners) shows for focus from the keyboard, or once a key is pressed after a click. The cursor is an up-down resize arrow.
 - **Behaviour:** as in Setting a number, dragged up and down, never in a circle. 200px of drag go from one end to the other, whatever the knob's size.

@@ -10,7 +10,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use uta_core::time::Ticks;
-use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
+use uta_core::{ClipId, ClipPosition, DrumParam, DrumSound, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
 use crate::stress::TestSong;
@@ -161,6 +161,20 @@ pub fn set_synth_param<R: Runtime>(
     gesture: Option<u32>,
 ) -> Result<Update, String> {
     edit(&app, |uta| uta.set_synth_param(track, param, gesture))
+}
+
+/// Sets one setting of one sound on a drum track. Calls to the same
+/// setting of the same sound with the same `gesture` (one drag) undo as one
+/// step.
+#[tauri::command]
+pub fn set_drum_param<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    sound: DrumSound,
+    param: DrumParam,
+    gesture: Option<u32>,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_drum_param(track, sound, param, gesture))
 }
 
 /// Sets a track's volume, pan, mute and solo. Calls to the same track with

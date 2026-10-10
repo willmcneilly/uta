@@ -39,6 +39,11 @@
   overflow: visible;
 }
 
+/* A smaller dial shrinks its drawing, not its lines. */
+.knob-dial * {
+  vector-effect: non-scaling-stroke;
+}
+
 .knob-range {
   fill: none;
   stroke: var(--ink-3);
