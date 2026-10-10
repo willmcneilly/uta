@@ -132,6 +132,7 @@ const roll = () => screen.getByRole("application", { name: "Notes" });
 
 /** The pointer at `tick` (from the song's start) in the middle of `pitch`'s row. */
 interface Modifiers {
+  altKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
 }
@@ -167,6 +168,13 @@ async function release() {
 async function key(target: Window | HTMLElement, name: string) {
   await act(async () => {
     fireEvent.keyDown(target, { key: name });
+  });
+}
+
+/** Lets go of a key, such as ⌥, with no other key held. */
+async function keyUp(name: string) {
+  await act(async () => {
+    fireEvent.keyUp(window, { key: name });
   });
 }
 
@@ -501,6 +509,8 @@ describe("moving and deleting a selection", () => {
     await waitFor(() => expect(drawnNote("high")).toMatchObject({ pitch: 74, start: 5760 }));
     // Still both selected, to move again.
     expect(renderer.lastSelected()).toEqual(["high", "low"]);
+    // A move, not a copy.
+    expect(sent("add_notes")).toEqual([]);
   });
 
   it("puts them all back on Esc", async () => {
@@ -521,6 +531,183 @@ describe("moving and deleting a selection", () => {
     expect(sent("remove_notes")).toEqual([{ clip: "clip-1", notes: ["low", "high"] }]);
     await waitFor(() => expect(renderer.lastNotes()).toEqual([]));
     expect(renderer.lastSelected()).toEqual([]);
+  });
+});
+
+describe("⌥-dragging copies of a selection", () => {
+  const alt = { altKey: true };
+  const selectBoth = async () => {
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+  };
+  const positions = (notes: NoteView[]) => notes.map(({ pitch, start }) => [pitch, start]);
+
+  it("moves copies as one AddNotes, leaving the originals, and selects the copies", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await release();
+
+    const adds = sent("add_notes");
+    expect(adds).toHaveLength(1);
+    const copies = adds[0].notes as NoteView[];
+    expect(positions(copies)).toEqual([
+      [62, 960],
+      [74, 4800],
+    ]);
+    expect(copies.map((copy) => copy.id)).not.toContain("low");
+    expect(copies.map((copy) => copy.id)).not.toContain("high");
+    // Trimmed under, as part of the same gesture, so it's one undo step.
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: copies.map((copy) => copy.id), gesture: adds[0].gesture },
+    ]);
+    expect(edits()).toEqual(["add_notes", "trim_notes"]);
+
+    // The originals are where they were, and the copies are drawn and selected.
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(4));
+    expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 });
+    expect(drawnNote("high")).toMatchObject({ pitch: 72, start: 3840 });
+    expect(renderer.lastSelected()).toEqual(copies.map((copy) => copy.id).sort());
+  });
+
+  it("moves the copies on as the drag goes on, as part of the same gesture", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await moveTo(240 + 1920, 62, alt);
+    await release();
+
+    const [add] = sent("add_notes");
+    const [set] = sent("set_notes");
+    const ids = (add.notes as NoteView[]).map((copy) => copy.id);
+    expect((set.notes as NoteView[]).map((copy) => copy.id)).toEqual(ids);
+    expect(positions(set.notes as NoteView[])).toEqual([
+      [62, 1920],
+      [74, 5760],
+    ]);
+    expect(set.gesture).toBe(add.gesture);
+    expect(edits()).toEqual(["add_notes", "set_notes", "trim_notes"]);
+  });
+
+  it("goes back to a plain move when ⌥ is let go mid-drag, as a gesture of its own", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await moveTo(240 + 1920, 62);
+    await release();
+
+    const [add] = sent("add_notes");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: add.gesture }]);
+    const [set] = sent("set_notes");
+    expect(set.notes).toEqual([note("low", 62, 1920), note("high", 74, 5760)]);
+    expect(set.gesture).not.toBe(add.gesture);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low", "high"], gesture: set.gesture },
+    ]);
+    expect(edits()).toEqual(["add_notes", "cancel_gesture", "set_notes", "trim_notes"]);
+
+    // No copies are left, and the moved notes are selected again.
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 62, start: 1920 }));
+    expect(renderer.lastNotes()).toHaveLength(2);
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("swaps as soon as ⌥ is let go or pressed, without waiting for the pointer to move", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await keyUp("Alt");
+    expect(sent("set_notes").map((set) => set.notes)).toEqual([
+      [note("low", 62, 960), note("high", 74, 4800)],
+    ]);
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Alt", altKey: true });
+    });
+    expect(sent("add_notes")).toHaveLength(2);
+    expect(edits()).toEqual(["add_notes", "cancel_gesture", "set_notes", "cancel_gesture", "add_notes"]);
+  });
+
+  it("starts copying when ⌥ is pressed mid-drag", async () => {
+    await renderApp();
+    await press(240, 60);
+    await moveTo(240 + 960, 60);
+    await moveTo(240 + 960, 60, alt);
+    const [set] = sent("set_notes");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: set.gesture }]);
+    const [add] = sent("add_notes");
+    expect(positions(add.notes as NoteView[])).toEqual([[60, 960]]);
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 }));
+  });
+
+  it("removes the copies on Esc, and selects the originals again", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await key(window, "Escape");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: sent("add_notes")[0].gesture }]);
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(2));
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high", "low"]));
+  });
+
+  it("does nothing for an ⌥-click", async () => {
+    await renderApp();
+    await click(240, 60, alt);
+    expect(edits()).toEqual([]);
+  });
+});
+
+describe("resizing a selection", () => {
+  const selectBoth = async () => {
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+  };
+
+  it("changes every selected note's length by the same amount, in one SetNotes", async () => {
+    await renderApp();
+    await selectBoth();
+    // "low"'s end: 480 longer.
+    await press(470, 60);
+    await moveTo(470 + 500, 60);
+    await release();
+    const [set] = sent("set_notes");
+    expect(set.notes).toEqual([note("low", 60, 0, 960), note("high", 72, 3840, 960)]);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low", "high"], gesture: set.gesture },
+    ]);
+    expect(edits()).toEqual(["set_notes", "trim_notes"]);
+    await waitFor(() => expect(drawnNote("high")).toMatchObject({ length: 960 }));
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("moves every start by the same amount from a start", async () => {
+    await renderApp();
+    await selectBoth();
+    // "high"'s start: 240 later, so 240 shorter.
+    await press(3840 + 10, 72);
+    await moveTo(3840 + 10 + 250, 72);
+    expect(sent("set_notes")[0].notes).toEqual([
+      note("low", 60, 240, 240),
+      note("high", 72, 4080, 240),
+    ]);
+  });
+
+  it("keeps each note at least one grid step long", async () => {
+    project = projectView({}, [note("low", 60, 0, 480), note("long", 64, 960, 1920)]);
+    await renderApp();
+    await click(240, 60);
+    await click(960 + 240, 64, { shiftKey: true });
+    // "long"'s end, 1680 shorter: both stop at a sixteenth.
+    await press(960 + 1910, 64);
+    await moveTo(960 + 1910 - 1680, 64);
+    expect(sent("set_notes")[0].notes).toEqual([
+      note("low", 60, 0, 240),
+      note("long", 64, 960, 240),
+    ]);
   });
 });
 

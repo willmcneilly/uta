@@ -15,7 +15,14 @@ import { Follow } from "../follow";
 import { nextGesture } from "../useGesture";
 import { createCanvas2DRenderer } from "./canvasRenderer";
 import { duplicateNotes, pasteNotes } from "./clipboard";
-import { type Drag, dragNote, dragVelocities, moveNotes, sameNote } from "./editing";
+import {
+  type Drag,
+  dragNote,
+  dragVelocities,
+  moveNotes,
+  resizeNotes,
+  sameNote,
+} from "./editing";
 import type { FrameLoop } from "../frameLoop";
 import type { PlayheadClock } from "./playhead";
 import type { RendererFactory } from "./renderer";
@@ -88,6 +95,8 @@ const NEW_NOTE_VELOCITY = 100;
 /** The cursor over each part of a note, and while dragging it. */
 const NOTE_CURSORS = { body: "grab", start: "ew-resize", end: "ew-resize" } as const;
 const DRAG_CURSORS = { body: "grabbing", start: "ew-resize", end: "ew-resize" } as const;
+/** The cursor while ⌥-dragging copies of notes, as the system shows for copying. */
+const COPY_CURSOR = "copy";
 
 /** A drag in progress: of notes, velocities or a selection box. */
 interface DragState {
@@ -100,10 +109,20 @@ interface DragState {
   stop: () => void;
 }
 
+/** The keys held that change what a drag does: ⌥ copies, ⌘ turns snapping off. */
+interface Modifiers {
+  altKey: boolean;
+  metaKey: boolean;
+}
+
 /** What a drag does as the pointer moves, when it's released, and on Esc. */
 interface DragHandlers {
-  /** The pointer at `x`, `y`, once it has moved far enough to be a drag. */
-  move(x: number, y: number, event: globalThis.PointerEvent): void;
+  /**
+   * The pointer at `x`, `y`, once it has moved far enough to be a drag, with
+   * the keys held. Pressing or letting go of ⌥ or ⌘ mid-drag calls it again,
+   * where the pointer is.
+   */
+  move(x: number, y: number, keys: Modifiers): void;
   /** `moved` says whether it became a drag or stayed a click. */
   end?(moved: boolean): void;
   cancel?(): void;
@@ -276,10 +295,11 @@ export function PianoRoll({
 
   /** Follows the pointer until it's released, or Esc is pressed. */
   const startDrag = (x: number, y: number, handlers: DragHandlers) => {
+    let point = { x, y };
     const onMove = (move: globalThis.PointerEvent) => {
       const state = dragging.current;
       if (!state) return;
-      const point = pointOf(move);
+      point = pointOf(move);
       if (!state.moving) {
         if (Math.hypot(point.x - state.x, point.y - state.y) < DRAG_THRESHOLD_PIXELS) return;
         state.moving = true;
@@ -288,7 +308,12 @@ export function PianoRoll({
     };
     const onKey = (key: globalThis.KeyboardEvent) => {
       const state = dragging.current;
-      if (key.key !== "Escape" || !state) return;
+      if (!state) return;
+      if (key.key === "Alt" || key.key === "Meta") {
+        if (state.moving) handlers.move(point.x, point.y, key);
+        return;
+      }
+      if (key.key !== "Escape" || key.type !== "keydown") return;
       key.preventDefault();
       state.stop();
       handlers.cancel?.();
@@ -303,6 +328,7 @@ export function PianoRoll({
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     dragging.current = {
       x,
       y,
@@ -312,6 +338,7 @@ export function PianoRoll({
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
         window.removeEventListener("keydown", onKey);
+        window.removeEventListener("keyup", onKey);
         dragging.current = null;
         setCursor("");
         // The pointer may have been released anywhere; the next move over
@@ -429,37 +456,73 @@ export function PianoRoll({
     const wasSelected = selected.current.has(from.id);
     if (!wasSelected) select([from.id]);
 
+    const group = selectedNotes();
+
+    // An end resizes every selected note together.
     if (hit.part !== "body") {
       const drag: Drag = { kind: hit.part, from, tick, pitch };
-      const changes = noteChanges(gesture, [from], false);
+      const changes = noteChanges(gesture, group, false);
       startDrag(x, y, {
-        move: (x, y, move) => changes.send([dragAt(drag, x, y, move)]),
+        move: (x, _y, keys) => {
+          const view = scene.getView();
+          if (!view) return;
+          const next = resizeNotes(
+            group,
+            drag,
+            xToTick(view, x),
+            stepFor(keys),
+            latest.current.clip.start,
+          );
+          changes.send(next);
+        },
         end: changes.end,
         cancel: changes.cancel,
       });
       return;
     }
 
-    // The body moves every selected note together.
+    // The body moves every selected note together, or with ⌥ held, copies
+    // of them, leaving the notes where they were. Pressing or letting go of
+    // ⌥ mid-drag swaps one for the other: it puts back what the drag did so
+    // far, and starts again as a new gesture, so what's left when the drag
+    // ends is one undo step.
     setCursor(DRAG_CURSORS.body);
     const drag: Drag = { kind: "move", from, tick, pitch };
-    const group = selectedNotes();
-    const changes = noteChanges(gesture, group, false);
+    // Chosen here, before Rust applies the command (RFC-002, "The shared model", point 3).
+    const copies = group.map((note) => ({ ...note, id: crypto.randomUUID() }));
+    const dragged = group.findIndex((note) => note.id === from.id);
+    let copying: boolean | null = null;
+    let changes = noteChanges(gesture, group, false);
     let heard = from.pitch;
     startDrag(x, y, {
-      move: (x, y, move) => {
+      move: (x, y, keys) => {
         const view = scene.getView();
         if (!view) return;
         const { clip, editor } = latest.current;
+        const notes = keys.altKey ? copies : group;
         const next = moveNotes(
-          group,
+          notes,
           drag,
           xToTick(view, x),
           yToPitch(view, y),
-          stepFor(move),
+          stepFor(keys),
           clip.start,
         );
-        const moved = next[group.findIndex((note) => note.id === from.id)];
+        if (keys.altKey !== copying) {
+          if (copying !== null) changes.cancel();
+          const swapped = copying === null ? gesture : nextGesture();
+          copying = keys.altKey;
+          setCursor(copying ? COPY_CURSOR : DRAG_CURSORS.body);
+          select(notes.map((note) => note.id));
+          if (copying) {
+            // One AddNotes, which the drag's later steps fold into.
+            editor.add(next, swapped);
+            changes = noteChanges(swapped, next, true);
+          } else {
+            changes = noteChanges(swapped, group, false);
+          }
+        }
+        const moved = next[dragged];
         if (moved.pitch !== heard) {
           editor.audition(moved.pitch, moved.velocity);
           heard = moved.pitch;
@@ -471,19 +534,22 @@ export function PianoRoll({
         changes.end();
         if (!moved && wasSelected) select([from.id]);
       },
-      cancel: changes.cancel,
+      cancel: () => {
+        changes.cancel();
+        select(group.map((note) => note.id));
+      },
     });
   };
 
   /** Where `drag` (of one note) puts it with the pointer at `x`, `y`. */
-  const dragAt = (drag: Drag, x: number, y: number, event: { metaKey: boolean }): NoteView => {
+  const dragAt = (drag: Drag, x: number, y: number, keys: Modifiers): NoteView => {
     const view = scene.getView();
     if (!view) return drag.from;
     return dragNote(
       drag,
       xToTick(view, x),
       yToPitch(view, y),
-      stepFor(event),
+      stepFor(keys),
       latest.current.clip.start,
     );
   };
