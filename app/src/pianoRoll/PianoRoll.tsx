@@ -286,11 +286,8 @@ export function PianoRoll({
   }, [scene, follow]);
 
   const select = (ids: Iterable<string>) => {
-    const next = new Set(ids);
-    const same =
-      next.size === selected.current.size && [...next].every((id) => selected.current.has(id));
-    if (!same) trimMoved();
-    selected.current = next;
+    trimMoved();
+    selected.current = new Set(ids);
     scene.setSelection(selected.current);
   };
 

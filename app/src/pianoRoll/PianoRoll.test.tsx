@@ -12,6 +12,7 @@ import {
   announceChange,
   firstClip,
   projectView,
+  trackView,
   recordingFactory,
   withFirstClipNotes,
 } from "./testing";
@@ -851,6 +852,32 @@ describe("moving notes with the arrow keys", () => {
       await press(1920, 62);
       expect(edits()).toEqual([...Array(5).fill("set_notes"), "trim_notes", "add_notes"]);
       expect(sent("trim_notes")[0].gesture).toBe(lastMove());
+    });
+
+    it("on switching to the Sound tab", async () => {
+      await moveThroughTheChord();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+      });
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
+    });
+
+    it("on opening another track's clip, in the clip the notes are in", async () => {
+      const chord = [note("c", 60, 0), note("e", 64, 0), note("g", 67, 0)];
+      project = projectView({
+        tracks: [
+          trackView("track-1", "Synth 1", [{ id: "clip-1", start: 0, length: 4 * 3840, notes: chord }]),
+          trackView("track-2", "Synth 2", [{ id: "clip-2", start: 0, length: 3840, notes: [] }]),
+        ],
+      });
+      await renderApp();
+      await click(240, 60);
+      await arrow("ArrowUp");
+      expect(sent("trim_notes")).toEqual([]);
+      await act(async () => {
+        fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 2" }));
+      });
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
     });
 
     it("before a drag of the same notes, and a paste or duplicate", async () => {
