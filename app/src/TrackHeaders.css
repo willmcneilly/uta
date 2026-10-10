@@ -75,7 +75,9 @@
   -webkit-user-select: none;
 }
 
-.track-header.dragging .track-name {
+/* Wherever the pointer goes over the headers during a drag. */
+.track-headers[data-reordering],
+.track-headers[data-reordering] * {
   cursor: grabbing;
 }
 

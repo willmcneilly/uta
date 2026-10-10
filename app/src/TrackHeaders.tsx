@@ -125,7 +125,12 @@ export function TrackHeaders({
 
   const full = project.tracks.length >= project.maxTracks;
   return (
-    <section className="track-headers" aria-label="Tracks" ref={scrollRef}>
+    <section
+      className="track-headers"
+      aria-label="Tracks"
+      ref={scrollRef}
+      data-reordering={reorder !== null || undefined}
+    >
       <div className="track-headers-ruler" style={{ height: RULER_HEIGHT }} />
       <ol ref={listRef}>
         {project.tracks.map((track, index) => (
