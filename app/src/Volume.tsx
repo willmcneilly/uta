@@ -1,6 +1,6 @@
 import type { ProjectView } from "./backend";
-import { Slider } from "./design/Slider";
-import { linearScale } from "./design/sliderScale";
+import { Fader } from "./design/Fader";
+import { linearScale } from "./design/numberScale";
 import "./Volume.css";
 
 interface Props {
@@ -16,7 +16,7 @@ function formatDb(db: number): string {
 /** The master volume. It shows the project's volume, as Rust last sent it. */
 export function Volume({ project, onChange }: Props) {
   return (
-    <Slider
+    <Fader
       className="volume"
       label="Volume"
       value={project.volumeDb}

@@ -13,7 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { toPosition } from "./synthScale";
-import { press, slide, thumbX } from "./design/sliderTesting";
+import { press, slide, thumbX } from "./design/faderTesting";
 import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
   Frame,
@@ -781,8 +781,8 @@ describe("App", () => {
     });
   });
 
-  it("resets each slider on double-click to its own default, from the outline", async () => {
-    // Defaults that differ from each other and from the values, so a slider
+  it("resets each fader on double-click to its own default, from the outline", async () => {
+    // Defaults that differ from each other and from the values, so a fader
     // wired to the wrong one sends the wrong command.
     const synthDefaults: SynthView = {
       waveform: "saw",
@@ -836,6 +836,17 @@ describe("App", () => {
       { name: "sustain", value: 0.5 },
       { name: "release_seconds", value: 0.75 },
     ]);
+  });
+
+  it("resets a fader with ⌥-click or Delete too, each as a step of its own", async () => {
+    project = { ...project, volumeDb: -30, defaultVolumeDb: -10, bpm: 90, defaultBpm: 130 };
+    await renderApp();
+    press(volume(), { altKey: true }).release();
+    fireEvent.keyDown(tempo(), { key: "Delete" });
+    await waitFor(() => expect(commands()).toContain("set_tempo"));
+    const argsOf = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+    expect(argsOf("set_volume")).toEqual([{ volumeDb: -10, gesture: null }]);
+    expect(argsOf("set_tempo")).toEqual([{ bpm: 130, gesture: null }]);
   });
 
   it("fetches and shows undo and redo from the menu, which Rust announces with no payload", async () => {

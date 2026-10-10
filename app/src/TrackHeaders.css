@@ -178,7 +178,7 @@
   background: transparent;
 }
 
-/* Volume and pan: the label in the second ink, the value as a number. */
+/* Volume and pan: the label in the second ink, the value in ink. */
 .track-setting {
   display: grid;
   grid-template-columns: var(--track-label-width) 1fr var(--track-value-width);
@@ -188,19 +188,16 @@
   font: var(--font-text);
 }
 
-.track-setting .slider {
+.track-setting .fader {
   min-width: 0;
 }
 
 .track-setting output {
   text-align: right;
   color: var(--ink);
-  font: var(--font-number);
-  /* After the font shorthand, which resets it. */
-  font-variant-numeric: tabular-nums;
 }
 
-/* Under the sliders' rails: past the label column, its gap and the slider's
+/* Under the faders' rails: past the label column, its gap and the fader's
    own room at the end. Its width is the rails' (METER_WIDTH). */
 .track-header .meter {
   margin-top: var(--space-1);

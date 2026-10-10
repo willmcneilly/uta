@@ -4,12 +4,11 @@
   gap: var(--space-5);
 }
 
-.volume .slider {
+.volume .fader {
   flex: 1;
 }
 
 .volume output {
   min-width: 64px;
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }

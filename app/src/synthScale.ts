@@ -1,29 +1,29 @@
-// How the synth panel's sliders map to settings, and how settings read.
-// A slider runs over whole positions from 0 to SLIDER_STEPS. Frequencies and
+// How the synth panel's controls map to settings, and how settings read.
+// A control runs over whole positions from 0 to SETTING_STEPS. Frequencies and
 // times move on a log scale, so each step is the same ratio, the way you
 // hear them; levels move on a linear scale.
 
 import type { Limits } from "./backend";
 
-/** The number of steps from one end of a slider to the other. */
-export const SLIDER_STEPS = 1000;
+/** The number of steps from one end of a control to the other. */
+export const SETTING_STEPS = 1000;
 
 export type Scale = "log" | "linear";
 
-/** The setting at slider position `position`. The ends give exactly the limits. */
+/** The setting at position `position`. The ends give exactly the limits. */
 export function fromPosition(position: number, [min, max]: Limits, scale: Scale): number {
   if (position <= 0) return min;
-  if (position >= SLIDER_STEPS) return max;
-  const fraction = position / SLIDER_STEPS;
+  if (position >= SETTING_STEPS) return max;
+  const fraction = position / SETTING_STEPS;
   return scale === "log" ? min * (max / min) ** fraction : min + (max - min) * fraction;
 }
 
-/** The nearest slider position to `value`, clamped to the slider. */
+/** The nearest position to `value`, clamped to the control. */
 export function toPosition(value: number, [min, max]: Limits, scale: Scale): number {
   const fraction =
     scale === "log" ? Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min);
-  const position = Math.round(fraction * SLIDER_STEPS);
-  return Math.min(SLIDER_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
+  const position = Math.round(fraction * SETTING_STEPS);
+  return Math.min(SETTING_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
 }
 
 export function formatHz(hz: number): string {
