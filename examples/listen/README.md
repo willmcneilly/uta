@@ -80,3 +80,30 @@ What to listen for, against how you remember an 808:
 - **Velocity:** softer claps should be duller as well as quieter.
 - **Repeats and flams:** no clicks. Fast repeats sound like applause rather than a buzz.
 - **With the snare:** the third bar should sound like the two layered, with a slight hollow, "phasing" quality from the shared noise, as on a 909.
+
+## Hats (808)
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | Closed hats on 8ths at the defaults (Tune 205.3 Hz, Tone 7.1 kHz, closed Decay 0.05 s, open Decay 0.35 s), then open hats a beat apart, then 8ths with an open hat on each off-beat, cut off by the closed hat after it. |
+| `02-tune` | Tune 102.65, 145, 205.3, 290 and 410.6 Hz: four closed hats and an open hat a bar. |
+| `03-tone` | Tone 4, 5.5, 7.1, 9 and 12 kHz, the same pattern. |
+| `04-closed-decay` | The closed hat's Decay 0.02, 0.05, 0.1 and 0.15 s, on 8ths. |
+| `05-open-decay` | The open hat's Decay 0.09, 0.2, 0.35 and 0.6 s, two a bar. |
+| `06-level` | Both Levels 0, -6, -12 and -24 dB. |
+| `07-velocity` | A closed hat a beat, velocity 8 up to 127, then the same on the open hat. |
+| `08-repeats` | Closed hats on 16ths, 32nds, then 64ths; then open hats on 16ths and 32nds at their longest Decay, so they pile up. |
+| `09-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart, on the closed hat, then the open hat. |
+| `10-choke` | An open hat left ringing at its longest Decay, then four cut off by a closed hat 240, 120, 60 and 30 ms after it. |
+| `11-groove` | A 1-bar 808 hat pattern at 100 BPM, looped: 16ths with accents and ghost notes, and an open hat on the "and" of 2 and 4, cut off by the next closed hat. Also the hats' golden WAV. |
+| `12-beat` | The groove with the kick and the clap, two bars at 110 BPM, looped. |
+
+What to listen for, against how you remember an 808:
+
+- **Defaults:** a crisp, metallic "tss" with a slightly clangy, ringing quality, not a burst of white noise. The closed hat is short and tight; the open hat rings, then the closed hat after it stops it dead, as on the 808.
+- **Tune:** the metal's clang moves in pitch, lower and gongier at 102.65 Hz, thinner and higher at 410.6 Hz; it should still sound like the same hat.
+- **Tone:** 4 kHz is darker, with more of the clang in it; 12 kHz is a thin, airy sizzle. Somewhere around 7 kHz should be the classic 808 hat.
+- **Decay:** from a short tick at 0.02 s to a loose closed hat at 0.15 s, and on the open hat from a short "tsh" at 0.09 s to a long wash at 0.6 s.
+- **Velocity:** softer hits should be duller and smoother as well as quieter; accents brighter and a little rougher, from the amplifier's clipping.
+- **Repeats and flams:** no clicks; the 32nds and 64ths should shimmer, each hit a little different, not buzz like a machine gun.
+- **Choke:** each closed hat should cut the open hat off cleanly, with no click, and the 30 ms one should sound like a single, slightly longer closed hat.
