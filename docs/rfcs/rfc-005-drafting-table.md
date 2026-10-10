@@ -1,6 +1,6 @@
 # RFC-005: Drafting table
 
-**Status:** Accepted (2026-10-04) · **Author:** Will · **Notion:** https://app.notion.com/p/Drafting-table-3ef3af969b6f816f9639ec5af0e668eb
+**Status:** Accepted (2026-10-04), amended (2026-10-10) · **Author:** Will · **Notion:** https://app.notion.com/p/Drafting-table-3ef3af969b6f816f9639ec5af0e668eb
 
 ## Summary
 
@@ -116,12 +116,69 @@ After the first pass, the parts that appear more than once become shared compone
 - **One CI check: no colour written directly in the code.** A colour that isn't a token fails the build. This covers `#hex`, `rgb()` and `hsl()` values and named colours, in the CSS (using [Stylelint](https://stylelint.io)'s built-in rules) and in the TypeScript (an ESLint rule). The generated token files are the only exception. CI also runs `designmd lint DESIGN.md`. Sizes and spacing aren't checked yet; they can be added once their tokens settle (open question 5).
 - **`CLAUDE.md`** gets a short Design section pointing to `DESIGN.md` and the log.
 
+### 7. Controls (added by amendment, 2026-10-10)
+
+While writing RFC-006 (Drums), the drum panel needed about 27 controls, too many for sliders, and the design system had no answer to "when is something a fader, a knob, or something else?". The answer belongs to the whole app, not to drums, and it's best settled while this project still owns the components. So this part adds a rule for choosing a control, one shared behaviour for every control, the components that are missing, and the replacements the audit calls for.
+
+**What other DAWs do.** Research into Ableton Live, Bitwig, Logic, FL Studio, REAPER, Cubase, Pro Tools, the main plug-in makers and Figma (in Notion's Research database, "Faders, knobs and drag fields") found a consistent split:
+- **Faders** wherever levels are compared across channels: every mixer.
+- **Knobs with the value written next to them** for instrument and effect settings, where each setting stands on its own.
+- **Drag fields** (a number you drag up or down, like Ableton's number boxes or Figma's scrubbable inputs) are taking over crowded places. Ableton's device "sliders" are mostly drag fields, Logic's inspector uses them, and Bitwig 6 shows track volume as a dB number by default.
+- iZotope's published reasoning for Neutron 3 is the best on the subject. Circular mouse movement is awkward and knob angles are hard to compare, but sliders are wide and jumpy. Their answer is a flat circle whose outer ring shows the value, dragged up and down.
+- No controlled study compares on-screen knobs and sliders with a mouse. The case either way rests on practitioners.
+
+DESIGN.md already rules out skeuomorphic knobs (bevels, screws, brushed metal). It doesn't rule out knobs.
+
+**The rule for choosing a control.** The first row that fits wins:
+
+| Control | Use when | Examples |
+|---|---|---|
+| **Fader** (the slider) | Values compared side by side | Track and master volume, a drum's Level |
+| **Toggle** | On or off | Mute, solo, loop |
+| **Segmented choice** | Five or fewer named options, all visible | Waveform |
+| **Menu** | More options than that, or a list that changes | Snap, output device |
+| **Drawing you can drag** | A shape: an envelope, a filter curve | Later: the synth's curves |
+| **Drag field** | A crowded place where the exact number matters | Tempo |
+| **Knob** | A setting in a compact group that stands on its own | Pan, the synth's settings, the drums' settings |
+
+The rule goes into `DESIGN.md`'s Components section, with each control's entry.
+
+**One behaviour for every control.** The fader, knob and drag field all set a number, so they share one set of behaviours, built once and used by all three. UTA-25's slider already has most of it: it takes focus on click, the arrow keys step it, a drag is one undo step, the default comes from Rust, it shows its own value during a drag, and it's a slider to assistive tech. The research agrees on these too:
+- **Knobs and drag fields are dragged up and down,** never in a circle. Faders follow the mouse along their length.
+- **The value and its unit show while you hover or drag,** in the number font so the digits don't jump around.
+- **To assistive tech, every one is a slider,** and its value is read out with the unit ("−6 dB").
+
+Where today's slider departs from what most DAWs do, or where nothing is decided yet, there's an open question (8 to 12): fine adjustment, jumping to the click, resetting, typing a value, and the scroll wheel.
+
+**The components.** These sit next to the slider in `app/src/design/`, drawn in Drafting table from tokens, each with a `DESIGN.md` entry and its own UI tests:
+- **Knob:** a thin arc for the range, an inked arc and indicator for the value (filled from the centre for a centred setting such as pan), a tick at the default, and the value written underneath. No bevel, shadow or metal.
+- **Drag field:** the value and unit in the number font, with a hairline under it and a resize-style cursor on hover. A click without dragging lets you type (open question 11).
+- **Segmented choice:** an outlined row of options, with the chosen one in ink. It's a radio group to assistive tech.
+
+Each one is a provisional design decision until you adopt it between projects, and each is judged in the real app, not only in the sandbox (the lesson of the millimetre grid).
+
+**The audit, and what changes.** These are every control in the app on 2026-10-10 (after UTA-41):
+
+| Where | Today | Becomes |
+|---|---|---|
+| Track volume, master volume | Slider | Stays a fader |
+| Track pan (headers) | Slider | Knob, filled from the centre |
+| Tempo (transport) | Slider | Drag field |
+| The synth's six settings (under UTA-41's drawings) | Sliders | Knobs |
+| Waveform | Radio buttons | Segmented choice |
+| Snap (piano roll, timeline), output device | Dropdowns | Stay menus, restyled if UTA-42 hasn't already |
+| Mute, solo, loop | Toggle buttons | Stay toggles |
+
+The shared behaviour lands in the slider first, so every control that exists today follows the answers to the open questions straight away. Each new component then arrives with its first use in the same ticket: the knob with pan and the synth panel, the drag field with tempo, the segmented choice with the waveform. That keeps part 5's rule, "extract on the second use, not before". A component built for a real place keeps that place's character.
+
+Not in this part: dragging the synth's curves directly, the scroll wheel if it stays off (open question 12), dragging past the edge of the screen (it needs a browser feature that may not work in the Mac's web view, so it would need a trial first), and modulation indicators, which can't use orange or blue since those mean playing and selected.
+
 ### Not in this project
 
 - Brand and logo, the app icon and a wordmark.
 - Layout changes beyond what the restyle needs.
 - A setting in the app for choosing light or dark. Only the development tuning panel can override the system.
-- New features in any component.
+- New features in any component, apart from the controls in part 7 (amended 2026-10-10).
 - Screenshot comparison tests.
 - The design sandbox's own process, which stays in the private design repo.
 
@@ -168,6 +225,7 @@ After the first pass, the parts that appear more than once become shared compone
   - a colour is written directly in CSS or TypeScript outside the generated files. A test plants one in a fixture and checks that the rule catches it.
 - A release-build check: the bundle built by `tauri build` contains neither Tweakpane nor the save endpoint's code.
 - The existing UI tests pass unchanged. A test that changes a token checks that the timeline and piano roll renderers read the new value.
+- **Controls (part 7):** one shared set of behaviour tests runs against the fader, the knob and the drag field alike. It covers focus on click, keyboard steps, fine adjustment, the reset gestures, no jump on press (if that's chosen), the value shown during a drag and the project's value after it, one gesture per drag sending the expected commands, and the accessible role, value, range and unit. The drag field also tests typing a value (if chosen), including units and a value out of range. The segmented choice tests keyboard selection and its radio-group role. Each replaced control (pan, tempo, the synth panel, the waveform) sends the same commands as before.
 
 **Manual, by you:**
 1. With the system in light mode, open a release build next to the Two inks sandbox, both playing the demo song. Each area should read as the same direction.
@@ -176,6 +234,7 @@ After the first pass, the parts that appear more than once become shared compone
 4. Save, then check `git diff DESIGN.md`. Only token lines should have changed.
 5. Open a release build and confirm there's no tuning panel.
 6. Use each area as before (play, select, drag clips and notes, mute and solo, the synth), and check that nothing has become harder to hit or read.
+7. **Controls (part 7):** set pan, tempo and the synth's settings with the new controls while a song plays. They should be quicker to use than the sliders were, not just smaller. Try fine adjustment, reset, and typing a tempo. Check that a knob's value reads at a glance, and that nothing jumps when you grab it.
 
 ## Open questions
 
@@ -187,6 +246,15 @@ After the first pass, the parts that appear more than once become shared compone
 6. **Where does the provisional decisions log live?** Recommendation: a Notion database in your workspace, next to the scratchpad, so the reasoning stays private and only outcomes reach the public repo. The alternative is a `docs/design/log.md` in this repo, which is visible to anyone. **Resolved: Notion (Will, 2026-10-04).**
 7. **Glossary area.** The Glossary's `Area` options have no home for design terms. Recommendation: add a "Design" area for the new terms below. **Resolved: add it (Will, 2026-10-04).**
 
+Questions 8 to 13 come with part 7 (the amendment of 2026-10-10).
+
+8. **Which key gives fine adjustment?** Today it's ⌥-drag. Ableton, Bitwig, Logic, Cubase, FabFilter and Serum all use Shift-drag, and in Logic and Pro Tools ⌥-click *resets* a control, so anyone coming from Logic would hit the wrong thing. Shift+arrow is a big keyboard step today, and that can stay: holding Shift while dragging and while pressing arrows meaning different things is what Ableton does too. Recommendation: Shift-drag for fine adjustment, which can also be pressed part-way through a drag, as in Bitwig. **Resolved: as recommended (Will, 2026-10-10).**
+9. **Should a fader jump to where you press?** Today a press away from the thumb jumps the slider there. Audio software mostly moves relative to where you grab (iZotope argues against jumping because a level leaps suddenly, and it's Cubase's default), and knobs and drag fields never jump. Recommendation: no jump. Pressing anywhere on a fader grabs it, and dragging moves it from where it was. **Resolved: as recommended (Will, 2026-10-10).**
+10. **How do you reset a control to its default?** Today it's a double-click (as in Bitwig and REAPER). Logic and Pro Tools use ⌥-click, FabFilter and Steinberg ⌘-click, and Ableton the Delete key. Recommendation: keep double-click, and add ⌥-click and Delete or Backspace when the control has focus. All three are cheap and none clash, once fine adjustment moves to Shift. **Resolved: as recommended (Will, 2026-10-10).**
+11. **Can you type a value?** Recommendation: yes for drag fields. A click without dragging opens the value for typing, Return sets it and Escape cancels, as in Ableton. It understands units and shorthand ("120", "1k", "250 ms", "−6"). Knobs and faders don't get typing in this project. **Resolved: as recommended (Will, 2026-10-10).**
+12. **Should the scroll wheel change values?** Most DAWs allow it, Ableton doesn't, and REAPER makes it a setting. In a panel that scrolls, it changes sounds by accident. Recommendation: off for now. It can be added later as "only when the control has focus". **Resolved: as recommended (Will, 2026-10-10).**
+13. **Which way do you drag a drag field?** Recommendation: up and down, like knobs and every DAW. Figma drags left and right, which matches Uta's horizontal faders, but a drag field sits among knobs more often than among faders. **Resolved: as recommended (Will, 2026-10-10).**
+
 ## New terms
 
 - **Design system:** the shared set of decisions, values and parts that make an app look and behave consistently, written down so new work follows it.
@@ -195,3 +263,14 @@ After the first pass, the parts that appear more than once become shared compone
 - **Ink weight:** how heavily something is drawn. Uta's design uses it to rank what matters: faint structure, ink for content, heaviest for the selection.
 - **Tuning panel:** a set of live controls, in development builds only, for adjusting design tokens on the real app and saving them to DESIGN.md.
 - **Provisional design decision:** a design choice made during a ticket for something the design system doesn't cover yet, marked in the code and logged so it's adopted, revised or rejected later.
+
+Added with part 7 (2026-10-10):
+- **Fader:** a control that slides along a line, used where values are compared side by side, as on a mixer.
+- **Knob:** a compact control drawn as an arc and dragged up and down, for a setting that stands on its own where space is tight.
+- **Drag field:** a number you change by dragging up or down on it, or by clicking and typing, used where the exact value matters and space is tight.
+- **Segmented choice:** a row of a few named options with one chosen, all visible at once.
+- **Fine adjustment:** holding a key while dragging so the control moves in smaller steps, for precise settings.
+
+## Amendments
+
+- **2026-10-10: Part 7, Controls.** Adds a rule for choosing a control, one shared behaviour for every control, the knob, drag field and segmented choice, and the replacements from an audit of the app (pan, tempo, the synth panel, the waveform). It came out of RFC-006 (Drums), whose panel needed a control the design system didn't have. Open questions 8 to 13 and five new terms come with it. The new tickets join the Drafting table plan, before UTA-43. **Accepted (Will, 2026-10-10)**, with open questions 8 to 13 resolved as recommended. The audit's "seven settings" corrected to six (the synth has six number settings).
