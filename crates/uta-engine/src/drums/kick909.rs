@@ -497,6 +497,59 @@ mod tests {
         assert!(kick.state.phase > 0.25);
     }
 
+    /// Every control glides to a new setting over the drum smoothing time,
+    /// rather than jumping: a tenth of the way in, each has moved about a
+    /// tenth of the way, and by the end it's there.
+    #[test]
+    fn every_control_glides() {
+        let mut kick = Kick909::new(Kick909Settings::default(), RATE);
+        let to = Kick909Settings {
+            tune_hz: 70.0,
+            sweep: 1.0,
+            attack: 1.0,
+            decay_seconds: 1.5,
+            level_db: 6.0,
+        };
+        kick.set_settings(to);
+        let glide = super::super::smoothing_samples(RATE) as usize;
+        let shares = |kick: &Kick909| {
+            let c = &kick.controls;
+            let share = |now: f32, from: f32, to: f32| (now - from) / (to - from);
+            let from = Kick909Settings::default();
+            [
+                share(
+                    c.tune_octaves.value(),
+                    from.tune_hz.log2(),
+                    to.tune_hz.log2(),
+                ),
+                share(c.sweep.value(), from.sweep, to.sweep),
+                share(c.attack.value(), from.attack, to.attack),
+                share(
+                    c.log_tau.value(),
+                    log_tau(from.decay_seconds),
+                    log_tau(to.decay_seconds),
+                ),
+                share(
+                    c.level.value(),
+                    super::super::db_to_gain(from.level_db),
+                    super::super::db_to_gain(to.level_db),
+                ),
+            ]
+        };
+        for _ in 0..glide / 10 {
+            kick.next_sample(0.0);
+        }
+        for share in shares(&kick) {
+            assert!((0.05..0.15).contains(&share), "{:?}", shares(&kick));
+        }
+        for _ in glide / 10..glide {
+            kick.next_sample(0.0);
+        }
+        for share in shares(&kick) {
+            assert!((share - 1.0).abs() < 1e-3, "{:?}", shares(&kick));
+        }
+    }
+
     /// Once it has died away far below hearing it stops, and does no work
     /// until the next hit. At the longest Decay, 1.5 s to fall 40 dB, it's
     /// about 140 dB down after 5.3 s.

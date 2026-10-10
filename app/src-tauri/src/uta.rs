@@ -236,8 +236,9 @@ impl SharedSettingsView {
 }
 
 /// One setting of one drum sound: what the panel calls it, its value, the
-/// limits it has on that sound (on the kick, its chosen model's), what a reset sets it to, and the unit all
-/// of them are in, so the panel draws a sound it has never seen.
+/// limits it has on that sound (on the kick, its chosen model's), what a
+/// reset sets it to, and the unit all of them are in, so the panel draws a
+/// sound it has never seen.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DrumSettingView {

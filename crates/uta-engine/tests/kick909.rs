@@ -375,26 +375,19 @@ fn turning_the_controls_while_it_rings_does_not_click() {
     }
 }
 
-/// Every control glides in when it's turned while the kick rings, rather
-/// than jumping: compared with the same render without the turn, the turn
-/// makes little of its difference in the first tenth of the 20 ms glide.
-/// Sweep is turned as the hit lands, while it sweeps. Attack shapes only the
-/// first few milliseconds of a hit, the click, too short to see a 20 ms
-/// glide in; turning it never clicks (above).
+/// Level glides in when it's turned while the kick rings, rather than
+/// jumping: compared with the same render without the turn, the turn makes
+/// little of its difference in the first tenth of the 20 ms glide. A jump in
+/// Tune, Sweep, Attack or Decay changes the sound too gently to show this
+/// way (they bend the waveform rather than step it), so their glides are
+/// checked on the controls themselves: `every_control_glides` in
+/// `kick909.rs`.
 #[test]
-fn every_control_glides_in() {
-    use DrumParam as P;
+fn level_glides_in() {
     let glide = seconds(uta_engine::DRUM_SMOOTHING_SECONDS);
-    for (what, param, at) in [
-        ("Tune", P::TuneHz(70.0), 12 * 128),
-        ("Decay", P::DecaySeconds(0.1), 12 * 128),
-        ("Level", P::LevelDb(6.0), 12 * 128),
-        ("Sweep", P::Sweep(1.0), 0),
-    ] {
-        let base = tr909(&[P::DecaySeconds(1.5), P::Sweep(0.5)]);
-        let difference = turn_difference(KICK, &base, kick(param), at, 0.3);
-        assert_glides(&difference, glide, what);
-    }
+    let base = tr909(&[DrumParam::DecaySeconds(1.5)]);
+    let difference = turn_difference(KICK, &base, kick(DrumParam::LevelDb(6.0)), 12 * 128, 0.3);
+    assert_glides(&difference, glide, "Level");
 }
 
 // The model.

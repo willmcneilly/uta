@@ -101,11 +101,10 @@ impl KitSettings {
         // shell rings about 0.5 s with its long tail, and its wires hold for
         // up to 70 ms first; the clap's tail swells for a few ms after its
         // last burst, 30 ms in.
-        // The chosen kick's. The 909's envelope holds for 1 ms first.
-        let kick = match self.kick_model {
-            KickModel::Tr808 => kick.decay_seconds * 1.5,
-            KickModel::Tr909 => 0.001 + self.kick_909.clamped().decay_seconds * 1.5,
-        };
+        // Either kick, since one can still be ringing out after the model
+        // changes. The 909's envelope holds for 1 ms first.
+        let kick =
+            (kick.decay_seconds * 1.5).max(0.001 + self.kick_909.clamped().decay_seconds * 1.5);
         let snare = (0.07 + snare.tone_seconds * 1.5).max(0.5);
         let clap = 0.05 + clap.decay_seconds * 1.5;
         let hats = closed_hat.decay_seconds.max(open_hat.decay_seconds) * 1.5;
