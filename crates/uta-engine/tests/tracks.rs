@@ -12,8 +12,8 @@ use std::f32::consts::SQRT_2;
 use common::*;
 use uta_core::time::Ticks;
 use uta_core::{
-    Clip, ClipId, Command, MixerStrip, Note, NoteId, PlacedTrack, Project, ProjectId, Source,
-    SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, Command, MixerStrip, Note, NoteId, PlacedTrack, Project, Source, SynthSettings,
+    Track, TrackId, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{
@@ -102,7 +102,7 @@ fn beats(pitch: u8) -> Vec<(u8, Ticks, Ticks)> {
 /// A 1-bar loop at 120 BPM, with the master at 0 dB and just `tracks`, in
 /// order.
 fn song(tracks: Vec<Track>) -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let first = project.tracks()[0].id();
     let tracks = tracks
         .into_iter()
@@ -543,7 +543,7 @@ fn changing_tracks_while_playing_does_not_click_or_leave_notes_stuck() {
 
     let duplicate = project.track(track_id(1)).unwrap().copy(
         track_id(5),
-        project.next_track_name(),
+        project.next_track_name(uta_core::SourceKind::Synth),
         ClipId::random,
         NoteId::random,
     );

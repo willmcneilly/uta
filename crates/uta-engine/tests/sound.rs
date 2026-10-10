@@ -395,7 +395,8 @@ fn the_clap_matches_its_golden_wav() {
 #[test]
 fn the_demo_song_matches_its_golden_wav() {
     let project = demo_song();
-    assert_eq!(project.tracks().len(), 3);
+    // Its three synth tracks, and a new project's empty Drums 1.
+    assert_eq!(project.tracks().len(), 4);
     check_golden("demo-song", stereo(), &project);
 }
 

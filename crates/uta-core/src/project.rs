@@ -6,9 +6,10 @@ use uuid::Uuid;
 
 use crate::command::{ClipPosition, PlacedClip, PlacedTrack};
 use crate::time::{MAX_TICKS, TempoMap, Ticks, TimeSignature};
-use crate::track::{Clip, Source, Track, check_span};
+use crate::track::{Clip, Source, SourceKind, Track, check_span};
 use crate::{
-    ClipId, Command, CommandError, DrumParamError, NoteId, ProjectId, SynthSettings, TrackId,
+    ClipId, Command, CommandError, DrumParamError, KitSettings, NoteId, ProjectId, SynthSettings,
+    TrackId,
 };
 
 /// The song's tempo, time signature and loop region.
@@ -91,11 +92,13 @@ impl Project {
         Self::with_id(ProjectId::random())
     }
 
-    /// A new project with the given ID: one synth track, "Synth 1", with an
-    /// empty 4-bar clip, and the loop switched on over those 4 bars. Its
-    /// track's and clip's IDs are worked out from the project's ID, so the
-    /// same ID always gives exactly the same project, and commands saved
-    /// against it replay.
+    /// A new project with the given ID: a synth track, "Synth 1", and a drum
+    /// track, "Drums 1", each with an empty 4-bar clip, and the loop switched
+    /// on over those 4 bars. Its tracks' and clips' IDs are worked out from
+    /// the project's ID, so the same ID always gives exactly the same
+    /// project, and commands saved against it replay. Synth 1 and its clip
+    /// keep the IDs they had before Drums 1 was added, so older command
+    /// lists still find them.
     pub fn with_id(id: ProjectId) -> Self {
         let time_signature = TimeSignature::FOUR_FOUR;
         let loop_length = Ticks::from(Self::DEFAULT_LOOP_BARS) * time_signature.ticks_per_bar();
@@ -118,6 +121,16 @@ impl Project {
                 )
                 .with_clips([Clip::new(
                     ClipId::from_uuid(derived("clip 1")),
+                    0,
+                    loop_length,
+                )]),
+                Track::new(
+                    TrackId::from_uuid(derived("track 2")),
+                    "Drums 1",
+                    Source::Drums(KitSettings::default()),
+                )
+                .with_clips([Clip::new(
+                    ClipId::from_uuid(derived("clip 2")),
                     0,
                     loop_length,
                 )]),
@@ -166,16 +179,21 @@ impl Project {
         last + self.transport.time_signature.ticks_per_bar()
     }
 
-    /// The name for a new track, including a duplicate: "Synth n", where n
-    /// is one more than the highest number any track's name uses.
-    pub fn next_track_name(&self) -> String {
+    /// The name for a new track of `kind`, including a duplicate: "Synth n"
+    /// or "Drums n", where n is one more than the highest number any track's
+    /// name of that kind uses.
+    pub fn next_track_name(&self, kind: SourceKind) -> String {
+        let prefix = kind.name();
         let highest = self
             .tracks
             .iter()
-            .filter_map(|track| track.name.strip_prefix("Synth ")?.parse::<u32>().ok())
+            .filter_map(|track| {
+                let number = track.name.strip_prefix(prefix)?.strip_prefix(' ')?;
+                number.parse::<u32>().ok()
+            })
             .max()
             .unwrap_or(0);
-        format!("Synth {}", highest.saturating_add(1))
+        format!("{prefix} {}", highest.saturating_add(1))
     }
 
     /// Applies `command` and returns its inverse: the command that puts the
@@ -480,10 +498,15 @@ impl Project {
                 .track(position.track)
                 .ok_or(CommandError::UnknownTrack(position.track))?;
             check_span(position.id, position.start, position.length)?;
-            // A clip can't take notes off the kit onto a drum track.
-            let clip = self.clip(position.id).expect("checked above");
-            clip.notes()
-                .try_for_each(|note| track.source.check_note(note))?;
+            // A clip moves only between tracks of the same kind, so it never
+            // takes notes off the kit onto a drum track either.
+            let from = self.track_of(position.id).expect("checked above");
+            if from.source.kind() != track.source.kind() {
+                return Err(CommandError::ClipToOtherKind {
+                    clip: position.id,
+                    track: position.track,
+                });
+            }
         }
         let previous = positions
             .iter()
@@ -783,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn new_project_has_one_track_with_one_empty_clip() {
+    fn new_project_has_a_synth_and_a_drum_track_each_with_one_empty_clip() {
         let project = Project::new();
         let transport = project.transport();
         assert_eq!(transport.tempo_map().bpm(), 120.0);
@@ -793,22 +816,43 @@ mod tests {
         assert_eq!(transport.loop_length(), 4 * 3840, "4 bars");
         assert!(transport.loop_enabled());
 
-        let [track] = project.tracks() else {
-            panic!("expected one track");
+        let [synth, drums] = project.tracks() else {
+            panic!("expected two tracks");
         };
-        assert_eq!(track.name(), "Synth 1");
-        assert_eq!(track.source(), &Source::Synth(SynthSettings::default()));
-        assert_eq!(track.effects(), &[] as &[Effect]);
-        assert_eq!(track.mixer(), &MixerStrip::default());
-        let [clip] = track.clips() else {
-            panic!("expected one clip");
-        };
-        assert_eq!(clip.start(), 0);
-        assert_eq!(clip.length(), transport.loop_length());
-        assert_eq!(clip.content_offset(), 0);
-        assert_eq!(clip.content_length(), clip.length());
-        assert_eq!(clip.notes().len(), 0);
-        assert_eq!(project.song_end(), 5 * BAR, "one bar after the clip");
+        assert_eq!(synth.name(), "Synth 1");
+        assert_eq!(synth.source(), &Source::Synth(SynthSettings::default()));
+        assert_eq!(drums.name(), "Drums 1");
+        assert_eq!(drums.source(), &Source::Drums(KitSettings::default()));
+        for track in [synth, drums] {
+            assert_eq!(track.effects(), &[] as &[Effect]);
+            assert_eq!(track.mixer(), &MixerStrip::default());
+            let [clip] = track.clips() else {
+                panic!("expected one clip");
+            };
+            assert_eq!(clip.start(), 0);
+            assert_eq!(clip.length(), transport.loop_length());
+            assert_eq!(clip.content_offset(), 0);
+            assert_eq!(clip.content_length(), clip.length());
+            assert_eq!(clip.notes().len(), 0);
+        }
+        assert_eq!(project.song_end(), 5 * BAR, "one bar after the clips");
+    }
+
+    #[test]
+    fn synth_1_keeps_the_ids_it_had_before_drums_1() {
+        // Older command lists, such as examples/demo-loop.json, name Synth 1
+        // and its clip by these IDs, worked out from the project's.
+        let project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(7)));
+        let derived = |name: &str| Uuid::new_v5(&project.id().as_uuid(), name.as_bytes());
+        let ids = |track: &Track| (track.id().as_uuid(), track.clips()[0].id().as_uuid());
+        assert_eq!(
+            ids(&project.tracks()[0]),
+            (derived("track 1"), derived("clip 1"))
+        );
+        assert_eq!(
+            ids(&project.tracks()[1]),
+            (derived("track 2"), derived("clip 2"))
+        );
     }
 
     #[test]
@@ -1239,20 +1283,12 @@ mod tests {
         );
     }
 
-    /// The test project with a drum track, "Drums 1", added second, with an
+    /// The test project, with its drum track, "Drums 1", and that track's
     /// empty 4-bar clip.
     fn with_drums() -> (Project, TrackId, ClipId) {
-        let mut project = testing::project();
-        let (track, clip) = (testing::track_id(9), testing::clip_id(9));
-        project
-            .apply(&Command::AddTracks {
-                tracks: vec![PlacedTrack {
-                    index: 1,
-                    track: Track::new(track, "Drums 1", Source::Drums(KitSettings::default()))
-                        .with_clips([Clip::new(clip, 0, 4 * BAR)]),
-                }],
-            })
-            .unwrap();
+        let project = testing::project();
+        let drums = &project.tracks()[1];
+        let (track, clip) = (drums.id(), drums.clips()[0].id());
         (project, track, clip)
     }
 
@@ -1420,7 +1456,8 @@ mod tests {
             },
             refused,
         );
-        // SetClips: moving a synth clip with a note off the kit onto it.
+        // SetClips: a synth clip with a note off the kit can't move onto it,
+        // because no clip moves to a track of the other kind.
         let mut with_off_kit = project.clone();
         let synth_clip = clip_id(&project);
         with_off_kit
@@ -1439,7 +1476,10 @@ mod tests {
                     length: 4 * BAR,
                 }],
             },
-            refused,
+            CommandError::ClipToOtherKind {
+                clip: synth_clip,
+                track,
+            },
         );
         // A synth track still takes any pitch.
         apply_and_check_undo(
@@ -1491,11 +1531,17 @@ mod tests {
         project.tracks().iter().map(Track::name).collect()
     }
 
-    /// The test project with tracks "Synth 2" and "Synth 3" after the first.
-    /// "Synth 2" has a clip with note 0 in it, and "Synth 3" a mixer and
-    /// sound of its own.
+    /// The test project with its drum track taken out, and tracks "Synth 2"
+    /// and "Synth 3" after the first. "Synth 2" has a clip with note 0 in
+    /// it, and "Synth 3" a mixer and sound of its own.
     fn with_three_tracks() -> Project {
         let mut project = testing::project();
+        let drums = project.tracks()[1].id();
+        project
+            .apply(&Command::RemoveTracks {
+                tracks: vec![drums],
+            })
+            .unwrap();
         project
             .apply(&Command::AddTracks {
                 tracks: vec![
@@ -1545,7 +1591,11 @@ mod tests {
             }
         );
         let ids: Vec<_> = changed.tracks().iter().map(Track::id).collect();
-        assert_eq!(ids, [testing::track_id(0), first, testing::track_id(1)]);
+        let drums = project.tracks()[1].id();
+        assert_eq!(
+            ids,
+            [testing::track_id(0), first, testing::track_id(1), drums]
+        );
         apply_and_check_undo(&project, command);
     }
 
@@ -1583,8 +1633,9 @@ mod tests {
     #[test]
     fn a_project_can_have_32_tracks_and_no_more() {
         let project = testing::project();
-        let tracks = (0..31)
-            .map(|index| placed(index + 1, synth_track(index as u128, index as u32 + 2)))
+        let room = Project::MAX_TRACKS - project.tracks().len();
+        let tracks = (0..room)
+            .map(|index| placed(index + 2, synth_track(index as u128, index as u32 + 2)))
             .collect();
         let full = apply_and_check_undo(&project, Command::AddTracks { tracks });
         assert_eq!(full.tracks().len(), Project::MAX_TRACKS);
@@ -2119,7 +2170,7 @@ mod tests {
         let mut clip_index = 10;
         let copy = original.copy(
             testing::track_id(10),
-            project.next_track_name(),
+            project.next_track_name(SourceKind::Synth),
             || {
                 clip_index += 1;
                 testing::clip_id(clip_index)
@@ -2172,42 +2223,113 @@ mod tests {
     }
 
     #[test]
-    fn new_track_names_count_on_from_the_highest() {
+    fn new_track_names_count_on_from_the_highest_of_their_kind() {
+        use SourceKind::{Drums, Synth};
         let mut project = testing::project();
-        assert_eq!(project.next_track_name(), "Synth 2");
+        assert_eq!(project.next_track_name(Synth), "Synth 2");
+        assert_eq!(project.next_track_name(Drums), "Drums 2");
         project
             .apply(&Command::AddTracks {
                 tracks: vec![placed(1, synth_track(0, 2)), placed(2, synth_track(1, 3))],
             })
             .unwrap();
-        assert_eq!(project.next_track_name(), "Synth 4");
+        assert_eq!(project.next_track_name(Synth), "Synth 4");
+        assert_eq!(
+            project.next_track_name(Drums),
+            "Drums 2",
+            "synths don't count"
+        );
         // Deleting "Synth 2" renames nothing, and the next is still 4.
         project
             .apply(&Command::RemoveTracks {
                 tracks: vec![testing::track_id(0)],
             })
             .unwrap();
-        assert_eq!(names(&project), ["Synth 1", "Synth 3"]);
-        assert_eq!(project.next_track_name(), "Synth 4");
+        assert_eq!(names(&project), ["Synth 1", "Synth 3", "Drums 1"]);
+        assert_eq!(project.next_track_name(Synth), "Synth 4");
         // Other names don't count, and reordering changes nothing.
         project
             .apply(&Command::AddTracks {
-                tracks: vec![placed(
-                    0,
-                    Track {
-                        name: "Bass 9".into(),
-                        ..synth_track(2, 0)
-                    },
-                )],
+                tracks: vec![
+                    placed(
+                        0,
+                        Track {
+                            name: "Bass 9".into(),
+                            ..synth_track(2, 0)
+                        },
+                    ),
+                    placed(
+                        1,
+                        Track {
+                            name: "Drumsy 7".into(),
+                            ..synth_track(3, 0)
+                        },
+                    ),
+                ],
             })
             .unwrap();
-        assert_eq!(project.next_track_name(), "Synth 4");
+        assert_eq!(project.next_track_name(Synth), "Synth 4");
+        assert_eq!(project.next_track_name(Drums), "Drums 2");
         project
             .apply(&Command::RemoveTracks {
                 tracks: project.tracks().iter().map(Track::id).collect(),
             })
             .unwrap();
-        assert_eq!(project.next_track_name(), "Synth 1");
+        assert_eq!(project.next_track_name(Synth), "Synth 1");
+        assert_eq!(project.next_track_name(Drums), "Drums 1");
+    }
+
+    #[test]
+    fn a_clip_moves_only_between_tracks_of_the_same_kind() {
+        let (project, drums, drum_clip) = with_drums();
+        let synth = track_id(&project);
+        let synth_clip = clip_id(&project);
+        let to = |id, track| Command::SetClips {
+            clips: vec![ClipPosition {
+                id,
+                track,
+                start: BAR,
+                length: BAR,
+            }],
+        };
+        // Even an empty clip can't change kind, either way.
+        assert_rejected(
+            &project,
+            to(synth_clip, drums),
+            CommandError::ClipToOtherKind {
+                clip: synth_clip,
+                track: drums,
+            },
+        );
+        assert_rejected(
+            &project,
+            to(drum_clip, synth),
+            CommandError::ClipToOtherKind {
+                clip: drum_clip,
+                track: synth,
+            },
+        );
+        // A move within its own track, or to another of its kind, is fine.
+        apply_and_check_undo(&project, to(drum_clip, drums));
+        let mut two_kits = project.clone();
+        let second = testing::track_id(5);
+        two_kits
+            .apply(&Command::AddTracks {
+                tracks: vec![placed(
+                    2,
+                    Track::new(second, "Drums 2", Source::Drums(KitSettings::default())),
+                )],
+            })
+            .unwrap();
+        apply_and_check_undo(&two_kits, to(drum_clip, second));
+        assert!(
+            CommandError::ClipToOtherKind {
+                clip: drum_clip,
+                track: synth
+            }
+            .to_string()
+            .contains("different kind of track")
+        );
     }
 
     #[test]

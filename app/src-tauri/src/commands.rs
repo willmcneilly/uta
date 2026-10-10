@@ -14,7 +14,7 @@ use uta_core::{ClipId, ClipPosition, Note, NoteId, SynthParam, TrackId};
 
 use crate::menu::MenuState;
 use crate::stress::TestSong;
-use crate::uta::{ClipNotes, Frame, MixerView, PastedClip, Update, Uta};
+use crate::uta::{ClipNotes, Frame, MixerView, PastedClip, TrackKind, Update, Uta};
 
 /// The event sent, with no payload, after a change the UI didn't ask for:
 /// Undo and Redo from the menu bar, ⌘Z and ⇧⌘Z included. The UI answers with
@@ -184,10 +184,14 @@ pub fn solo_track_alone<R: Runtime>(app: AppHandle<R>, track: TrackId) -> Result
     edit(&app, |uta| uta.solo_alone(track))
 }
 
-/// Adds a synth track below the others. The UI picks its ID.
+/// Adds a synth or drum track below the others. The UI picks its ID.
 #[tauri::command]
-pub fn add_track<R: Runtime>(app: AppHandle<R>, id: TrackId) -> Result<Update, String> {
-    edit(&app, |uta| uta.add_track(id))
+pub fn add_track<R: Runtime>(
+    app: AppHandle<R>,
+    id: TrackId,
+    kind: TrackKind,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.add_track(id, kind))
 }
 
 /// Adds a copy of a track, with its sound, mixer and clips, below it. The UI

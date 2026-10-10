@@ -376,6 +376,13 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
     let mut added_clip: Option<ClipId> = None;
     for step in 0..480usize {
         let tracks: Vec<TrackId> = project.tracks().iter().map(|track| track.id()).collect();
+        // Synth settings go to the synth tracks, not the empty drum track.
+        let synths: Vec<TrackId> = project
+            .tracks()
+            .iter()
+            .filter(|track| matches!(track.source(), uta_core::Source::Synth(_)))
+            .map(|track| track.id())
+            .collect();
         // Removing a track removes its clips.
         if added_clip.is_some_and(|id| project.clip(id).is_none()) {
             added_clip = None;
@@ -386,7 +393,7 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
                 let source = project.tracks()[step / 9 % tracks.len()].clone();
                 let copy = source.copy(
                     TrackId::random(),
-                    project.next_track_name(),
+                    project.next_track_name(source.source().kind()),
                     ClipId::random,
                     NoteId::random,
                 );
@@ -416,16 +423,16 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
                     .collect::<Vec<_>>();
                 Command::AddClips {
                     clips: vec![PlacedClip {
-                        track: tracks[1],
+                        track: synths[1 % synths.len()],
                         clip: Clip::new(id, 960 * (step as u64 % 8), 3840).with_notes(notes),
                     }],
                 }
             }
-            // Move the added clip along, and to another track.
+            // Move the added clip along, and to another synth track.
             3 | 4 if added_clip.is_some() => Command::SetClips {
                 clips: vec![ClipPosition {
                     id: added_clip.unwrap(),
-                    track: tracks[step % tracks.len()],
+                    track: synths[step % synths.len()],
                     start: 480 * (step as u64 % 16),
                     length: 3840,
                 }],
@@ -442,7 +449,7 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
                 },
             },
             _ => Command::SetSynthParam {
-                track: tracks[step % tracks.len()],
+                track: synths[step % synths.len()],
                 param: SynthParam::CutoffHz(300.0 + (step % 40) as f32 * 100.0),
             },
         };
@@ -525,6 +532,13 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     let mut added_clip: Option<ClipId> = None;
     for step in 0..400usize {
         let tracks: Vec<TrackId> = project.tracks().iter().map(|track| track.id()).collect();
+        // Synth settings go to the synth tracks, not the empty drum track.
+        let synths: Vec<TrackId> = project
+            .tracks()
+            .iter()
+            .filter(|track| matches!(track.source(), uta_core::Source::Synth(_)))
+            .map(|track| track.id())
+            .collect();
         if added_clip.is_some_and(|id| project.clip(id).is_none()) {
             added_clip = None;
         }
@@ -543,7 +557,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                         index: step % tracks.len(),
                         track: source.copy(
                             TrackId::random(),
-                            project.next_track_name(),
+                            project.next_track_name(source.source().kind()),
                             ClipId::random,
                             NoteId::random,
                         ),
@@ -568,7 +582,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                     .collect::<Vec<_>>();
                 Command::AddClips {
                     clips: vec![PlacedClip {
-                        track: tracks[step % tracks.len()],
+                        track: synths[step % synths.len()],
                         clip: Clip::new(id, 3840 * (step as u64 % 10), 3840).with_notes(notes),
                     }],
                 }
@@ -576,7 +590,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
             4 | 6 if added_clip.is_some() => Command::SetClips {
                 clips: vec![ClipPosition {
                     id: added_clip.unwrap(),
-                    track: tracks[step % tracks.len()],
+                    track: synths[step % synths.len()],
                     start: 960 * (step as u64 % 40),
                     length: 3840,
                 }],
@@ -585,7 +599,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                 clips: vec![added_clip.take().unwrap()],
             },
             _ => Command::SetSynthParam {
-                track: tracks[step % tracks.len()],
+                track: synths[step % synths.len()],
                 param: SynthParam::CutoffHz(400.0 + (step % 30) as f32 * 100.0),
             },
         };
