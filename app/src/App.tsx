@@ -70,7 +70,12 @@ import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
-import { type NoteEditor, PianoRoll, type PianoRollHandle } from "./pianoRoll/PianoRoll";
+import {
+  NEW_NOTE_VELOCITY,
+  type NoteEditor,
+  PianoRoll,
+  type PianoRollHandle,
+} from "./pianoRoll/PianoRoll";
 import { PlayheadClock } from "./pianoRoll/playhead";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { EMPTY_CACHE, inOutline, missingNotes, receive } from "./projectCache";
@@ -125,9 +130,6 @@ function isTransportKey(event: KeyboardEvent): boolean {
 }
 
 type Tab = "notes" | "sound";
-
-/** How hard a sound plays when its name is clicked on the drum panel, as a new note's velocity. */
-const AUDITION_VELOCITY = 100;
 
 /** The views the Edit menu's Copy, Paste and Duplicate can act on. */
 type EditView = "timeline" | "pianoRoll";
@@ -642,7 +644,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               <DrumPanel
                 rows={track.source.kit.rows}
                 onChange={changeDrum}
-                onAudition={(pitch) => editor.audition(pitch, AUDITION_VELOCITY)}
+                onAudition={(pitch) => editor.audition(pitch, NEW_NOTE_VELOCITY)}
               />
             )
           ) : clip ? (
