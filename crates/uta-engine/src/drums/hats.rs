@@ -330,9 +330,9 @@ impl Hats {
         (f64::from(closed_level), f64::from(open_level))
     }
 
-    /// The next sample, from the metal's next sample. Hats
-    /// that have died away return silence without doing the work, and the
-    /// kit doesn't work the metal out for them.
+    /// The next sample, from this sample of the metal. Hats that have died
+    /// away return silence without doing the work, and the kit doesn't work
+    /// the metal out for them.
     #[inline]
     pub(crate) fn next_sample(&mut self, metal: f64) -> f32 {
         let (closed_level, open_level) = self.controls();
