@@ -92,7 +92,8 @@
  * ring and shades it; press shades it more. On, hover lifts the fill to
  * ink-2 and press presses it back to ink. Keyboard focus rings the key in
  * the selected ink. The drawn circle is 18 px inside a space-7 (24 px)
- * square to hit. provisional: D-12
+ * square to hit: the button itself stays square, because a rounded one
+ * wouldn't respond in its corners. provisional: D-12
  */
 .track-key {
   position: relative;
@@ -104,7 +105,6 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 50%;
   background: transparent;
   color: var(--ink-2);
   font: var(--font-number);
@@ -154,9 +154,14 @@
   background: var(--ink);
 }
 
+/* The ring goes round the drawn circle, not the square hit area. */
 .track-key:focus-visible {
+  outline: none;
+}
+
+.track-key:focus-visible::before {
   outline: var(--stroke-clip-selected) solid var(--selected);
-  outline-offset: 0;
+  outline-offset: var(--space-1);
 }
 
 /* Nothing disables them today; disabled beats on and off. */
