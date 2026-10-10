@@ -12,23 +12,10 @@
   font: var(--font-text);
 }
 
-.synth fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
 /* Each group keeps its width, so on a narrow window the panel scrolls
    rather than squeezing the knobs or overlapping the drawings. */
 .synth > fieldset {
   flex: none;
-}
-
-.synth legend {
-  padding: 0 0 var(--space-3);
-  color: var(--ink-2);
-  font: var(--font-text);
 }
 
 /* A group's knobs, in a row under its drawing, each in an equal column a

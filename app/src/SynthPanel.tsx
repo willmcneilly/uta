@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
+import { Group } from "./design/Group";
 import { Knob } from "./design/Knob";
 import type { NumberScale } from "./design/numberScale";
 import { type Option, SegmentedChoice } from "./design/SegmentedChoice";
@@ -164,8 +165,7 @@ export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Pr
         onChange={(value) => onChange({ name: "waveform", value })}
       />
 
-      <fieldset className="filter">
-        <legend>Filter</legend>
+      <Group title="Filter" className="filter">
         <FilterDrawing
           cutoffHz={shown.cutoffHz}
           resonance={shown.resonance}
@@ -176,10 +176,9 @@ export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Pr
           {setting("Cutoff", "cutoff_hz", limits.cutoffHz, "log", formatHz)}
           {setting("Resonance", "resonance", limits.resonance, "linear", formatAmount)}
         </div>
-      </fieldset>
+      </Group>
 
-      <fieldset className="envelope">
-        <legend>Envelope</legend>
+      <Group title="Envelope" className="envelope">
         <EnvelopeDrawing times={shown} marked={dragged ? (STAGES[dragged.name] ?? null) : null} />
         <div className="knobs">
           {setting("Attack", "attack_seconds", limits.envelopeSeconds, "log", formatSeconds)}
@@ -187,7 +186,7 @@ export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Pr
           {setting("Sustain", "sustain", limits.sustain, "linear", formatLevel)}
           {setting("Release", "release_seconds", limits.envelopeSeconds, "log", formatSeconds)}
         </div>
-      </fieldset>
+      </Group>
     </section>
   );
 }
