@@ -573,15 +573,74 @@ fn playing_again_sounds_the_same() {
 }
 
 /// Once they have died away, the hats stop: a render of one open hat at
-/// its longest Decay ends in exact silence. They stop 120 dB down, three
-/// times the 40 dB of Decay, so 1.8 s after the hit.
+/// its longest Decay ends in exact silence, at every Tune and Tone. They
+/// stop 120 dB down, three times the 40 dB of Decay, so 1.8 s after the
+/// hit. The metal runs on underneath, so this checks the hats stop on
+/// their envelopes, not on the metal falling quiet, which it never does.
 #[test]
 fn the_hats_die_away_to_silence() {
-    let samples = one_hit(OPEN, &[open(DrumParam::DecaySeconds(0.6))], 127, 3.0);
-    let last = samples.iter().rposition(|&s| s != 0.0).unwrap();
-    assert!(
-        last < seconds(2.1),
-        "still sounding at {} s",
-        last as f64 / 48_000.0
-    );
+    for tune in [102.65, 205.3, 300.0, 410.6] {
+        for tone in [4000.0, 7100.0, 12_000.0] {
+            let params = [
+                open(DrumParam::DecaySeconds(0.6)),
+                closed(DrumParam::TuneHz(tune)),
+                closed(DrumParam::Tone(tone)),
+            ];
+            let samples = one_hit(OPEN, &params, 127, 3.0);
+            let last = samples.iter().rposition(|&s| s != 0.0).unwrap();
+            assert!(
+                last < seconds(2.1),
+                "Tune {tune}, Tone {tone}: still sounding at {} s",
+                last as f64 / 48_000.0
+            );
+        }
+    }
+}
+
+/// Play restarts the metal even while the hats ring, crossfading so their
+/// ring doesn't jump: Stop and Play again straight away, with an open hat
+/// at its longest Decay still ringing, and once that ring has died away
+/// the beat sounds exactly as a render from the top does, at the darkest
+/// Tone too. The crossfade itself is checked in the engine's unit tests,
+/// and the beat's own hits keep to the click limit through it.
+#[test]
+fn playing_again_while_they_ring_restarts_the_metal() {
+    for params in [vec![], vec![closed(DrumParam::Tone(4000.0))]] {
+        let hits = vec![
+            hit(0, OPEN, 127, 0),
+            hit(1, CLOSED, 100, 2 * BEAT),
+            hit(2, OPEN, 127, 4 * BEAT + BEAT / 2),
+        ];
+        let mut project = drum_project(120.0, 4, &[], hits);
+        for (sound, param) in params
+            .iter()
+            .copied()
+            .chain([open(DrumParam::DecaySeconds(0.6))])
+        {
+            project
+                .apply(&Command::SetDrumParam {
+                    track: drum_track(),
+                    sound,
+                    param,
+                })
+                .unwrap();
+        }
+        let reference = render_drums(&project, 4.0, 128);
+        let mut renderer = Renderer::new(config(), Snapshot::from(&project), 128);
+        renderer.controller.play().unwrap();
+        // Stop 0.1 s in, as the open hat rings, and play again.
+        renderer.render(seconds(0.1));
+        renderer.controller.stop().unwrap();
+        renderer.controller.play().unwrap();
+        renderer.render_seconds(4.0);
+        let again = &renderer.samples()[seconds(0.1)..];
+        // From the second open hat on, 2.25 s in, the first has long gone.
+        let from = seconds(2.25);
+        assert_eq!(
+            &again[from..seconds(4.0)],
+            &reference[from..seconds(4.0)],
+            "{params:?}"
+        );
+        assert!(peak(&again[from..seconds(4.0)]) > 0.3);
+    }
 }

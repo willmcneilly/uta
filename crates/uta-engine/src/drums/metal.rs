@@ -20,7 +20,9 @@
 //! hit catches it at a different point and comes out a little different, as
 //! on the 808, where the oscillators are never reset by a trigger. It
 //! restarts from the same point when playback starts, so playing from the
-//! top sounds the same as a render.
+//! top sounds the same as a render. If the hats are ringing then, it
+//! crossfades from where it was to the restarted metal over a few
+//! milliseconds, so their ring doesn't jump.
 
 use crate::ramp::Ramp;
 use crate::synth::oscillator::poly_blep;
@@ -35,11 +37,20 @@ const DUTY: f64 = 0.4798;
 /// don't all rise on the same sample when playback starts.
 const START_PHASES: [f64; 6] = [0.0, 0.17, 0.41, 0.59, 0.73, 0.89];
 
+/// How long a restart while the hats ring crossfades for.
+const CROSSFADE_SECONDS: f64 = 0.005;
+
 /// The six oscillators. Everything in it is a plain number.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Metal {
     /// Where each is in its cycle, 0..1.
     phases: [f64; 6],
+    /// Where each was before a restart while the hats rang, still running
+    /// while the crossfade away from it lasts.
+    old_phases: [f64; 6],
+    /// Steps left in the crossfade, and its length.
+    crossfade: u32,
+    crossfade_steps: u32,
     /// How far each moves a step, in cycles.
     increments: [f64; 6],
     /// Tune, in octaves above the 808's, as it glides.
@@ -62,6 +73,9 @@ impl Metal {
     pub(crate) fn new(tune_hz: f32, rate: f64, smoothing: u32) -> Self {
         Self {
             phases: START_PHASES,
+            old_phases: START_PHASES,
+            crossfade: 0,
+            crossfade_steps: (CROSSFADE_SECONDS * rate).round().max(1.0) as u32,
             increments: [0.0; 6],
             tune_octaves: Ramp::new(octaves(tune_hz), smoothing),
             tuned_to: f32::NAN,
@@ -69,8 +83,16 @@ impl Metal {
         }
     }
 
-    /// Starts again from the same point.
-    pub(crate) fn restart(&mut self) {
+    /// Starts again from the same point. If something is listening to it
+    /// (`ringing`), it crossfades there from where it was, so the sound
+    /// doesn't jump.
+    pub(crate) fn restart(&mut self, ringing: bool) {
+        if ringing {
+            self.old_phases = self.phases;
+            self.crossfade = self.crossfade_steps;
+        } else {
+            self.crossfade = 0;
+        }
         self.phases = START_PHASES;
     }
 
@@ -101,16 +123,14 @@ impl Metal {
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f64 {
         self.tune();
-        let mut sum = 0.0;
-        for (phase, &dt) in self.phases.iter_mut().zip(&self.increments) {
-            let t = *phase;
-            // High for the first 47.98% of the cycle, low for the rest: a
-            // jump up at the start of the cycle and down at the duty.
-            let naive = if t < DUTY { 1.0 } else { -1.0 };
-            sum += naive + poly_blep(t, dt) - poly_blep((t + 1.0 - DUTY).fract(), dt);
-            *phase = (t + dt).fract();
+        let new = squares(&mut self.phases, &self.increments);
+        if self.crossfade == 0 {
+            return new;
         }
-        sum / 6.0
+        let old = squares(&mut self.old_phases, &self.increments);
+        let old_share = f64::from(self.crossfade) / f64::from(self.crossfade_steps + 1);
+        self.crossfade -= 1;
+        old * old_share + new * (1.0 - old_share)
     }
 
     /// Moves on a step without working out the sound, for when nothing is
@@ -118,9 +138,35 @@ impl Metal {
     #[inline]
     pub(crate) fn skip(&mut self) {
         self.tune();
-        for (phase, &dt) in self.phases.iter_mut().zip(&self.increments) {
-            *phase = (*phase + dt).fract();
+        advance(&mut self.phases, &self.increments);
+        if self.crossfade > 0 {
+            advance(&mut self.old_phases, &self.increments);
+            self.crossfade -= 1;
         }
+    }
+}
+
+/// Six squares at `phases`, added together, from -1 to 1, then moved on a
+/// step.
+#[inline]
+fn squares(phases: &mut [f64; 6], increments: &[f64; 6]) -> f64 {
+    let mut sum = 0.0;
+    for (phase, &dt) in phases.iter_mut().zip(increments) {
+        let t = *phase;
+        // High for the first 47.98% of the cycle, low for the rest: a jump
+        // up at the start of the cycle and down at the duty.
+        let naive = if t < DUTY { 1.0 } else { -1.0 };
+        sum += naive + poly_blep(t, dt) - poly_blep((t + 1.0 - DUTY).fract(), dt);
+        *phase = (t + dt).fract();
+    }
+    sum / 6.0
+}
+
+/// Moves `phases` on a step.
+#[inline]
+fn advance(phases: &mut [f64; 6], increments: &[f64; 6]) {
+    for (phase, &dt) in phases.iter_mut().zip(increments) {
+        *phase = (*phase + dt).fract();
     }
 }
 
@@ -132,9 +178,11 @@ mod tests {
 
     /// Each oscillator rises once a cycle: counted over 10 s, the lowest
     /// rises 2053 times at the 808's tuning and twice that an octave up, and
-    /// the others in their ratios.
+    /// the others in their ratios. The 808's frequencies are written out
+    /// here (Werner, section 3), so a wrong one in the code fails.
     #[test]
     fn the_oscillators_are_at_the_808s_frequencies_and_tune_moves_them() {
+        const WERNER: [f64; 6] = [205.3, 304.4, 369.6, 522.7, 540.0, 800.0];
         for (tune_hz, ratio) in [(205.3, 1.0), (410.6, 2.0)] {
             let mut metal = Metal::new(tune_hz, RATE, 1);
             let mut rises = [0u32; 6];
@@ -147,7 +195,7 @@ mod tests {
                     }
                 }
             }
-            for (rises, frequency) in rises.iter().zip(FREQUENCIES) {
+            for (rises, frequency) in rises.iter().zip(WERNER) {
                 let expected = 10.0 * frequency * ratio;
                 assert!(
                     (f64::from(*rises) - expected).abs() <= 1.0,
@@ -157,14 +205,15 @@ mod tests {
         }
     }
 
-    /// Each square spends 47.98% of its cycle high: the sum's average over
-    /// a long time is what six such squares average, 2 × 0.4798 - 1.
+    /// Each square spends 47.98% of its cycle high (Werner, section 3): the
+    /// sum's average over a long time is what six such squares average,
+    /// 2 × 0.4798 - 1, about -0.040. A square at 50% would average 0.
     #[test]
     fn the_squares_have_the_808s_duty() {
         let mut metal = Metal::new(205.3, RATE, 1);
         let n = (20.0 * RATE) as usize;
         let mean = (0..n).map(|_| metal.next_sample()).sum::<f64>() / n as f64;
-        assert!((mean - (2.0 * DUTY - 1.0)).abs() < 1e-3, "mean {mean}");
+        assert!((mean - (2.0 * 0.4798 - 1.0)).abs() < 1e-3, "mean {mean}");
     }
 
     /// Tune glides rather than jumping: a tenth of the way through its
@@ -196,9 +245,32 @@ mod tests {
             skipped.skip();
         }
         assert_eq!(heard.next_sample(), skipped.next_sample());
-        heard.restart();
+        heard.restart(false);
         let first = heard.next_sample();
-        heard.restart();
+        heard.restart(false);
         assert_eq!(heard.next_sample(), first);
+    }
+
+    /// A restart while the hats ring crossfades over 5 ms from where the
+    /// metal was to where it restarts, rather than jumping, and after it
+    /// the metal is exactly where a restart while quiet would put it.
+    #[test]
+    fn a_restart_while_ringing_crossfades() {
+        let mut ringing = Metal::new(205.3, RATE, 1);
+        for _ in 0..1000 {
+            ringing.next_sample();
+        }
+        let (mut old, mut quiet) = (ringing, Metal::new(205.3, RATE, 1));
+        ringing.restart(true);
+        quiet.next_sample();
+        quiet.restart(false);
+        let steps = (0.005 * RATE) as u32;
+        for step in 1..=steps {
+            let (from, to) = (old.next_sample(), quiet.next_sample());
+            let share = f64::from(steps + 1 - step) / f64::from(steps + 1);
+            let mixed = ringing.next_sample();
+            assert!((mixed - (from * share + to * (1.0 - share))).abs() < 1e-12);
+        }
+        assert_eq!(ringing.next_sample(), quiet.next_sample());
     }
 }

@@ -511,14 +511,12 @@ impl Kit {
     /// the snare's oscillators start from the same point whenever it has died
     /// away, so neither is touched.
     ///
-    /// The metal restarts too, unless the hats are ringing: its square waves
-    /// would jump, and the hats would click. Then it carries on, and that
-    /// one start differs from a render.
+    /// The metal restarts too. If the hats are ringing, it crossfades to
+    /// its restarted self over a few milliseconds, since its square waves
+    /// jumping would make the hats click.
     pub(crate) fn restart(&mut self) {
         self.noise.restart();
-        if !self.hats.is_sounding() {
-            self.metal.restart();
-        }
+        self.metal.restart(self.hats.is_sounding());
     }
 
     /// Whether any sound is ringing, or about to.
