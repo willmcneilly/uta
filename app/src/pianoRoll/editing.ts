@@ -88,6 +88,35 @@ export function dragNote(
 }
 
 /**
+ * Where a resize puts `notes`, all together, when `drag` (a resize of one of
+ * them, from its start or its end) has the pointer at `tick`. The dragged
+ * note goes where {@link dragNote} puts it, and every other note's length
+ * changes by the same amount, at the same end. Each stays at least one step
+ * long (or as long as it was, if it was already shorter) and never starts
+ * before its clip.
+ */
+export function resizeNotes(
+  notes: readonly NoteView[],
+  drag: Drag,
+  tick: number,
+  step: number,
+  clipStart: number,
+): NoteView[] {
+  const dragged = dragNote(drag, tick, drag.pitch, step, clipStart);
+  const change = dragged.length - drag.from.length;
+  return notes.map((note) => {
+    if (note.id === drag.from.id) return dragged;
+    const shortest = Math.min(step, note.length);
+    if (drag.kind !== "start") {
+      return { ...note, length: Math.max(shortest, note.length + change) };
+    }
+    const end = note.start + note.length;
+    const start = clamp(note.start - change, 0, end - shortest);
+    return { ...note, start, length: end - start };
+  });
+}
+
+/**
  * Where a move puts `notes`, all together, when `drag` (a move of one of
  * them) has the pointer at `tick` and `pitch`. The dragged note's start snaps
  * to the grid, and the rest keep their places relative to it. The move stops
@@ -111,6 +140,30 @@ export function moveNotes(
   const ticks = Math.max(-earliest, snapNearest(start + tick - drag.tick, step) - start);
   const pitches = clamp(pitch - drag.pitch, -lowest, PITCH_COUNT - 1 - highest);
   return notes.map((note) => ({ ...note, start: note.start + ticks, pitch: note.pitch + pitches }));
+}
+
+/**
+ * `notes` moved `semitones` up (negative is down), all together. The move
+ * stops where any note would go off the keyboard, so a chord keeps its shape.
+ */
+export function transposeNotes(notes: readonly NoteView[], semitones: number): NoteView[] {
+  if (notes.length === 0) return [];
+  const lowest = Math.min(...notes.map((note) => note.pitch));
+  const highest = Math.max(...notes.map((note) => note.pitch));
+  const change = clamp(semitones, -lowest, PITCH_COUNT - 1 - highest);
+  return notes.map((note) => ({ ...note, pitch: note.pitch + change }));
+}
+
+/**
+ * `notes` moved `ticks` later (negative is earlier), all together. The move
+ * stops where the earliest would go before its clip's start, so the notes
+ * keep their spacing.
+ */
+export function shiftNotes(notes: readonly NoteView[], ticks: number): NoteView[] {
+  if (notes.length === 0) return [];
+  const earliest = Math.min(...notes.map((note) => note.start));
+  const change = Math.max(-earliest, ticks);
+  return notes.map((note) => ({ ...note, start: note.start + change }));
 }
 
 /** A note's bar in the velocity lane is this close to the pointer to be picked. */

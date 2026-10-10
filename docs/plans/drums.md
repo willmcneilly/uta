@@ -1,6 +1,6 @@
 # Project: Drums
 
-**Status:** Created, amended 2026-10-10 (UTA-52 waits for UTA-43) · **RFC:** [RFC-006](../rfcs/rfc-006-drums.md) · **Notion:** https://app.notion.com/p/Drums-3f53af969b6f81e1ae4edc50119a07d3
+**Status:** Created, amended 2026-10-10 (UTA-52 waits for UTA-43; UTA-52 adds the arrow keys) · **RFC:** [RFC-006](../rfcs/rfc-006-drums.md) · **Notion:** https://app.notion.com/p/Drums-3f53af969b6f81e1ae4edc50119a07d3
 
 ## Goal
 
@@ -116,12 +116,13 @@ Checked against `main` at `290e6f7`, after UTA-45. RFC-005's project is Active: 
 
 ### 6. [UTA-52] Duplicate notes with ⌥-drag, and resize the whole selection (Feature)
 
-**Goal:** Two piano-roll comforts from the scratchpad, for every kind of track: ⌥-dragging selected notes leaves the originals and moves copies, and resizing one selected note resizes them all together.
+**Goal:** Two piano-roll comforts from the scratchpad, for every kind of track: ⌥-dragging selected notes leaves the originals and moves copies, and resizing one selected note resizes them all together. And a third, which Will added while it was in progress: the arrow keys move the selected notes in pitch.
 
 **Acceptance criteria**
 - [ ] ⌥-dragging a selected note moves a copy of the whole selection and leaves the originals. Letting go of ⌥ mid-drag goes back to a plain move. The copy is one command and one undo step, and the copies are selected afterwards.
 - [ ] Resizing one note of a selection changes every selected note's length by the same amount, with each note kept at least one grid step long. One command, one undo step.
 - [ ] UI tests against the mocked back end: ⌥-drag sends one `AddNotes` with the copies in the right place; a plain drag still moves; resizing a selection sends one `SetNotes` with every note's new length.
+- [ ] ↑ and ↓ move the selected notes a semitone, and ⇧↑ and ⇧↓ an octave, as in Ableton, playing the first of them where it lands. ← and → move them a grid step. Each press is one undo step, and the notes stop at the ends of the keyboard and at the clip's start. Moved notes overlap what they pass over, and trim what they cover once they're deselected, as in Ableton. UI tests check the commands. (Added by Will, 2026-10-10. Drum lanes (7) assume these keys exist.)
 
 **Out of scope:** The same comforts for clips in the timeline. Drum lanes (7), which check that both work on a drum track.
 

@@ -12,6 +12,7 @@ import {
   announceChange,
   firstClip,
   projectView,
+  trackView,
   recordingFactory,
   withFirstClipNotes,
 } from "./testing";
@@ -132,6 +133,8 @@ const roll = () => screen.getByRole("application", { name: "Notes" });
 
 /** The pointer at `tick` (from the song's start) in the middle of `pitch`'s row. */
 interface Modifiers {
+  altKey?: boolean;
+  ctrlKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
 }
@@ -167,6 +170,13 @@ async function release() {
 async function key(target: Window | HTMLElement, name: string) {
   await act(async () => {
     fireEvent.keyDown(target, { key: name });
+  });
+}
+
+/** Lets go of a key, such as ⌥, with no other key held. */
+async function keyUp(name: string) {
+  await act(async () => {
+    fireEvent.keyUp(window, { key: name });
   });
 }
 
@@ -501,6 +511,8 @@ describe("moving and deleting a selection", () => {
     await waitFor(() => expect(drawnNote("high")).toMatchObject({ pitch: 74, start: 5760 }));
     // Still both selected, to move again.
     expect(renderer.lastSelected()).toEqual(["high", "low"]);
+    // A move, not a copy.
+    expect(sent("add_notes")).toEqual([]);
   });
 
   it("puts them all back on Esc", async () => {
@@ -521,6 +533,376 @@ describe("moving and deleting a selection", () => {
     expect(sent("remove_notes")).toEqual([{ clip: "clip-1", notes: ["low", "high"] }]);
     await waitFor(() => expect(renderer.lastNotes()).toEqual([]));
     expect(renderer.lastSelected()).toEqual([]);
+  });
+});
+
+describe("⌥-dragging copies of a selection", () => {
+  const alt = { altKey: true };
+  const selectBoth = async () => {
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+  };
+  const positions = (notes: NoteView[]) => notes.map(({ pitch, start }) => [pitch, start]);
+
+  it("moves copies as one AddNotes, leaving the originals, and selects the copies", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await release();
+
+    const adds = sent("add_notes");
+    expect(adds).toHaveLength(1);
+    const copies = adds[0].notes as NoteView[];
+    expect(positions(copies)).toEqual([
+      [62, 960],
+      [74, 4800],
+    ]);
+    expect(copies.map((copy) => copy.id)).not.toContain("low");
+    expect(copies.map((copy) => copy.id)).not.toContain("high");
+    // Trimmed under, as part of the same gesture, so it's one undo step.
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: copies.map((copy) => copy.id), gesture: adds[0].gesture },
+    ]);
+    expect(edits()).toEqual(["add_notes", "trim_notes"]);
+
+    // The originals are where they were, and the copies are drawn and selected.
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(4));
+    expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 });
+    expect(drawnNote("high")).toMatchObject({ pitch: 72, start: 3840 });
+    expect(renderer.lastSelected()).toEqual(copies.map((copy) => copy.id).sort());
+  });
+
+  it("moves the copies on as the drag goes on, as part of the same gesture", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await moveTo(240 + 1920, 62, alt);
+    await release();
+
+    const [add] = sent("add_notes");
+    const [set] = sent("set_notes");
+    const ids = (add.notes as NoteView[]).map((copy) => copy.id);
+    expect((set.notes as NoteView[]).map((copy) => copy.id)).toEqual(ids);
+    expect(positions(set.notes as NoteView[])).toEqual([
+      [62, 1920],
+      [74, 5760],
+    ]);
+    expect(set.gesture).toBe(add.gesture);
+    expect(edits()).toEqual(["add_notes", "set_notes", "trim_notes"]);
+  });
+
+  it("goes back to a plain move when ⌥ is let go mid-drag, as a gesture of its own", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await moveTo(240 + 1920, 62);
+    await release();
+
+    const [add] = sent("add_notes");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: add.gesture }]);
+    const [set] = sent("set_notes");
+    expect(set.notes).toEqual([note("low", 62, 1920), note("high", 74, 5760)]);
+    expect(set.gesture).not.toBe(add.gesture);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low", "high"], gesture: set.gesture },
+    ]);
+    expect(edits()).toEqual(["add_notes", "cancel_gesture", "set_notes", "trim_notes"]);
+
+    // No copies are left, and the moved notes are selected again.
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 62, start: 1920 }));
+    expect(renderer.lastNotes()).toHaveLength(2);
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("swaps as soon as ⌥ is let go or pressed, without waiting for the pointer to move", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await keyUp("Alt");
+    expect(sent("set_notes").map((set) => set.notes)).toEqual([
+      [note("low", 62, 960), note("high", 74, 4800)],
+    ]);
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Alt", altKey: true });
+    });
+    expect(sent("add_notes")).toHaveLength(2);
+    expect(edits()).toEqual(["add_notes", "cancel_gesture", "set_notes", "cancel_gesture", "add_notes"]);
+  });
+
+  it("starts copying when ⌥ is pressed mid-drag", async () => {
+    await renderApp();
+    await press(240, 60);
+    await moveTo(240 + 960, 60);
+    await moveTo(240 + 960, 60, alt);
+    const [set] = sent("set_notes");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: set.gesture }]);
+    const [add] = sent("add_notes");
+    expect(positions(add.notes as NoteView[])).toEqual([[60, 960]]);
+    await waitFor(() => expect(drawnNote("low")).toMatchObject({ pitch: 60, start: 0 }));
+  });
+
+  it("removes the copies on Esc, and selects the originals again", async () => {
+    await renderApp();
+    await selectBoth();
+    await press(240, 60, alt);
+    await moveTo(240 + 960, 62, alt);
+    await key(window, "Escape");
+    expect(sent("cancel_gesture")).toEqual([{ gesture: sent("add_notes")[0].gesture }]);
+    await waitFor(() => expect(renderer.lastNotes()).toHaveLength(2));
+    await waitFor(() => expect(renderer.lastSelected()).toEqual(["high", "low"]));
+  });
+
+  it("does nothing for an ⌥-click", async () => {
+    await renderApp();
+    await click(240, 60, alt);
+    expect(edits()).toEqual([]);
+  });
+});
+
+describe("resizing a selection", () => {
+  const selectBoth = async () => {
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+  };
+
+  it("changes every selected note's length by the same amount, in one SetNotes", async () => {
+    await renderApp();
+    await selectBoth();
+    // "low"'s end: 480 longer.
+    await press(470, 60);
+    await moveTo(470 + 500, 60);
+    await release();
+    const [set] = sent("set_notes");
+    expect(set.notes).toEqual([note("low", 60, 0, 960), note("high", 72, 3840, 960)]);
+    expect(sent("trim_notes")).toEqual([
+      { clip: "clip-1", notes: ["low", "high"], gesture: set.gesture },
+    ]);
+    expect(edits()).toEqual(["set_notes", "trim_notes"]);
+    await waitFor(() => expect(drawnNote("high")).toMatchObject({ length: 960 }));
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("moves every start by the same amount from a start", async () => {
+    await renderApp();
+    await selectBoth();
+    // "high"'s start: 240 later, so 240 shorter.
+    await press(3840 + 10, 72);
+    await moveTo(3840 + 10 + 250, 72);
+    expect(sent("set_notes")[0].notes).toEqual([
+      note("low", 60, 240, 240),
+      note("high", 72, 4080, 240),
+    ]);
+  });
+
+  it("keeps each note at least one grid step long", async () => {
+    project = projectView({}, [note("low", 60, 0, 480), note("long", 64, 960, 1920)]);
+    await renderApp();
+    await click(240, 60);
+    await click(960 + 240, 64, { shiftKey: true });
+    // "long"'s end, 1680 shorter: both stop at a sixteenth.
+    await press(960 + 1910, 64);
+    await moveTo(960 + 1910 - 1680, 64);
+    expect(sent("set_notes")[0].notes).toEqual([
+      note("low", 60, 0, 240),
+      note("long", 64, 960, 240),
+    ]);
+  });
+});
+
+describe("moving notes with the arrow keys", () => {
+  const auditioned = () => sent("audition_note").map((args) => args.pitch);
+
+  const arrow = async (name: string, modifiers: Modifiers = {}) => {
+    await act(async () => {
+      fireEvent.keyDown(roll(), { key: name, ...modifiers });
+    });
+  };
+
+  it("moves the selection a semitone with ↑ and ↓, each press one undo step", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await arrow("ArrowUp");
+    await arrow("ArrowDown");
+    await arrow("ArrowDown");
+
+    const sets = sent("set_notes");
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 61, 0), note("high", 73, 3840)],
+      [note("low", 60, 0), note("high", 72, 3840)],
+      [note("low", 59, 0), note("high", 71, 3840)],
+    ]);
+    expect(new Set(sets.map((set) => set.gesture)).size).toBe(3);
+    // Nothing is trimmed while the notes stay selected.
+    expect(sent("trim_notes")).toEqual([]);
+    await waitFor(() => expect(drawnNote("high")).toMatchObject({ pitch: 71 }));
+    expect(renderer.lastSelected()).toEqual(["high", "low"]);
+  });
+
+  it("plays the first selected note where each press puts it", async () => {
+    // A chord on the first beat: its lowest note plays.
+    project = projectView({}, [note("e", 64, 0), note("c", 60, 0), note("later", 55, 960)]);
+    await renderApp();
+    await click(240, 64);
+    await click(240, 60, { shiftKey: true });
+    await click(960 + 240, 55, { shiftKey: true });
+    await arrow("ArrowUp");
+    await arrow("ArrowDown", { shiftKey: true });
+    expect(auditioned()).toEqual([61, 49]);
+  });
+
+  it("moves it an octave with Shift", async () => {
+    await renderApp();
+    await click(240, 60);
+    await arrow("ArrowUp", { shiftKey: true });
+    await arrow("ArrowDown", { shiftKey: true });
+    await arrow("ArrowDown", { shiftKey: true });
+    expect(sent("set_notes").map((set) => set.notes)).toEqual([
+      [note("low", 72, 0)],
+      [note("low", 60, 0)],
+      [note("low", 48, 0)],
+    ]);
+  });
+
+  it("stops at the ends of the keyboard, sending nothing once there", async () => {
+    await renderApp();
+    await click(240, 60);
+    for (let i = 0; i < 6; i++) await arrow("ArrowDown", { shiftKey: true });
+    // 60 down to 0 in octaves, then nothing: 0 is the lowest note.
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].pitch)).toEqual([
+      48, 36, 24, 12, 0,
+    ]);
+  });
+
+  it("moves the selection a grid step with ← and →, without playing it", async () => {
+    await renderApp();
+    await click(240, 60);
+    await click(3840 + 240, 72, { shiftKey: true });
+    await arrow("ArrowRight");
+    await arrow("ArrowRight");
+    await arrow("ArrowLeft");
+
+    const sets = sent("set_notes");
+    // A sixteenth, the grid the piano roll opens with.
+    expect(sets.map((set) => set.notes)).toEqual([
+      [note("low", 60, 240), note("high", 72, 4080)],
+      [note("low", 60, 480), note("high", 72, 4320)],
+      [note("low", 60, 240), note("high", 72, 4080)],
+    ]);
+    expect(new Set(sets.map((set) => set.gesture)).size).toBe(3);
+    expect(sent("trim_notes")).toEqual([]);
+    expect(auditioned()).toEqual([]);
+  });
+
+  it("moves by the grid picked in the Snap menu, or a sixteenth with snapping off", async () => {
+    await renderApp();
+    await click(240, 60);
+    fireEvent.change(screen.getByLabelText("Snap"), { target: { value: "1/4" } });
+    await arrow("ArrowRight");
+    fireEvent.change(screen.getByLabelText("Snap"), { target: { value: "off" } });
+    await arrow("ArrowRight");
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].start)).toEqual([
+      960, 1200,
+    ]);
+  });
+
+  it("stops at the clip's start, sending nothing once there", async () => {
+    await renderApp();
+    await click(240, 60);
+    await arrow("ArrowRight");
+    await arrow("ArrowLeft");
+    await arrow("ArrowLeft");
+    expect(sent("set_notes").map((set) => (set.notes as NoteView[])[0].start)).toEqual([
+      240, 0,
+    ]);
+  });
+
+  describe("trims what the moved notes cover only once they're deselected", () => {
+    const moveThroughTheChord = async () => {
+      // Move the C up through the E and on: the chord stays whole meanwhile.
+      project = projectView({}, [note("c", 60, 0), note("e", 64, 0), note("g", 67, 0)]);
+      await renderApp();
+      await click(240, 60);
+      for (let i = 0; i < 5; i++) await arrow("ArrowUp");
+      expect(sent("trim_notes")).toEqual([]);
+    };
+    const lastMove = () => sent("set_notes").at(-1)?.gesture;
+
+    it("on Esc, as part of the last press's gesture", async () => {
+      await moveThroughTheChord();
+      await key(roll(), "Escape");
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
+      // Once only.
+      await key(roll(), "Escape");
+      expect(sent("trim_notes")).toHaveLength(1);
+    });
+
+    it("on selecting another note", async () => {
+      await moveThroughTheChord();
+      await click(240, 67);
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
+    });
+
+    it("before drawing a note, so the trim goes first", async () => {
+      await moveThroughTheChord();
+      await press(1920, 62);
+      expect(edits()).toEqual([...Array(5).fill("set_notes"), "trim_notes", "add_notes"]);
+      expect(sent("trim_notes")[0].gesture).toBe(lastMove());
+    });
+
+    it("on switching to the Sound tab", async () => {
+      await moveThroughTheChord();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+      });
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
+    });
+
+    it("on opening another track's clip, in the clip the notes are in", async () => {
+      const chord = [note("c", 60, 0), note("e", 64, 0), note("g", 67, 0)];
+      project = projectView({
+        tracks: [
+          trackView("track-1", "Synth 1", [{ id: "clip-1", start: 0, length: 4 * 3840, notes: chord }]),
+          trackView("track-2", "Synth 2", [{ id: "clip-2", start: 0, length: 3840, notes: [] }]),
+        ],
+      });
+      await renderApp();
+      await click(240, 60);
+      await arrow("ArrowUp");
+      expect(sent("trim_notes")).toEqual([]);
+      await act(async () => {
+        fireEvent.pointerDown(screen.getByRole("listitem", { name: "Synth 2" }));
+      });
+      expect(sent("trim_notes")).toEqual([{ clip: "clip-1", notes: ["c"], gesture: lastMove() }]);
+    });
+
+    it("before a drag of the same notes, and a paste or duplicate", async () => {
+      await moveThroughTheChord();
+      await press(240, 65);
+      expect(sent("trim_notes")).toHaveLength(1);
+      await release();
+      await arrow("ArrowUp");
+      await menu("duplicate");
+      // The moved note's trim, then the duplicate's own add and trim.
+      expect(edits().slice(-4)).toEqual(["set_notes", "trim_notes", "add_notes", "trim_notes"]);
+    });
+  });
+
+  it("does nothing with nothing selected, or with ⌘, Ctrl or ⌥ held", async () => {
+    await renderApp();
+    await arrow("ArrowUp");
+    await arrow("ArrowRight");
+    await click(240, 60);
+    await arrow("ArrowUp", { metaKey: true });
+    await arrow("ArrowUp", { altKey: true });
+    await arrow("ArrowDown", { ctrlKey: true });
+    await arrow("ArrowLeft", { metaKey: true });
+    await arrow("ArrowRight", { altKey: true });
+    expect(edits()).toEqual([]);
   });
 });
 
