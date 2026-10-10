@@ -154,6 +154,35 @@ pub struct KitRowView {
     /// Each of the sound's settings, in the order of its panel. Empty for a
     /// sound that has none yet.
     pub settings: Vec<DrumSettingView>,
+    /// Settings it takes from another sound, which its panel says, if any.
+    pub shares: Option<SharedSettingsView>,
+}
+
+/// Settings one sound takes from another: the open hat plays with the
+/// closed hat's Tune and Tone, as on the 808.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedSettingsView {
+    /// The sound they belong to.
+    pub sound: DrumSound,
+    /// What the panel calls them, in its order.
+    pub labels: Vec<&'static str>,
+}
+
+impl SharedSettingsView {
+    /// What `sound` takes from another sound, if anything.
+    fn of(sound: DrumSound) -> Option<Self> {
+        match sound {
+            DrumSound::OpenHat => Some(Self {
+                sound: DrumSound::ClosedHat,
+                labels: vec![
+                    drum_label(&DrumParam::TuneHz(0.0)),
+                    drum_label(&DrumParam::Tone(0.0)),
+                ],
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// One setting of one drum sound: what the panel calls it, its value, the
@@ -200,7 +229,7 @@ impl DrumUnit {
             DrumParam::Tone(_) => match sound {
                 DrumSound::Kick => Self::Fraction,
                 DrumSound::Snare => Self::Seconds,
-                DrumSound::Clap => Self::Hz,
+                DrumSound::Clap | DrumSound::ClosedHat => Self::Hz,
                 _ => return None,
             },
         })
@@ -243,6 +272,7 @@ impl From<&KitSettings> for KitView {
                                 .expect("every setting a kit has has a unit"),
                         })
                         .collect(),
+                    shares: SharedSettingsView::of(row.sound),
                 })
                 .collect(),
         }
@@ -2518,6 +2548,20 @@ mod tests {
             [tone_unit(0), tone_unit(1), tone_unit(2)],
             ["fraction", "seconds", "hz"]
         );
+        // The open hat says where its Tune and Tone are; no other sound
+        // shares anything.
+        let open_hat = KIT
+            .iter()
+            .position(|row| row.sound == DrumSound::OpenHat)
+            .unwrap();
+        for (i, row) in source["kit"]["rows"].as_array().unwrap().iter().enumerate() {
+            let expected = if i == open_hat {
+                serde_json::json!({"sound": "closed_hat", "labels": ["Tune", "Tone"]})
+            } else {
+                serde_json::Value::Null
+            };
+            assert_eq!(row["shares"], expected, "{}", row["name"]);
+        }
         assert_eq!(source["kit"]["rows"][7]["name"], "Cymbal");
     }
 

@@ -83,6 +83,15 @@
   row-gap: var(--space-2);
 }
 
+/* Settings a sound takes from another, said where its knobs would be. */
+.strip-shared {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--font-label);
+  text-align: center;
+}
+
 /* A sound without its circuit yet says so, quietly. */
 .strip-empty {
   grid-column: 1 / -1;

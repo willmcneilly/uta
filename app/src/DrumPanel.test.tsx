@@ -150,6 +150,16 @@ describe("the drum panel", () => {
     expect(slider("Clap tone")).toHaveAttribute("aria-valuetext", "1000 Hz");
     expect(strip("Snare").getByText("Snappy")).toBeVisible();
 
+    // The hats: Tone in Hz, whole up to 10 kHz; the open hat's Tune and
+    // Tone are the closed hat's, and it says so.
+    expect(slider("Closed hat tone")).toHaveAttribute("aria-valuetext", "7100 Hz");
+    expect(strip("Open hat").getAllByRole("slider").map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Open hat decay",
+      "Open hat level",
+    ]);
+    expect(strip("Open hat").getByText("Tune and Tone: the closed hat’s")).toBeInTheDocument();
+    expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(1);
+
     // A sound without its circuit yet has a name and nothing to turn.
     expect(strip("Cymbal").queryAllByRole("slider")).toEqual([]);
     expect(strip("Cymbal").getByText("No controls yet")).toBeInTheDocument();
@@ -173,6 +183,7 @@ describe("the drum panel", () => {
         { name: "decay_seconds", label: "Decay", value: 0.2, limits: [0.1, 0.6], default: 0.2, unit: "seconds" },
         { name: "level_db", label: "Level", value: -6, limits: [-60, 6], default: -6, unit: "db" },
       ],
+      shares: null,
     };
     project = withKit(KIT_ROWS.map((row) => (row.sound === "low_tom" ? tom : row)));
     await renderSound();

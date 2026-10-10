@@ -54,10 +54,21 @@ const isLevel = (setting: DrumSettingView) => setting.name === "level_db";
 
 interface StripProps extends Omit<Props, "rows"> {
   row: KitRowView;
+  /** What the sound it shares settings with is called, if it shares any. */
+  sharedWith?: string;
 }
 
-/** One sound: its name, which plays it, its knobs two to a row, and its Level beside them. */
-function Strip({ row, onChange, onAudition }: StripProps) {
+/** "Tune", "Tune and Tone", "Tune, Tone and Decay". */
+function listed(labels: string[]): string {
+  return labels.length < 2 ? (labels[0] ?? "") : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+}
+
+/**
+ * One sound: its name, which plays it, its knobs two to a row, and its
+ * Level beside them. Where its other settings belong to another sound, it
+ * says so where they'd be.
+ */
+function Strip({ row, sharedWith, onChange, onAudition }: StripProps) {
   const level = row.settings.find(isLevel);
   const knobs = row.settings.filter((setting) => !isLevel(setting));
   const control = (setting: DrumSettingView) => ({
@@ -93,6 +104,11 @@ function Strip({ row, onChange, onAudition }: StripProps) {
               {...control(setting)}
             />
           ))}
+          {row.shares && sharedWith && (
+            <p className="strip-shared">
+              {listed(row.shares.labels)}: the {sharedWith.toLowerCase()}’s
+            </p>
+          )}
         </div>
       )}
       {level && (
@@ -112,7 +128,13 @@ export function DrumPanel({ rows, onChange, onAudition }: Props) {
   return (
     <div className="drums" role="group" aria-label="Drum kit">
       {rows.map((row) => (
-        <Strip key={row.sound} row={row} onChange={onChange} onAudition={onAudition} />
+        <Strip
+          key={row.sound}
+          row={row}
+          sharedWith={rows.find((other) => other.sound === row.shares?.sound)?.name}
+          onChange={onChange}
+          onAudition={onAudition}
+        />
       ))}
     </div>
   );

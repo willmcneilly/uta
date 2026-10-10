@@ -144,6 +144,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("decay_seconds", 0.3, [0.05, 0.8], "seconds"),
       setting("level_db", 0, [-60, 6], "db"),
     ],
+    shares: null,
   },
   {
     sound: "snare",
@@ -155,6 +156,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("snappy", 0.5, [0, 1], "fraction"),
       setting("level_db", 0, [-60, 6], "db"),
     ],
+    shares: null,
   },
   {
     sound: "clap",
@@ -165,12 +167,33 @@ export const KIT_ROWS: KitRowView[] = [
       setting("decay_seconds", 0.2, [0.05, 0.4], "seconds"),
       setting("level_db", 0, [-60, 6], "db"),
     ],
+    shares: null,
   },
-  { sound: "low_tom", name: "Low tom", pitch: 45, settings: [] },
-  { sound: "high_tom", name: "High tom", pitch: 50, settings: [] },
-  { sound: "closed_hat", name: "Closed hat", pitch: 42, settings: [] },
-  { sound: "open_hat", name: "Open hat", pitch: 46, settings: [] },
-  { sound: "cymbal", name: "Cymbal", pitch: 49, settings: [] },
+  { sound: "low_tom", name: "Low tom", pitch: 45, settings: [], shares: null },
+  { sound: "high_tom", name: "High tom", pitch: 50, settings: [], shares: null },
+  {
+    sound: "closed_hat",
+    name: "Closed hat",
+    pitch: 42,
+    settings: [
+      setting("tune_hz", 205.3, [102.65, 410.6], "hz"),
+      setting("tone", 7100, [4000, 12_000], "hz"),
+      setting("decay_seconds", 0.05, [0.02, 0.15], "seconds"),
+      setting("level_db", 0, [-60, 6], "db"),
+    ],
+    shares: null,
+  },
+  {
+    sound: "open_hat",
+    name: "Open hat",
+    pitch: 46,
+    settings: [
+      setting("decay_seconds", 0.35, [0.09, 0.6], "seconds"),
+      setting("level_db", 0, [-60, 6], "db"),
+    ],
+    shares: { sound: "closed_hat", labels: ["Tune", "Tone"] },
+  },
+  { sound: "cymbal", name: "Cymbal", pitch: 49, settings: [], shares: null },
 ];
 
 /** A drum track with the default kit and mixer, and `clips`. */

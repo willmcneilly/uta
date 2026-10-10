@@ -144,6 +144,16 @@ export interface KitRowView {
   pitch: number;
   /** In the order of its panel. Empty for a sound that has none yet. */
   settings: DrumSettingView[];
+  /** Settings it takes from another sound, which its panel says, or null. */
+  shares: SharedSettingsView | null;
+}
+
+/** Settings one sound takes from another: the open hat's Tune and Tone are the closed hat's. */
+export interface SharedSettingsView {
+  /** The sound they belong to. */
+  sound: DrumSound;
+  /** What the panel calls them, in its order. */
+  labels: string[];
 }
 
 /** One setting of one drum sound, in that sound's own unit. */
