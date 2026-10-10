@@ -222,6 +222,21 @@ For a crowded place where the exact number matters, such as tempo. A label, and 
 - **Typing:** a click without dragging opens it for typing: a text box over it in the same type and place, the value selected to type over, a `selected` caret and selection wash (`selected-wash`), and the hairline heavier (`stroke-clip-selected`) in `selected`. Return sets it, as one undo step; Escape leaves it as it was, and so does anything it can't read; clicking away sets it. It reads units and shorthand ("120", "120 bpm", "1k", "250 ms", "−6"), and a value out of range goes to the nearest end.
 - **Behaviour:** as in Setting a number, dragged up and down, a step for every 2px. The first click of a double-click opens the box and the second closes it and resets, so the box shows for a moment.
 
+### Knob
+
+For a setting in a compact group that stands on its own, such as pan or the synth's cutoff. A label, the knob, and its value underneath. Provisional (D-19) until it's adopted.
+- **Drawing:** flat, with no bevel, shadow or metal. A thin arc for the range, 270° from bottom left to bottom right (`ink-3` at `stroke-grid`); the value as an `ink` arc and an `ink` indicator from near the centre out to the arc (`stroke-curve`); and a tick outside the arc where a reset sets it (`ink-3`). The value's arc runs from the start of the range, or from the middle for a centred setting such as pan. The dial is 32px across.
+- **Value:** underneath, in the `number` type in `ink`. The dial and the value are one hit area, at least as big as the mute and solo keys. The label is above, in the `text` type in `ink-2`, and can be left out where the place around it says what it is (a track's pan, under mute and solo).
+- **States:** as the fader's. Hover and drag darken the range arc to `ink-2`. With focus, the indicator is `selected`. The focus ring (`selected` at `stroke-clip-selected`, `rounded-md` corners) shows for focus from the keyboard, or once a key is pressed after a click. The cursor is an up-down resize arrow.
+- **Behaviour:** as in Setting a number, dragged up and down, never in a circle. 200px of drag go from one end to the other, whatever the knob's size.
+
+### Segmented choice
+
+For five or fewer named options, all visible, such as the waveform. Provisional (D-20) until it's adopted.
+- **Drawing:** a row of options in one `ink-3` outline (`stroke-grid`, `rounded-md` corners). Each option is its name in the `text` type in `ink-2`, with a drawing above it where one helps, such as a cycle of each wave. The chosen one is outlined in `ink`, over the row's outline, with its name and drawing in `ink`. Each option is at least `space-7` tall.
+- **States:** hover shades an option with `line` and darkens it to `ink`; pressing shades it with `line-2`. The focus ring is `selected` at `stroke-clip-selected`, round the option with focus. Disabled options are `ink-3`, with no shading.
+- **Behaviour:** a click chooses an option and gives it focus. The arrow keys move the choice, round from one end to the other. Only the chosen option is in the Tab order. To assistive tech it's a radio group named by its label.
+
 ## Do's and Don'ts
 
 - Do use tokens for every colour. Name a new colour for what it means and add it here first.

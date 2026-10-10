@@ -1,0 +1,109 @@
+/*
+ * The segmented choice: a row of options in one ink-3 outline, each in the
+ * second ink, and the chosen one outlined in ink with its words and drawing
+ * in ink, as D-11's waveform keys were. Hover shades an option and pressing
+ * shades it more. The focus ring is the selected ink, round the option
+ * with focus. Each option is at least space-7 (24 px) tall. provisional: D-20
+ */
+.segmented {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.segmented legend {
+  padding: 0 0 var(--space-3);
+  color: var(--ink-2);
+  font: var(--font-text);
+}
+
+/* Each option as wide as the widest. */
+.segmented-row {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  border: var(--stroke-grid) solid var(--ink-3);
+  border-radius: var(--rounded-md);
+}
+
+.segmented label {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-height: var(--space-7);
+  /* Over the row's outline, so the chosen one's ink outline covers it. */
+  margin: calc(-1 * var(--stroke-grid));
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-clip) solid transparent;
+  border-radius: var(--rounded-md);
+  color: var(--ink-2);
+  font: var(--font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The radio itself is hidden; the option is drawn on its label. It stays in
+   the page, focusable, for the keyboard and assistive tech. */
+.segmented input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-drawing {
+  display: flex;
+}
+
+.segmented-drawing svg {
+  overflow: visible;
+}
+
+.segmented-drawing path {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: var(--stroke-curve);
+  stroke-linejoin: round;
+}
+
+.segmented label:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.segmented label:active {
+  background: var(--line-2);
+}
+
+.segmented label:has(input:checked) {
+  z-index: 1;
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.segmented label:has(input:focus-visible) {
+  z-index: 2;
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+/* Nothing disables it today; disabled beats chosen and hover. */
+.segmented label:has(input:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.segmented label:has(input:disabled:checked) {
+  border-color: var(--ink-3);
+}

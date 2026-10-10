@@ -14,7 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { toPosition } from "./synthScale";
 import * as field from "./design/dragFieldTesting";
-import { press, slide, thumbX } from "./design/faderTesting";
+import { press, slide } from "./design/faderTesting";
+import { knobAt, pressKnob, slideKnob } from "./design/knobTesting";
 import { type BenchmarkOptions, type Clock, DEFAULT_OPTIONS } from "./benchmark/run";
 import type {
   Frame,
@@ -546,6 +547,13 @@ describe("App", () => {
         const drag = press(slider);
         return { to: (value) => drag.to(fraction(value)), release: drag.release };
       };
+    /** Drags a knob up and down to `fraction` of the way round for each value. */
+    const knobDrag =
+      (fraction: (value: number) => number) =>
+      (slider: HTMLElement): ValueDrag => {
+        const drag = pressKnob(slider);
+        return { to: (value) => drag.to(fraction(value)), release: drag.release };
+      };
     /** Drags a drag field whose steps are `step` apart, up or down to each value. */
     const fieldDrag =
       (step: number) =>
@@ -606,7 +614,7 @@ describe("App", () => {
         (args) =>
           toPosition((args.param as { value: number }).value, project.synthLimits.cutoffHz, "log"),
         [800, 700, 600, 500],
-        faderDrag((position) => position / 1000),
+        knobDrag((position) => position / 1000),
       ],
     ];
 
@@ -678,12 +686,12 @@ describe("App", () => {
       await renderSound();
       expect(synth().getByRole("radio", { name: "Saw" })).toBeChecked();
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "20.0 kHz");
-      expect(thumbX(slider("Cutoff"))).toBe(1000);
+      expect(knobAt(slider("Cutoff"))).toBeCloseTo(1, 6);
       expect(slider("Resonance")).toHaveAttribute("aria-valuetext", "0.00");
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "5.0 ms");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "200 ms");
       expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "70%");
-      expect(thumbX(slider("Sustain"))).toBe(700);
+      expect(knobAt(slider("Sustain"))).toBeCloseTo(0.7, 6);
       expect(slider("Release")).toHaveAttribute("aria-valuetext", "200 ms");
     });
 
@@ -745,9 +753,9 @@ describe("App", () => {
         ["Release", "release_seconds", 0.1, "100 ms"],
       ];
       for (const [label, name, value, shown] of cases) {
-        slide(slider(label), 0.5);
+        slideKnob(slider(label), 0.5);
         await waitFor(() => expect(slider(label)).toHaveAttribute("aria-valuetext", shown));
-        expect(thumbX(slider(label))).toBe(500);
+        expect(knobAt(slider(label))).toBeCloseTo(0.5, 6);
         const sent = synthCalls().at(-1)!;
         expect(sent.track).toBe("track-1");
         expect(sent.gesture).toEqual(expect.any(Number));
@@ -759,8 +767,8 @@ describe("App", () => {
 
     it("sends the limits exactly at each end of a slider", async () => {
       await renderSound();
-      slide(slider("Cutoff"), 0);
-      slide(slider("Release"), 1);
+      slideKnob(slider("Cutoff"), 0);
+      slideKnob(slider("Release"), 1);
       await waitFor(() => expect(synthCalls()).toHaveLength(2));
       expect(synthCalls().map((args) => args.param)).toEqual([
         { name: "cutoff_hz", value: 20 },
@@ -770,8 +778,8 @@ describe("App", () => {
 
     it("marks every change in one drag with the same gesture", async () => {
       await renderSound();
-      press(slider("Cutoff")).to(0.8).to(0.6).release();
-      slide(slider("Sustain"), 0.3);
+      pressKnob(slider("Cutoff")).to(0.8).to(0.6).release();
+      slideKnob(slider("Sustain"), 0.3);
       fireEvent.keyDown(slider("Sustain"), { key: "Home" });
 
       await waitFor(() => expect(synthCalls()).toHaveLength(4));
@@ -811,13 +819,13 @@ describe("App", () => {
       project = undone;
       await announceChange();
       expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
-      expect(thumbX(slider("Cutoff"))).toBe(333);
+      expect(knobAt(slider("Cutoff"))).toBeCloseTo(0.333, 6);
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
-      expect(thumbX(slider("Resonance"))).toBe(800);
-      expect(thumbX(slider("Attack"))).toBe(750);
+      expect(knobAt(slider("Resonance"))).toBeCloseTo(0.8, 6);
+      expect(knobAt(slider("Attack"))).toBeCloseTo(0.75, 6);
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "1.00 s");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "10 ms");
-      expect(thumbX(slider("Sustain"))).toBe(250);
+      expect(knobAt(slider("Sustain"))).toBeCloseTo(0.25, 6);
       expect(slider("Release")).toHaveAttribute("aria-valuetext", "2.50 s");
     });
   });
@@ -1134,9 +1142,14 @@ describe("App", () => {
       await waitFor(() =>
         expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument(),
       );
-      slide(pan(), along(0.25, [-1, 1]));
+      slideKnob(pan(), along(0.25, [-1, 1]));
 
       await waitFor(() => expect(within(header("Synth 2")).getByText("R 25")).toBeInTheDocument());
+      // Pan fills from the centre: its value arc starts at the top of the dial.
+      expect(pan().querySelector(".knob-value")).toHaveAttribute(
+        "d",
+        expect.stringMatching(/^M16\.000,5\.000 /),
+      );
       expect(within(header("Synth 2")).getByText("4.5 dB")).toBeInTheDocument();
       const mixers = sent("set_track_mixer");
       expect(mixers.map((args) => args.track)).toEqual(["track-2", "track-2", "track-2"]);

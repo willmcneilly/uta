@@ -3,8 +3,8 @@
 // The UI works it out here, from the exact formula for the engine's filter
 // (crates/uta-engine/src/synth/filter.rs), rather than asking Rust or
 // measuring the filter. It's presentation, like turning a velocity into a
-// colour: the curve follows a slider during a drag with no round trip, and
-// working it out is cheap. Asking Rust would be a round trip on every slider
+// colour: the curve follows a knob during a drag with no round trip, and
+// working it out is cheap. Asking Rust would be a round trip on every knob
 // step, and measuring the real filter (with test tones or an FFT) is far too
 // slow for a drawing that follows a drag.
 //
@@ -49,7 +49,7 @@ export function filterGainDb(
   return 10 * Math.log10(power);
 }
 
-/** The frequencies the drawing spans, in Hz: the cutoff slider's range. */
+/** The frequencies the drawing spans, in Hz: the cutoff knob's range. */
 export const FREQUENCIES: readonly [number, number] = [20, 20_000];
 /**
  * The gains it spans, in dB, from the bottom edge to the top. The top leaves

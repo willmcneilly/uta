@@ -1,0 +1,94 @@
+/*
+ * The knob: a label, a flat dial and the value underneath. The dial is a
+ * thin arc for the range in ink-3, the value as an ink arc with an ink
+ * indicator, and a tick outside the arc where a reset sets it. No bevel,
+ * shadow or metal. The dial and the value are one hit area, at least 40 px
+ * wide, so it's bigger than the mute and solo keys. provisional: D-19
+ */
+.knob {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.knob-label {
+  color: var(--ink-2);
+  font: var(--font-text);
+  white-space: nowrap;
+}
+
+.knob-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-width: 40px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--rounded-md);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.knob-dial {
+  display: block;
+  overflow: visible;
+}
+
+.knob-range {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-grid);
+}
+
+.knob-default {
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-grid);
+}
+
+.knob-value {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+}
+
+.knob-indicator {
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+  stroke-linecap: round;
+}
+
+.knob-value-text {
+  color: var(--ink);
+  font: var(--font-number);
+  /* After the font shorthand, which resets it. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * States, as the fader's (D-8). Hover and drag darken the range arc. Focused,
+ * the indicator turns the selected ink, because the arrow keys now move it.
+ * The focus ring shows for focus from the keyboard, or once a key is
+ * pressed after a click. provisional: D-19
+ */
+.knob-control:hover .knob-range,
+.knob-control[data-dragging] .knob-range {
+  stroke: var(--ink-2);
+}
+
+.knob-control:focus {
+  outline: none;
+}
+
+.knob-control:focus .knob-indicator {
+  stroke: var(--selected);
+}
+
+.knob-control:focus-visible:not([data-pointer-focused]) {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}

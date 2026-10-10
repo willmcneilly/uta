@@ -1,8 +1,10 @@
 /* It scrolls with the timeline rather than by itself, so it has no scroll bar. */
 .track-headers {
-  /* The columns of each volume and pan row, which the meter lines up with. */
+  /* The columns of the volume row, which the meter lines up with. */
   --track-label-width: 28px;
   --track-value-width: 56px;
+  /* The pan knob's column, as wide as mute and solo above it. */
+  --track-pan-width: calc(2 * var(--space-7) + var(--space-1));
 
   flex: 0 0 var(--track-headers-width);
   overflow: hidden;
@@ -25,11 +27,20 @@
   padding: 0;
 }
 
-/* As tall as its row on the timeline, set from TRACK_HEIGHT. */
+/*
+ * As tall as its row on the timeline, set from TRACK_HEIGHT. The name, mute
+ * and solo across the top; under them the volume and the meter, with the
+ * pan knob to their right, under mute and solo. provisional: D-21
+ */
 .track-header {
   display: grid;
+  grid-template-areas:
+    "title title"
+    "volume pan"
+    "meter pan";
+  grid-template-columns: minmax(0, 1fr) var(--track-pan-width);
   align-content: center;
-  gap: var(--space-1);
+  gap: var(--space-1) 0;
   box-sizing: border-box;
   overflow: hidden;
   padding: 0 var(--space-4);
@@ -54,6 +65,7 @@
 }
 
 .track-title {
+  grid-area: title;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -178,8 +190,9 @@
   background: transparent;
 }
 
-/* Volume and pan: the label in the second ink, the value in ink. */
+/* Volume: the label in the second ink, the value in ink. */
 .track-setting {
+  grid-area: volume;
   display: grid;
   grid-template-columns: var(--track-label-width) 1fr var(--track-value-width);
   align-items: center;
@@ -197,11 +210,17 @@
   color: var(--ink);
 }
 
-/* Under the faders' rails: past the label column, its gap and the fader's
-   own room at the end. Its width is the rails' (METER_WIDTH). */
+/* Under the fader's rail: past the label column, its gap and the fader's
+   own room at the end. Its width is the rail's (METER_WIDTH). */
 .track-header .meter {
+  grid-area: meter;
   margin-top: var(--space-1);
   margin-left: calc(var(--track-label-width) + var(--space-3) + var(--space-3));
+}
+
+.track-pan {
+  grid-area: pan;
+  align-self: center;
 }
 
 .add-track-row {

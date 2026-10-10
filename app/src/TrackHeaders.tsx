@@ -1,6 +1,7 @@
 import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
 import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
 import { Fader } from "./design/Fader";
+import { Knob } from "./design/Knob";
 import { linearScale } from "./design/numberScale";
 import { Meter } from "./Meter";
 import type { TrackLevels } from "./meterLevel";
@@ -9,11 +10,11 @@ import { dropIndex, formatPan } from "./trackOrder";
 import "./TrackHeaders.css";
 
 /**
- * Each header's meter, in CSS pixels. It sits under the faders' rails, as
- * wide as they are (see TrackHeaders.css), and thinner than the master's so
- * the headers stay quieter than the clips. provisional: D-12
+ * Each header's meter, in CSS pixels. It sits under the volume fader's rail,
+ * as wide as it is (see TrackHeaders.css), and thinner than the master's so
+ * the headers stay quieter than the clips. provisional: D-12, D-21
  */
-const METER_WIDTH = 148;
+const METER_WIDTH = 98;
 const METER_HEIGHT = 4;
 
 interface Props {
@@ -168,7 +169,7 @@ export function TrackHeaders({
 interface HeaderProps {
   track: TrackView;
   limits: MixerLimits;
-  /** A new track's mixer strip, which a reset sets each fader to. */
+  /** A new track's mixer strip, which a reset sets volume and pan to. */
   defaults: MixerView;
   selected: boolean;
   dragging: boolean;
@@ -241,10 +242,12 @@ function TrackHeader({
         format={formatDb}
         onChange={(volumeDb, gesture) => onMixer({ ...mixer, volumeDb }, gesture)}
       />
-      <Fader
-        className="track-setting"
+      <Knob
+        className="track-pan"
         label="Pan"
         ariaLabel={`${name} pan`}
+        hideLabel
+        centred
         value={mixer.pan}
         defaultValue={defaults.pan}
         scale={linearScale(...limits.pan, 0.01)}
