@@ -541,7 +541,10 @@ fn a_synth_slot_handed_to_a_drum_track_does_not_click() {
         .controller
         .note_on(slot, NoteKey(1), 45, 127)
         .unwrap();
-    renderer.render_seconds(0.3);
+    // A quarter cycle past a whole number of them, so the handover lands at
+    // the sine's peak, where cutting it off would step by its whole level.
+    renderer.render(seconds(0.3) + seconds(0.25 / 110.0));
+    let handover = renderer.samples().len();
     let held = peak(&renderer.samples()[seconds(0.2)..]);
     assert!(held > 0.1, "the sine isn't sounding: {held}");
 
@@ -556,9 +559,13 @@ fn a_synth_slot_handed_to_a_drum_track_does_not_click() {
     renderer.render_seconds(1.0);
 
     let samples = renderer.samples();
-    let after = &samples[seconds(0.3)..];
-    // The kick sounds, and the sine is gone within its 5 ms fade.
-    assert!(peak(after) > 0.4, "no kick: {}", peak(after));
+    let after = &samples[handover..];
+    // The sine is gone after its 5 ms fade: from then on it's exactly a
+    // lone kick.
+    let alone = one_kick(&[], 127, 1.0);
+    let faded = seconds(0.01);
+    assert_eq!(&after[faded..], &alone[faded..after.len()]);
+    assert!(peak(&after[..faded]) > 0.1);
     let (step, _) = lone_hit(&[], 127);
     // The sine's own steepest step, and its fade's, are on top of the
     // kick's: 0.25 is the synth's level at full velocity.
