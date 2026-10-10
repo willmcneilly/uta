@@ -103,8 +103,6 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.rect(area.x, area.y, area.width, area.height);
     context.clip();
 
-    this.drawMillimetres(view, area);
-
     // Rows: black keys shaded, a line under each B (the octave boundary).
     for (let pitch = low; pitch <= high; pitch++) {
       const y = pitchToY(view, pitch);
@@ -143,27 +141,6 @@ class Canvas2DRenderer implements PianoRollRenderer {
     this.drawRuler(view, ticksPerQuarter, bar, loopStart, loopEnd, loopEnabled);
     this.drawKeyboard(view, low, high);
     this.drawVelocityLane(view, ticksPerQuarter, bar);
-  }
-
-  /**
-   * The millimetre grid: fine lines every `mmGap` pixels both ways, behind
-   * the bar and beat lines. It's paper, so it scrolls with the notes but
-   * keeps its size as you zoom (provisional: D-5).
-   */
-  private drawMillimetres(view: Viewport, area: Rect): void {
-    const context = this.contexts.grid;
-    const gap = this.theme.mmGap;
-    const line = this.theme.gridWidth;
-    if (!(gap >= 1)) return;
-    context.fillStyle = this.theme.mmLine;
-    const right = area.x + area.width;
-    const bottom = area.y + area.height;
-    for (let x = area.x + modulo(-view.scrollTicks * view.pixelsPerTick, gap); x < right; x += gap) {
-      context.fillRect(Math.round(x), area.y, line, area.height);
-    }
-    for (let y = area.y + modulo(-view.scrollY, gap); y < bottom; y += gap) {
-      context.fillRect(area.x, Math.round(y), area.width, line);
-    }
   }
 
   /**
@@ -557,9 +534,4 @@ function stem(context: CanvasRenderingContext2D, view: Viewport, note: PlacedNot
   context.rect(x, y, line, bottom - y);
   const head = VELOCITY_HEAD + (line - 1);
   context.rect(x + line / 2 - head / 2, y - head / 2, head, head);
-}
-
-/** `value` wrapped into 0 up to `size`, for negative values too. */
-function modulo(value: number, size: number): number {
-  return ((value % size) + size) % size;
 }

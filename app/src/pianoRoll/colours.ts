@@ -1,20 +1,17 @@
 // The piano roll's colours, line weights and fonts, from the design tokens'
 // CSS variables, so they follow light and dark mode and the tuning panel.
-// They're ranked by ink weight (DESIGN.md, "Elevation & Depth"): the
-// millimetre grid and the rows are faintest, bar lines are ink-3, notes are
+// They're ranked by ink weight (DESIGN.md, "Elevation & Depth"): the rows
+// and finer grid lines are faintest, bar lines are ink-3, notes are
 // ink, and selected notes are drawn heaviest, in the selected ink. The
 // notes sounding now are in the live ink. Its own, not the timeline's, so
 // restyling one never moves the other.
 
 import { readColours } from "../design/readColours";
-import { readFonts, readLineWidths, readPatterns } from "../design/readTokens";
+import { readFonts, readLineWidths } from "../design/readTokens";
 
 export interface Theme {
   /** The drawing surface: the notes, the keys, the ruler and the velocity lane. */
   background: string;
-  /** The millimetre grid behind the bar and beat lines, and its gap. */
-  mmLine: string;
-  mmGap: number;
   blackKeyRow: string;
   /** Over the grid outside the clip. */
   outsideClip: string;
@@ -75,8 +72,6 @@ export function readTheme(element: Element): Theme {
   const widths = readLineWidths(element);
   return {
     background: c.sheet,
-    mmLine: c.mmLine,
-    mmGap: readPatterns(element).mmGridGap,
     blackKeyRow: c.line,
     outsideClip: c.line2,
     barLine: c.ink3,

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { colors, spacing } from "../design/tokens";
 import { createCanvas2DRenderer } from "./canvasRenderer";
-import { readTheme, velocityAlpha } from "./colours";
+import { velocityAlpha } from "./colours";
 import type { PlacedNote } from "./notes";
 import type { PianoRollRenderer, TopMarks } from "./renderer";
 import {
@@ -14,8 +14,7 @@ import {
   velocityLane,
 } from "./viewport";
 
-// The piano roll draws by ink weight: a millimetre grid and faint rows
-// behind the bar and beat lines, notes in ink filled as heavily as they're
+// The piano roll draws by ink weight: faint rows and grid lines, notes in ink filled as heavily as they're
 // played, selected notes heaviest in the selected ink, and the playhead and
 // the notes sounding now in the live ink. Each is checked on what the real
 // renderer asks the canvas to draw.
@@ -130,35 +129,10 @@ describe("the piano roll's canvas renderer", () => {
       (m) => m.call === "fillRect" && m.args[1] === area.y && m.args[3] === area.height && m.args[2] === spacing.strokeGrid,
     );
 
-  it("draws a millimetre grid at the grid-spacing token, behind the bar and beat lines", () => {
+  it("draws the bar and beat lines with DESIGN.md's mapping, and no other columns", () => {
     setUp();
     drawGrid();
-    const mm = grid.filter((m) => m.style === light.mmLine);
-    const across = columns(mm).map((m) => m.args[0] as number);
-    expect(across.length).toBeGreaterThan(10);
-    // Every mm-grid-gap pixels, from the notes' left edge.
-    expect(across.slice(0, 3)).toEqual([area.x, area.x + spacing.mmGridGap, area.x + 2 * spacing.mmGridGap]);
-    const down = mm.filter((m) => m.args[2] === area.width).map((m) => m.args[1] as number);
-    expect(down.length).toBeGreaterThan(5);
-    // Drawn first, so the bar and beat lines go over it.
-    const firstBarLine = grid.findIndex((m) => m.style === light.ink3);
-    const lastMm = grid.map((m) => m.style).lastIndexOf(light.mmLine);
-    expect(lastMm).toBeLessThan(firstBarLine);
-    // The bar and beat lines keep DESIGN.md's mapping.
-    expect(new Set(columns(grid).filter((m) => m.style !== light.mmLine).map((m) => m.style))).toEqual(
-      new Set([light.ink3, light.line2, light.line]),
-    );
-  });
-
-  it("scrolls the millimetre grid with the notes, and takes its gap from the tokens", () => {
-    document.documentElement.style.setProperty("--mm-grid-gap", "16px");
-    expect(readTheme(document.documentElement).mmGap).toBe(16);
-    setUp();
-    drawGrid(undefined, { ...view, scrollTicks: 5 / view.pixelsPerTick, scrollY: view.scrollY + 3 });
-    const mm = grid.filter((m) => m.style === light.mmLine);
-    expect(columns(mm).slice(0, 2).map((m) => m.args[0])).toEqual([area.x + 11, area.x + 27]);
-    const rows = mm.filter((m) => m.args[2] === area.width).map((m) => m.args[1]);
-    expect(rows.slice(0, 2)).toEqual([area.y + 13, area.y + 29]);
+    expect(new Set(columns(grid).map((m) => m.style))).toEqual(new Set([light.ink3, light.line2, light.line]));
   });
 
   it("draws the keys in ink-3 and faint lines, and names each C in the second ink", () => {
@@ -193,7 +167,7 @@ describe("the piano roll's canvas renderer", () => {
   it("draws the grid layer with no ink and neither coloured ink", () => {
     setUp();
     drawGrid();
-    const allowed = [light.sheet, light.mmLine, light.line, light.line2, light.ink3, light.ink2, light.ink];
+    const allowed = [light.sheet, light.line, light.line2, light.ink3, light.ink2, light.ink];
     for (const mark of grid) expect(allowed).toContain(mark.style);
     // Ink only for the loop's dimension line while it's on (its arrowheads are a path).
     const inked = grid.filter((m) => m.style === light.ink && m.call === "fillRect");
