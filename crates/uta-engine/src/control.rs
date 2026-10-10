@@ -6,7 +6,7 @@ use rtrb::{Consumer, Producer};
 use uta_core::TrackId;
 use uta_core::time::{MAX_TICKS, Ticks};
 
-use crate::{Command, NoteKey, Snapshot, Status, SynthSettings, TRACK_SLOTS};
+use crate::{Command, NoteKey, Snapshot, Status, SynthSettings, TRACK_SLOTS, TrackSound};
 
 /// The command queue was full, so the command wasn't sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,8 +213,8 @@ impl Controller {
 
     /// Sets the synth settings of the track in `slot`, by sending a new
     /// snapshot. They glide to their new values. Out-of-range values are
-    /// clamped by the synth. With no track in the slot, the snapshot is sent
-    /// unchanged.
+    /// clamped by the synth. With no synth track in the slot, the snapshot is
+    /// sent unchanged.
     pub fn set_synth_settings(
         &mut self,
         slot: usize,
@@ -225,8 +225,9 @@ impl Controller {
             .tracks_mut()
             .iter_mut()
             .find(|track| track.slot() == slot)
+            && let TrackSound::Synth(synth) = &mut track.sound
         {
-            track.synth = settings;
+            *synth = settings;
         }
         self.set_snapshot(snapshot)
     }
@@ -236,7 +237,8 @@ impl Controller {
     /// and, later, playing live. It sounds whether or not the transport is
     /// playing, until [`Controller::note_off`] with the same slot and key. A
     /// note already sounding with that key in that slot is released first.
-    /// If no track has the slot when it arrives, it doesn't sound.
+    /// If no track has the slot when it arrives, it doesn't sound. On a drum
+    /// track it's a hit, which plays out in full: its note off does nothing.
     pub fn note_on(
         &mut self,
         slot: usize,

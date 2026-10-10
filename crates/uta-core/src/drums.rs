@@ -115,7 +115,8 @@ pub struct KickSettings {
     /// The note it settles on, in Hz.
     pub tune_hz: f32,
     /// How bright it is, from 0 to 1: the low-pass after the resonator,
-    /// which also lets more of the click through.
+    /// from 200 Hz to 8 kHz on a log scale, which also lets more of the
+    /// click through.
     pub tone: f32,
     /// How long it rings: the seconds it takes to die away by 40 dB, about
     /// where it's lost in a mix.
@@ -137,7 +138,8 @@ impl Default for KickSettings {
     fn default() -> Self {
         Self {
             tune_hz: 49.0,
-            tone: 0.5,
+            // Round and deep, with a soft click: about a 420 Hz low-pass.
+            tone: 0.2,
             decay_seconds: 0.3,
             level_db: 0.0,
         }
@@ -342,7 +344,7 @@ mod tests {
 
     #[test]
     fn settings_serialise_and_leave_out_nothing_they_need() {
-        let json = r#"{"kick":{"tune_hz":49.0,"tone":0.5,"decay_seconds":0.3,"level_db":0.0}}"#;
+        let json = r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0}}"#;
         assert_eq!(
             serde_json::to_string(&KitSettings::default()).unwrap(),
             json

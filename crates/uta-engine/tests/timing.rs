@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, Command, Note, NoteId, PlacedClip, PlacedTrack, Project, ProjectId, SynthParam,
-    TrackId,
+    Clip, ClipId, Command, DrumParam, DrumSound, KIT, Note, NoteId, PlacedClip, PlacedTrack,
+    Project, ProjectId, SynthParam, TrackId,
 };
 use uta_engine::offline::Renderer;
-use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, VOICES};
+use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
 use uuid::Uuid;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -44,6 +44,11 @@ enum Load {
     /// one-bar clips × 3,000 stress notes, 588,000 notes in all, with the
     /// volume gliding. See RFC-004, "What we measured".
     Check7,
+    /// 32 drum tracks, each playing every kit note at once on every 16th,
+    /// with every sound at its longest Decay so they never fall silent, and
+    /// the kick's Tune gliding. It grows as the sounds arrive. See RFC-006,
+    /// "Risks & unknowns" (CPU).
+    Drums,
     /// The same song, timing only the first block after Play from bar
     /// 10.5, where the notes already sounding there are started. Play is
     /// pressed [`PLAYS`] times, each once the last Play's notes are silent.
@@ -58,6 +63,7 @@ impl Load {
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
             Self::Check7 => "Check 7 (588k notes)",
+            Self::Drums => "32 drum tracks × every sound",
             Self::Check7FirstBlock => "Check 7, first block after Play from bar 10.5",
         }
     }
@@ -146,6 +152,67 @@ fn many_tracks() -> Project {
     project
 }
 
+/// 32 drum tracks, each hitting every kit note on every 16th of the loop,
+/// with every sound at its longest Decay.
+fn drum_tracks() -> Project {
+    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let synth = project.tracks()[0].id();
+    let loop_length = project.transport().loop_length();
+    let sixteenth = TICKS_PER_QUARTER / 4;
+    let notes = (0..loop_length / sixteenth).flat_map(|step| {
+        KIT.iter().map(move |row| Note {
+            id: NoteId::random(),
+            pitch: row.pitch,
+            velocity: 100,
+            start: step * sixteenth,
+            length: sixteenth,
+        })
+    });
+    let drums = uta_core::Track::new(
+        TrackId::random(),
+        "Drums 1",
+        uta_core::Source::Drums(uta_core::KitSettings::default()),
+    )
+    .with_clips([Clip::new(ClipId::random(), 0, loop_length).with_notes(notes)]);
+    let id = drums.id();
+    project
+        .apply(&Command::AddTracks {
+            tracks: vec![PlacedTrack {
+                index: 1,
+                track: drums,
+            }],
+        })
+        .unwrap();
+    project
+        .apply(&Command::RemoveTracks {
+            tracks: vec![synth],
+        })
+        .unwrap();
+    project
+        .apply(&Command::SetDrumParam {
+            track: id,
+            sound: DrumSound::Kick,
+            param: DrumParam::DecaySeconds(uta_core::KickSettings::MAX_DECAY_SECONDS),
+        })
+        .unwrap();
+    let first = project.tracks()[0].clone();
+    let copies = (1..Project::MAX_TRACKS)
+        .map(|index| PlacedTrack {
+            index,
+            track: first.copy(
+                TrackId::random(),
+                format!("Drums {}", index + 1),
+                ClipId::random,
+                NoteId::random,
+            ),
+        })
+        .collect();
+    project
+        .apply(&Command::AddTracks { tracks: copies })
+        .unwrap();
+    project
+}
+
 struct Report {
     load: Load,
     block_size: usize,
@@ -162,6 +229,7 @@ fn snapshot(load: Load) -> Snapshot {
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks()),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
+        Load::Drums => Snapshot::from(&drum_tracks()),
     }
 }
 
@@ -222,6 +290,16 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
+                // Every kick's Tune, gliding.
+                Load::Drums => {
+                    let mut snapshot = renderer.controller.snapshot().clone();
+                    for track in snapshot.tracks_mut() {
+                        if let TrackSound::Drums(kit) = &mut track.sound {
+                            kit.kick.tune_hz = 40.0 + ((i / 64) % 40) as f32;
+                        }
+                    }
+                    renderer.controller.set_snapshot(snapshot).unwrap();
+                }
                 Load::Check7FirstBlock => unreachable!(),
             }
         }
@@ -285,6 +363,7 @@ fn report_block_timing() {
         Load::Tracks,
         Load::Check7,
         Load::Check7FirstBlock,
+        Load::Drums,
     ];
     for load in loads {
         let snapshot = snapshot(load);

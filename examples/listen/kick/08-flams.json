@@ -1,0 +1,145 @@
+{
+  "project": "b04f3a3c-fda8-5b44-92ae-33e92b786554",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "b27b15d1-8351-5477-aef6-84c1b0dcbeef",
+              "name": "Kick",
+              "source": {
+                "drums": {
+                  "kick": {}
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "464b6300-3bd4-5ea9-a0ae-94567614d8ad",
+                  "start": 0,
+                  "length": 11520,
+                  "notes": [
+                    {
+                      "id": "0bdadd69-64a6-5ff2-a7e7-fa42a198576c",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 883,
+                      "length": 240
+                    },
+                    {
+                      "id": "e4df96d1-2ba5-5d34-ad92-f217e2e96855",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "e80115a6-8f07-5773-8d2b-16b538f61a7a",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 2803,
+                      "length": 240
+                    },
+                    {
+                      "id": "338dbb87-6fa8-5c70-9c77-78c0a5857a4e",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "2ad5807f-775b-5e8a-80ef-a33d388d2b7d",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 4762,
+                      "length": 240
+                    },
+                    {
+                      "id": "d5ddd652-9bf8-577e-a80f-c3365c1e1e06",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 4800,
+                      "length": 240
+                    },
+                    {
+                      "id": "6d6f46ca-7ce3-554f-9346-9b62a7ab9085",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 6682,
+                      "length": 240
+                    },
+                    {
+                      "id": "c344aa71-e54f-52c7-a746-1d27fca08f01",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 6720,
+                      "length": 240
+                    },
+                    {
+                      "id": "8ce600d0-bf29-5dd8-bb97-d3d48084cbe9",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 8621,
+                      "length": 240
+                    },
+                    {
+                      "id": "2ca9662f-deb8-5557-ba0d-3b980999d82d",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 8640,
+                      "length": 240
+                    },
+                    {
+                      "id": "95272171-abac-572b-9cdb-61c08674e801",
+                      "pitch": 36,
+                      "velocity": 64,
+                      "start": 10541,
+                      "length": 240
+                    },
+                    {
+                      "id": "8552b4b1-d6fa-54fc-b46e-ea9a3d2e7eba",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 10560,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

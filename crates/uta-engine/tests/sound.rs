@@ -359,6 +359,33 @@ fn matches_the_golden_wav() {
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.
+/// The kick's groove from its listening renders: accents, soft hits, a
+/// 16th-note double, ringing into each other round a 1-bar loop.
+/// Regenerate with `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a
+/// human approves every change to the file.
+#[test]
+fn the_kick_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/listen/kick/09-groove.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("kick", config(), &list.build().unwrap());
+}
+
+/// A command list in format 3 renders exactly as it did: the demo song,
+/// loaded as written and again after saving it in format 4.
+#[test]
+fn a_format_3_list_renders_the_same() {
+    let json = include_str!("../../../examples/demo-song.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    assert!(list.commands.len() > 1);
+    let resaved: uta_core::CommandList =
+        serde_json::from_str(&serde_json::to_string(&list).unwrap()).unwrap();
+    let render = |list: &uta_core::CommandList| {
+        let project = list.build().unwrap();
+        offline::render_song(stereo(), Snapshot::from(&project), golden_seconds(&project))
+    };
+    assert_eq!(render(&resaved), render(&list));
+}
+
 #[test]
 fn the_demo_song_matches_its_golden_wav() {
     let project = demo_song();

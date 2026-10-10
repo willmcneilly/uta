@@ -690,7 +690,10 @@ mod tests {
         assert_eq!((kick(&session).tune_hz, kick(&session).tone), (58.5, 0.8));
 
         only(session.undo());
-        assert_eq!((kick(&session).tune_hz, kick(&session).tone), (58.5, 0.5));
+        assert_eq!(
+            (kick(&session).tune_hz, kick(&session).tone),
+            (58.5, crate::KickSettings::default().tone)
+        );
         only(session.undo());
         assert_eq!(session.project(), &before);
     }

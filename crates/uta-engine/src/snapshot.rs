@@ -6,7 +6,9 @@ use std::sync::Arc;
 use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
-use crate::{DEFAULT_SAMPLE_RATE, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS, Waveform};
+use crate::{
+    DEFAULT_SAMPLE_RATE, KitSettings, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS, Waveform,
+};
 
 /// Everything the audio thread needs to know about what to play.
 ///
@@ -33,11 +35,30 @@ pub struct Snapshot {
 pub struct TrackSnapshot {
     id: TrackId,
     slot: usize,
-    /// How the track's synth sounds.
-    pub synth: SynthSettings,
+    /// What makes its sound, and how it sounds.
+    pub sound: TrackSound,
     /// The track's volume, pan, mute and solo.
     pub mixer: MixerStrip,
     notes: Arc<TrackNotes>,
+}
+
+/// What makes a track's sound, as the engine plays it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TrackSound {
+    Synth(SynthSettings),
+    /// The drum machine. See RFC-006.
+    Drums(KitSettings),
+}
+
+impl TrackSound {
+    /// How long its sound goes on once the transport stops: a synth's
+    /// release, or the time a drum hit takes to ring out.
+    pub fn tail_seconds(&self) -> f32 {
+        match self {
+            Self::Synth(settings) => settings.clamped().release_seconds,
+            Self::Drums(kit) => kit.ring_seconds(),
+        }
+    }
 }
 
 impl TrackSnapshot {
@@ -140,11 +161,14 @@ impl Snapshot {
                     Some(old) if same_timing && old.notes.shares(&clips) => Arc::clone(&old.notes),
                     _ => Arc::new(TrackNotes::new(clips, &sequence)),
                 };
-                let Source::Synth(settings) = track.source();
+                let sound = match track.source() {
+                    Source::Synth(settings) => TrackSound::Synth(synth_settings(settings)),
+                    Source::Drums(kit) => TrackSound::Drums(KitSettings::from(kit)),
+                };
                 TrackSnapshot {
                     id: track.id(),
                     slot,
-                    synth: synth_settings(settings),
+                    sound,
                     mixer: MixerStrip::from(track.mixer()),
                     notes,
                 }
@@ -823,7 +847,7 @@ mod tests {
         let [track] = snapshot.tracks() else {
             panic!("one track");
         };
-        assert_eq!(track.synth, SynthSettings::default());
+        assert_eq!(track.sound, TrackSound::Synth(SynthSettings::default()));
         assert_eq!(track.mixer, MixerStrip::default());
         assert_eq!(track.slot(), 0);
         assert!(track.notes().events().is_empty());
@@ -864,8 +888,44 @@ mod tests {
             .unwrap();
         let snapshot = Snapshot::from(&project);
         assert_eq!(snapshot.gain, db_to_gain(-6.0));
-        assert_eq!(snapshot.tracks()[0].synth.waveform, Waveform::Square);
-        assert_eq!(snapshot.tracks()[0].synth.cutoff_hz, 800.0);
+        let TrackSound::Synth(synth) = snapshot.tracks()[0].sound else {
+            panic!("a synth track")
+        };
+        assert_eq!(synth.waveform, Waveform::Square);
+        assert_eq!(synth.cutoff_hz, 800.0);
+    }
+
+    #[test]
+    fn a_drum_tracks_kit_settings_copy_across() {
+        let mut project = project();
+        let track = TrackId::from_uuid(uuid::Uuid::from_u128(77));
+        let commands = [
+            Command::AddTracks {
+                tracks: vec![uta_core::PlacedTrack {
+                    index: 1,
+                    track: uta_core::Track::new(
+                        track,
+                        "Drums 1",
+                        Source::Drums(uta_core::KitSettings::default()),
+                    ),
+                }],
+            },
+            Command::SetDrumParam {
+                track,
+                sound: uta_core::DrumSound::Kick,
+                param: uta_core::DrumParam::DecaySeconds(0.6),
+            },
+        ];
+        for command in &commands {
+            project.apply(command).unwrap();
+        }
+        let snapshot = Snapshot::from(&project);
+        let TrackSound::Drums(kit) = snapshot.tracks()[1].sound else {
+            panic!("a drum track")
+        };
+        assert_eq!(kit.kick.decay_seconds, 0.6);
+        assert_eq!(kit.kick.tune_hz, KitSettings::default().kick.tune_hz);
+        assert!((snapshot.tracks()[1].sound.tail_seconds() - 0.9).abs() < 1e-6);
     }
 
     #[test]

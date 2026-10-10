@@ -13,9 +13,12 @@
 mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
-use common::{demo_loop, demo_song, note, project, with_mixer};
+use common::{
+    KICK, demo_loop, demo_song, drum_project, drum_track, hit, note, project, with_mixer,
+};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, NoteId, PlacedClip, PlacedTrack, SynthParam, TrackId,
+    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
+    SynthParam, TrackId,
 };
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
@@ -633,6 +636,100 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
         status.dropped_note_events >= 20,
         "the crowd was chased past the limit: {} skipped",
         status.dropped_note_events
+    );
+}
+
+/// The kick's hits, fast repeats and flams, every control turned while it
+/// rings, live hits, a jump and Play again (which restarts the kit), more
+/// drum events in a block than the budget, and a drum track taking over a
+/// synth's slot: none of it allocates or frees on the audio thread.
+#[test]
+fn drum_hits_flams_and_control_turns_do_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    let beat = 960;
+    let mut hits = Vec::new();
+    for i in 0..16u64 {
+        // A kick every 16th, with a flam 10 ms before each beat.
+        hits.push(hit(2 * u128::from(i), KICK, 40 + i as u8 * 5, i * beat / 4));
+        if i % 4 == 0 {
+            hits.push(hit(
+                2 * u128::from(i) + 1,
+                KICK,
+                64,
+                (i * beat / 4).saturating_sub(19),
+            ));
+        }
+    }
+    // More hits on one sample than a block's budget of events.
+    for i in 0..MAX_NOTE_EVENTS_PER_BLOCK as u128 {
+        hits.push(hit(1000 + i, KICK, 100, beat / 4));
+    }
+    let mut project = drum_project(120.0, 1, &[], hits);
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    let slot = renderer.controller.slot(drum_track()).unwrap();
+    renderer.controller.play().unwrap();
+
+    let turns = [
+        DrumParam::TuneHz(80.0),
+        DrumParam::Tone(1.0),
+        DrumParam::DecaySeconds(0.05),
+        DrumParam::LevelDb(-60.0),
+        DrumParam::TuneHz(40.0),
+        DrumParam::Tone(0.0),
+        DrumParam::DecaySeconds(0.8),
+        DrumParam::LevelDb(6.0),
+    ];
+    for (round, &param) in turns.iter().cycle().take(40).enumerate() {
+        project
+            .apply(&Command::SetDrumParam {
+                track: drum_track(),
+                sound: DrumSound::Kick,
+                param,
+            })
+            .unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        renderer
+            .controller
+            .note_on(slot, NoteKey(round as u128), KICK, 127)
+            .unwrap();
+        renderer
+            .controller
+            .note_off(slot, NoteKey(round as u128))
+            .unwrap();
+        if round % 10 == 9 {
+            renderer.controller.locate(beat / 2).unwrap();
+        }
+        if round == 20 {
+            renderer.controller.stop().unwrap();
+            renderer.controller.play().unwrap();
+        }
+        for _ in 0..8 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        renderer.controller.free_used_snapshots();
+    }
+
+    // The synth track goes, and a drum track lands in its slot while its
+    // notes still sound.
+    let synth = project.tracks()[0].id();
+    let mut swapped = project.clone();
+    swapped
+        .apply(&Command::RemoveTracks {
+            tracks: vec![synth],
+        })
+        .unwrap();
+    renderer.controller.set_project(&swapped).unwrap();
+    for _ in 0..8 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+    renderer.controller.free_used_snapshots();
+
+    let status = renderer.controller.poll();
+    assert!(status.peak > 0.0, "the kit made no sound");
+    assert!(
+        status.dropped_note_events > 0,
+        "the budget was never reached: {status:?}"
     );
 }
 

@@ -4,7 +4,10 @@
 #![allow(dead_code)] // Each test binary uses a different subset.
 
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
-use uta_core::{Command, CommandList, Note, NoteId, Project, ProjectId, SynthParam};
+use uta_core::{
+    Clip, ClipId, Command, CommandList, DrumParam, DrumSound, KitSettings, Note, NoteId,
+    PlacedTrack, Project, ProjectId, Source, SynthParam, Track, TrackId,
+};
 use uuid::Uuid;
 
 /// The demo loop, built from its committed command list.
@@ -48,6 +51,68 @@ pub fn project(bpm: f32, bars: u32, params: &[SynthParam], notes: Vec<Note>) -> 
     if !notes.is_empty() {
         commands.push(Command::AddNotes { clip, notes });
     }
+    for command in &commands {
+        project.apply(command).expect("a valid test project");
+    }
+    project
+}
+
+/// The drum track [`drum_project`] adds.
+pub fn drum_track() -> TrackId {
+    TrackId::from_uuid(Uuid::from_u128(70))
+}
+
+/// A hit on a drum track: a sixteenth note at `start`, its ID worked out from
+/// `index`.
+pub fn hit(index: u128, pitch: u8, velocity: u8, start: Ticks) -> Note {
+    Note {
+        id: NoteId::from_uuid(Uuid::from_u128(5000 + index)),
+        pitch,
+        velocity,
+        start,
+        length: TICKS_PER_QUARTER / 4,
+    }
+}
+
+/// The kick's note.
+pub const KICK: u8 = 36;
+
+/// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
+/// track, "Drums 1", under the empty synth track: its clip fills the loop
+/// and holds `hits`, and its kit has the settings in `params`. Built
+/// through commands, as the app would.
+pub fn drum_project(
+    bpm: f32,
+    bars: u32,
+    params: &[(DrumSound, DrumParam)],
+    hits: Vec<Note>,
+) -> Project {
+    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let track = drum_track();
+    let bar = project.transport().time_signature().ticks_per_bar();
+    let clip = Clip::new(
+        ClipId::from_uuid(Uuid::from_u128(71)),
+        0,
+        Ticks::from(bars) * bar,
+    )
+    .with_notes(hits);
+    let mut commands = vec![
+        Command::SetMasterVolume { volume_db: 0.0 },
+        Command::SetTempo { bpm },
+        Command::SetLoopLength { bars },
+        Command::AddTracks {
+            tracks: vec![PlacedTrack {
+                index: 1,
+                track: Track::new(track, "Drums 1", Source::Drums(KitSettings::default()))
+                    .with_clips([clip]),
+            }],
+        },
+    ];
+    commands.extend(params.iter().map(|&(sound, param)| Command::SetDrumParam {
+        track,
+        sound,
+        param,
+    }));
     for command in &commands {
         project.apply(command).expect("a valid test project");
     }
@@ -142,7 +207,145 @@ pub fn spectrum(samples: &[f32]) -> Vec<f64> {
         .collect();
     let mut im = vec![0.0; n];
 
-    // Iterative radix-2 FFT: bit-reversal, then butterflies.
+    fft(&mut re, &mut im);
+    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
+}
+
+/// The loudest sample within `window / 2` samples of `at`. With a window of
+/// at least a cycle, it's a tone's level at that point.
+pub fn level_at(samples: &[f32], at: usize, window: usize) -> f32 {
+    let start = at.saturating_sub(window / 2);
+    let end = (at + window / 2).min(samples.len());
+    peak(&samples[start..end])
+}
+
+/// `snapshot` with its first track's mixer strip set to `mixer`.
+pub fn with_mixer(
+    mut snapshot: uta_engine::Snapshot,
+    mixer: uta_engine::MixerStrip,
+) -> uta_engine::Snapshot {
+    snapshot.tracks_mut()[0].mixer = mixer;
+    snapshot
+}
+
+/// `snapshot` with its first track's synth set to `synth`.
+pub fn with_synth(
+    mut snapshot: uta_engine::Snapshot,
+    synth: uta_engine::SynthSettings,
+) -> uta_engine::Snapshot {
+    snapshot.tracks_mut()[0].sound = uta_engine::TrackSound::Synth(synth);
+    snapshot
+}
+
+/// The app's stress notes (`stress::notes` in `uta-app`) for one bar of 4/4, seed
+/// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
+/// The app gives each note a random ID; here they count up from `first_id`,
+/// so every run plays the same song: notes on one sample sound in ID order.
+pub fn stress_notes(first_id: u128) -> Vec<Note> {
+    let sixteenth = TICKS_PER_QUARTER / 4;
+    let steps = 16;
+    let mut state: u64 = 1;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    (0..3_000)
+        .map(|index| Note {
+            id: NoteId::from_uuid(Uuid::from_u128(first_id + index)),
+            pitch: 24 + (next() % 85) as u8,
+            velocity: Note::MIN_VELOCITY
+                + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
+            start: (next() % steps) * sixteenth,
+            length: (1 + next() % 16) * sixteenth,
+        })
+        .collect()
+}
+
+/// The pitch over time of a tone that may glide, from each cycle between
+/// upward zero crossings (interpolated between samples): each cycle's
+/// frequency, at the time of its middle, in seconds from the first sample.
+/// For low, clean tones such as a kick or a tom; noise has no pitch.
+pub fn pitch_over_time(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
+    let rate = f64::from(sample_rate);
+    let mut crossings = Vec::new();
+    for (i, pair) in samples.windows(2).enumerate() {
+        let (a, b) = (f64::from(pair[0]), f64::from(pair[1]));
+        if a < 0.0 && b >= 0.0 {
+            crossings.push(i as f64 + a / (a - b));
+        }
+    }
+    crossings
+        .windows(2)
+        .map(|pair| ((pair[0] + pair[1]) / 2.0 / rate, rate / (pair[1] - pair[0])))
+        .collect()
+}
+
+/// The level over time, in dB relative to full scale: the loudest sample in
+/// each `window_seconds`, at the time of the window's middle.
+pub fn envelope_db(samples: &[f32], sample_rate: u32, window_seconds: f64) -> Vec<(f64, f64)> {
+    let window = ((window_seconds * f64::from(sample_rate)) as usize).max(1);
+    samples
+        .chunks(window)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let time = (i as f64 + 0.5) * window as f64 / f64::from(sample_rate);
+            (time, 20.0 * f64::from(peak(chunk)).max(1e-12).log10())
+        })
+        .collect()
+}
+
+/// How long a sound takes to die away by `drop_db` from its loudest point,
+/// in seconds, from its level over 5 ms windows, interpolated in dB between
+/// the two windows either side of the drop. `None` if it never drops that
+/// far.
+pub fn decay_seconds(samples: &[f32], sample_rate: u32, drop_db: f64) -> Option<f64> {
+    let envelope = envelope_db(samples, sample_rate, 0.005);
+    let (loudest, &(peak_time, peak_db)) = envelope
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.1.total_cmp(&b.1.1))?;
+    let target = peak_db - drop_db;
+    let after = &envelope[loudest..];
+    let below = after.iter().position(|&(_, db)| db < target)?;
+    let (t0, db0) = after[below - 1];
+    let (t1, db1) = after[below];
+    let time = t0 + (t1 - t0) * (db0 - target) / (db0 - db1);
+    Some(time - peak_time)
+}
+
+/// The spectral centroid of `samples`, in Hz: the average frequency, weighted
+/// by each frequency's magnitude. A measure of brightness. The samples are
+/// zero-padded to a power of two.
+pub fn spectral_centroid(samples: &[f32], sample_rate: u32) -> f64 {
+    let n = samples.len().next_power_of_two();
+    let mut padded = samples.to_vec();
+    padded.resize(n, 0.0);
+    let bins = spectrum_unwindowed(&padded);
+    let bin_hz = f64::from(sample_rate) / n as f64;
+    let total: f64 = bins.iter().sum();
+    let weighted: f64 = bins
+        .iter()
+        .enumerate()
+        .map(|(k, magnitude)| k as f64 * bin_hz * magnitude)
+        .sum();
+    weighted / total
+}
+
+/// [`spectrum`] without the window: for a whole sound that starts and ends
+/// in silence, where a window would only weigh its middle more.
+fn spectrum_unwindowed(samples: &[f32]) -> Vec<f64> {
+    let n = samples.len();
+    let mut re: Vec<f64> = samples.iter().map(|&s| f64::from(s)).collect();
+    let mut im = vec![0.0; n];
+    fft(&mut re, &mut im);
+    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
+}
+
+/// An iterative radix-2 FFT, in place: bit-reversal, then butterflies.
+fn fft(re: &mut [f64], im: &mut [f64]) {
+    let n = re.len();
     let mut j = 0;
     for i in 1..n {
         let mut bit = n >> 1;
@@ -173,57 +376,4 @@ pub fn spectrum(samples: &[f32]) -> Vec<f64> {
         }
         len <<= 1;
     }
-    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
-}
-
-/// The loudest sample within `window / 2` samples of `at`. With a window of
-/// at least a cycle, it's a tone's level at that point.
-pub fn level_at(samples: &[f32], at: usize, window: usize) -> f32 {
-    let start = at.saturating_sub(window / 2);
-    let end = (at + window / 2).min(samples.len());
-    peak(&samples[start..end])
-}
-
-/// `snapshot` with its first track's mixer strip set to `mixer`.
-pub fn with_mixer(
-    mut snapshot: uta_engine::Snapshot,
-    mixer: uta_engine::MixerStrip,
-) -> uta_engine::Snapshot {
-    snapshot.tracks_mut()[0].mixer = mixer;
-    snapshot
-}
-
-/// `snapshot` with its first track's synth set to `synth`.
-pub fn with_synth(
-    mut snapshot: uta_engine::Snapshot,
-    synth: uta_engine::SynthSettings,
-) -> uta_engine::Snapshot {
-    snapshot.tracks_mut()[0].synth = synth;
-    snapshot
-}
-
-/// The app's stress notes (`stress::notes` in `uta-app`) for one bar of 4/4, seed
-/// 0: the same pattern Develop → Add Stress Notes and the benchmark make.
-/// The app gives each note a random ID; here they count up from `first_id`,
-/// so every run plays the same song: notes on one sample sound in ID order.
-pub fn stress_notes(first_id: u128) -> Vec<Note> {
-    let sixteenth = TICKS_PER_QUARTER / 4;
-    let steps = 16;
-    let mut state: u64 = 1;
-    let mut next = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
-    };
-    (0..3_000)
-        .map(|index| Note {
-            id: NoteId::from_uuid(Uuid::from_u128(first_id + index)),
-            pitch: 24 + (next() % 85) as u8,
-            velocity: Note::MIN_VELOCITY
-                + (next() % u64::from(Note::MAX_VELOCITY - Note::MIN_VELOCITY + 1)) as u8,
-            start: (next() % steps) * sixteenth,
-            length: (1 + next() % 16) * sixteenth,
-        })
-        .collect()
 }

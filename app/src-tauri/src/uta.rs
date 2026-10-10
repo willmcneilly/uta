@@ -1046,12 +1046,18 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
             .tracks()
             .iter()
             .map(|track| {
-                let Source::Synth(synth) = track.source();
+                // UTA-53 gives a drum track its own outline. Until then the
+                // app can't add one, and a drum track shows the synth's
+                // defaults.
+                let synth = match track.source() {
+                    Source::Synth(synth) => *synth,
+                    Source::Drums(_) => SynthSettings::default(),
+                };
                 TrackOutline {
                     id: track.id(),
                     name: track.name().to_owned(),
                     mixer: track.mixer().into(),
-                    synth: synth.into(),
+                    synth: (&synth).into(),
                     clips: track.clips().iter().map(&mut clip).collect(),
                 }
             })
@@ -1470,16 +1476,17 @@ mod tests {
             .unwrap();
         let view = uta.project().tracks[0].synth;
         assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
-        let engine = uta.controller.snapshot().tracks()[0].synth;
+        let engine_synth = |uta: &Uta| match uta.controller.snapshot().tracks()[0].sound {
+            uta_engine::TrackSound::Synth(synth) => synth,
+            uta_engine::TrackSound::Drums(_) => panic!("a synth track"),
+        };
+        let engine = engine_synth(&uta);
         assert_eq!(engine.waveform, uta_engine::Waveform::Square);
         assert_eq!(engine.cutoff_hz, 800.0);
 
         uta.undo();
         assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 20_000.0);
-        assert_eq!(
-            uta.controller.snapshot().tracks()[0].synth.cutoff_hz,
-            20_000.0
-        );
+        assert_eq!(engine_synth(&uta).cutoff_hz, 20_000.0);
         uta.redo();
         assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 800.0);
     }
