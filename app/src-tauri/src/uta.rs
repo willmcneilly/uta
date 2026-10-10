@@ -65,11 +65,15 @@ pub struct Outline<C = ClipOutline> {
     pub volume_db: f32,
     pub min_volume_db: f32,
     pub max_volume_db: f32,
+    /// A new project's master volume, which the volume control resets to.
+    pub default_volume_db: f32,
     pub can_undo: bool,
     pub can_redo: bool,
     pub bpm: f32,
     pub min_bpm: f32,
     pub max_bpm: f32,
+    /// A new project's tempo, which the tempo control resets to.
+    pub default_bpm: f32,
     /// Where the loop starts, in ticks.
     pub loop_start: Ticks,
     /// How long the loop is, in ticks.
@@ -83,8 +87,12 @@ pub struct Outline<C = ClipOutline> {
     pub beats_per_bar: u32,
     /// The limits of the synth's settings, the same for every track.
     pub synth_limits: SynthLimits,
+    /// A new track's synth settings, which the synth's controls reset to.
+    pub synth_defaults: SynthView,
     /// The limits of a track's volume and pan.
     pub mixer_limits: MixerLimits,
+    /// A new track's mixer strip, which its controls reset to.
+    pub mixer_defaults: MixerView,
     /// The most tracks a project can have.
     pub max_tracks: usize,
     /// Every track, in order from the top.
@@ -1016,11 +1024,13 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         volume_db: project.master_volume_db(),
         min_volume_db: VOLUME_RANGE_DB.0,
         max_volume_db: VOLUME_RANGE_DB.1,
+        default_volume_db: Project::DEFAULT_MASTER_VOLUME_DB,
         can_undo: session.can_undo(),
         can_redo: session.can_redo(),
         bpm: transport.tempo_map().bpm(),
         min_bpm: Project::MIN_BPM,
         max_bpm: Project::MAX_BPM,
+        default_bpm: Project::DEFAULT_BPM,
         loop_start: transport.loop_start(),
         loop_length: transport.loop_length(),
         loop_enabled: transport.loop_enabled(),
@@ -1028,7 +1038,9 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         ticks_per_quarter: TICKS_PER_QUARTER,
         beats_per_bar: transport.time_signature().beats_per_bar,
         synth_limits: SynthLimits::ALL,
+        synth_defaults: (&SynthSettings::default()).into(),
         mixer_limits: MixerLimits::ALL,
+        mixer_defaults: (&MixerStrip::default()).into(),
         max_tracks: Project::MAX_TRACKS,
         tracks: project
             .tracks()
@@ -1421,6 +1433,31 @@ mod tests {
         assert_eq!(envelope[1], 10.0);
         // 0.001 as an f32 isn't exactly 0.001 as a JSON number.
         assert!((envelope[0].as_f64().unwrap() - 0.001).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_outline_carries_each_controls_default() {
+        let json = serde_json::to_value(offline().update().outline).unwrap();
+        assert_eq!(json["defaultVolumeDb"], -12.0);
+        assert_eq!(json["defaultBpm"], 120.0);
+        assert_eq!(
+            json["mixerDefaults"],
+            serde_json::json!({"volumeDb": 0.0, "pan": 0.0, "mute": false, "solo": false})
+        );
+        let synth = &json["synthDefaults"];
+        assert_eq!(synth["waveform"], "saw");
+        assert_eq!(synth["cutoffHz"], 20_000.0);
+        assert_eq!(synth["resonance"], 0.0);
+        assert_eq!(synth["sustain"], 0.7_f32 as f64);
+
+        // They're the values a new project and a new track start with.
+        let outline = offline().update().outline;
+        assert_eq!(
+            outline.default_volume_db,
+            Project::default().master_volume_db()
+        );
+        assert_eq!(outline.synth_defaults, (&SynthSettings::default()).into());
+        assert_eq!(outline.mixer_defaults, (&MixerStrip::default()).into());
     }
 
     #[test]

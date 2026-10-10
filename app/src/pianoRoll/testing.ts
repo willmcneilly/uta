@@ -6,9 +6,11 @@ import { emit } from "@tauri-apps/api/event";
 import type {
   ClipNotes,
   ClipView,
+  MixerView,
   NoteView,
   Outline,
   ProjectView,
+  SynthView,
   TrackView,
   Update,
 } from "../backend";
@@ -77,23 +79,23 @@ export class Updates {
   }
 }
 
+/** A new track's mixer strip, as Rust sends it. */
+export const MIXER_DEFAULTS: MixerView = { volumeDb: 0, pan: 0, mute: false, solo: false };
+
+/** A new track's synth settings, as Rust sends them. */
+export const SYNTH_DEFAULTS: SynthView = {
+  waveform: "saw",
+  cutoffHz: 20_000,
+  resonance: 0,
+  attackSeconds: 0.005,
+  decaySeconds: 0.2,
+  sustain: 0.7,
+  releaseSeconds: 0.2,
+};
+
 /** A track with the default sound and mixer, and `clips`. */
 export function trackView(id: string, name: string, clips: ClipView[] = []): TrackView {
-  return {
-    id,
-    name,
-    mixer: { volumeDb: 0, pan: 0, mute: false, solo: false },
-    synth: {
-      waveform: "saw",
-      cutoffHz: 20_000,
-      resonance: 0,
-      attackSeconds: 0.005,
-      decaySeconds: 0.2,
-      sustain: 0.7,
-      releaseSeconds: 0.2,
-    },
-    clips,
-  };
+  return { id, name, mixer: { ...MIXER_DEFAULTS }, synth: { ...SYNTH_DEFAULTS }, clips };
 }
 
 /** A project with one track, "Synth 1", whose one 4-bar clip holds `notes`. */
@@ -102,11 +104,13 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
     volumeDb: -12,
     minVolumeDb: -60,
     maxVolumeDb: 0,
+    defaultVolumeDb: -12,
     canUndo: false,
     canRedo: false,
     bpm: 120,
     minBpm: 20,
     maxBpm: 300,
+    defaultBpm: 120,
     loopStart: 0,
     loopLength: 4 * 3840,
     loopEnabled: true,
@@ -119,7 +123,9 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
       envelopeSeconds: [0.001, 10],
       sustain: [0, 1],
     },
+    synthDefaults: SYNTH_DEFAULTS,
     mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
+    mixerDefaults: MIXER_DEFAULTS,
     maxTracks: 32,
     tracks: [trackView("track-1", "Synth 1", [{ id: "clip-1", start: 0, length: 4 * 3840, notes }])],
     ...overrides,

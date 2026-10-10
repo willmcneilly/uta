@@ -66,12 +66,16 @@ interface ProjectFields {
   volumeDb: number;
   minVolumeDb: number;
   maxVolumeDb: number;
+  /** A new project's master volume, which the volume control resets to. */
+  defaultVolumeDb: number;
   canUndo: boolean;
   canRedo: boolean;
   /** Quarter notes per minute. */
   bpm: number;
   minBpm: number;
   maxBpm: number;
+  /** A new project's tempo, which the tempo control resets to. */
+  defaultBpm: number;
   /** Where the loop starts, in ticks. */
   loopStart: number;
   /** How long the loop is, in ticks. */
@@ -85,8 +89,12 @@ interface ProjectFields {
   beatsPerBar: number;
   /** The limits of the synth's settings, the same for every track. */
   synthLimits: SynthLimits;
+  /** A new track's synth settings, which the synth's controls reset to. */
+  synthDefaults: SynthView;
   /** The limits of a track's volume and pan. */
   mixerLimits: MixerLimits;
+  /** A new track's mixer strip, which its controls reset to. */
+  mixerDefaults: MixerView;
   /** The most tracks a project can have. */
   maxTracks: number;
 }
