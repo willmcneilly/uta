@@ -3,7 +3,7 @@
  * second ink, and the chosen one outlined in ink with its words and drawing
  * in ink, as D-11's waveform keys were. Hover shades an option and pressing
  * shades it more. The focus ring is the selected ink, round the option
- * with focus. Each option is at least space-7 (24 px) tall. provisional: D-19
+ * with focus. Each option is at least space-7 (24 px) tall. provisional: D-20
  */
 .segmented {
   min-width: 0;

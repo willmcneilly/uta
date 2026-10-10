@@ -38,7 +38,7 @@ const ARROW_STEPS: Record<string, number> = {
  * WebKit on macOS doesn't focus a radio button when it's clicked, and leaves
  * radios out of the Tab order, so the group focuses them itself, gives the
  * chosen one an explicit tabIndex, and handles the arrow keys itself.
- * provisional: D-19
+ * provisional: D-20
  */
 export function SegmentedChoice<T extends string>({
   legend,

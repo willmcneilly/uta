@@ -61,7 +61,7 @@ function arc(from: number, to: number): string | null {
  * A label, the knob and its value underneath. Drag it up or down from
  * wherever you press, or click it and use the arrow keys (Shift for bigger
  * steps). Shift-drag moves it in fine steps. Double-click, ⌥-click, or
- * Delete resets it to its default. provisional: D-18
+ * Delete resets it to its default. provisional: D-19
  */
 export function Knob({
   label,

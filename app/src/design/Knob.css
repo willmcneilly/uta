@@ -3,7 +3,7 @@
  * thin arc for the range in ink-3, the value as an ink arc with an ink
  * indicator, and a tick outside the arc where a reset sets it. No bevel,
  * shadow or metal. The dial and the value are one hit area, 32 px wide or
- * more. provisional: D-18
+ * more. provisional: D-19
  */
 .knob {
   display: flex;
@@ -74,7 +74,7 @@
  * States, as the fader's (D-8). Hover and drag darken the range arc. Focused,
  * the indicator turns the selected ink, because the arrow keys now move it.
  * The focus ring shows for focus from the keyboard, or once a key is
- * pressed after a click. provisional: D-18
+ * pressed after a click. provisional: D-19
  */
 .knob-control:hover .knob-range,
 .knob-control[data-dragging] .knob-range {

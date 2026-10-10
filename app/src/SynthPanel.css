@@ -1,6 +1,6 @@
 /*
  * The synth panel: the waveform, then the filter and the envelope, each
- * drawn above a row of its knobs (provisional: D-10, D-21).
+ * drawn above a row of its knobs (provisional: D-10, D-22).
  */
 .synth {
   display: flex;
@@ -33,7 +33,7 @@
 
 /* A group's knobs, in a row under its drawing, each in an equal column a
    quarter of the drawing's width, so the envelope's attack, decay, sustain
-   and release sit left to right like its stages. provisional: D-21 */
+   and release sit left to right like its stages. provisional: D-22 */
 .synth .knobs {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

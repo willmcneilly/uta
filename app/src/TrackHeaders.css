@@ -30,7 +30,7 @@
 /*
  * As tall as its row on the timeline, set from TRACK_HEIGHT. The name, mute
  * and solo across the top; under them the volume and the meter, with the
- * pan knob to their right, under mute and solo. provisional: D-20
+ * pan knob to their right, under mute and solo. provisional: D-21
  */
 .track-header {
   display: grid;

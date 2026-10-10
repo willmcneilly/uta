@@ -12,7 +12,7 @@ import "./TrackHeaders.css";
 /**
  * Each header's meter, in CSS pixels. It sits under the volume fader's rail,
  * as wide as it is (see TrackHeaders.css), and thinner than the master's so
- * the headers stay quieter than the clips. provisional: D-12, D-20
+ * the headers stay quieter than the clips. provisional: D-12, D-21
  */
 const METER_WIDTH = 98;
 const METER_HEIGHT = 4;
