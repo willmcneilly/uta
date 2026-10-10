@@ -60,6 +60,11 @@
   padding-left: var(--space-1);
 }
 
+/* Room either side of the label, as in the piano roll's. */
+.timeline .zoom span {
+  padding: 0 var(--space-1);
+}
+
 .timeline-tools button,
 .timeline-tools select {
   box-sizing: border-box;
