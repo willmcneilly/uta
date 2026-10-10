@@ -1,7 +1,7 @@
 .volume {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-5);
 }
 
 .volume .slider {
