@@ -7,7 +7,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::time::{MAX_TICKS, Ticks};
-use crate::{ClipId, CommandError, DrumSound, KitSettings, NoteId, SynthSettings, TrackId};
+use crate::{
+    ClipId, CommandError, DrumParamError, DrumSound, KitSettings, NoteId, SynthSettings, TrackId,
+};
 
 /// A chain that makes sound: a source, then effects, then a mixer strip.
 /// It holds the clips that play through it.
@@ -166,9 +168,15 @@ impl Source {
             Self::Synth(settings) => settings
                 .validate()
                 .map_err(CommandError::SynthParamOutOfRange),
-            Self::Drums(kit) => kit
-                .validate()
-                .map_err(|(sound, param, _)| CommandError::DrumParamOutOfRange { sound, param }),
+            Self::Drums(kit) => kit.validate().map_err(|(sound, param, error)| match error {
+                DrumParamError::OutOfRange { min, max } => CommandError::DrumParamOutOfRange {
+                    sound,
+                    param,
+                    min,
+                    max,
+                },
+                DrumParamError::NoSuchSetting => CommandError::NoSuchDrumParam { sound, param },
+            }),
         }
     }
 

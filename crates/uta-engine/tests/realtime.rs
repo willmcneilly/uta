@@ -19,8 +19,8 @@ use common::{
     replace_track, with_every_slot_taken, with_mixer,
 };
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
-    SynthParam, TrackId,
+    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, KickModel, NoteId, PlacedClip,
+    PlacedTrack, SynthParam, TrackId,
 };
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
@@ -656,7 +656,8 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
 }
 
 /// Every sound's hits, fast repeats and flams, closed hats choking open
-/// ones, every control of each turned while they ring, live hits, a jump
+/// ones, every control of each turned while they ring, the kick's model
+/// switched while it rings, live hits, a jump
 /// and Play again (which restarts the kit's noise and its metal,
 /// crossfading if the hats or the cymbal ring), and more drum events in a
 /// block than the budget: none of it allocates or frees on the audio
@@ -744,8 +745,21 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         (Cymbal, DrumParam::Tone(0.0)),
         (Cymbal, DrumParam::DecaySeconds(1.2)),
         (Cymbal, DrumParam::LevelDb(-60.0)),
+        // The 909 kick, switched to while the 808 rings, and back.
+        (Kick, DrumParam::Model(KickModel::Tr909)),
+        (Kick, DrumParam::TuneHz(70.0)),
+        (Kick, DrumParam::Sweep(1.0)),
+        (Kick, DrumParam::Attack(1.0)),
+        (Kick, DrumParam::DecaySeconds(1.5)),
+        (Kick, DrumParam::LevelDb(-60.0)),
+        (Kick, DrumParam::TuneHz(45.0)),
+        (Kick, DrumParam::Sweep(0.0)),
+        (Kick, DrumParam::Attack(0.0)),
+        (Kick, DrumParam::DecaySeconds(0.1)),
+        (Kick, DrumParam::LevelDb(6.0)),
+        (Kick, DrumParam::Model(KickModel::Tr808)),
     ];
-    for (round, &(sound, param)) in turns.iter().cycle().take(156).enumerate() {
+    for (round, &(sound, param)) in turns.iter().cycle().take(3 * turns.len()).enumerate() {
         project
             .apply(&Command::SetDrumParam {
                 track: drum_track(),

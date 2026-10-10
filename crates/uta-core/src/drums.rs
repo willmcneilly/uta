@@ -115,12 +115,35 @@ pub struct KitSettings {
     pub cymbal: CymbalSettings,
 }
 
-/// The 808 kick's settings: its front panel, plus Tune. See RFC-006, "The
-/// kit".
+/// Which kick plays: the 808's or the 909's. See RFC-006, resolved open
+/// question 1. Serialises as `"808"` or `"909"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum KickModel {
+    #[default]
+    #[serde(rename = "808")]
+    Tr808,
+    #[serde(rename = "909")]
+    Tr909,
+}
+
+impl KickModel {
+    pub const ALL: [KickModel; 2] = [KickModel::Tr808, KickModel::Tr909];
+}
+
+/// The kick's settings: which model plays, and each model's own settings, so
+/// switching back and forth loses nothing. The 808's are the ones at the top
+/// level, as they were before the kick had a model, so older command lists
+/// load: its front panel, plus Tune. See RFC-006, "The kit".
+///
+/// Serialises as `{"model":"808","tune_hz":49.0,"tone":0.2,
+/// "decay_seconds":0.3,"level_db":0.0,"909":{...}}`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KickSettings {
-    /// The note it settles on, in Hz.
+    /// Which kick plays. The kick's Tune, Decay and Level in `SetDrumParam`
+    /// are this model's, as the panel only shows the chosen model's knobs.
+    pub model: KickModel,
+    /// The 808's: the note it settles on, in Hz.
     pub tune_hz: f32,
     /// How bright it is, from 0 to 1: the low-pass after the resonator,
     /// from 200 Hz to 8 kHz on a log scale, which also lets more of the
@@ -131,6 +154,9 @@ pub struct KickSettings {
     pub decay_seconds: f32,
     /// Its level, in dB.
     pub level_db: f32,
+    /// The 909's settings.
+    #[serde(rename = "909")]
+    pub tr909: Kick909Settings,
 }
 
 impl KickSettings {
@@ -145,10 +171,60 @@ impl KickSettings {
 impl Default for KickSettings {
     fn default() -> Self {
         Self {
+            model: KickModel::Tr808,
             tune_hz: 49.0,
             // Round and deep, with a soft click: about a 420 Hz low-pass.
             tone: 0.2,
             decay_seconds: 0.3,
+            level_db: 0.0,
+            tr909: Kick909Settings::default(),
+        }
+    }
+}
+
+/// The 909 kick's settings: its front panel, plus Tune. See RFC-006, "The
+/// kit".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Kick909Settings {
+    /// The note it settles on, in Hz.
+    pub tune_hz: f32,
+    /// How far the pitch drops at the start, from 0 (none) to 1: the 909's
+    /// own Tune knob. The first half deepens the drop, up to 4.5 times Tune,
+    /// and the second half makes it slower.
+    pub sweep: f32,
+    /// How much click there is, from 0 to 1, which also brightens it.
+    pub attack: f32,
+    /// How long it rings: the seconds it takes to die away by 40 dB.
+    pub decay_seconds: f32,
+    /// Its level, in dB.
+    pub level_db: f32,
+}
+
+impl Kick909Settings {
+    /// The research's base pitch range for the 909 kick.
+    pub const MIN_TUNE_HZ: f32 = 45.0;
+    pub const MAX_TUNE_HZ: f32 = 70.0;
+    pub const MIN_SWEEP: f32 = 0.0;
+    pub const MAX_SWEEP: f32 = 1.0;
+    pub const MIN_ATTACK: f32 = 0.0;
+    pub const MAX_ATTACK: f32 = 1.0;
+    /// The research's 909 Decay range.
+    pub const MIN_DECAY_SECONDS: f32 = 0.1;
+    pub const MAX_DECAY_SECONDS: f32 = 1.5;
+}
+
+impl Default for Kick909Settings {
+    fn default() -> Self {
+        Self {
+            // A little above the 808's, as the 909's sits.
+            tune_hz: 55.0,
+            // A drop from about 3.8 times Tune, quick: the classic 909 punch.
+            sweep: 0.4,
+            // A clear click, but not a slap.
+            attack: 0.5,
+            // A punchy kick you hear for about half a second.
+            decay_seconds: 0.5,
             level_db: 0.0,
         }
     }
@@ -410,12 +486,17 @@ pub const MAX_LEVEL_DB: f32 = 6.0;
 /// One drum setting with its new value, as `SetDrumParam` carries it. Which
 /// sound it's for travels beside it, and not every sound has every setting.
 ///
-/// Serialises as `{"name":"tune_hz","value":55.0}`.
+/// Serialises as `{"name":"tune_hz","value":55.0}`, or
+/// `{"name":"model","value":"909"}` for the kick's model.
 ///
 /// Each value is in its sound's own unit. Tone is the one that differs: from
 /// 0 to 1 on the kick, the wires' length in seconds on the snare, and the
 /// filters' centre in Hz on the clap and the closed hat, and from 0 to 1
 /// again on the cymbal, as each sound's settings say. The toms have no Tone.
+///
+/// The kick's Tune, Decay and Level are its chosen model's, with that
+/// model's limits, as its panel only shows the chosen model's knobs. Tone is
+/// the 808's alone, and Sweep and Attack the 909's.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "name", content = "value", rename_all = "snake_case")]
 pub enum DrumParam {
@@ -424,6 +505,9 @@ pub enum DrumParam {
     DecaySeconds(f32),
     Snappy(f32),
     LevelDb(f32),
+    Sweep(f32),
+    Attack(f32),
+    Model(KickModel),
 }
 
 impl DrumParam {
@@ -432,14 +516,33 @@ impl DrumParam {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
-    /// The value it carries.
-    pub fn value(&self) -> f32 {
+    /// The number it carries, or `None` for the kick's model, which is a
+    /// choice.
+    pub fn value(&self) -> Option<f32> {
         match *self {
             Self::TuneHz(value)
             | Self::Tone(value)
             | Self::DecaySeconds(value)
             | Self::Snappy(value)
-            | Self::LevelDb(value) => value,
+            | Self::LevelDb(value)
+            | Self::Sweep(value)
+            | Self::Attack(value) => Some(value),
+            Self::Model(_) => None,
+        }
+    }
+
+    /// The same setting with `value`. The model has no number, so it stays
+    /// as it is.
+    fn with_value(self, value: f32) -> Self {
+        match self {
+            Self::TuneHz(_) => Self::TuneHz(value),
+            Self::Tone(_) => Self::Tone(value),
+            Self::DecaySeconds(_) => Self::DecaySeconds(value),
+            Self::Snappy(_) => Self::Snappy(value),
+            Self::LevelDb(_) => Self::LevelDb(value),
+            Self::Sweep(_) => Self::Sweep(value),
+            Self::Attack(_) => Self::Attack(value),
+            Self::Model(model) => Self::Model(model),
         }
     }
 }
@@ -447,7 +550,8 @@ impl DrumParam {
 /// Why a drum setting couldn't be set.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DrumParamError {
-    /// The sound doesn't have this setting.
+    /// The sound doesn't have this setting (for the kick, its chosen model
+    /// doesn't).
     NoSuchSetting,
     /// The value is outside the setting's limits, or not a number. They're
     /// the limits it has on this sound.
@@ -456,22 +560,37 @@ pub enum DrumParamError {
 
 impl KitSettings {
     /// The limits (inclusive) of `param` on `sound`, or `None` if the sound
-    /// doesn't have that setting.
-    pub fn range(sound: DrumSound, param: &DrumParam) -> Option<(f32, f32)> {
+    /// doesn't have that setting, or it's the kick's model, which has no
+    /// limits. The kick's are its chosen model's.
+    pub fn range(&self, sound: DrumSound, param: &DrumParam) -> Option<(f32, f32)> {
         use ClapSettings as C;
         use ClosedHatSettings as CH;
         use CymbalSettings as CY;
         use DrumParam as P;
         use DrumSound as D;
         use HighTomSettings as HT;
+        use Kick909Settings as K9;
         use KickSettings as K;
         use LowTomSettings as LT;
         use OpenHatSettings as OH;
         use SnareSettings as S;
+        let model = self.kick.model;
         match (sound, param) {
-            (D::Kick, P::TuneHz(_)) => Some((K::MIN_TUNE_HZ, K::MAX_TUNE_HZ)),
-            (D::Kick, P::Tone(_)) => Some((K::MIN_TONE, K::MAX_TONE)),
-            (D::Kick, P::DecaySeconds(_)) => Some((K::MIN_DECAY_SECONDS, K::MAX_DECAY_SECONDS)),
+            (D::Kick, P::TuneHz(_)) => Some(match model {
+                KickModel::Tr808 => (K::MIN_TUNE_HZ, K::MAX_TUNE_HZ),
+                KickModel::Tr909 => (K9::MIN_TUNE_HZ, K9::MAX_TUNE_HZ),
+            }),
+            (D::Kick, P::DecaySeconds(_)) => Some(match model {
+                KickModel::Tr808 => (K::MIN_DECAY_SECONDS, K::MAX_DECAY_SECONDS),
+                KickModel::Tr909 => (K9::MIN_DECAY_SECONDS, K9::MAX_DECAY_SECONDS),
+            }),
+            (D::Kick, P::Tone(_)) if model == KickModel::Tr808 => Some((K::MIN_TONE, K::MAX_TONE)),
+            (D::Kick, P::Sweep(_)) if model == KickModel::Tr909 => {
+                Some((K9::MIN_SWEEP, K9::MAX_SWEEP))
+            }
+            (D::Kick, P::Attack(_)) if model == KickModel::Tr909 => {
+                Some((K9::MIN_ATTACK, K9::MAX_ATTACK))
+            }
             (D::Snare, P::TuneHz(_)) => Some((S::MIN_TUNE_HZ, S::MAX_TUNE_HZ)),
             (D::Snare, P::Tone(_)) => Some((S::MIN_TONE_SECONDS, S::MAX_TONE_SECONDS)),
             (D::Snare, P::Snappy(_)) => Some((S::MIN_SNAPPY, S::MAX_SNAPPY)),
@@ -498,16 +617,37 @@ impl KitSettings {
         }
     }
 
-    /// Every setting of every sound, as `SetDrumParam` carries them.
+    /// Every numeric setting of every sound, as `SetDrumParam` carries them:
+    /// the kick's are its chosen model's. The model itself isn't among them.
     pub fn params(&self) -> Vec<(DrumSound, DrumParam)> {
         let (kick, snare, clap) = (&self.kick, &self.snare, &self.clap);
         let (closed, open) = (&self.closed_hat, &self.open_hat);
         let (low, high, cymbal) = (&self.low_tom, &self.high_tom, &self.cymbal);
-        vec![
-            (DrumSound::Kick, DrumParam::TuneHz(kick.tune_hz)),
-            (DrumSound::Kick, DrumParam::Tone(kick.tone)),
-            (DrumSound::Kick, DrumParam::DecaySeconds(kick.decay_seconds)),
-            (DrumSound::Kick, DrumParam::LevelDb(kick.level_db)),
+        let kick_params = match kick.model {
+            KickModel::Tr808 => [
+                Some(DrumParam::TuneHz(kick.tune_hz)),
+                Some(DrumParam::Tone(kick.tone)),
+                Some(DrumParam::DecaySeconds(kick.decay_seconds)),
+                Some(DrumParam::LevelDb(kick.level_db)),
+                None,
+            ],
+            KickModel::Tr909 => {
+                let tr909 = &kick.tr909;
+                [
+                    Some(DrumParam::TuneHz(tr909.tune_hz)),
+                    Some(DrumParam::Sweep(tr909.sweep)),
+                    Some(DrumParam::Attack(tr909.attack)),
+                    Some(DrumParam::DecaySeconds(tr909.decay_seconds)),
+                    Some(DrumParam::LevelDb(tr909.level_db)),
+                ]
+            }
+        };
+        let mut params: Vec<(DrumSound, DrumParam)> = kick_params
+            .into_iter()
+            .flatten()
+            .map(|param| (DrumSound::Kick, param))
+            .collect();
+        params.extend([
             (DrumSound::Snare, DrumParam::TuneHz(snare.tune_hz)),
             (DrumSound::Snare, DrumParam::Tone(snare.tone_seconds)),
             (DrumSound::Snare, DrumParam::Snappy(snare.snappy)),
@@ -545,13 +685,27 @@ impl KitSettings {
                 DrumParam::DecaySeconds(cymbal.decay_seconds),
             ),
             (DrumSound::Cymbal, DrumParam::LevelDb(cymbal.level_db)),
-        ]
+        ]);
+        params
     }
 
-    /// Checks every setting is in range, or returns the first that isn't.
+    /// This kit with the kick's model set to `model`, and nothing else
+    /// changed: how it looks with the other model chosen.
+    pub fn with_kick_model(&self, model: KickModel) -> Self {
+        let mut kit = *self;
+        kit.kick.model = model;
+        kit
+    }
+
+    /// Checks every setting is in range, every model's, or returns the first
+    /// that isn't, as `SetDrumParam` would carry it with that model chosen.
     pub(crate) fn validate(&self) -> Result<(), (DrumSound, DrumParam, DrumParamError)> {
-        for (sound, param) in self.params() {
-            check(sound, &param).map_err(|error| (sound, param, error))?;
+        for model in KickModel::ALL {
+            let kit = self.with_kick_model(model);
+            for (sound, param) in kit.params() {
+                kit.check(sound, &param)
+                    .map_err(|error| (sound, param, error))?;
+            }
         }
         Ok(())
     }
@@ -564,59 +718,75 @@ impl KitSettings {
         sound: DrumSound,
         param: DrumParam,
     ) -> Result<DrumParam, DrumParamError> {
-        check(sound, &param)?;
         use DrumParam as P;
         use DrumSound as D;
+        if let (D::Kick, P::Model(model)) = (sound, param) {
+            let previous = std::mem::replace(&mut self.kick.model, model);
+            return Ok(P::Model(previous));
+        }
+        self.check(sound, &param)?;
+        let model = self.kick.model;
         let (kick, snare, clap) = (&mut self.kick, &mut self.snare, &mut self.clap);
         let (closed, open) = (&mut self.closed_hat, &mut self.open_hat);
         let (low, high, cymbal) = (&mut self.low_tom, &mut self.high_tom, &mut self.cymbal);
-        let slot = match (sound, param) {
-            (D::Kick, P::TuneHz(_)) => &mut kick.tune_hz,
-            (D::Kick, P::Tone(_)) => &mut kick.tone,
-            (D::Kick, P::DecaySeconds(_)) => &mut kick.decay_seconds,
-            (D::Kick, P::LevelDb(_)) => &mut kick.level_db,
-            (D::Snare, P::TuneHz(_)) => &mut snare.tune_hz,
-            (D::Snare, P::Tone(_)) => &mut snare.tone_seconds,
-            (D::Snare, P::Snappy(_)) => &mut snare.snappy,
-            (D::Snare, P::LevelDb(_)) => &mut snare.level_db,
-            (D::Clap, P::Tone(_)) => &mut clap.tone_hz,
-            (D::Clap, P::DecaySeconds(_)) => &mut clap.decay_seconds,
-            (D::Clap, P::LevelDb(_)) => &mut clap.level_db,
-            (D::ClosedHat, P::TuneHz(_)) => &mut closed.tune_hz,
-            (D::ClosedHat, P::Tone(_)) => &mut closed.tone_hz,
-            (D::ClosedHat, P::DecaySeconds(_)) => &mut closed.decay_seconds,
-            (D::ClosedHat, P::LevelDb(_)) => &mut closed.level_db,
-            (D::OpenHat, P::DecaySeconds(_)) => &mut open.decay_seconds,
-            (D::OpenHat, P::LevelDb(_)) => &mut open.level_db,
-            (D::LowTom, P::TuneHz(_)) => &mut low.tune_hz,
-            (D::LowTom, P::DecaySeconds(_)) => &mut low.decay_seconds,
-            (D::LowTom, P::LevelDb(_)) => &mut low.level_db,
-            (D::HighTom, P::TuneHz(_)) => &mut high.tune_hz,
-            (D::HighTom, P::DecaySeconds(_)) => &mut high.decay_seconds,
-            (D::HighTom, P::LevelDb(_)) => &mut high.level_db,
-            (D::Cymbal, P::Tone(_)) => &mut cymbal.tone,
-            (D::Cymbal, P::DecaySeconds(_)) => &mut cymbal.decay_seconds,
-            (D::Cymbal, P::LevelDb(_)) => &mut cymbal.level_db,
+        let slot = match (sound, param, model) {
+            (D::Kick, P::TuneHz(_), KickModel::Tr808) => &mut kick.tune_hz,
+            (D::Kick, P::Tone(_), KickModel::Tr808) => &mut kick.tone,
+            (D::Kick, P::DecaySeconds(_), KickModel::Tr808) => &mut kick.decay_seconds,
+            (D::Kick, P::LevelDb(_), KickModel::Tr808) => &mut kick.level_db,
+            (D::Kick, P::TuneHz(_), KickModel::Tr909) => &mut kick.tr909.tune_hz,
+            (D::Kick, P::Sweep(_), KickModel::Tr909) => &mut kick.tr909.sweep,
+            (D::Kick, P::Attack(_), KickModel::Tr909) => &mut kick.tr909.attack,
+            (D::Kick, P::DecaySeconds(_), KickModel::Tr909) => &mut kick.tr909.decay_seconds,
+            (D::Kick, P::LevelDb(_), KickModel::Tr909) => &mut kick.tr909.level_db,
+            (D::Snare, P::TuneHz(_), _) => &mut snare.tune_hz,
+            (D::Snare, P::Tone(_), _) => &mut snare.tone_seconds,
+            (D::Snare, P::Snappy(_), _) => &mut snare.snappy,
+            (D::Snare, P::LevelDb(_), _) => &mut snare.level_db,
+            (D::Clap, P::Tone(_), _) => &mut clap.tone_hz,
+            (D::Clap, P::DecaySeconds(_), _) => &mut clap.decay_seconds,
+            (D::Clap, P::LevelDb(_), _) => &mut clap.level_db,
+            (D::ClosedHat, P::TuneHz(_), _) => &mut closed.tune_hz,
+            (D::ClosedHat, P::Tone(_), _) => &mut closed.tone_hz,
+            (D::ClosedHat, P::DecaySeconds(_), _) => &mut closed.decay_seconds,
+            (D::ClosedHat, P::LevelDb(_), _) => &mut closed.level_db,
+            (D::OpenHat, P::DecaySeconds(_), _) => &mut open.decay_seconds,
+            (D::OpenHat, P::LevelDb(_), _) => &mut open.level_db,
+            (D::LowTom, P::TuneHz(_), _) => &mut low.tune_hz,
+            (D::LowTom, P::DecaySeconds(_), _) => &mut low.decay_seconds,
+            (D::LowTom, P::LevelDb(_), _) => &mut low.level_db,
+            (D::HighTom, P::TuneHz(_), _) => &mut high.tune_hz,
+            (D::HighTom, P::DecaySeconds(_), _) => &mut high.decay_seconds,
+            (D::HighTom, P::LevelDb(_), _) => &mut high.level_db,
+            (D::Cymbal, P::Tone(_), _) => &mut cymbal.tone,
+            (D::Cymbal, P::DecaySeconds(_), _) => &mut cymbal.decay_seconds,
+            (D::Cymbal, P::LevelDb(_), _) => &mut cymbal.level_db,
             _ => unreachable!("check found the setting"),
         };
-        let previous = std::mem::replace(slot, param.value());
-        Ok(match param {
-            DrumParam::TuneHz(_) => DrumParam::TuneHz(previous),
-            DrumParam::Tone(_) => DrumParam::Tone(previous),
-            DrumParam::DecaySeconds(_) => DrumParam::DecaySeconds(previous),
-            DrumParam::Snappy(_) => DrumParam::Snappy(previous),
-            DrumParam::LevelDb(_) => DrumParam::LevelDb(previous),
-        })
+        let value = param.value().expect("only the model has no number");
+        let previous = std::mem::replace(slot, value);
+        Ok(param.with_value(previous))
     }
-}
 
-/// Whether `sound` has `param`, and its value is in range. NaN never is.
-fn check(sound: DrumSound, param: &DrumParam) -> Result<(), DrumParamError> {
-    let (min, max) = KitSettings::range(sound, param).ok_or(DrumParamError::NoSuchSetting)?;
-    if (min..=max).contains(&param.value()) {
-        Ok(())
-    } else {
-        Err(DrumParamError::OutOfRange { min, max })
+    /// Whether `sound` has `param`, and its value is in range. NaN never is.
+    fn check(&self, sound: DrumSound, param: &DrumParam) -> Result<(), DrumParamError> {
+        if let DrumParam::Model(_) = param {
+            return match sound {
+                DrumSound::Kick => Ok(()),
+                _ => Err(DrumParamError::NoSuchSetting),
+            };
+        }
+        let (min, max) = self
+            .range(sound, param)
+            .ok_or(DrumParamError::NoSuchSetting)?;
+        if param
+            .value()
+            .is_some_and(|value| (min..=max).contains(&value))
+        {
+            Ok(())
+        } else {
+            Err(DrumParamError::OutOfRange { min, max })
+        }
     }
 }
 
@@ -648,10 +818,145 @@ mod tests {
         let kick = KickSettings::default();
         assert_eq!((kick.tune_hz, kick.decay_seconds), (49.0, 0.3));
         assert_eq!(kick.level_db, 0.0);
-        let range = |param| KitSettings::range(DrumSound::Kick, &param);
+        let range = |param| KitSettings::default().range(DrumSound::Kick, &param);
         assert_eq!(range(DrumParam::TuneHz(0.0)), Some((40.0, 80.0)));
         assert_eq!(range(DrumParam::DecaySeconds(0.0)), Some((0.05, 0.8)));
         assert!(KitSettings::default().validate().is_ok());
+    }
+
+    #[test]
+    fn the_909_kicks_defaults_and_limits_are_the_research() {
+        let kit = KitSettings::default();
+        assert_eq!(kit.kick.model, KickModel::Tr808, "808 by default");
+        let tr909 = kit.kick.tr909;
+        assert_eq!((tr909.tune_hz, tr909.decay_seconds), (55.0, 0.5));
+        assert_eq!(tr909.level_db, 0.0);
+        let kit = kit.with_kick_model(KickModel::Tr909);
+        let range = |param| kit.range(DrumSound::Kick, &param);
+        assert_eq!(range(DrumParam::TuneHz(0.0)), Some((45.0, 70.0)));
+        assert_eq!(range(DrumParam::Sweep(0.0)), Some((0.0, 1.0)));
+        assert_eq!(range(DrumParam::Attack(0.0)), Some((0.0, 1.0)));
+        assert_eq!(range(DrumParam::DecaySeconds(0.0)), Some((0.1, 1.5)));
+        assert_eq!(range(DrumParam::LevelDb(0.0)), Some((-60.0, 6.0)));
+        // Tone is the 808's alone, and Sweep and Attack the 909's.
+        assert_eq!(range(DrumParam::Tone(0.0)), None);
+        let range = |param| KitSettings::default().range(DrumSound::Kick, &param);
+        assert_eq!(range(DrumParam::Sweep(0.0)), None);
+        assert_eq!(range(DrumParam::Attack(0.0)), None);
+        assert!(kit.validate().is_ok());
+    }
+
+    /// The kick's Tune, Decay and Level go to the chosen model, and each
+    /// model keeps its own, so switching back and forth loses nothing.
+    #[test]
+    fn each_kick_model_keeps_its_own_settings() {
+        let mut kit = KitSettings::default();
+        kit.set(DrumSound::Kick, DrumParam::TuneHz(60.0)).unwrap();
+        kit.set(DrumSound::Kick, DrumParam::LevelDb(-3.0)).unwrap();
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::Model(KickModel::Tr909)),
+            Ok(DrumParam::Model(KickModel::Tr808))
+        );
+        // The 909's own values, not the 808's.
+        assert!(
+            kit.params()
+                .contains(&(DrumSound::Kick, DrumParam::TuneHz(55.0)))
+        );
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::TuneHz(48.0)),
+            Ok(DrumParam::TuneHz(55.0))
+        );
+        kit.set(DrumSound::Kick, DrumParam::Sweep(0.9)).unwrap();
+        kit.set(DrumSound::Kick, DrumParam::Attack(0.1)).unwrap();
+        kit.set(DrumSound::Kick, DrumParam::DecaySeconds(1.5))
+            .unwrap();
+        kit.set(DrumSound::Kick, DrumParam::LevelDb(2.0)).unwrap();
+        assert_eq!(
+            kit.kick.tr909,
+            Kick909Settings {
+                tune_hz: 48.0,
+                sweep: 0.9,
+                attack: 0.1,
+                decay_seconds: 1.5,
+                level_db: 2.0,
+            }
+        );
+        // The 808's are as they were.
+        assert_eq!((kit.kick.tune_hz, kit.kick.level_db), (60.0, -3.0));
+        assert_eq!(kit.kick.decay_seconds, 0.3);
+        kit.set(DrumSound::Kick, DrumParam::Model(KickModel::Tr808))
+            .unwrap();
+        assert_eq!(
+            kit.params()[..4],
+            [
+                (DrumSound::Kick, DrumParam::TuneHz(60.0)),
+                (DrumSound::Kick, DrumParam::Tone(0.2)),
+                (DrumSound::Kick, DrumParam::DecaySeconds(0.3)),
+                (DrumSound::Kick, DrumParam::LevelDb(-3.0)),
+            ]
+        );
+        assert_eq!(kit.kick.tr909.tune_hz, 48.0);
+    }
+
+    /// Each model's limits are its own, and a setting the chosen model
+    /// doesn't have is refused, changing nothing.
+    #[test]
+    fn the_kick_takes_only_its_chosen_models_settings() {
+        let mut kit = KitSettings::default();
+        // A Decay the 909 allows, but not the 808.
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::DecaySeconds(1.2)),
+            Err(DrumParamError::OutOfRange {
+                min: 0.05,
+                max: 0.8
+            })
+        );
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::Sweep(0.5)),
+            Err(DrumParamError::NoSuchSetting)
+        );
+        kit.set(DrumSound::Kick, DrumParam::Model(KickModel::Tr909))
+            .unwrap();
+        let before = kit;
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::TuneHz(40.0)),
+            Err(DrumParamError::OutOfRange {
+                min: 45.0,
+                max: 70.0
+            })
+        );
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::Tone(0.5)),
+            Err(DrumParamError::NoSuchSetting)
+        );
+        assert_eq!(
+            kit.set(DrumSound::Kick, DrumParam::Attack(f32::NAN)),
+            Err(DrumParamError::OutOfRange { min: 0.0, max: 1.0 })
+        );
+        // Only the kick has a model.
+        assert_eq!(
+            kit.set(DrumSound::Snare, DrumParam::Model(KickModel::Tr909)),
+            Err(DrumParamError::NoSuchSetting)
+        );
+        assert_eq!(kit, before);
+    }
+
+    /// A kit is checked whole: the model that isn't chosen too.
+    #[test]
+    fn validate_checks_both_models() {
+        let mut kit = KitSettings::default();
+        kit.kick.tr909.decay_seconds = 3.0;
+        assert_eq!(
+            kit.validate(),
+            Err((
+                DrumSound::Kick,
+                DrumParam::DecaySeconds(3.0),
+                DrumParamError::OutOfRange { min: 0.1, max: 1.5 }
+            ))
+        );
+        let mut kit = KitSettings::default().with_kick_model(KickModel::Tr909);
+        kit.kick.tone = -1.0;
+        assert!(kit.validate().is_err());
     }
 
     #[test]
@@ -660,7 +965,7 @@ mod tests {
         assert_eq!((snare.tune_hz, snare.level_db), (180.0, 0.0));
         let clap = ClapSettings::default();
         assert_eq!((clap.tone_hz, clap.level_db), (1000.0, 0.0));
-        let range = |sound, param| KitSettings::range(sound, &param);
+        let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
         use DrumSound as D;
         assert_eq!(range(D::Snare, P::TuneHz(0.0)), Some((140.0, 260.0)));
@@ -678,7 +983,7 @@ mod tests {
         let closed = ClosedHatSettings::default();
         assert_eq!((closed.tune_hz, closed.decay_seconds), (205.3, 0.05));
         assert_eq!(closed.level_db, 0.0);
-        let range = |sound, param| KitSettings::range(sound, &param);
+        let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
         use DrumSound as D;
         assert_eq!(range(D::ClosedHat, P::TuneHz(0.0)), Some((102.65, 410.6)));
@@ -707,7 +1012,7 @@ mod tests {
             (high.tune_hz, high.decay_seconds, high.level_db),
             (185.0, 0.1, 0.0)
         );
-        let range = |sound, param| KitSettings::range(sound, &param);
+        let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
         use DrumSound as D;
         assert_eq!(range(D::LowTom, P::TuneHz(0.0)), Some((80.0, 100.0)));
@@ -727,7 +1032,7 @@ mod tests {
             (cymbal.tone, cymbal.decay_seconds, cymbal.level_db),
             (0.5, 0.8, 0.0)
         );
-        let range = |param| KitSettings::range(DrumSound::Cymbal, &param);
+        let range = |param| KitSettings::default().range(DrumSound::Cymbal, &param);
         assert_eq!(range(DrumParam::Tone(0.0)), Some((0.0, 1.0)));
         assert_eq!(range(DrumParam::DecaySeconds(0.0)), Some((0.35, 1.2)));
         assert_eq!(range(DrumParam::LevelDb(0.0)), Some((-60.0, 6.0)));
@@ -854,7 +1159,8 @@ mod tests {
     #[test]
     fn settings_serialise_and_leave_out_nothing_they_need() {
         let json = concat!(
-            r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0},"#,
+            r#"{"kick":{"model":"808","tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0,"#,
+            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":0.0}},"#,
             r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
             r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
             r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
@@ -882,6 +1188,18 @@ mod tests {
         assert_eq!(tuned.low_tom, LowTomSettings::default());
         assert_eq!(tuned.high_tom, HighTomSettings::default());
         assert_eq!(tuned.cymbal, CymbalSettings::default());
+        // A kick from before it had a model is the 808, with the 909 at its
+        // defaults.
+        assert_eq!(tuned.kick.model, KickModel::Tr808);
+        assert_eq!(tuned.kick.tr909, Kick909Settings::default());
+        let tr909: KitSettings =
+            serde_json::from_str(r#"{"kick":{"model":"909","909":{"sweep":0.8}}}"#).unwrap();
+        assert_eq!(tr909.kick.model, KickModel::Tr909);
+        assert_eq!(tr909.kick.tr909.sweep, 0.8);
+        assert_eq!(tr909.kick.tr909.tune_hz, 55.0);
+        let param: DrumParam = serde_json::from_str(r#"{"name":"model","value":"909"}"#).unwrap();
+        assert_eq!(param, DrumParam::Model(KickModel::Tr909));
+        assert!(serde_json::from_str::<DrumParam>(r#"{"name":"model","value":"707"}"#).is_err());
         let param: DrumParam = serde_json::from_str(r#"{"name":"snappy","value":0.7}"#).unwrap();
         assert_eq!(param, DrumParam::Snappy(0.7));
         assert!(serde_json::from_str::<KitSettings>(r#"{"cowbell":{}}"#).is_err());

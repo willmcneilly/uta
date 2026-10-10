@@ -1,6 +1,7 @@
 import type { DrumParam, DrumSettingView, DrumSound, DrumUnit, KitRowView } from "./backend";
 import { Fader } from "./design/Fader";
 import { Knob } from "./design/Knob";
+import { SegmentedChoice } from "./design/SegmentedChoice";
 import { type NumberScale, linearScale } from "./design/numberScale";
 import { SETTING_STEPS, formatSeconds, fromPosition, toPosition } from "./synthScale";
 import "./DrumPanel.css";
@@ -95,6 +96,17 @@ function Strip({ row, sharedWith, onChange, onAudition }: StripProps) {
         <p className="strip-empty">No controls yet</p>
       ) : (
         <div className="strip-knobs">
+          {row.model && (
+            // provisional: D-28
+            <SegmentedChoice
+              className="strip-model"
+              legend={row.model.label}
+              name={`${row.sound}-model`}
+              options={row.model.options}
+              value={row.model.value}
+              onChange={(value) => onChange(row.sound, { name: "model", value })}
+            />
+          )}
           {knobs.map((setting) => (
             <Knob
               key={setting.name}
