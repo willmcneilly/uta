@@ -2,17 +2,18 @@
 //! (maximised, not full screen). After that, Tauri's window-state plugin
 //! opens it at the size and position it was closed at, unless that place is
 //! on no screen now, say because a display was unplugged: then it fills the
-//! main screen again.
+//! main screen again. A window closed maximised is saved with no size of its
+//! own until it's unmaximised, and that fills the main screen too.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Deserialize;
 use tauri::{App, Manager, PhysicalPosition, Runtime, WebviewWindow};
-use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 /// The window's label in `tauri.conf.json`.
-const MAIN: &str = "main";
+pub const MAIN: &str = "main";
 
 /// What the plugin saves and restores: size, position and whether it was
 /// maximised. Not visibility, because the window is shown here once it's
@@ -44,7 +45,7 @@ impl Rect {
 /// How the window opens.
 #[derive(Debug, PartialEq)]
 pub enum Opening {
-    /// Where it was closed, as the plugin restored it.
+    /// Where it was closed, restored by the plugin.
     Restored,
     /// Maximised on the main screen.
     FillMainScreen,
@@ -54,13 +55,8 @@ pub enum Opening {
 /// screens there are now.
 pub fn opening(saved: Option<Rect>, screens: &[Rect]) -> Opening {
     match saved {
-        Some(rect)
-            if rect.width > 0
-                && rect.height > 0
-                && screens.iter().any(|screen| rect.overlaps(screen)) =>
-        {
-            Opening::Restored
-        }
+        // A rectangle with no size overlaps nothing, so it fills too.
+        Some(rect) if screens.iter().any(|screen| rect.overlaps(screen)) => Opening::Restored,
         _ => Opening::FillMainScreen,
     }
 }
@@ -102,34 +98,41 @@ fn monitor_rect(monitor: &tauri::Monitor) -> Rect {
     }
 }
 
-/// Places the main window and shows it. By now the plugin has restored
-/// whatever it saved, so this only has to decide whether to fill the main
-/// screen instead.
+/// Places the main window and shows it: where the plugin saved it, or
+/// filling the main screen. The plugin is built with `skip_initial_state`,
+/// so it restores only when this says so, and a window that's going to fill
+/// the screen is never first maximised somewhere else. Placing is best
+/// effort: if it fails, the window is still shown, wherever it is.
 pub fn place<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window(MAIN) else {
         return Ok(());
     };
+    if let Err(error) = restore_or_fill(app, &window) {
+        eprintln!("uta: couldn't place the window: {error}");
+    }
+    window.show()?;
+    window.set_focus()
+}
+
+fn restore_or_fill<R: Runtime>(app: &App<R>, window: &WebviewWindow<R>) -> tauri::Result<()> {
     let path = app.path().app_config_dir()?.join(app.handle().filename());
     let screens: Vec<Rect> = window
         .available_monitors()?
         .iter()
         .map(monitor_rect)
         .collect();
-    if opening(saved(&path, MAIN), &screens) == Opening::FillMainScreen {
-        fill_main_screen(&window)?;
+    match opening(saved(&path, MAIN), &screens) {
+        Opening::Restored => window.restore_state(state_flags()),
+        Opening::FillMainScreen => {
+            // Maximising fills the screen the window is on, so move it to
+            // the main one first.
+            if let Some(main) = window.primary_monitor()? {
+                let PhysicalPosition { x, y } = *main.position();
+                window.set_position(PhysicalPosition { x, y })?;
+            }
+            window.maximize()
+        }
     }
-    window.show()?;
-    window.set_focus()
-}
-
-fn fill_main_screen<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
-    // Maximising fills the screen the window is on, so move it to the main
-    // one first.
-    if let Some(main) = window.primary_monitor()? {
-        let PhysicalPosition { x, y } = *main.position();
-        window.set_position(PhysicalPosition { x, y })?;
-    }
-    window.maximize()
 }
 
 #[cfg(test)]

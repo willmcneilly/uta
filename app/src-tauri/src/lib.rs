@@ -22,6 +22,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(window::state_flags())
+                // `window::place` decides whether to restore.
+                .skip_initial_state(window::MAIN)
                 .build(),
         )
         .setup(|app| {
