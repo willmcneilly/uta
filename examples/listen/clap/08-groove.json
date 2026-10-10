@@ -1,0 +1,90 @@
+{
+  "project": "6719a5cb-18b8-564e-bfef-60efa70c986b",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 100.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop",
+        "start_bar": 0,
+        "bars": 1
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "4572410d-6f07-5689-af82-1b50429156d7",
+              "name": "Clap",
+              "source": {
+                "drums": {
+                  "clap": {}
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "f12b02e0-7a73-5c3a-b11f-545152922eec",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "20b0769b-dc1c-50dc-aadb-11fdfd64e396",
+                      "pitch": 39,
+                      "velocity": 127,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "b4815193-13b8-545c-b095-ec562a678bcc",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 2640,
+                      "length": 240
+                    },
+                    {
+                      "id": "f580fbdd-93d4-5d50-b736-7fff6f92c14b",
+                      "pitch": 39,
+                      "velocity": 70,
+                      "start": 2400,
+                      "length": 240
+                    },
+                    {
+                      "id": "ecb3472a-3904-519d-8588-c750a43658f9",
+                      "pitch": 39,
+                      "velocity": 127,
+                      "start": 2880,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

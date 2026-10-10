@@ -1,0 +1,117 @@
+{
+  "project": "e69b3389-2681-5eed-90c2-e7197b20bcfc",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "d4d264e0-a5ca-5d57-9f77-97e28774f749",
+              "name": "Snare",
+              "source": {
+                "drums": {
+                  "snare": {}
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "464324e0-5a66-5843-b277-a4a0c2c4be39",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "de5d8a62-2cc7-5260-9a75-d533540af6e0",
+                      "pitch": 38,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "05fa60f9-5358-5c90-8f72-676fbb9c6555",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "1c310bc9-18d7-5b6f-ac8b-b3d5849af635",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "6dcfe735-f14c-50b2-990a-165869e60d5c",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "71afc621-4d83-58c0-a0a1-c1cd0b78a700",
+                      "pitch": 38,
+                      "velocity": 127,
+                      "start": 3840,
+                      "length": 240
+                    },
+                    {
+                      "id": "d8b0c49f-8e82-5f33-8126-958adfd9d330",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 4800,
+                      "length": 240
+                    },
+                    {
+                      "id": "abbc68ff-fbfe-588f-b08d-af8ba2662765",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 5760,
+                      "length": 240
+                    },
+                    {
+                      "id": "458292a3-6d71-5f64-a61b-2b50bbe6c50e",
+                      "pitch": 38,
+                      "velocity": 100,
+                      "start": 6720,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -367,6 +367,28 @@ fn the_kick_matches_its_golden_wav() {
     check_golden("kick", config(), &list.build().unwrap());
 }
 
+/// The snare's groove from its listening renders: backbeat accents, ghost
+/// notes and a flam round a 1-bar loop. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
+#[test]
+fn the_snare_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/listen/snare/09-groove.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("snare", config(), &list.build().unwrap());
+}
+
+/// The clap's groove from its listening renders: claps on 2 and 4 and a
+/// soft double before 4, round a 1-bar loop. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
+#[test]
+fn the_clap_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/listen/clap/08-groove.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("clap", config(), &list.build().unwrap());
+}
+
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.

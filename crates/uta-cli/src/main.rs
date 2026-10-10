@@ -628,13 +628,17 @@ mod tests {
 
     /// Every listening render builds, and `render-all` finds them all.
     #[test]
-    fn the_kick_listening_lists_build() {
-        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/kick");
-        let lists = command_lists(&folder).unwrap();
-        assert!(lists.len() >= 9, "{lists:?}");
-        for list in lists {
-            let project = load(Some(&list), false).unwrap();
-            assert!(default_seconds(&project) > 1.0, "{}", list.display());
+    fn the_listening_lists_build() {
+        for sound in ["kick", "snare", "clap"] {
+            let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/listen")
+                .join(sound);
+            let lists = command_lists(&folder).unwrap();
+            assert!(lists.len() >= 8, "{sound}: {lists:?}");
+            for list in lists {
+                let project = load(Some(&list), false).unwrap();
+                assert!(default_seconds(&project) > 1.0, "{}", list.display());
+            }
         }
     }
 

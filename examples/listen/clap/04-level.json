@@ -1,0 +1,206 @@
+{
+  "project": "e7bbf32f-7909-511c-a74b-b3888a0589dd",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "642ecac3-6209-5972-b6c1-ec091f53e758",
+              "name": "level_db 0.0",
+              "source": {
+                "drums": {
+                  "clap": {
+                    "level_db": 0.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "80e45c47-6b63-50c4-948c-d8a2e3961501",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "ae8ec336-4d6d-5caf-8d89-f000cd7c2a71",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "53f1f03d-c957-59e9-b343-8480e4069adb",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "9a512a08-9ea2-5e98-946e-95523cac5ad2",
+              "name": "level_db -6.0",
+              "source": {
+                "drums": {
+                  "clap": {
+                    "level_db": -6.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c48944d9-efec-529a-a9b2-5b929e31b341",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "40a1802c-df29-531a-aef4-d813d52eb113",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "4344a174-e946-5cd2-8256-9c0842c5f9af",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "5febed2b-8393-5ce1-befd-8b134f246274",
+              "name": "level_db -12.0",
+              "source": {
+                "drums": {
+                  "clap": {
+                    "level_db": -12.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "84d83197-b0b8-52b9-af62-85369b110b23",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "6e4a41ab-7d87-53f9-b524-7b93a1ef3d16",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "2f2ad71d-7d8b-5b1e-b6f2-45d286e12079",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "f09d67cf-0b19-51bc-a037-f67e75cfbd26",
+              "name": "level_db -24.0",
+              "source": {
+                "drums": {
+                  "clap": {
+                    "level_db": -24.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "f09b29cc-8886-541e-a6ac-0afde3739e66",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "7ea83a7e-31d5-5cfb-9b84-11b2edf00c79",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "e988347b-d457-5d1d-8984-e5bb30a7b505",
+                      "pitch": 39,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
