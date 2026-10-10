@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { OutputView } from "./backend";
+import { Menu } from "./design/Menu";
 import type { MeterLevel } from "./meterLevel";
 import { percent, SLOWEST_BLOCK_REFRESH_MS } from "./slowestBlock";
 import "./Output.css";
@@ -66,20 +67,19 @@ export function Output({ output, dropouts, slowestBlock, busy, onBufferSize }: P
         <label htmlFor="buffer-size">Buffer</label>
       </dt>
       <dd>
-        <span className="buffer">
-          <select
-            id="buffer-size"
-            value={output.requestedBufferSize}
-            disabled={busy}
-            onChange={(event) => onBufferSize(Number(event.currentTarget.value))}
-          >
-            {sizes.map((size) => (
-              <option key={size} value={size} disabled={!output.bufferSizes.includes(size)}>
-                {size} samples
-              </option>
-            ))}
-          </select>
-        </span>
+        <Menu
+          className="buffer"
+          id="buffer-size"
+          value={output.requestedBufferSize}
+          disabled={busy}
+          onChange={(event) => onBufferSize(Number(event.currentTarget.value))}
+        >
+          {sizes.map((size) => (
+            <option key={size} value={size} disabled={!output.bufferSizes.includes(size)}>
+              {size} samples
+            </option>
+          ))}
+        </Menu>
         {output.state === "running" && output.bufferSize !== output.requestedBufferSize && (
           <span className="note"> The device is using {output.bufferSize}.</span>
         )}

@@ -1,0 +1,73 @@
+/*
+ * A chip of tools on its own sheet, edged in a faint line, with its caption
+ * in the second ink. The keys inside are flat, in ink: they shade under the
+ * pointer, shade more when pressed, and ring in the selected ink when they
+ * have focus. Every key keeps at least a space-7 (24 px) square to hit.
+ * provisional: D-3
+ */
+.tool-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  background: var(--sheet);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
+  color: var(--ink-2);
+  font: var(--font-label);
+}
+
+/* A chip that starts with a key has no caption to give room to. */
+.tool-chip:has(> button:first-child) {
+  padding-left: var(--space-1);
+}
+
+/* Room either side of a caption between keys. */
+.tool-chip .zoom-label {
+  padding: 0 var(--space-1);
+}
+
+.tool-chip button {
+  box-sizing: border-box;
+  min-width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.tool-chip button:hover {
+  background: var(--line);
+}
+
+.tool-chip button:active {
+  background: var(--line-2);
+}
+
+.tool-chip button:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+.tool-chip button:disabled {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* A menu in a chip has the keys' smaller corners, and its chevron sits a
+   little nearer its edge. */
+.tool-chip .menu select {
+  border-radius: var(--rounded-sm);
+}
+
+.tool-chip .menu::after {
+  right: var(--space-3);
+}
