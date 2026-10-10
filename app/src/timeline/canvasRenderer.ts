@@ -2,6 +2,8 @@
 // and loops only over what fits on screen, so its work doesn't grow with the
 // song.
 
+import { drawPlayhead, drawSelectionBox } from "../design/canvasMarks";
+import { drawRuler } from "../design/ruler";
 import type { Rect } from "../pianoRoll/viewport";
 import type { Span } from "./editing";
 import { timelineGridStep } from "./snap";
@@ -23,8 +25,6 @@ import {
   visibleTracks,
 } from "./viewport";
 
-/** Bar numbers are at least this far apart. */
-const MIN_BAR_LABEL_SPACING = 32;
 /** Space between a clip and the edges of its track's row. */
 const CLIP_INSET = 3;
 /**
@@ -38,17 +38,6 @@ const PREVIEW_PADDING = 6;
 /** The tallest a note is drawn in a preview, however few pitches the clip spans. */
 const MAX_PREVIEW_ROW = 6;
 
-/** The loop's dimension line, this far above the bottom of the ruler. */
-const LOOP_LINE_RAISE = 5;
-/** Its end ticks run from here to the bottom of the ruler. */
-const LOOP_TICK_HEIGHT = 10;
-/** Its arrowheads, and the narrowest loop that has room for them. */
-const LOOP_ARROW_LENGTH = 5;
-const LOOP_ARROW_HALF_WIDTH = 2.5;
-const LOOP_ARROWS_MIN_WIDTH = 4 * LOOP_ARROW_LENGTH;
-/** The ruler's bar ticks and beat ticks, up from its bottom edge. */
-const BAR_TICK_HEIGHT = 8;
-const BEAT_TICK_HEIGHT = 4;
 
 export function createTimelineRenderer(layers: TimelineLayers): TimelineRenderer | null {
   const grid = layers.grid.getContext("2d", { alpha: false });
@@ -149,87 +138,31 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     bar: number,
     loop: TimelineGridScene["loop"],
   ): void {
-    const context = this.contexts.grid;
     const theme = this.theme;
-    const ticks = visibleTicks(view);
-    const line = theme.gridWidth;
-    context.fillStyle = theme.background;
-    context.fillRect(0, 0, this.width, RULER_HEIGHT);
-    const loopLeft = Math.max(0, Math.round(tickToX(view, loop.start)));
-    const loopRight = Math.min(this.width, Math.round(tickToX(view, loop.end)));
-    if (loop.enabled && loopRight > loopLeft) {
-      context.fillStyle = theme.loopRegion;
-      context.fillRect(loopLeft, 0, loopRight - loopLeft, RULER_HEIGHT);
-    }
-    context.fillStyle = theme.rowLine;
-    context.fillRect(0, RULER_HEIGHT - line, this.width, line);
-
-    // Beat ticks when they're far enough apart, and bar ticks with their
-    // numbers, all standing on the ruler's bottom edge.
-    const bottom = RULER_HEIGHT - line;
-    if (ticksPerQuarter * view.pixelsPerTick >= 6) {
-      context.fillStyle = theme.beatTick;
-      for (
-        let tick = Math.floor(ticks.start / ticksPerQuarter) * ticksPerQuarter;
-        tick < ticks.end;
-        tick += ticksPerQuarter
-      ) {
-        if (tick % bar !== 0) {
-          context.fillRect(Math.round(tickToX(view, tick)), bottom - BEAT_TICK_HEIGHT, line, BEAT_TICK_HEIGHT);
-        }
-      }
-    }
-    context.font = theme.labelFont;
-    context.textBaseline = "top";
-    const labelEvery = Math.max(1, Math.ceil(MIN_BAR_LABEL_SPACING / (bar * view.pixelsPerTick)));
-    const barStep = bar * labelEvery;
-    for (
-      let tick = Math.floor(ticks.start / barStep) * barStep;
-      tick < ticks.end;
-      tick += barStep
-    ) {
-      const x = Math.round(tickToX(view, tick));
-      context.fillStyle = theme.barTick;
-      context.fillRect(x, bottom - BAR_TICK_HEIGHT, line, BAR_TICK_HEIGHT);
-      context.fillStyle = theme.rulerText;
-      context.fillText(String(tick / bar + 1), x + 4, 4);
-    }
-    this.drawLoop(view, loop);
-  }
-
-  /**
-   * The loop region, drawn like a dimension line on a drawing: a line from
-   * its start to its end with an arrowhead and a tick at each, in ink over
-   * the ruler's wash while the loop is on, and faint while it's off
-   * (provisional: D-2).
-   */
-  private drawLoop(view: TimelineViewport, loop: TimelineGridScene["loop"]): void {
-    const context = this.contexts.grid;
-    const theme = this.theme;
-    const start = Math.round(tickToX(view, loop.start));
-    const end = Math.round(tickToX(view, loop.end));
-    const left = Math.max(0, start);
-    const right = Math.min(this.width, end);
-    if (right <= left) return;
-    const weight = theme.clipWidth;
-    const y = RULER_HEIGHT - LOOP_LINE_RAISE;
-    const middle = y + weight / 2;
-    context.fillStyle = loop.enabled ? theme.loop : theme.loopOff;
-    context.fillRect(left, y, right - left, weight);
-    // The ticks sit on the bar lines the loop starts and ends on, inside it.
-    context.fillRect(start, RULER_HEIGHT - LOOP_TICK_HEIGHT, weight, LOOP_TICK_HEIGHT);
-    context.fillRect(end - weight, RULER_HEIGHT - LOOP_TICK_HEIGHT, weight, LOOP_TICK_HEIGHT);
-    if (end - start < LOOP_ARROWS_MIN_WIDTH) return;
-    context.beginPath();
-    context.moveTo(start + weight, middle);
-    context.lineTo(start + weight + LOOP_ARROW_LENGTH, middle - LOOP_ARROW_HALF_WIDTH);
-    context.lineTo(start + weight + LOOP_ARROW_LENGTH, middle + LOOP_ARROW_HALF_WIDTH);
-    context.closePath();
-    context.moveTo(end - weight, middle);
-    context.lineTo(end - weight - LOOP_ARROW_LENGTH, middle - LOOP_ARROW_HALF_WIDTH);
-    context.lineTo(end - weight - LOOP_ARROW_LENGTH, middle + LOOP_ARROW_HALF_WIDTH);
-    context.closePath();
-    context.fill();
+    drawRuler(this.contexts.grid, {
+      left: 0,
+      width: this.width,
+      height: RULER_HEIGHT,
+      tickToX: (tick) => tickToX(view, tick),
+      pixelsPerTick: view.pixelsPerTick,
+      ticks: visibleTicks(view),
+      ticksPerQuarter,
+      bar,
+      loop,
+      line: theme.gridWidth,
+      loopWeight: theme.clipWidth,
+      font: theme.labelFont,
+      colours: {
+        background: theme.background,
+        loopRegion: theme.loopRegion,
+        edge: theme.rowLine,
+        beatTick: theme.beatTick,
+        barTick: theme.barTick,
+        text: theme.rulerText,
+        loop: theme.loop,
+        loopOff: theme.loopOff,
+      },
+    });
   }
 
   drawClips({ view, clips }: TimelineClipsScene): void {
@@ -301,12 +234,8 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
       context.beginPath();
       context.rect(0, RULER_HEIGHT, this.width, this.height - RULER_HEIGHT);
       context.clip();
-      context.fillStyle = this.theme.selectionBox;
-      context.fillRect(x, y, width, height);
-      const line = this.theme.selectionBoxWidth;
-      context.strokeStyle = this.theme.selectionBoxEdge;
-      context.lineWidth = line;
-      context.strokeRect(x + line / 2, y + line / 2, width - line, height - line);
+      const { selectionBox, selectionBoxEdge, selectionBoxWidth } = this.theme;
+      drawSelectionBox(context, { x, y, width, height }, selectionBox, selectionBoxEdge, selectionBoxWidth);
       context.restore();
     };
     if (drawing) {
@@ -318,15 +247,6 @@ class Canvas2DTimelineRenderer implements TimelineRenderer {
     if (box) shade(box.x, box.y, box.width, box.height);
     const x = Math.round(tickToX(view, playhead));
     if (x < 0 || x > this.width) return;
-    context.fillStyle = this.theme.playhead;
-    context.fillRect(x, 0, this.theme.playheadWidth, this.height);
-    // A marker in the ruler, centred on the line.
-    const middle = x + this.theme.playheadWidth / 2;
-    context.beginPath();
-    context.moveTo(middle - 5.5, 0);
-    context.lineTo(middle + 5.5, 0);
-    context.lineTo(middle, 7);
-    context.closePath();
-    context.fill();
+    drawPlayhead(context, x, this.theme.playheadWidth, this.height, this.theme.playhead);
   }
 }
