@@ -190,8 +190,8 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
 }
 
 /// A drum setting for any sound: mostly one the sound has (the kick's,
-/// snare's and clap's), with values a bit wider than its limits, so some are
-/// rejected, and now and then any setting on any sound.
+/// snare's, clap's and hats'), with values a bit wider than its limits, so
+/// some are rejected, and now and then any setting on any sound.
 fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
     let level = || (-70.0f32..10.0).prop_map(DrumParam::LevelDb);
     let kick = prop_oneof![
@@ -212,6 +212,13 @@ fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
         (0.0f32..0.45).prop_map(DrumParam::DecaySeconds),
         level(),
     ];
+    let closed_hat = prop_oneof![
+        (90.0f32..420.0).prop_map(DrumParam::TuneHz),
+        (3500.0f32..13_000.0).prop_map(DrumParam::Tone),
+        (0.0f32..0.2).prop_map(DrumParam::DecaySeconds),
+        level(),
+    ];
+    let open_hat = prop_oneof![(0.0f32..0.7).prop_map(DrumParam::DecaySeconds), level(),];
     let any = prop_oneof![
         (35.0f32..280.0).prop_map(DrumParam::TuneHz),
         (-0.1f32..1.1).prop_map(DrumParam::Tone),
@@ -223,6 +230,8 @@ fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
         3 => kick.prop_map(|param| (DrumSound::Kick, param)),
         3 => snare.prop_map(|param| (DrumSound::Snare, param)),
         3 => clap.prop_map(|param| (DrumSound::Clap, param)),
+        3 => closed_hat.prop_map(|param| (DrumSound::ClosedHat, param)),
+        3 => open_hat.prop_map(|param| (DrumSound::OpenHat, param)),
         1 => (prop::sample::select(KIT.map(|row| row.sound).to_vec()), any),
     ]
 }

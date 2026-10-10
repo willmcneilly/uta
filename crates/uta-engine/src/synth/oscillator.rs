@@ -65,7 +65,7 @@ impl Oscillator {
 /// at phase `t` with `dt` cycles per sample. Zero except within a sample
 /// either side of the jump.
 #[inline]
-fn poly_blep(t: f64, dt: f64) -> f64 {
+pub(crate) fn poly_blep(t: f64, dt: f64) -> f64 {
     let dt = dt.min(0.5);
     if t < dt {
         let x = t / dt;
