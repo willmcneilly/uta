@@ -23,8 +23,6 @@ import {
 const MIN_BAR_LABEL_SPACING = 32;
 /** Notes past the clip's end, and their velocity stems, are drawn this faint. */
 const OUTSIDE_ALPHA = 0.35;
-/** A black key is this much of the keyboard's width. */
-const BLACK_KEY_SHARE = 0.6;
 /** Space between the keyboard's right edge and its C labels. */
 const KEY_LABEL_INSET = 6;
 /** Where the velocity lane's label sits, from the lane's top left. */
@@ -280,8 +278,11 @@ class Canvas2DRenderer implements PianoRollRenderer {
   }
 
   /**
-   * The keys: black keys in ink-3, a faint line under each white key, and
-   * each C named in the second ink beside the notes (provisional: D-5).
+   * The keys, drawn like rows rather than a real keyboard: every key is
+   * the keyboard's full width and one row tall, so each lines up with its
+   * row in the notes. Black keys are ink-3, a faint line parts two white
+   * keys that meet (E and F, B and C), and each C is named in the second
+   * ink beside the notes (provisional: D-5).
    */
   private drawKeyboard(view: Viewport, low: number, high: number): void {
     const context = this.contexts.grid;
@@ -298,15 +299,12 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.font = theme.labelFont;
     context.textBaseline = "middle";
     context.textAlign = "right";
-    const blackWidth = Math.round(KEYBOARD_WIDTH * BLACK_KEY_SHARE);
-    // A black key stops short of its neighbours' lines, when there's room.
-    const inset = view.keyHeight >= 6 ? 1 : 0;
     for (let pitch = low; pitch <= high; pitch++) {
       const y = pitchToY(view, pitch);
       if (isBlackKey(pitch)) {
         context.fillStyle = theme.blackKey;
-        context.fillRect(0, y + inset, blackWidth, view.keyHeight - 2 * inset);
-      } else {
+        context.fillRect(0, y, KEYBOARD_WIDTH, view.keyHeight);
+      } else if (!isBlackKey(pitch - 1)) {
         context.fillStyle = theme.keyLine;
         context.fillRect(0, Math.round(y + view.keyHeight) - line, KEYBOARD_WIDTH, line);
       }

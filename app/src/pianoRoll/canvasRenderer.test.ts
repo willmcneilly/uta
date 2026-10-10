@@ -135,13 +135,24 @@ describe("the piano roll's canvas renderer", () => {
     expect(new Set(columns(grid).map((m) => m.style))).toEqual(new Set([light.ink3, light.line2, light.line]));
   });
 
-  it("draws the keys in ink-3 and faint lines, and names each C in the second ink", () => {
+  it("draws every key full width and one row tall, black keys in ink-3, and names each C", () => {
     setUp();
     drawGrid();
     const keys = grid.filter((m) => m.call === "fillRect" && m.args[0] === 0 && (m.args[1] as number) >= RULER_HEIGHT);
-    const black = keys.filter((m) => m.style === light.ink3);
-    expect(black.length).toBeGreaterThan(0);
-    expect(black.every((m) => m.args[2] === Math.round(KEYBOARD_WIDTH * 0.6))).toBe(true);
+    // C#4 is a full-width bar exactly on its row.
+    const cSharp4 = keys.find((m) => m.style === light.ink3 && m.args[1] === pitchToY(view, 61));
+    expect(cSharp4?.args).toEqual([0, pitchToY(view, 61), KEYBOARD_WIDTH, view.keyHeight]);
+    expect(keys.filter((m) => m.style === light.ink3).every((m) => m.args[2] === KEYBOARD_WIDTH)).toBe(true);
+    // A line parts two white keys that meet: under F4 (above E4), not under D4 (above C#4).
+    const lineUnder = (pitch: number) =>
+      keys.some(
+        (m) =>
+          m.style === light.line2 &&
+          m.args[3] === spacing.strokeGrid &&
+          m.args[1] === Math.round(pitchToY(view, pitch) + view.keyHeight) - spacing.strokeGrid,
+      );
+    expect(lineUnder(65)).toBe(true);
+    expect(lineUnder(62)).toBe(false);
     // C4 sits in the keys, right-aligned against the notes.
     const c4 = grid.find((m) => m.call === "fillText" && m.args[0] === "C4");
     expect(c4?.style).toBe(light.ink2);
