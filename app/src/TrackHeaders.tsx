@@ -8,8 +8,13 @@ import { ADD_TRACK_HEIGHT, RULER_HEIGHT, TRACK_HEIGHT } from "./timeline/viewpor
 import { dropIndex, formatPan } from "./trackOrder";
 import "./TrackHeaders.css";
 
-/** How wide each header's meter is, in CSS pixels. */
-const METER_WIDTH = 180;
+/**
+ * Each header's meter, in CSS pixels. It sits under the sliders' rails, as
+ * wide as they are (see TrackHeaders.css), and thinner than the master's so
+ * the headers stay quieter than the clips. provisional: D-12
+ */
+const METER_WIDTH = 148;
+const METER_HEIGHT = 4;
 
 interface Props {
   project: ProjectView;
@@ -120,7 +125,12 @@ export function TrackHeaders({
 
   const full = project.tracks.length >= project.maxTracks;
   return (
-    <section className="track-headers" aria-label="Tracks" ref={scrollRef}>
+    <section
+      className="track-headers"
+      aria-label="Tracks"
+      ref={scrollRef}
+      data-reordering={reorder !== null || undefined}
+    >
       <div className="track-headers-ruler" style={{ height: RULER_HEIGHT }} />
       <ol ref={listRef}>
         {project.tracks.map((track, index) => (
@@ -201,16 +211,16 @@ function TrackHeader({
         </span>
         <button
           type="button"
-          className="mute"
+          className="track-key mute"
           aria-label={`Mute ${name}`}
           aria-pressed={mixer.mute}
           onClick={() => onMixer({ ...mixer, mute: !mixer.mute })}
         >
-          M
+          <span>M</span>
         </button>
         <button
           type="button"
-          className="solo"
+          className="track-key solo"
           aria-label={`Solo ${name}`}
           aria-pressed={mixer.solo}
           title="⌥-click to solo on its own"
@@ -218,7 +228,7 @@ function TrackHeader({
             event.altKey ? onSoloAlone() : onMixer({ ...mixer, solo: !mixer.solo })
           }
         >
-          S
+          <span>S</span>
         </button>
       </div>
       <Slider
@@ -241,7 +251,12 @@ function TrackHeader({
         format={formatPan}
         onChange={(pan, gesture) => onMixer({ ...mixer, pan }, gesture)}
       />
-      <Meter level={levels.level(track.id)} label={`${name} meter`} width={METER_WIDTH} />
+      <Meter
+        level={levels.level(track.id)}
+        label={`${name} meter`}
+        width={METER_WIDTH}
+        height={METER_HEIGHT}
+      />
     </li>
   );
 }

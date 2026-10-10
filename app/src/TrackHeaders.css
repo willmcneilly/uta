@@ -1,8 +1,12 @@
 /* It scrolls with the timeline rather than by itself, so it has no scroll bar. */
 .track-headers {
+  /* The columns of each volume and pan row, which the meter lines up with. */
+  --track-label-width: 28px;
+  --track-value-width: 56px;
+
   flex: 0 0 var(--track-headers-width);
   overflow: hidden;
-  border-right: 1px solid var(--line-2);
+  border-right: var(--stroke-grid) solid var(--line-2);
 }
 
 /* Level with the timeline's ruler, and stays put while the headers scroll under it. */
@@ -11,7 +15,7 @@
   top: 0;
   z-index: 1;
   background: var(--sheet);
-  border-bottom: 1px solid var(--line-2);
+  border-bottom: var(--stroke-grid) solid var(--line-2);
   box-sizing: border-box;
 }
 
@@ -24,14 +28,15 @@
 /* As tall as its row on the timeline, set from TRACK_HEIGHT. */
 .track-header {
   display: grid;
-  align-content: start;
-  gap: 2px;
+  align-content: center;
+  gap: var(--space-1);
   box-sizing: border-box;
   overflow: hidden;
-  padding: 6px 10px 8px;
-  border-bottom: 1px solid var(--line-2);
+  padding: 0 var(--space-4);
+  border-bottom: var(--stroke-grid) solid var(--line-2);
 }
 
+/* The same wash as the track's row on the timeline. */
 .track-header.selected {
   background: var(--selected-wash);
 }
@@ -41,49 +46,146 @@
 }
 
 .track-header.drop-above {
-  box-shadow: inset 0 2px 0 var(--selected);
+  box-shadow: inset 0 var(--stroke-clip-selected) 0 var(--selected);
 }
 
 .track-header.drop-below {
-  box-shadow: inset 0 -2px 0 var(--selected);
+  box-shadow: inset 0 calc(-1 * var(--stroke-clip-selected)) 0 var(--selected);
 }
 
 .track-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
+/* The name is the handle to drag the track by. */
 .track-name {
   flex: 1;
-  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  /* Taller than the line, so it's easier to grab. */
+  padding-block: var(--space-1);
+  color: var(--ink);
+  font: var(--font-name);
+  white-space: nowrap;
+  text-overflow: ellipsis;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.track-title button {
-  width: 24px;
-  height: 20px;
-  padding: 0;
-  font-size: 11px;
-  font-weight: 600;
+/* Wherever the pointer goes over the headers during a drag. */
+.track-headers[data-reordering],
+.track-headers[data-reordering] * {
+  cursor: grabbing;
 }
 
-.track-title .mute[aria-pressed="true"],
-.track-title .solo[aria-pressed="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
+/* The selected track's name is underlined in the selected ink, at the
+   weight a selected clip is outlined. provisional: D-12 */
+.track-header.selected .track-name {
+  text-decoration: underline var(--stroke-clip-selected) var(--selected);
+  text-underline-offset: var(--space-1);
+}
+
+/*
+ * Mute and solo are round keys: an ink-3 ring with its letter in ink-2,
+ * filled solid ink with the letter in paper while on. Hover darkens the
+ * ring and shades it; press shades it more. On, hover lifts the fill to
+ * ink-2 and press presses it back to ink. Keyboard focus rings the key in
+ * the selected ink. The drawn circle is 18 px inside a space-7 (24 px)
+ * square to hit: the button itself stays square, because a rounded one
+ * wouldn't respond in its corners. provisional: D-12
+ */
+.track-key {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-number);
+  cursor: pointer;
+  appearance: none;
+}
+
+.track-key::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  box-sizing: border-box;
+  border: var(--stroke-grid) solid var(--ink-3);
+  border-radius: 50%;
+}
+
+/* The letter, above the drawn circle. */
+.track-key span {
+  position: relative;
+}
+
+.track-key:hover::before {
+  border-color: var(--ink-2);
+  background: var(--line);
+}
+
+.track-key:active::before {
+  background: var(--line-2);
+}
+
+.track-key[aria-pressed="true"] {
   color: var(--paper);
 }
 
+.track-key[aria-pressed="true"]::before {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.track-key[aria-pressed="true"]:hover::before {
+  border-color: var(--ink-2);
+  background: var(--ink-2);
+}
+
+.track-key[aria-pressed="true"]:active::before {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+/* The ring goes round the drawn circle, not the square hit area. */
+.track-key:focus-visible {
+  outline: none;
+}
+
+.track-key:focus-visible::before {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: var(--space-1);
+}
+
+/* Nothing disables them today; disabled beats on and off. */
+.track-key:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.track-key:disabled::before,
+.track-key[aria-pressed]:disabled::before {
+  border-color: var(--line-2);
+  background: transparent;
+}
+
+/* Volume and pan: the label in the second ink, the value as a number. */
 .track-setting {
   display: grid;
-  grid-template-columns: 28px 1fr 56px;
+  grid-template-columns: var(--track-label-width) 1fr var(--track-value-width);
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-text);
 }
 
 .track-setting .slider {
@@ -93,11 +195,56 @@
 .track-setting output {
   text-align: right;
   color: var(--ink);
+  font: var(--font-number);
+  /* After the font shorthand, which resets it. */
   font-variant-numeric: tabular-nums;
+}
+
+/* Under the sliders' rails: past the label column, its gap and the slider's
+   own room at the end. Its width is the rails' (METER_WIDTH). */
+.track-header .meter {
+  margin-top: var(--space-1);
+  margin-left: calc(var(--track-label-width) + var(--space-3) + var(--space-3));
 }
 
 .add-track-row {
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 var(--space-4);
+}
+
+/* A key like the transport's: a faint outline and ink words. provisional: D-9 */
+.add-track {
+  box-sizing: border-box;
+  height: var(--space-7);
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.add-track:hover {
+  background: var(--line);
+}
+
+.add-track:active {
+  background: var(--line-2);
+}
+
+.add-track:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+/* At the most tracks a project can have. */
+.add-track:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
 }

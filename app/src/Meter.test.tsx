@@ -93,4 +93,24 @@ describe("Meter", () => {
     runFrame();
     expect(filled).toContain("after");
   });
+
+  it("draws at the height it's given, the full height of its canvas", () => {
+    const { context } = fakeContext();
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(
+      context as unknown as CanvasRenderingContext2D,
+    );
+    const level = new MeterLevel();
+    const { getByRole } = render(<Meter level={level} label="Track meter" width={148} height={4} />);
+    const canvas = getByRole("img", { name: "Track meter" }) as HTMLCanvasElement;
+    expect(canvas.style.height).toBe("4px");
+    expect(canvas.height).toBe(4 * (window.devicePixelRatio || 1));
+    act(() => {
+      level.push(0.5);
+      runFrame();
+    });
+    for (const [, , , height] of context.fillRect.mock.calls as unknown as number[][]) {
+      expect(height).toBe(4);
+    }
+    expect(context.fillRect).toHaveBeenCalledWith(0, 0, 148, 4);
+  });
 });
