@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SynthLimits, SynthView } from "./backend";
 import { SynthPanel } from "./SynthPanel";
-import { press } from "./design/faderTesting";
+import { pressKnob } from "./design/knobTesting";
 import { DRAWING_HEIGHT, DRAWING_WIDTH } from "./synth/Drawings";
 import { envelopeShape } from "./synth/envelopeShape";
 import { type Point, filterCurve, xOfFrequency } from "./synth/filterCurve";
@@ -83,7 +83,7 @@ describe("SynthPanel's drawings", () => {
   it("follows a slider during a drag, from the value it shows, before Rust replies", () => {
     renderPanel();
     // Halfway along the cutoff's log scale is 632 Hz.
-    const drag = press(slider("Cutoff")).to(0.5);
+    const drag = pressKnob(slider("Cutoff")).to(0.5);
     expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "632 Hz");
     const shown = Number(slider("Cutoff").getAttribute("aria-valuenow"));
     expectCurve("filter", filterAt(shown, 0.5));
@@ -102,7 +102,7 @@ describe("SynthPanel's drawings", () => {
       ["Sustain", "sustain"],
       ["Release", "releaseSeconds"],
     ] as const) {
-      const drag = press(slider(name)).to(0.35);
+      const drag = pressKnob(slider(name)).to(0.35);
       const shown = Number(slider(name).getAttribute("aria-valuenow"));
       expect(shown).not.toBe(SYNTH[field]);
       expectCurve("envelope", envelopeOf({ ...SYNTH, [field]: shown }));
@@ -125,7 +125,7 @@ describe("SynthPanel's drawings", () => {
 
     // The cutoff, for both filter sliders.
     for (const name of ["Cutoff", "Resonance"]) {
-      const drag = press(slider(name)).to(0.6);
+      const drag = pressKnob(slider(name)).to(0.6);
       const cutoff = Number(slider("Cutoff").getAttribute("aria-valuenow"));
       const [mark] = marks("filter");
       expect(Number(mark.getAttribute("x1"))).toBeCloseTo(xOfFrequency(cutoff, DRAWING_WIDTH), 6);
@@ -136,7 +136,7 @@ describe("SynthPanel's drawings", () => {
     }
 
     // A timed stage's start and end.
-    let drag = press(slider("Decay")).to(0.3);
+    let drag = pressKnob(slider("Decay")).to(0.3);
     const decay = envelopeShape(
       { ...SYNTH, decaySeconds: Number(slider("Decay").getAttribute("aria-valuenow")) },
       DRAWING_WIDTH,
@@ -149,7 +149,7 @@ describe("SynthPanel's drawings", () => {
     drag.release();
 
     // The sustain level, across.
-    drag = press(slider("Sustain")).to(0.4);
+    drag = pressKnob(slider("Sustain")).to(0.4);
     const [level] = marks("envelope");
     expect(Number(level.getAttribute("y1"))).toBeCloseTo((1 - 0.4) * DRAWING_HEIGHT, 6);
     expect(Number(level.getAttribute("x2"))).toBe(DRAWING_WIDTH);

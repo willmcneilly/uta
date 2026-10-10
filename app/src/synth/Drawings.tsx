@@ -6,14 +6,14 @@ import { type EnvelopeTimes, type StageName, envelopeShape } from "./envelopeSha
 import { type Point, filterCurve, xOfFrequency, yOfGain } from "./filterCurve";
 
 // The synth panel's drawings of what the filter and the envelope do: read
-// only, so the sliders stay the controls. They're SVG, coloured and weighted
+// only, so the knobs stay the controls. They're SVG, coloured and weighted
 // by the tokens through CSS (SynthPanel.css), so they follow the theme and
 // the tuning panel. Only the hatching's spacing is read here, because an SVG
 // pattern's size is an attribute, not a style.
 
 /**
  * Each drawing's size in CSS pixels, without its labels: wide enough to read
- * three decades of frequency, short enough to sit above its sliders.
+ * three decades of frequency, short enough to sit above its knobs.
  * provisional: D-10
  */
 export const DRAWING_WIDTH = 288;
@@ -70,7 +70,7 @@ interface FilterProps {
   cutoffHz: number;
   resonance: number;
   sampleRate: number;
-  /** Mark the cutoff, while its slider or the resonance's is dragged. */
+  /** Mark the cutoff, while its knob or the resonance's is dragged. */
   marked: boolean;
 }
 
@@ -115,7 +115,7 @@ export function FilterDrawing({ cutoffHz, resonance, sampleRate, marked }: Filte
 
 interface EnvelopeProps {
   times: EnvelopeTimes;
-  /** The stage whose slider is being dragged, to mark. */
+  /** The stage whose knob is being dragged, to mark. */
   marked: StageName | null;
 }
 
@@ -138,7 +138,9 @@ export function EnvelopeDrawing({ times, marked }: EnvelopeProps) {
         `release ${formatSeconds(releaseSeconds)}`,
       ].join(", ")}
       width={width}
-      height={height}
+      // As tall as the filter's, labels and all, so the knobs under the two
+      // drawings line up.
+      height={height + LABEL_ROOM}
       data-testid="envelope-drawing"
     >
       {pattern}
