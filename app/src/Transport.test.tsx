@@ -29,9 +29,10 @@ describe("Transport", () => {
 
   it("tells screen readers whether the song is playing, as a status", () => {
     const { rerender } = render(transport(true));
-    expect(screen.getByRole("status")).toHaveTextContent("Playing");
+    // Not getByRole: each slider's <output> is a status too.
+    expect(screen.getByText("Playing")).toHaveAttribute("role", "status");
 
     rerender(transport(false));
-    expect(screen.getByRole("status")).toHaveTextContent("Stopped");
+    expect(screen.getByText("Stopped")).toHaveAttribute("role", "status");
   });
 });
