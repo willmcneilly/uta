@@ -507,6 +507,49 @@ mod tests {
         assert!(difference > 0.02, "the second hit copied the first");
     }
 
+    /// Every control glides to a new setting over the kit's smoothing time,
+    /// rather than jumping. A jump in Tune or Decay doesn't click, since the
+    /// resonator's state carries on through it, so the tests that listen
+    /// can't tell; this watches the controls themselves. A tenth of the way
+    /// into the glide, each has moved about a tenth of the way, and by the
+    /// end it's there.
+    #[test]
+    fn every_control_glides_to_a_new_setting() {
+        let mut tom = low();
+        tom.hit(1.0);
+        run(&mut tom, None, 0.01);
+        let before = tom.controls;
+        tom.set_settings(TomSettings {
+            tune_hz: 100.0,
+            decay_seconds: 0.6,
+            level_db: 6.0,
+        });
+        let after = Controls::new(tom.settings, 1);
+        let glide = super::super::smoothing_samples(RATE) as usize;
+        run(&mut tom, None, (glide / 10) as f64 / RATE);
+        let share = |from: &Ramp, now: &Ramp, to: &Ramp| {
+            (now.value() - from.value()) / (to.value() - from.value())
+        };
+        let shares = |tom: &Tom| {
+            [
+                share(
+                    &before.tune_octaves,
+                    &tom.controls.tune_octaves,
+                    &after.tune_octaves,
+                ),
+                share(&before.log_tau, &tom.controls.log_tau, &after.log_tau),
+                share(&before.level, &tom.controls.level, &after.level),
+            ]
+        };
+        for share in shares(&tom) {
+            assert!((0.05..0.2).contains(&share), "{:?}", shares(&tom));
+        }
+        run(&mut tom, None, glide as f64 / RATE);
+        for share in shares(&tom) {
+            assert!((share - 1.0).abs() < 1e-3, "{:?}", shares(&tom));
+        }
+    }
+
     /// A soft hit on a ringing accent doesn't cut its bend or skin short:
     /// they only charge up.
     #[test]

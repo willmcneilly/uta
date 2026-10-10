@@ -646,10 +646,10 @@ impl Kit {
     ///
     /// The noise restarts here. A sound ringing as playback starts carries on
     /// without a click: noise has no waveform to break, and the filters it
-    /// runs through aren't touched. The kick and toms have no free-running
-    /// parts, and
-    /// the snare's oscillators start from the same point whenever it has died
-    /// away, so neither is touched.
+    /// runs through aren't touched; the toms' skin is noise of this kind. The
+    /// kick's and toms' resonators aren't free-running, and the snare's
+    /// oscillators start from the same point whenever it has died away, so
+    /// none of them is touched.
     ///
     /// The metal restarts too. If the hats are ringing, it crossfades to
     /// its restarted self over a few milliseconds, since its square waves
