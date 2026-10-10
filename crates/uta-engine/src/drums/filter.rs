@@ -51,6 +51,7 @@ pub(crate) struct Svf {
 pub(crate) struct SvfOut {
     pub(crate) low_pass: f64,
     pub(crate) band_pass: f64,
+    pub(crate) high_pass: f64,
 }
 
 impl Svf {
@@ -68,7 +69,13 @@ impl Svf {
         SvfOut {
             low_pass,
             band_pass,
+            high_pass: hp,
         }
+    }
+
+    /// How much is still ringing in it: zero when it's at rest.
+    pub(crate) fn state(&self) -> f64 {
+        self.s1.abs() + self.s2.abs()
     }
 }
 
@@ -116,6 +123,18 @@ mod tests {
             let mut svf = Svf::default();
             let octave_up = gain(|x| svf.process(x, g, 2.0).band_pass / 2.0, cutoff * 2.0);
             assert!(octave_up < 0.5, "{cutoff}: {octave_up}");
+            // The high-pass is at -3 dB at its cutoff with no resonance
+            // (quality 0.5^0.5), and passes an octave up.
+            let q = 0.5f64.sqrt();
+            let mut svf = Svf::default();
+            let at_cutoff = gain(|x| svf.process(x, g, q).high_pass, cutoff);
+            assert!(
+                (at_cutoff - 0.5f64.sqrt()).abs() < 0.01,
+                "{cutoff}: {at_cutoff}"
+            );
+            let mut svf = Svf::default();
+            let octave_down = gain(|x| svf.process(x, g, q).high_pass, cutoff / 2.0);
+            assert!(octave_down < 0.3, "{cutoff}: {octave_down}");
         }
     }
 }

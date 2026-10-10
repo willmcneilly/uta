@@ -99,6 +99,10 @@ pub const KICK: u8 = 36;
 pub const SNARE: u8 = 38;
 /// The clap's note.
 pub const CLAP: u8 = 39;
+/// The closed hat's note.
+pub const CLOSED_HAT: u8 = 42;
+/// The open hat's note.
+pub const OPEN_HAT: u8 = 46;
 
 /// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
 /// track, "Drums 1", under the empty synth track: its clip fills the loop

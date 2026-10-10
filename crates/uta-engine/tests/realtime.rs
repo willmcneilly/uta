@@ -14,8 +14,9 @@ mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{
-    CLAP, KICK, SNARE, demo_loop, demo_song, drum_project, drum_track, empty_drum_track,
-    empty_sine_track, hit, note, project, replace_track, with_every_slot_taken, with_mixer,
+    CLAP, CLOSED_HAT, KICK, OPEN_HAT, SNARE, demo_loop, demo_song, drum_project, drum_track,
+    empty_drum_track, empty_sine_track, hit, note, project, replace_track, with_every_slot_taken,
+    with_mixer,
 };
 use uta_core::{
     Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
@@ -654,16 +655,19 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     );
 }
 
-/// The kick's, snare's and clap's hits, fast repeats and flams, every
-/// control of each turned while they ring, live hits, a jump and Play again
-/// (which restarts the kit's noise), and more drum events in a block than
-/// the budget: none of it allocates or frees on the audio thread.
+/// The kick's, snare's, clap's and hats' hits, fast repeats and flams,
+/// closed hats choking open ones, every control of each turned while they
+/// ring, live hits, a jump and Play again (which restarts the kit's noise
+/// and, when the hats are quiet, its metal), and more drum events in a
+/// block than the budget: none of it allocates or frees on the audio
+/// thread.
 #[test]
 fn drum_hits_flams_and_control_turns_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
     let beat = 960;
     let mut hits = Vec::new();
-    for (n, pitch) in [KICK, SNARE, CLAP].into_iter().enumerate() {
+    let pitches = [KICK, SNARE, CLAP, CLOSED_HAT, OPEN_HAT];
+    for (n, pitch) in pitches.into_iter().enumerate() {
         let first = 100 * n as u128;
         for i in 0..16u64 {
             // Each sound every 16th, with a flam 10 ms before each beat.
@@ -684,7 +688,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
     let slot = renderer.controller.slot(drum_track()).unwrap();
     renderer.controller.play().unwrap();
 
-    use DrumSound::{Clap, Kick, Snare};
+    use DrumSound::{Clap, ClosedHat, Kick, OpenHat, Snare};
     let turns = [
         (Kick, DrumParam::TuneHz(80.0)),
         (Snare, DrumParam::TuneHz(260.0)),
@@ -708,9 +712,20 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         (Kick, DrumParam::LevelDb(6.0)),
         (Snare, DrumParam::LevelDb(-60.0)),
         (Clap, DrumParam::LevelDb(6.0)),
+        (ClosedHat, DrumParam::TuneHz(410.6)),
+        (ClosedHat, DrumParam::Tone(12_000.0)),
+        (ClosedHat, DrumParam::DecaySeconds(0.15)),
+        (OpenHat, DrumParam::DecaySeconds(0.09)),
+        (ClosedHat, DrumParam::LevelDb(-60.0)),
+        (OpenHat, DrumParam::LevelDb(6.0)),
+        (ClosedHat, DrumParam::TuneHz(102.65)),
+        (ClosedHat, DrumParam::Tone(4000.0)),
+        (ClosedHat, DrumParam::DecaySeconds(0.02)),
+        (OpenHat, DrumParam::DecaySeconds(0.6)),
+        (ClosedHat, DrumParam::LevelDb(6.0)),
+        (OpenHat, DrumParam::LevelDb(-60.0)),
     ];
-    let pitches = [KICK, SNARE, CLAP];
-    for (round, &(sound, param)) in turns.iter().cycle().take(66).enumerate() {
+    for (round, &(sound, param)) in turns.iter().cycle().take(102).enumerate() {
         project
             .apply(&Command::SetDrumParam {
                 track: drum_track(),
@@ -721,7 +736,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         renderer.controller.set_project(&project).unwrap();
         renderer
             .controller
-            .note_on(slot, NoteKey(round as u128), pitches[round % 3], 127)
+            .note_on(slot, NoteKey(round as u128), pitches[round % 5], 127)
             .unwrap();
         renderer
             .controller
@@ -730,7 +745,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         if round % 10 == 9 {
             renderer.controller.locate(beat / 2).unwrap();
         }
-        if round == 20 || round == 50 {
+        if round % 30 == 20 {
             renderer.controller.stop().unwrap();
             renderer.controller.play().unwrap();
         }

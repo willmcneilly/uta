@@ -47,9 +47,9 @@ enum Load {
     Check7,
     /// 32 drum tracks, each playing every kit note at once on every 16th,
     /// with every sound at its longest Decay so they never fall silent, and
-    /// the kick's and snare's Tune and the clap's Tone gliding. It grows as
-    /// the sounds arrive. See RFC-006,
-    /// "Risks & unknowns" (CPU).
+    /// the kick's, snare's and hats' Tune and the clap's and hats' Tone
+    /// gliding. It grows as the sounds arrive. See RFC-006, "Risks &
+    /// unknowns" (CPU).
     Drums,
     /// The same song, timing only the first block after Play from bar
     /// 10.5, where the notes already sounding there are started. Play is
@@ -203,6 +203,14 @@ fn drum_tracks() -> Project {
             DrumSound::Clap,
             DrumParam::DecaySeconds(uta_core::ClapSettings::MAX_DECAY_SECONDS),
         ),
+        (
+            DrumSound::ClosedHat,
+            DrumParam::DecaySeconds(uta_core::ClosedHatSettings::MAX_DECAY_SECONDS),
+        ),
+        (
+            DrumSound::OpenHat,
+            DrumParam::DecaySeconds(uta_core::OpenHatSettings::MAX_DECAY_SECONDS),
+        ),
     ] {
         project
             .apply(&Command::SetDrumParam {
@@ -307,8 +315,8 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
-                // Every kick's and snare's Tune, and every clap's Tone,
-                // gliding.
+                // Every kick's, snare's and hats' Tune, and every clap's and
+                // hats' Tone, gliding.
                 Load::Drums => {
                     let mut snapshot = renderer.controller.snapshot().clone();
                     for track in snapshot.tracks_mut() {
@@ -317,6 +325,8 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                             kit.kick.tune_hz = 40.0 + step;
                             kit.snare.tune_hz = 140.0 + 3.0 * step;
                             kit.clap.tone_hz = 700.0 + 30.0 * step;
+                            kit.closed_hat.tune_hz = 102.65 + 7.0 * step;
+                            kit.closed_hat.tone_hz = 4000.0 + 200.0 * step;
                         }
                     }
                     renderer.controller.set_snapshot(snapshot).unwrap();

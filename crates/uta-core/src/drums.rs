@@ -98,16 +98,18 @@ impl DrumSound {
 
 /// Every setting of a drum track's kit.
 ///
-/// Serialises as `{"kick":{...},"snare":{...},"clap":{...}}`. Every sound
-/// may be left out, and takes its defaults, so a sound added later doesn't
-/// stop older command lists loading. The sounds that have no settings yet
-/// aren't here.
+/// Serialises as `{"kick":{...},"snare":{...},"clap":{...},
+/// "closed_hat":{...},"open_hat":{...}}`. Every sound may be left out, and
+/// takes its defaults, so a sound added later doesn't stop older command
+/// lists loading. The sounds that have no settings yet aren't here.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KitSettings {
     pub kick: KickSettings,
     pub snare: SnareSettings,
     pub clap: ClapSettings,
+    pub closed_hat: ClosedHatSettings,
+    pub open_hat: OpenHatSettings,
 }
 
 /// The 808 kick's settings: its front panel, plus Tune. See RFC-006, "The
@@ -221,6 +223,76 @@ impl Default for ClapSettings {
     }
 }
 
+/// The 808 closed hat's settings: its front panel, plus Tune, Tone and
+/// Decay. Its Tune and Tone are the open hat's too: the two hats are one
+/// circuit on the 808, which is how a closed hit cuts off a ringing open
+/// hat. See RFC-006, "The kit".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ClosedHatSettings {
+    /// The metal's pitch: the lowest of its six oscillators, in Hz. The
+    /// other five keep the 808's ratios to it.
+    pub tune_hz: f32,
+    /// Tone: where the filters that keep the metal's top end sit, in Hz.
+    pub tone_hz: f32,
+    /// How long it rings: the seconds it takes to die away by 40 dB.
+    pub decay_seconds: f32,
+    /// Its level, in dB.
+    pub level_db: f32,
+}
+
+impl ClosedHatSettings {
+    /// The 808's lowest oscillator, and an octave either side of it.
+    pub const DEFAULT_TUNE_HZ: f32 = 205.3;
+    pub const MIN_TUNE_HZ: f32 = Self::DEFAULT_TUNE_HZ / 2.0;
+    pub const MAX_TUNE_HZ: f32 = Self::DEFAULT_TUNE_HZ * 2.0;
+    pub const MIN_TONE_HZ: f32 = 4000.0;
+    pub const MAX_TONE_HZ: f32 = 12_000.0;
+    pub const MIN_DECAY_SECONDS: f32 = 0.02;
+    pub const MAX_DECAY_SECONDS: f32 = 0.15;
+}
+
+impl Default for ClosedHatSettings {
+    fn default() -> Self {
+        Self {
+            tune_hz: Self::DEFAULT_TUNE_HZ,
+            // The 808's band-pass, from the research's recipe.
+            tone_hz: 7100.0,
+            // The 808's fixed closed hat.
+            decay_seconds: 0.05,
+            level_db: 0.0,
+        }
+    }
+}
+
+/// The 808 open hat's settings: its front panel. Its Tune and Tone are the
+/// closed hat's. See RFC-006, "The kit".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OpenHatSettings {
+    /// How long it rings: the seconds it takes to die away by 40 dB.
+    pub decay_seconds: f32,
+    /// Its level, in dB.
+    pub level_db: f32,
+}
+
+impl OpenHatSettings {
+    /// The 808's Decay knob.
+    pub const MIN_DECAY_SECONDS: f32 = 0.09;
+    pub const MAX_DECAY_SECONDS: f32 = 0.6;
+}
+
+impl Default for OpenHatSettings {
+    fn default() -> Self {
+        Self {
+            // A little past the knob's middle: a hat you hear ring for about
+            // half a second.
+            decay_seconds: 0.35,
+            level_db: 0.0,
+        }
+    }
+}
+
 /// The quietest and loudest any sound's Level goes, in dB, as a track's
 /// volume does.
 pub const MIN_LEVEL_DB: f32 = -60.0;
@@ -233,7 +305,8 @@ pub const MAX_LEVEL_DB: f32 = 6.0;
 ///
 /// Each value is in its sound's own unit. Tone is the one that differs: from
 /// 0 to 1 on the kick, the wires' length in seconds on the snare, and the
-/// band-pass's centre in Hz on the clap, as each sound's settings say.
+/// filters' centre in Hz on the clap and the closed hat, as each sound's
+/// settings say.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "name", content = "value", rename_all = "snake_case")]
 pub enum DrumParam {
@@ -277,9 +350,11 @@ impl KitSettings {
     /// doesn't have that setting.
     pub fn range(sound: DrumSound, param: &DrumParam) -> Option<(f32, f32)> {
         use ClapSettings as C;
+        use ClosedHatSettings as CH;
         use DrumParam as P;
         use DrumSound as D;
         use KickSettings as K;
+        use OpenHatSettings as OH;
         use SnareSettings as S;
         match (sound, param) {
             (D::Kick, P::TuneHz(_)) => Some((K::MIN_TUNE_HZ, K::MAX_TUNE_HZ)),
@@ -290,7 +365,17 @@ impl KitSettings {
             (D::Snare, P::Snappy(_)) => Some((S::MIN_SNAPPY, S::MAX_SNAPPY)),
             (D::Clap, P::Tone(_)) => Some((C::MIN_TONE_HZ, C::MAX_TONE_HZ)),
             (D::Clap, P::DecaySeconds(_)) => Some((C::MIN_DECAY_SECONDS, C::MAX_DECAY_SECONDS)),
-            (D::Kick | D::Snare | D::Clap, P::LevelDb(_)) => Some((MIN_LEVEL_DB, MAX_LEVEL_DB)),
+            (D::ClosedHat, P::TuneHz(_)) => Some((CH::MIN_TUNE_HZ, CH::MAX_TUNE_HZ)),
+            (D::ClosedHat, P::Tone(_)) => Some((CH::MIN_TONE_HZ, CH::MAX_TONE_HZ)),
+            (D::ClosedHat, P::DecaySeconds(_)) => {
+                Some((CH::MIN_DECAY_SECONDS, CH::MAX_DECAY_SECONDS))
+            }
+            (D::OpenHat, P::DecaySeconds(_)) => {
+                Some((OH::MIN_DECAY_SECONDS, OH::MAX_DECAY_SECONDS))
+            }
+            (D::Kick | D::Snare | D::Clap | D::ClosedHat | D::OpenHat, P::LevelDb(_)) => {
+                Some((MIN_LEVEL_DB, MAX_LEVEL_DB))
+            }
             _ => None,
         }
     }
@@ -298,6 +383,7 @@ impl KitSettings {
     /// Every setting of every sound, as `SetDrumParam` carries them.
     pub fn params(&self) -> Vec<(DrumSound, DrumParam)> {
         let (kick, snare, clap) = (&self.kick, &self.snare, &self.clap);
+        let (closed, open) = (&self.closed_hat, &self.open_hat);
         vec![
             (DrumSound::Kick, DrumParam::TuneHz(kick.tune_hz)),
             (DrumSound::Kick, DrumParam::Tone(kick.tone)),
@@ -310,6 +396,18 @@ impl KitSettings {
             (DrumSound::Clap, DrumParam::Tone(clap.tone_hz)),
             (DrumSound::Clap, DrumParam::DecaySeconds(clap.decay_seconds)),
             (DrumSound::Clap, DrumParam::LevelDb(clap.level_db)),
+            (DrumSound::ClosedHat, DrumParam::TuneHz(closed.tune_hz)),
+            (DrumSound::ClosedHat, DrumParam::Tone(closed.tone_hz)),
+            (
+                DrumSound::ClosedHat,
+                DrumParam::DecaySeconds(closed.decay_seconds),
+            ),
+            (DrumSound::ClosedHat, DrumParam::LevelDb(closed.level_db)),
+            (
+                DrumSound::OpenHat,
+                DrumParam::DecaySeconds(open.decay_seconds),
+            ),
+            (DrumSound::OpenHat, DrumParam::LevelDb(open.level_db)),
         ]
     }
 
@@ -333,6 +431,7 @@ impl KitSettings {
         use DrumParam as P;
         use DrumSound as D;
         let (kick, snare, clap) = (&mut self.kick, &mut self.snare, &mut self.clap);
+        let (closed, open) = (&mut self.closed_hat, &mut self.open_hat);
         let slot = match (sound, param) {
             (D::Kick, P::TuneHz(_)) => &mut kick.tune_hz,
             (D::Kick, P::Tone(_)) => &mut kick.tone,
@@ -345,6 +444,12 @@ impl KitSettings {
             (D::Clap, P::Tone(_)) => &mut clap.tone_hz,
             (D::Clap, P::DecaySeconds(_)) => &mut clap.decay_seconds,
             (D::Clap, P::LevelDb(_)) => &mut clap.level_db,
+            (D::ClosedHat, P::TuneHz(_)) => &mut closed.tune_hz,
+            (D::ClosedHat, P::Tone(_)) => &mut closed.tone_hz,
+            (D::ClosedHat, P::DecaySeconds(_)) => &mut closed.decay_seconds,
+            (D::ClosedHat, P::LevelDb(_)) => &mut closed.level_db,
+            (D::OpenHat, P::DecaySeconds(_)) => &mut open.decay_seconds,
+            (D::OpenHat, P::LevelDb(_)) => &mut open.level_db,
             _ => unreachable!("check found the setting"),
         };
         let previous = std::mem::replace(slot, param.value());
@@ -422,6 +527,29 @@ mod tests {
     }
 
     #[test]
+    fn the_hats_defaults_and_limits_are_the_rfcs() {
+        let closed = ClosedHatSettings::default();
+        assert_eq!((closed.tune_hz, closed.decay_seconds), (205.3, 0.05));
+        assert_eq!(closed.level_db, 0.0);
+        let range = |sound, param| KitSettings::range(sound, &param);
+        use DrumParam as P;
+        use DrumSound as D;
+        assert_eq!(range(D::ClosedHat, P::TuneHz(0.0)), Some((102.65, 410.6)));
+        assert_eq!(range(D::ClosedHat, P::Tone(0.0)), Some((4000.0, 12_000.0)));
+        assert_eq!(
+            range(D::ClosedHat, P::DecaySeconds(0.0)),
+            Some((0.02, 0.15))
+        );
+        assert_eq!(range(D::OpenHat, P::DecaySeconds(0.0)), Some((0.09, 0.6)));
+        for sound in [D::ClosedHat, D::OpenHat] {
+            assert_eq!(range(sound, P::LevelDb(0.0)), Some((-60.0, 6.0)));
+        }
+        // The open hat shares the closed hat's Tune and Tone.
+        assert_eq!(range(D::OpenHat, P::TuneHz(0.0)), None);
+        assert_eq!(range(D::OpenHat, P::Tone(0.0)), None);
+    }
+
+    #[test]
     fn every_setting_of_the_snare_and_clap_sets_and_undoes() {
         let mut kit = KitSettings::default();
         let changes = [
@@ -432,6 +560,12 @@ mod tests {
             (DrumSound::Clap, DrumParam::Tone(2000.0)),
             (DrumSound::Clap, DrumParam::DecaySeconds(0.05)),
             (DrumSound::Clap, DrumParam::LevelDb(6.0)),
+            (DrumSound::ClosedHat, DrumParam::TuneHz(410.6)),
+            (DrumSound::ClosedHat, DrumParam::Tone(4000.0)),
+            (DrumSound::ClosedHat, DrumParam::DecaySeconds(0.15)),
+            (DrumSound::ClosedHat, DrumParam::LevelDb(-60.0)),
+            (DrumSound::OpenHat, DrumParam::DecaySeconds(0.09)),
+            (DrumSound::OpenHat, DrumParam::LevelDb(6.0)),
         ];
         let mut undo = Vec::new();
         for (sound, param) in changes {
@@ -494,6 +628,8 @@ mod tests {
             (DrumSound::Snare, DrumParam::DecaySeconds(0.2)),
             (DrumSound::Clap, DrumParam::TuneHz(200.0)),
             (DrumSound::Clap, DrumParam::Snappy(0.5)),
+            (DrumSound::OpenHat, DrumParam::TuneHz(205.3)),
+            (DrumSound::OpenHat, DrumParam::Tone(7100.0)),
             (DrumSound::LowTom, DrumParam::TuneHz(90.0)),
         ] {
             assert_eq!(
@@ -513,7 +649,9 @@ mod tests {
         let json = concat!(
             r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0},"#,
             r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
-            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0}}"#,
+            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
+            r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
+            r#""open_hat":{"decay_seconds":0.35,"level_db":0.0}}"#,
         );
         assert_eq!(
             serde_json::to_string(&KitSettings::default()).unwrap(),
@@ -529,6 +667,8 @@ mod tests {
         // UTA-47 wrote it) takes their defaults.
         assert_eq!(tuned.snare, SnareSettings::default());
         assert_eq!(tuned.clap, ClapSettings::default());
+        assert_eq!(tuned.closed_hat, ClosedHatSettings::default());
+        assert_eq!(tuned.open_hat, OpenHatSettings::default());
         let param: DrumParam = serde_json::from_str(r#"{"name":"snappy","value":0.7}"#).unwrap();
         assert_eq!(param, DrumParam::Snappy(0.7));
         assert!(serde_json::from_str::<KitSettings>(r#"{"cowbell":{}}"#).is_err());
