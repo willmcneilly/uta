@@ -1012,7 +1012,9 @@ mod tests {
             r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
             r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
             r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
-            r#""open_hat":{"decay_seconds":0.35,"level_db":0.0}}"#,
+            r#""open_hat":{"decay_seconds":0.35,"level_db":0.0},"#,
+            r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":0.0},"#,
+            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":0.0}}"#,
         );
         let cases = [
             (
