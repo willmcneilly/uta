@@ -12,6 +12,7 @@ mod cymbal;
 mod filter;
 mod hats;
 mod kick;
+mod kick909;
 mod metal;
 mod noise;
 mod resonator;
@@ -22,11 +23,12 @@ use clap::Clap;
 use cymbal::Cymbal;
 use hats::Hats;
 use kick::Kick;
+use kick909::Kick909;
 use metal::Metal;
 use noise::Noise;
 use snare::Snare;
 use tom::{Tom, TomKind, TomSettings};
-use uta_core::DrumSound;
+use uta_core::{DrumSound, KickModel};
 
 use crate::snapshot::db_to_gain;
 
@@ -70,7 +72,11 @@ pub fn velocity_to_strength(velocity: u8) -> f32 {
 /// and defaults, so the snapshot only has to copy values across.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct KitSettings {
+    /// Which kick plays.
+    pub kick_model: KickModel,
+    /// The 808 kick's settings, and the 909's.
     pub kick: KickSettings,
+    pub kick_909: Kick909Settings,
     pub snare: SnareSettings,
     pub clap: ClapSettings,
     pub closed_hat: ClosedHatSettings,
@@ -95,7 +101,11 @@ impl KitSettings {
         // shell rings about 0.5 s with its long tail, and its wires hold for
         // up to 70 ms first; the clap's tail swells for a few ms after its
         // last burst, 30 ms in.
-        let kick = kick.decay_seconds * 1.5;
+        // The chosen kick's. The 909's envelope holds for 1 ms first.
+        let kick = match self.kick_model {
+            KickModel::Tr808 => kick.decay_seconds * 1.5,
+            KickModel::Tr909 => 0.001 + self.kick_909.clamped().decay_seconds * 1.5,
+        };
         let snare = (0.07 + snare.tone_seconds * 1.5).max(0.5);
         let clap = 0.05 + clap.decay_seconds * 1.5;
         let hats = closed_hat.decay_seconds.max(open_hat.decay_seconds) * 1.5;
@@ -176,6 +186,67 @@ impl From<&uta_core::KickSettings> for KickSettings {
         Self {
             tune_hz: settings.tune_hz,
             tone: settings.tone,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
+/// The 909 kick's settings. See `uta_core::Kick909Settings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Kick909Settings {
+    /// The note it settles on, in Hz, [`Self::TUNE_HZ`].
+    pub tune_hz: f32,
+    /// How far the pitch drops at the start, [`Self::SWEEP`].
+    pub sweep: f32,
+    /// How much click, [`Self::ATTACK`].
+    pub attack: f32,
+    /// The seconds it takes to die away by 40 dB, [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl Kick909Settings {
+    pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::Kick909Settings::MIN_TUNE_HZ..=uta_core::Kick909Settings::MAX_TUNE_HZ;
+    pub const SWEEP: std::ops::RangeInclusive<f32> =
+        uta_core::Kick909Settings::MIN_SWEEP..=uta_core::Kick909Settings::MAX_SWEEP;
+    pub const ATTACK: std::ops::RangeInclusive<f32> =
+        uta_core::Kick909Settings::MIN_ATTACK..=uta_core::Kick909Settings::MAX_ATTACK;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::Kick909Settings::MIN_DECAY_SECONDS..=uta_core::Kick909Settings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
+            sweep: clamp(self.sweep, Self::SWEEP, default.sweep),
+            attack: clamp(self.attack, Self::ATTACK, default.attack),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for Kick909Settings {
+    fn default() -> Self {
+        Self::from(&uta_core::Kick909Settings::default())
+    }
+}
+
+impl From<&uta_core::Kick909Settings> for Kick909Settings {
+    fn from(settings: &uta_core::Kick909Settings) -> Self {
+        Self {
+            tune_hz: settings.tune_hz,
+            sweep: settings.sweep,
+            attack: settings.attack,
             decay_seconds: settings.decay_seconds,
             level_db: settings.level_db,
         }
@@ -565,7 +636,9 @@ impl From<&uta_core::CymbalSettings> for CymbalSettings {
 impl From<&uta_core::KitSettings> for KitSettings {
     fn from(kit: &uta_core::KitSettings) -> Self {
         Self {
+            kick_model: kit.kick.model,
             kick: KickSettings::from(&kit.kick),
+            kick_909: Kick909Settings::from(&kit.kick.tr909),
             snare: SnareSettings::from(&kit.snare),
             clap: ClapSettings::from(&kit.clap),
             closed_hat: ClosedHatSettings::from(&kit.closed_hat),
@@ -609,7 +682,11 @@ fn smoothing_samples(sample_rate: f64) -> u32 {
 /// One drum track's kit on the audio thread: a circuit per sound. Owned by
 /// its slot.
 pub(crate) struct Kit {
+    /// Which kick a hit plays. The other rings on if it was ringing, so
+    /// changing the model never cuts a kick off.
+    kick_model: KickModel,
     kick: Kick,
+    kick_909: Kick909,
     snare: Snare,
     clap: Clap,
     /// Both hats: one circuit.
@@ -617,7 +694,7 @@ pub(crate) struct Kit {
     low_tom: Tom,
     high_tom: Tom,
     cymbal: Cymbal,
-    /// The noise the snare, the clap and the toms share.
+    /// The noise the snare, the clap, the toms and the 909 kick's click share.
     noise: Noise,
     /// The metal the hats and the cymbal filter, tuned by the closed hat's
     /// Tune.
@@ -633,7 +710,9 @@ impl Kit {
     pub(crate) fn new(settings: KitSettings, sample_rate: f64) -> Self {
         let hats = Hats::new(settings.closed_hat, settings.open_hat, sample_rate);
         Self {
+            kick_model: settings.kick_model,
             kick: Kick::new(settings.kick, sample_rate),
+            kick_909: Kick909::new(settings.kick_909, sample_rate),
             snare: Snare::new(settings.snare, sample_rate),
             clap: Clap::new(settings.clap, sample_rate),
             low_tom: Tom::new(TomKind::Low, settings.low_tom.tom(), sample_rate),
@@ -649,6 +728,7 @@ impl Kit {
     /// was playing on has already faded out or gone.
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         self.kick.prepare(sample_rate);
+        self.kick_909.prepare(sample_rate);
         self.snare.prepare(sample_rate);
         self.clap.prepare(sample_rate);
         self.hats.prepare(sample_rate);
@@ -662,7 +742,9 @@ impl Kit {
     /// Takes on new settings straight away, with no glide: for a kit that
     /// isn't sounding.
     pub(crate) fn load(&mut self, settings: KitSettings) {
+        self.kick_model = settings.kick_model;
         self.kick.load(settings.kick);
+        self.kick_909.load(settings.kick_909);
         self.snare.load(settings.snare);
         self.clap.load(settings.clap);
         self.hats.load(settings.closed_hat, settings.open_hat);
@@ -674,7 +756,9 @@ impl Kit {
 
     /// Glides to new settings.
     pub(crate) fn set_settings(&mut self, settings: KitSettings) {
+        self.kick_model = settings.kick_model;
         self.kick.set_settings(settings.kick);
+        self.kick_909.set_settings(settings.kick_909);
         self.snare.set_settings(settings.snare);
         self.clap.set_settings(settings.clap);
         self.hats
@@ -690,7 +774,10 @@ impl Kit {
     pub(crate) fn hit(&mut self, pitch: u8, velocity: u8) {
         let strength = velocity_to_strength(velocity);
         match DrumSound::at_pitch(pitch) {
-            Some(DrumSound::Kick) => self.kick.hit(strength),
+            Some(DrumSound::Kick) => match self.kick_model {
+                KickModel::Tr808 => self.kick.hit(strength),
+                KickModel::Tr909 => self.kick_909.hit(strength),
+            },
             Some(DrumSound::Snare) => self.snare.hit(strength),
             Some(DrumSound::Clap) => self.clap.hit(strength),
             Some(DrumSound::ClosedHat) => self.hats.hit_closed(strength),
@@ -730,6 +817,7 @@ impl Kit {
     /// Whether any sound is ringing, or about to.
     pub(crate) fn is_sounding(&self) -> bool {
         self.kick.is_sounding()
+            || self.kick_909.is_sounding()
             || self.snare.is_sounding()
             || self.clap.is_sounding()
             || self.hats.is_sounding()
@@ -750,6 +838,7 @@ impl Kit {
             0.0
         };
         self.kick.next_sample()
+            + self.kick_909.next_sample(noise)
             + self.snare.next_sample(noise)
             + self.clap.next_sample(noise)
             + self.hats.next_sample(metal)
