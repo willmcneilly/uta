@@ -77,4 +77,34 @@ describe("NoteIndex", () => {
       expect(found).toEqual(expected);
     }
   });
+
+  it("finds the notes sounding at a tick: started, not yet ended, and inside the clip", () => {
+    const index = new NoteIndex(
+      clip(
+        [
+          { ...note(0, 960), id: "held" },
+          { ...note(480, 480, 64), id: "starts-now" },
+          { ...note(0, 480, 67), id: "ended" },
+          { ...note(500, 100, 72), id: "later" },
+          { ...note(0, 960, 30), id: "low" },
+          { ...note(600, 960, 76), id: "past-end" },
+        ],
+        1000,
+        600,
+      ),
+    );
+    // Song time: the clip starts at 1000, and is 600 ticks long.
+    const at = (tick: number, low = 50, high = 127) =>
+      index
+        .sounding(tick, low, high)
+        .map((n) => n.id)
+        .sort();
+    expect(at(1480)).toEqual(["held", "starts-now"]);
+    expect(at(1480, 0)).toEqual(["held", "low", "starts-now"]);
+    // A note sounds from its start, up to but not at its end.
+    expect(at(1000)).toEqual(["ended", "held"]);
+    expect(at(1960)).toEqual([]);
+    // Past the clip's end, a note isn't played.
+    expect(at(1700)).toEqual(["held", "starts-now"]);
+  });
 });

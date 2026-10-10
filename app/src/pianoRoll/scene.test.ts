@@ -255,6 +255,65 @@ describe("PianoRollScene", () => {
   });
 });
 
+describe("PianoRollScene's sounding and hovered notes", () => {
+  it("passes the notes under the playhead as sounding, only while playing", () => {
+    scene.draw(100);
+    expect(renderer.marks.at(-1)?.sounding).toEqual([]);
+    scene.draw(100, true);
+    expect(renderer.marks.at(-1)?.sounding.map((n) => n.id)).toEqual(["a"]);
+    scene.draw(600, true);
+    expect(renderer.marks.at(-1)?.sounding).toEqual([]);
+    scene.draw(7700, true);
+    expect(renderer.marks.at(-1)?.sounding.map((n) => n.id)).toEqual(["b"]);
+  });
+
+  it("redraws only the top layer as the playhead moves while playing", () => {
+    scene.draw(0, true);
+    for (const playhead of [100, 200, 600, 7700]) scene.draw(playhead, true);
+    expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
+    expect(renderer.tops).toEqual([0, 100, 200, 600, 7700]);
+  });
+
+  it("clears the sounding notes when playback stops, even if the playhead doesn't move", () => {
+    scene.draw(100, true);
+    scene.draw(100, false);
+    expect(renderer.tops).toEqual([100, 100]);
+    expect(renderer.marks.at(-1)?.sounding).toEqual([]);
+  });
+
+  it("redraws only the top layer when the note under the pointer changes", () => {
+    scene.draw(0);
+    const view = scene.getView()!;
+    const hit = scene.hitTest(tickToX(view, 100), pitchToY(view, 72) + 3);
+    expect(hit?.note.id).toBe("a");
+    scene.setHovered(hit!.note);
+    scene.draw(0);
+    scene.setHovered(hit!.note);
+    scene.draw(0);
+    scene.setHovered(null);
+    scene.draw(0);
+    expect([renderer.grids.length, renderer.notes.length]).toEqual([1, 1]);
+    expect(renderer.marks.map((marks) => marks.hovered?.id ?? null)).toEqual([null, "a", null]);
+  });
+
+  it("forgets the note under the pointer when the notes change", () => {
+    scene.draw(0);
+    const view = scene.getView()!;
+    scene.setHovered(scene.hitTest(tickToX(view, 100), pitchToY(view, 72) + 3)!.note);
+    show(projectView({}, [note("a", 960), note("b", 7680)]));
+    scene.draw(0);
+    expect(renderer.marks.at(-1)?.hovered).toBeNull();
+  });
+
+  it("says when the clip has no notes", () => {
+    scene.draw(0);
+    expect(renderer.notes.at(-1)?.empty).toBe(false);
+    show(projectView({}, []));
+    scene.draw(0);
+    expect(renderer.notes.at(-1)?.empty).toBe(true);
+  });
+});
+
 describe("sameClip", () => {
   it("doesn't compare the notes one by one when they're the same array", () => {
     let reads = 0;

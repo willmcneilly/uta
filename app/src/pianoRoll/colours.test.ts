@@ -1,14 +1,12 @@
-/* eslint-disable uta/no-raw-colour -- the colours here are test data */
 import { describe, expect, it } from "vitest";
-import { isBlackKey, octaveName, velocityColours } from "./colours";
+import { HARDEST_FILL, SOFTEST_FILL, isBlackKey, octaveName, velocityAlpha } from "./colours";
 
-describe("velocityColours", () => {
-  it("runs from the soft colour at velocity 1 to the hard one at 127", () => {
-    const colours = velocityColours("#000000", "#7e7e7e");
-    expect(colours).toHaveLength(128);
-    expect(colours[1]).toBe("rgb(0, 0, 0)");
-    expect(colours[64]).toBe("rgb(63, 63, 63)");
-    expect(colours[127]).toBe("rgb(126, 126, 126)");
+describe("velocityAlpha", () => {
+  it("fills harder notes more heavily, from the softest fill at 1 to the hardest at 127", () => {
+    expect(velocityAlpha(1)).toBe(SOFTEST_FILL);
+    expect(velocityAlpha(127)).toBe(HARDEST_FILL);
+    expect(velocityAlpha(64)).toBeCloseTo((SOFTEST_FILL + HARDEST_FILL) / 2, 2);
+    expect(velocityAlpha(100)).toBeGreaterThan(velocityAlpha(40));
   });
 });
 

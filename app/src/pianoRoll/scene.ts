@@ -37,8 +37,10 @@ export class PianoRollScene {
   private notesDirty = true;
   private topDirty = true;
   private lastPlayhead = NaN;
+  private lastPlaying = false;
   private selected: ReadonlySet<string> = new Set();
   private box: Rect | null = null;
+  private hovered: PlacedNote | null = null;
 
   /**
    * A new project view from Rust, and the clip to show from it: the notes,
@@ -58,6 +60,8 @@ export class PianoRollScene {
     if (!this.clip || !sameClip(this.clip, clip)) {
       this.index = new NoteIndex(clip);
       this.notesDirty = true;
+      // The note under the pointer may have moved or gone; the next move finds it again.
+      this.setHovered(null);
     }
     this.project = project;
     this.clip = clip;
@@ -118,6 +122,17 @@ export class PianoRollScene {
     if (ids.size === this.selected.size && [...ids].every((id) => this.selected.has(id))) return;
     this.selected = new Set(ids);
     this.notesDirty = true;
+    // The top layer draws the sounding and hovered notes by whether they're selected.
+    if (this.hovered || this.lastPlaying) this.topDirty = true;
+  }
+
+  /**
+   * Marks the note under the pointer, or none with `null`. Pass a note
+   * `hitTest` or `hitVelocity` found, so it's the one being drawn.
+   */
+  setHovered(note: PlacedNote | null): void {
+    if (note?.id !== this.hovered?.id) this.topDirty = true;
+    this.hovered = note;
   }
 
   /** Shows the selection box being dragged out, in CSS pixels, or hides it with `null`. */
@@ -180,8 +195,11 @@ export class PianoRollScene {
       .map((note) => note.id);
   }
 
-  /** Redraws the layers that need it, with the playhead at `playhead` ticks. */
-  draw(playhead: number): void {
+  /**
+   * Redraws the layers that need it, with the playhead at `playhead` ticks.
+   * While `playing`, the notes under the playhead are drawn as sounding.
+   */
+  draw(playhead: number, playing = false): void {
     const { renderer, view, project, index } = this;
     if (!renderer || !view || !project || !index) return;
     if (this.gridDirty) {
@@ -205,12 +223,19 @@ export class PianoRollScene {
         notes: index.visible(ticks.start, ticks.end, pitches.low, pitches.high),
         velocities: index.visible(ticks.start, ticks.end, 0, PITCH_COUNT - 1),
         selected: this.selected,
+        empty: index.size === 0,
       });
       this.notesDirty = false;
     }
-    if (this.topDirty || playhead !== this.lastPlayhead) {
-      renderer.drawTop(view, playhead, this.box);
+    if (this.topDirty || playhead !== this.lastPlayhead || playing !== this.lastPlaying) {
+      const pitches = visiblePitches(view);
+      renderer.drawTop(view, playhead, this.box, {
+        sounding: playing ? index.sounding(playhead, pitches.low, pitches.high) : [],
+        hovered: this.hovered,
+        selected: this.selected,
+      });
       this.lastPlayhead = playhead;
+      this.lastPlaying = playing;
       this.topDirty = false;
     }
   }

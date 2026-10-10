@@ -61,6 +61,24 @@ export class NoteIndex {
     }
     return found;
   }
+
+  /**
+   * The notes sounding at the tick `at` with a pitch from `low` to `high`:
+   * those that have started and not yet ended. Notes past the clip's end
+   * aren't played, so they never sound.
+   */
+  sounding(at: number, low: number, high: number): PlacedNote[] {
+    let index = firstAtOrAfter(this.notes, at - this.maxLength);
+    const found: PlacedNote[] = [];
+    for (; index < this.notes.length; index++) {
+      const note = this.notes[index];
+      if (note.start > at) break;
+      if (note.start + note.length > at && !note.outside && note.pitch >= low && note.pitch <= high) {
+        found.push(note);
+      }
+    }
+    return found;
+  }
 }
 
 /** The index of the first note starting at or after `ticks`. */

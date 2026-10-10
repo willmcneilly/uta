@@ -1,9 +1,10 @@
-/* The canvas's own colours are in colours.ts. */
+/* The canvas's own colours, line weights and fonts are in colours.ts. */
 .piano-roll {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  background: var(--sheet);
 }
 
 .piano-roll-canvas {
@@ -22,26 +23,113 @@
   outline: none;
 }
 
+/* The focus ring is the selected ink, inside the edge so the frame doesn't
+   clip it, as on the timeline (provisional: D-3). */
+.piano-roll-canvas:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: calc(-1 * var(--stroke-clip-selected));
+}
+
+/* Snap and zoom, styled as the timeline's: a chip on its own sheet, with
+   flat keys in ink that shade under the pointer, shade more when pressed,
+   and ring in the selected ink when they have focus. Every key keeps at
+   least a space-7 (24 px) square to hit (provisional: D-3). UTA-43 makes
+   the two one component. */
 .piano-roll-tools {
   position: absolute;
-  right: 8px;
+  right: var(--space-4);
   display: flex;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .piano-roll .zoom,
 .piano-roll .snap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
   background: var(--sheet);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-label);
+}
+
+.piano-roll .zoom {
+  padding-left: var(--space-1);
+}
+
+.piano-roll .zoom span {
+  padding: 0 var(--space-1);
 }
 
 .piano-roll .zoom button:nth-of-type(2) {
-  margin-right: 8px;
+  margin-right: var(--space-4);
+}
+
+.piano-roll-tools button,
+.piano-roll-tools select {
+  box-sizing: border-box;
+  min-width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.piano-roll-tools button {
+  padding: 0;
+}
+
+/* Room on the right for the chevron in place of the native arrow, and at
+   least as wide as the native select was. */
+.piano-roll-tools select {
+  min-width: 64px;
+  padding: 0 calc(var(--space-6) + var(--space-1)) 0 var(--space-3);
+}
+
+.piano-roll .snap::after {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--space-3) + var(--space-1));
+  width: 5px;
+  height: 5px;
+  border-right: var(--stroke-clip) solid var(--ink-2);
+  border-bottom: var(--stroke-clip) solid var(--ink-2);
+  content: "";
+  pointer-events: none;
+  transform: translateY(-75%) rotate(45deg);
+}
+
+.piano-roll-tools button:hover,
+.piano-roll-tools select:hover {
+  background: var(--line);
+}
+
+.piano-roll-tools button:active,
+.piano-roll-tools select:active {
+  background: var(--line-2);
+}
+
+.piano-roll-tools button:focus-visible,
+.piano-roll-tools select:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+.piano-roll-tools button:disabled,
+.piano-roll-tools select:disabled {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.piano-roll .snap:has(select:disabled)::after {
+  border-color: var(--ink-3);
 }
