@@ -1,47 +1,166 @@
+/*
+ * The synth panel: the waveform keys, then the filter and the envelope, each
+ * drawn above its sliders (provisional: D-10).
+ */
 .synth {
   display: flex;
-  gap: 24px;
+  align-items: flex-start;
+  gap: var(--space-7);
+  min-height: 0;
+  overflow: auto;
+  color: var(--ink);
+  font: var(--font-text);
 }
 
 .synth fieldset {
   display: grid;
-  grid-template-columns: max-content minmax(100px, 1fr) max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 4px 8px;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: none;
-  min-width: 0;
 }
 
 .synth legend {
-  padding: 0 0 4px;
+  padding: 0 0 var(--space-3);
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-text);
 }
 
-.synth .waveform {
-  grid-template-columns: max-content max-content;
-  align-content: start;
-}
-
-.synth .waveform label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.synth .envelope {
-  flex: 1;
-  grid-template-columns: max-content minmax(80px, 1fr) max-content max-content minmax(80px, 1fr) max-content;
-}
-
-/* Each slider's label, input and value sit in the fieldset's own columns. */
+/* Each slider's label, slider and value sit in the fieldset's own columns,
+   as wide as the drawing above them. */
 .synth .setting {
   display: contents;
 }
 
+.synth .setting > span {
+  color: var(--ink-2);
+}
+
 .synth .setting output {
-  min-width: 64px;
-  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+  color: var(--ink);
+  font: var(--font-number);
+  text-align: right;
+}
+
+/* The drawings. Structure is faint, the curve is ink, and the hatching
+   under it is the hatch ink. While a slider is dragged, a dashed line marks
+   the part of the drawing it moves. */
+.synth .drawing {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-3);
+  overflow: visible;
+}
+
+.drawing .frame {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: var(--stroke-grid);
+}
+
+.drawing .grid {
+  stroke: var(--line-2);
+  stroke-width: var(--stroke-grid);
+}
+
+.drawing .axis {
+  fill: var(--ink-2);
+  font: var(--font-label);
+}
+
+.drawing .hatch {
+  stroke: var(--hatch);
+  stroke-width: var(--stroke-grid);
+}
+
+.drawing .under {
+  stroke: none;
+}
+
+.drawing .curve {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+  stroke-linejoin: round;
+}
+
+.drawing .dimension {
+  stroke: var(--ink-2);
+  stroke-width: var(--stroke-grid);
+  stroke-dasharray: 2 3;
+}
+
+/*
+ * The waveform keys: one cycle of each wave and its name, in the second
+ * ink. The chosen one is in ink, outlined. Hover shades a key and pressing
+ * shades it more, and the focus ring is the selected ink, as D-3's keys.
+ * Every key is at least space-7 (24 px) tall (provisional: D-11).
+ */
+.synth .waveform {
+  grid-template-columns: max-content;
+  gap: var(--space-2);
+}
+
+.synth .waveform label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-height: var(--space-7);
+  padding: 0 var(--space-5) 0 var(--space-3);
+  border: var(--stroke-clip) solid transparent;
+  border-radius: var(--rounded-md);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+/* The radio itself is hidden; the key is drawn on its label. It stays in the
+   page, focusable, for the keyboard and assistive tech. */
+.synth .waveform input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.synth .waveform .cycle {
+  overflow: visible;
+}
+
+.synth .waveform .cycle path {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: var(--stroke-curve);
+  stroke-linejoin: round;
+}
+
+.synth .waveform label:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.synth .waveform label:active {
+  background: var(--line-2);
+}
+
+.synth .waveform label:has(input:checked) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.synth .waveform label:has(input:focus-visible) {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+.synth .waveform label:has(input:disabled) {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { readFonts, readLineWidths } from "./readTokens";
+import { readFonts, readHatchGap, readLineWidths } from "./readTokens";
 import { spacing, typography } from "./tokens";
 
 describe("readLineWidths", () => {
@@ -14,6 +14,16 @@ describe("readLineWidths", () => {
     const widths = readLineWidths(document.body);
     expect(widths.strokeGrid).toBe(spacing.strokeGrid);
     expect(Object.keys(widths).every((name) => name.startsWith("stroke"))).toBe(true);
+  });
+});
+
+describe("readHatchGap", () => {
+  afterEach(() => document.documentElement.removeAttribute("style"));
+
+  it("reads the hatching's spacing from its CSS variable, or DESIGN.md's without it", () => {
+    expect(readHatchGap(document.body)).toBe(spacing.hatchGap);
+    document.documentElement.style.setProperty("--hatch-gap", "8px");
+    expect(readHatchGap(document.body)).toBe(8);
   });
 });
 

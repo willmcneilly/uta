@@ -26,6 +26,12 @@ export function readLineWidths(element: Element): LineWidths {
   ) as LineWidths;
 }
 
+/** The gap between hatching lines (`hatch-gap`) in CSS pixels, read as `readLineWidths` reads. */
+export function readHatchGap(element: Element): number {
+  const value = parseFloat(getComputedStyle(element).getPropertyValue("--hatch-gap"));
+  return Number.isFinite(value) && value > 0 ? value : spacing.hatchGap;
+}
+
 /** Each type role as a canvas `font`, such as "400 11px system-ui", from the CSS variables. */
 export function readFonts(element: Element): Fonts {
   const style = getComputedStyle(element);

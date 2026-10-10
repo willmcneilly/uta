@@ -618,6 +618,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               synth={track.synth}
               limits={project.synthLimits}
               defaults={project.synthDefaults}
+              sampleRate={status?.output.sampleRate ?? null}
               onChange={changeSynth}
             />
           ) : clip ? (

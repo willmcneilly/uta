@@ -8,7 +8,7 @@ describe("the envelope's shape", () => {
   const times = { attackSeconds: 0.1, decaySeconds: 0.2, sustain: 0.5, releaseSeconds: 0.5 };
   const { stages, points } = envelopeShape(times, 1000, 100);
 
-  it("gives each timed stage a length in proportion to its time, and the sustain a fixed share", () => {
+  it("gives each timed stage a length in proportion to its time, the sustain a fixed share", () => {
     expect(SUSTAIN_SHARE).toBe(0.2);
     expect(stages.map(({ name, start, end }) => [name, start, end])).toEqual([
       ["attack", 0, 100],

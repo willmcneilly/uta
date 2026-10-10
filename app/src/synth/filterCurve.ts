@@ -73,7 +73,7 @@ export function frequencyOfX(x: number, width: number): number {
   return low * (high / low) ** (x / width);
 }
 
-/** Where `db` sits down a drawing `height` tall. Anything below the range sits on the bottom edge. */
+/** Where `db` sits down a drawing `height` tall. Anything quieter sits on the bottom edge. */
 export function yOfGain(db: number, height: number): number {
   const [bottom, top] = GAINS;
   const clamped = Math.min(top, Math.max(bottom, db));

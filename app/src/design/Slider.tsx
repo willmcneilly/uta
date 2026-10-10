@@ -37,6 +37,11 @@ interface Props {
   format: (value: number) => string;
   /** `gesture` is the same for every change in one drag, and undefined otherwise. */
   onChange: (value: number, gesture?: number) => void;
+  /**
+   * The value it shows during a drag, on each change, then null when the
+   * drag ends, for anything that draws what the slider shows.
+   */
+  onDrag?: (value: number | null) => void;
   /** How many positions an arrow key moves it. */
   keyStep?: number;
   /** How many positions Shift+arrow moves it. Ten arrow steps unless given. */
@@ -58,6 +63,7 @@ export function Slider({
   scale,
   format,
   onChange,
+  onDrag,
   keyStep = 1,
   bigStep = keyStep * 10,
   className = "",
@@ -74,8 +80,10 @@ export function Slider({
   const [pointerFocused, setPointerFocused] = useState(false);
   // A drag sends through the latest `onChange`: the caller's can change mid-drag.
   const latestOnChange = useRef(onChange);
+  const latestOnDrag = useRef(onDrag);
   useEffect(() => {
     latestOnChange.current = onChange;
+    latestOnDrag.current = onDrag;
   });
 
   // A drag ends if the slider goes away mid-drag.
@@ -117,6 +125,7 @@ export function Slider({
     let exact = anchor.at;
     let lastX = event.clientX;
     let sent = start;
+    let shown: number | null = null;
 
     const moveTo = (x: number, fine: boolean) => {
       if (fine !== anchor.fine) anchor = { x: lastX, at: clampPosition(exact), fine };
@@ -124,6 +133,10 @@ export function Slider({
       lastX = x;
       const next = clampPosition(Math.round(exact));
       setDragging(next);
+      if (next !== shown) {
+        shown = next;
+        latestOnDrag.current?.(scale.fromPosition(next));
+      }
       if (next !== sent) {
         sent = next;
         lastDrag.current = { gesture, at: performance.now() };
@@ -138,6 +151,7 @@ export function Slider({
       window.removeEventListener("blur", end);
       stopDrag.current = null;
       setDragging(null);
+      latestOnDrag.current?.(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
