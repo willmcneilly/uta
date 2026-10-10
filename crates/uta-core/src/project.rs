@@ -1300,12 +1300,22 @@ mod tests {
                 param,
             },
         );
+        // The snare and clap's settings set and undo too.
+        for (sound, param) in [
+            (DrumSound::Snare, DrumParam::TuneHz(200.0)),
+            (DrumSound::Snare, DrumParam::Tone(0.3)),
+            (DrumSound::Snare, DrumParam::Snappy(0.9)),
+            (DrumSound::Clap, DrumParam::Tone(1500.0)),
+            (DrumSound::Clap, DrumParam::DecaySeconds(0.4)),
+        ] {
+            apply_and_check_undo(&project, set(track, sound, param));
+        }
         let param = DrumParam::TuneHz(200.0);
         assert_rejected(
             &project,
-            set(track, DrumSound::Snare, param),
+            set(track, DrumSound::Clap, param),
             CommandError::NoSuchDrumParam {
-                sound: DrumSound::Snare,
+                sound: DrumSound::Clap,
                 param,
             },
         );

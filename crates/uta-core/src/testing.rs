@@ -189,21 +189,42 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
     ]
 }
 
-/// A drum setting for any sound: mostly the kick's, which has settings,
-/// with values a bit wider than its limits, so some are rejected.
+/// A drum setting for any sound: mostly one the sound has (the kick's,
+/// snare's and clap's), with values a bit wider than its limits, so some are
+/// rejected, and now and then any setting on any sound.
 fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
-    let sound = prop_oneof![
-        8 => Just(DrumSound::Kick),
-        1 => prop::sample::select(KIT.map(|row| row.sound).to_vec()),
-    ];
-    let param = prop_oneof![
+    let level = || (-70.0f32..10.0).prop_map(DrumParam::LevelDb);
+    let kick = prop_oneof![
         (35.0f32..85.0).prop_map(DrumParam::TuneHz),
         (-0.1f32..1.1).prop_map(DrumParam::Tone),
         (0.0f32..1.0).prop_map(DrumParam::DecaySeconds),
-        (-70.0f32..10.0).prop_map(DrumParam::LevelDb),
+        level(),
         Just(DrumParam::TuneHz(f32::NAN)),
     ];
-    (sound, param)
+    let snare = prop_oneof![
+        (130.0f32..270.0).prop_map(DrumParam::TuneHz),
+        (0.0f32..0.45).prop_map(DrumParam::Tone),
+        (-0.1f32..1.1).prop_map(DrumParam::Snappy),
+        level(),
+    ];
+    let clap = prop_oneof![
+        (600.0f32..2100.0).prop_map(DrumParam::Tone),
+        (0.0f32..0.45).prop_map(DrumParam::DecaySeconds),
+        level(),
+    ];
+    let any = prop_oneof![
+        (35.0f32..280.0).prop_map(DrumParam::TuneHz),
+        (-0.1f32..1.1).prop_map(DrumParam::Tone),
+        (0.0f32..1.0).prop_map(DrumParam::DecaySeconds),
+        (-0.1f32..1.1).prop_map(DrumParam::Snappy),
+        level(),
+    ];
+    prop_oneof![
+        3 => kick.prop_map(|param| (DrumSound::Kick, param)),
+        3 => snare.prop_map(|param| (DrumSound::Snare, param)),
+        3 => clap.prop_map(|param| (DrumSound::Clap, param)),
+        1 => (prop::sample::select(KIT.map(|row| row.sound).to_vec()), any),
+    ]
 }
 
 /// Any command against [`project`], across several tracks and clips:
