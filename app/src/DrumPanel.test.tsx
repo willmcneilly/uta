@@ -158,11 +158,20 @@ describe("the drum panel", () => {
       "Open hat level",
     ]);
     expect(strip("Open hat").getByText("Tune and Tone: the closed hat’s")).toBeInTheDocument();
-    expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(1);
 
-    // A sound without its circuit yet has a name and nothing to turn.
-    expect(strip("Cymbal").queryAllByRole("slider")).toEqual([]);
-    expect(strip("Cymbal").getByText("No controls yet")).toBeInTheDocument();
+    // The cymbal plays the same metal, so its Tune is the closed hat's too.
+    expect(strip("Cymbal").getAllByRole("slider").map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Cymbal tone",
+      "Cymbal decay",
+      "Cymbal level",
+    ]);
+    expect(strip("Cymbal").getByText("Tune: the closed hat’s")).toBeInTheDocument();
+    expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(2);
+
+    // A sound with no settings in the outline has a name and nothing to
+    // turn.
+    expect(strip("Low tom").queryAllByRole("slider")).toEqual([]);
+    expect(strip("Low tom").getByText("No controls yet")).toBeInTheDocument();
   });
 
   it("draws a sound it has never seen, from the outline alone", async () => {

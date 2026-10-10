@@ -193,7 +193,17 @@ export const KIT_ROWS: KitRowView[] = [
     ],
     shares: { sound: "closed_hat", labels: ["Tune", "Tone"] },
   },
-  { sound: "cymbal", name: "Cymbal", pitch: 49, settings: [], shares: null },
+  {
+    sound: "cymbal",
+    name: "Cymbal",
+    pitch: 49,
+    settings: [
+      setting("tone", 0.5, [0, 1], "fraction"),
+      setting("decay_seconds", 0.8, [0.35, 1.2], "seconds"),
+      setting("level_db", 0, [-60, 6], "db"),
+    ],
+    shares: { sound: "closed_hat", labels: ["Tune"] },
+  },
 ];
 
 /** A drum track with the default kit and mixer, and `clips`. */

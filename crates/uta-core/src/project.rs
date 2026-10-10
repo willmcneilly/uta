@@ -1336,7 +1336,8 @@ mod tests {
                 param,
             },
         );
-        // The snare's, clap's, hats' and toms' settings set and undo too.
+        // The snare's, clap's, hats', toms' and cymbal's settings set and undo
+        // too.
         for (sound, param) in [
             (DrumSound::Snare, DrumParam::TuneHz(200.0)),
             (DrumSound::Snare, DrumParam::Tone(0.3)),
@@ -1352,6 +1353,9 @@ mod tests {
             (DrumSound::LowTom, DrumParam::DecaySeconds(0.4)),
             (DrumSound::HighTom, DrumParam::TuneHz(200.0)),
             (DrumSound::HighTom, DrumParam::LevelDb(-6.0)),
+            (DrumSound::Cymbal, DrumParam::Tone(0.2)),
+            (DrumSound::Cymbal, DrumParam::DecaySeconds(1.0)),
+            (DrumSound::Cymbal, DrumParam::LevelDb(-3.0)),
         ] {
             apply_and_check_undo(&project, set(track, sound, param));
         }
