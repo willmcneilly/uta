@@ -8,6 +8,7 @@ import {
   hitTest,
   hitVelocity,
   moveNotes,
+  resizeNotes,
   sameNote,
 } from "./editing";
 import type { PlacedNote } from "./notes";
@@ -206,6 +207,71 @@ describe("moving several notes", () => {
       expect(moveNotes([group[0]], one, tick, pitch, 240, 3840)).toEqual([
         dragNote(one, tick, pitch, 240, 3840),
       ]);
+    }
+  });
+});
+
+describe("resizing several notes", () => {
+  const n = (id: string, start: number, length: number): NoteView => ({
+    id,
+    pitch: 60,
+    velocity: 100,
+    start,
+    length,
+  });
+  // "b" is dragged. "c" is shorter than it, and "d" is shorter than a step.
+  const group = [n("a", 480, 480), n("b", 1920, 960), n("c", 3840, 360), n("d", 4800, 120)];
+
+  it("changes every length by the dragged note's snapped change, from the end", () => {
+    // "b"'s end goes from 2880 to 3130, and snaps to 3120: 240 longer.
+    const drag: Drag = { kind: "end", from: group[1], tick: 2870, pitch: 60 };
+    expect(resizeNotes(group, drag, 3120, 240, 0)).toEqual([
+      n("a", 480, 720),
+      n("b", 1920, 1200),
+      n("c", 3840, 600),
+      n("d", 4800, 360),
+    ]);
+  });
+
+  it("keeps each note at least a step long, or as long as it was if shorter", () => {
+    // 720 shorter: "b" stops at one step, and so does "a"; "c" stops at one
+    // step, and "d" stays as it was.
+    const drag: Drag = { kind: "end", from: group[1], tick: 2870, pitch: 60 };
+    expect(resizeNotes(group, drag, 2150, 240, 0)).toEqual([
+      n("a", 480, 240),
+      n("b", 1920, 240),
+      n("c", 3840, 240),
+      n("d", 4800, 120),
+    ]);
+  });
+
+  it("moves every start by the same amount, from the start, keeping each end", () => {
+    // "b"'s start goes from 1920 to 1690, and snaps to 1680: 240 longer.
+    const drag: Drag = { kind: "start", from: group[1], tick: 1930, pitch: 60 };
+    expect(resizeNotes(group, drag, 1700, 240, 0)).toEqual([
+      n("a", 240, 720),
+      n("b", 1680, 1200),
+      n("c", 3600, 600),
+      n("d", 4560, 360),
+    ]);
+  });
+
+  it("never starts a note before its clip", () => {
+    const drag: Drag = { kind: "start", from: group[1], tick: 1930, pitch: 60 };
+    // 960 longer: "a" would start at -480.
+    const resized = resizeNotes(group, drag, 970, 240, 0);
+    expect(resized[0]).toEqual(n("a", 0, 960));
+    expect(resized[1]).toEqual(n("b", 960, 1920));
+  });
+
+  it("resizes one note as dragging it alone does", () => {
+    for (const kind of ["start", "end"] as const) {
+      const one: Drag = { kind, from: group[1], tick: 2000, pitch: 60 };
+      for (const tick of [100, 1500, 2600, 5000]) {
+        expect(resizeNotes([group[1]], one, tick, 240, 0)).toEqual([
+          dragNote(one, tick, 60, 240, 0),
+        ]);
+      }
     }
   });
 });

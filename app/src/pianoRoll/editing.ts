@@ -88,6 +88,35 @@ export function dragNote(
 }
 
 /**
+ * Where a resize puts `notes`, all together, when `drag` (a resize of one of
+ * them, from its start or its end) has the pointer at `tick`. The dragged
+ * note goes where {@link dragNote} puts it, and every other note's length
+ * changes by the same amount, at the same end. Each stays at least one step
+ * long (or as long as it was, if it was already shorter) and never starts
+ * before its clip.
+ */
+export function resizeNotes(
+  notes: readonly NoteView[],
+  drag: Drag,
+  tick: number,
+  step: number,
+  clipStart: number,
+): NoteView[] {
+  const dragged = dragNote(drag, tick, drag.pitch, step, clipStart);
+  const change = dragged.length - drag.from.length;
+  return notes.map((note) => {
+    if (note.id === drag.from.id) return dragged;
+    const shortest = Math.min(step, note.length);
+    if (drag.kind !== "start") {
+      return { ...note, length: Math.max(shortest, note.length + change) };
+    }
+    const end = note.start + note.length;
+    const start = clamp(note.start - change, 0, end - shortest);
+    return { ...note, start, length: end - start };
+  });
+}
+
+/**
  * Where a move puts `notes`, all together, when `drag` (a move of one of
  * them) has the pointer at `tick` and `pitch`. The dragged note's start snaps
  * to the grid, and the rest keep their places relative to it. The move stops
