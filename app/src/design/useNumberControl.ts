@@ -11,7 +11,7 @@ import type { NumberScale } from "./numberScale";
 
 // What it means to set a number by dragging, from the keyboard and by
 // reset, for every control that sets one (RFC-005, part 7), apart from how
-// the control is drawn. The fader draws it today.
+// the control is drawn. The fader and the drag field draw it.
 //
 // During a drag the control draws its own value, where the mouse has taken
 // it, rather than the project's, so it keeps up however slowly Rust replies
@@ -52,6 +52,9 @@ export interface NumberControlOptions {
   bigStep?: number;
 }
 
+/** Which way a drag raises it: rightwards along a fader, upwards on a knob or drag field. */
+export type DragDirection = "horizontal" | "vertical";
+
 export interface NumberControl {
   /** The whole position it's drawn at: the drag's during a drag, the project's otherwise. */
   position: number;
@@ -86,7 +89,9 @@ export interface NumberControl {
  * Backspace reset it to its default. The scroll wheel leaves it alone.
  *
  * `travel` is measured as each drag starts, so the control can change size.
- * A drag follows the mouse left and right.
+ * A drag follows the mouse left and right, or up and down when `direction`
+ * is vertical. `onClick` hears a press that ends without dragging, apart
+ * from a ⌥-click, which resets it.
  */
 export function useNumberControl(
   {
@@ -100,6 +105,7 @@ export function useNumberControl(
     bigStep = keyStep * 10,
   }: NumberControlOptions,
   travel: () => number | null,
+  { direction = "horizontal", onClick }: { direction?: DragDirection; onClick?: () => void } = {},
 ): NumberControl {
   // The position the drag has taken it to, from press to release.
   const [dragging, setDragging] = useState<number | null>(null);
@@ -113,9 +119,11 @@ export function useNumberControl(
   // A drag sends through the latest `onChange`: the caller's can change mid-drag.
   const latestOnChange = useRef(onChange);
   const latestOnDrag = useRef(onDrag);
+  const latestOnClick = useRef(onClick);
   useEffect(() => {
     latestOnChange.current = onChange;
     latestOnDrag.current = onDrag;
+    latestOnClick.current = onClick;
   });
   useEffect(() => {
     resetFrom.current = null;
@@ -154,18 +162,21 @@ export function useNumberControl(
 
     const gesture = nextGesture();
     const stepsPerPixel = steps / length;
+    // How far along the drag the pointer is, in pixels the way that raises it.
+    const along = (pointer: { clientX: number; clientY: number }) =>
+      direction === "vertical" ? -pointer.clientY : pointer.clientX;
     const start = position;
     // Where the drag measures from. It moves when Shift is pressed or let
     // go, so the control carries on from where it is at the new rate.
-    let anchor = { x: event.clientX, at: start, fine: event.shiftKey };
+    let anchor = { x: along(event), at: start, fine: event.shiftKey };
     // Not clamped, so a plain drag stays under the mouse after leaving the ends.
     let exact = start;
-    let lastX = event.clientX;
+    let lastX = along(event);
     let sent = start;
     let reported: number | null = null;
     // It stays where it is until the pointer passes DRAG_THRESHOLD, then
     // moves from the press, so it's still under the mouse.
-    const pressX = event.clientX;
+    const pressX = along(event);
     let started = false;
 
     const moveTo = (x: number, fine: boolean) => {
@@ -185,23 +196,27 @@ export function useNumberControl(
         latestOnChange.current(scale.fromPosition(next), gesture);
       }
     };
-    const move = (move: globalThis.PointerEvent) => moveTo(move.clientX, move.shiftKey);
+    const move = (move: globalThis.PointerEvent) => moveTo(along(move), move.shiftKey);
     const end = () => {
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointerup", release);
       window.removeEventListener("pointercancel", end);
       window.removeEventListener("blur", end);
       stopDrag.current = null;
       setDragging(null);
       latestOnDrag.current?.(null);
     };
+    const release = () => {
+      end();
+      if (!started) latestOnClick.current?.();
+    };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
+    window.addEventListener("pointerup", release);
     // A drag the window loses, to ⌘-Tab say, ends where it is.
     window.addEventListener("pointercancel", end);
     window.addEventListener("blur", end);
     stopDrag.current = end;
-    moveTo(event.clientX, event.shiftKey);
+    moveTo(along(event), event.shiftKey);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {

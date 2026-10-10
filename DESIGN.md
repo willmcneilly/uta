@@ -214,6 +214,14 @@ For values compared side by side, such as volume on every track. A label, the fa
 - **States:** at rest as drawn. Hover and drag darken the rail to `ink-2`. With focus, the thumb is `selected`, because the arrow keys now move it. The focus ring (`selected` at `stroke-clip-selected`) shows for focus from the keyboard, or once a key is pressed after a click. The cursor is a left-right resize arrow.
 - **Behaviour:** as in Setting a number, dragged left and right along the rail.
 
+### Drag field
+
+For a crowded place where the exact number matters, such as tempo. A label, and the value with its unit, which you drag or type. Provisional (D-18) until it's adopted.
+- **Drawing:** the value and unit in the `number` type in `ink`, centred over a hairline (`ink-3` at `stroke-grid`, inset `space-3`), in a box `space-7` (24px) tall and at least 64px wide, with `rounded-md` corners for the focus ring. No outline at rest: it isn't a form. The label is in the `text` type in `ink-2`.
+- **States:** at rest as drawn. Hover and drag darken the hairline to `ink-2`. With focus, the hairline is `selected`, because the arrow keys now move it; the value stays in `ink`, since blue text reads as a link. The focus ring shows as on the fader. The cursor is an up-down resize arrow.
+- **Typing:** a click without dragging opens it for typing: a text box over it in the same type and place, the value selected to type over, a `selected` caret and selection wash (`selected-wash`), and the hairline heavier (`stroke-clip-selected`) in `selected`. Return sets it, as one undo step; Escape leaves it as it was, and so does anything it can't read; clicking away sets it. It reads units and shorthand ("120", "120 bpm", "1k", "250 ms", "−6"), and a value out of range goes to the nearest end.
+- **Behaviour:** as in Setting a number, dragged up and down, a step for every 2px. The first click of a double-click opens the box and the second closes it and resets, so the box shows for a moment.
+
 ## Do's and Don'ts
 
 - Do use tokens for every colour. Name a new colour for what it means and add it here first.
