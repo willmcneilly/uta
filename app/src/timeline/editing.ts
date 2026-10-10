@@ -57,8 +57,12 @@ export interface Span {
  * pointer went down at `pressTick` on track `pressTrack` on the one at
  * `from`, with the pointer now at `tick` on `track`. That clip's start snaps
  * to multiples of `step` (1 with snapping off), and the rest keep their
- * places relative to it. They all stay on one of the `trackCount` tracks, at
- * or after the song's start.
+ * places relative to it, at or after the song's start.
+ *
+ * A clip only goes on a track of its own kind, so up and down it skips the
+ * tracks of the other kind: `kinds` is each track's kind, in order. The
+ * dragged clip moves one track of its kind for each one the pointer passes,
+ * and every clip moves as many tracks of its own kind, staying on one.
  */
 export function moveClips<T extends Span>(
   group: readonly T[],
@@ -68,15 +72,31 @@ export function moveClips<T extends Span>(
   tick: number,
   track: number,
   step: number,
-  trackCount: number,
+  kinds: readonly string[],
 ): T[] {
   if (group.length === 0) return [];
   const earliest = Math.min(...group.map((clip) => clip.start));
-  const top = Math.min(...group.map((clip) => clip.track));
-  const bottom = Math.max(...group.map((clip) => clip.track));
   const ticks = Math.max(-earliest, snapNearest(from.start + tick - pressTick, step) - from.start);
-  const tracks = clamp(track - pressTrack, -top, trackCount - 1 - bottom);
-  return group.map((clip) => ({ ...clip, track: clip.track + tracks, start: clip.start + ticks }));
+  // Each kind's tracks, top to bottom.
+  const ofKind = (kind: string) =>
+    kinds.flatMap((other, index) => (other === kind ? [index] : []));
+  // How many tracks of the dragged clip's kind the pointer has passed.
+  const same = ofKind(kinds[from.track]);
+  const to = clamp(track, 0, kinds.length - 1);
+  const passed = same.filter((index) =>
+    to > pressTrack ? index > pressTrack && index <= to : index < pressTrack && index >= to,
+  ).length;
+  let steps = to > pressTrack ? passed : -passed;
+  // Kept so every clip stays on a track of its own kind.
+  const placed = group.map((clip) => {
+    const tracks = ofKind(kinds[clip.track]);
+    return { tracks, rank: tracks.indexOf(clip.track) };
+  });
+  for (const { tracks, rank } of placed) steps = clamp(steps, -rank, tracks.length - 1 - rank);
+  return group.map((clip, i) => {
+    const { tracks, rank } = placed[i];
+    return { ...clip, track: tracks[rank + steps], start: clip.start + ticks };
+  });
 }
 
 /**

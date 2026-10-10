@@ -55,7 +55,7 @@ const view: TimelineViewport = {
 
 function clip(id: string, start: number, overrides: Partial<DrawnClip> = {}): DrawnClip {
   const notes: PlacedNote[] = [
-    { id: `${id}-n`, pitch: 60, velocity: 100, start, length: BAR / 4, outside: false },
+    { id: `${id}-n`, pitch: 60, velocity: 100, start, length: BAR / 4, row: 60, outside: false },
   ];
   return {
     id,

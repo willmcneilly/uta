@@ -491,7 +491,7 @@ export function Timeline({
                 now.tick,
                 now.track,
                 step,
-                project.tracks.length,
+                project.tracks.map((track) => track.source.kind),
               );
         if (next.every((span, i) => sameSpan(span, last[i]))) return;
         if (next.some((span) => !project.tracks[span.track])) return;

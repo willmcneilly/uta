@@ -89,31 +89,63 @@ describe("hitting clips", () => {
   });
 });
 
+/** `count` synth tracks' kinds, as `moveClips` takes them. */
+const synths = (count: number) => Array.from({ length: count }, () => "synth");
+
 describe("moving clips", () => {
   const from = { track: 0, start: BAR, length: 2 * BAR };
-  const moveOne = (clip: Span, ...rest: [number, number, number, number, number, number]) =>
+  const moveOne = (
+    clip: Span,
+    ...rest: [number, number, number, number, number, readonly string[]]
+  ) =>
     moveClips([clip], clip, ...rest)[0];
 
   it("moves its start by as far as the pointer moves, snapped to the grid", () => {
     // Pressed half a bar in; moved 1.4 bars right snaps to a bar later.
-    expect(moveOne(from, 1.5 * BAR, 0, 2.9 * BAR, 0, BAR, 3)).toEqual({
+    expect(moveOne(from, 1.5 * BAR, 0, 2.9 * BAR, 0, BAR, synths(3))).toEqual({
       track: 0,
       start: 2 * BAR,
       length: 2 * BAR,
     });
-    expect(moveOne(from, 1.5 * BAR, 0, 2.2 * BAR, 0, BEAT, 3).start).toBe(BAR + 3 * BEAT);
+    expect(moveOne(from, 1.5 * BAR, 0, 2.2 * BAR, 0, BEAT, synths(3)).start).toBe(BAR + 3 * BEAT);
     // Unsnapped: to the tick.
-    expect(moveOne(from, 1.5 * BAR, 0, 1.5 * BAR + 123, 0, 1, 3).start).toBe(BAR + 123);
+    expect(moveOne(from, 1.5 * BAR, 0, 1.5 * BAR + 123, 0, 1, synths(3)).start).toBe(BAR + 123);
   });
 
   it("moves onto another track, keeping to the tracks there are", () => {
-    expect(moveOne(from, BAR, 0, BAR, 2, BAR, 3).track).toBe(2);
-    expect(moveOne(from, BAR, 0, BAR, 7, BAR, 3).track).toBe(2);
-    expect(moveOne({ ...from, track: 1 }, BAR, 1, BAR, -3, BAR, 3).track).toBe(0);
+    expect(moveOne(from, BAR, 0, BAR, 2, BAR, synths(3)).track).toBe(2);
+    expect(moveOne(from, BAR, 0, BAR, 7, BAR, synths(3)).track).toBe(2);
+    expect(moveOne({ ...from, track: 1 }, BAR, 1, BAR, -3, BAR, synths(3)).track).toBe(0);
   });
 
   it("never starts before the song", () => {
-    expect(moveOne(from, BAR, 0, -5 * BAR, 0, BAR, 1).start).toBe(0);
+    expect(moveOne(from, BAR, 0, -5 * BAR, 0, BAR, synths(1)).start).toBe(0);
+  });
+
+  describe("tracks of another kind", () => {
+    // Synth, drums, synth, drums, synth.
+    const kinds = ["synth", "drums", "synth", "drums", "synth"];
+
+    it("are skipped: a clip moves a track of its own kind for each the pointer passes", () => {
+      const synthClip = { track: 0, start: 0, length: BAR };
+      const to = (track: number) => moveOne(synthClip, 0, 0, 0, track, BAR, kinds).track;
+      expect([0, 1, 2, 3, 4].map(to)).toEqual([0, 0, 2, 2, 4]);
+      const drumClip = { track: 3, start: 0, length: BAR };
+      const up = (track: number) => moveOne(drumClip, 0, 3, 0, track, BAR, kinds).track;
+      expect([4, 3, 2, 1, 0, -2].map(up)).toEqual([3, 3, 3, 1, 1, 1]);
+    });
+
+    it("keep a mixed group each on its own kind, stopping where either runs out", () => {
+      const group = [
+        { id: "s", track: 0, start: 0, length: BAR },
+        { id: "d", track: 1, start: 0, length: BAR },
+      ];
+      const moved = moveClips(group, group[0], 0, 0, 0, 2, BAR, kinds);
+      expect(moved.map((clip) => clip.track)).toEqual([2, 3]);
+      // Two synth tracks down there's no third drum track for "d".
+      const far = moveClips(group, group[0], 0, 0, 0, 4, BAR, kinds);
+      expect(far.map((clip) => clip.track)).toEqual([2, 3]);
+    });
   });
 
   describe("a group", () => {
@@ -124,19 +156,19 @@ describe("moving clips", () => {
     const [a] = group;
 
     it("moves together, the pressed clip snapped and the rest kept where they are from it", () => {
-      expect(moveClips(group, a, 2.5 * BAR, 1, 4.6 * BAR, 0, BAR, 4)).toEqual([
+      expect(moveClips(group, a, 2.5 * BAR, 1, 4.6 * BAR, 0, BAR, synths(4))).toEqual([
         { id: "a", track: 0, start: 4 * BAR, length: BAR },
         { id: "b", track: 1, start: 5 * BAR + BEAT, length: BAR },
       ]);
     });
 
     it("stops where its first clip reaches the song's start, or its clips the first or last track", () => {
-      const left = moveClips(group, a, 2.5 * BAR, 1, -3 * BAR, 1, BAR, 4);
+      const left = moveClips(group, a, 2.5 * BAR, 1, -3 * BAR, 1, BAR, synths(4));
       expect(left.map((clip) => clip.start)).toEqual([0, BAR + BEAT]);
-      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, 9, BAR, 4).map((c) => c.track)).toEqual([
+      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, 9, BAR, synths(4)).map((c) => c.track)).toEqual([
         2, 3,
       ]);
-      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, -4, BAR, 4).map((c) => c.track)).toEqual([
+      expect(moveClips(group, a, 2 * BAR, 1, 2 * BAR, -4, BAR, synths(4)).map((c) => c.track)).toEqual([
         0, 1,
       ]);
     });

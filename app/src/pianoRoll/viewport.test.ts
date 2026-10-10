@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  KEYBOARD,
   KEYBOARD_WIDTH,
   MAX_KEY_HEIGHT,
   MIN_PIXELS_PER_TICK,
@@ -14,12 +15,16 @@ import {
   velocityLane,
   velocityPerPixel,
   velocityToY,
-  visiblePitches,
+  visibleRows,
   visibleTicks,
   xToTick,
   yToPitch,
   zoomPitch,
   zoomTime,
+  LANE_LABELS_WIDTH,
+  drumLanes,
+  rowToY,
+  yToRow,
 } from "./viewport";
 
 const view = (overrides: Partial<Viewport> = {}): Viewport => ({
@@ -30,6 +35,7 @@ const view = (overrides: Partial<Viewport> = {}): Viewport => ({
   scrollY: 0,
   pixelsPerTick: 0.1,
   keyHeight: 12,
+  rows: KEYBOARD,
   ...overrides,
 });
 
@@ -72,11 +78,11 @@ describe("what's in view", () => {
 
   it("covers every row that shows, even partly", () => {
     // 240 px of 12 px rows from the top: pitches 127 down to 108.
-    expect(visiblePitches(view())).toEqual({ low: 108, high: 127 });
+    expect(visibleRows(view())).toEqual({ low: 108, high: 127 });
     // Scrolled half a row: 21 rows partly show.
-    expect(visiblePitches(view({ scrollY: 6 }))).toEqual({ low: 107, high: 127 });
+    expect(visibleRows(view({ scrollY: 6 }))).toEqual({ low: 107, high: 127 });
     // At the bottom.
-    expect(visiblePitches(view({ scrollY: 128 * 12 - 240 }))).toEqual({ low: 0, high: 19 });
+    expect(visibleRows(view({ scrollY: 128 * 12 - 240 }))).toEqual({ low: 0, high: 19 });
   });
 });
 
@@ -156,5 +162,51 @@ describe("the velocity lane", () => {
     expect(velocityToY(v, 127 / 2)).toBeCloseTo((top + bottom) / 2, 9);
     // Moving the pointer the lane's usable height covers the whole range.
     expect((bottom - top) * velocityPerPixel(v)).toBeCloseTo(127, 9);
+  });
+});
+
+describe("drum lanes", () => {
+  // As Rust sends a kit, bottom to top: the notes aren't in order.
+  const kit = drumLanes([
+    { name: "Kick", pitch: 36 },
+    { name: "Snare", pitch: 38 },
+    { name: "Low tom", pitch: 45 },
+    { name: "Closed hat", pitch: 42 },
+  ]);
+  const lanes = (overrides: Partial<Viewport> = {}) =>
+    clampViewport(view({ rows: kit, keyHeight: 12, ...overrides }), 1e6);
+
+  it("map each lane to its sound's note, and back", () => {
+    expect([0, 1, 2, 3].map((row) => kit.pitch(row))).toEqual([36, 38, 45, 42]);
+    expect(kit.row(42)).toBe(3);
+    expect(kit.row(37)).toBe(-1);
+    expect(KEYBOARD.row(61)).toBe(61);
+  });
+
+  it("share out the height between them, so all show, and don't scroll or zoom", () => {
+    const v = lanes({ scrollY: 300 });
+    expect(v.keyHeight).toBe(240 / 4);
+    expect(v.scrollY).toBe(0);
+    expect(visibleRows(v)).toEqual({ low: 0, high: 3 });
+    expect(zoomPitch(v, 2, RULER_HEIGHT + 100)).toBe(v);
+  });
+
+  it("put the first at the bottom and the last at the top", () => {
+    const v = lanes();
+    expect(rowToY(v, 3)).toBe(RULER_HEIGHT);
+    expect(pitchToY(v, 42)).toBe(RULER_HEIGHT);
+    expect(pitchToY(v, 36)).toBe(RULER_HEIGHT + 180);
+    expect(yToPitch(v, RULER_HEIGHT + 70)).toBe(45);
+    // Past the top and bottom lanes, the nearest.
+    expect(yToPitch(v, -100)).toBe(42);
+    expect(yToPitch(v, RULER_HEIGHT + 1000)).toBe(36);
+    expect(yToRow(v, -100)).toBeGreaterThan(3);
+  });
+
+  it("make room for their labels in place of the keyboard", () => {
+    const v = lanes();
+    expect(noteArea(v).x).toBe(LANE_LABELS_WIDTH);
+    expect(tickToX(v, 0)).toBe(LANE_LABELS_WIDTH);
+    expect(xToTick(v, LANE_LABELS_WIDTH + 96)).toBe(960);
   });
 });

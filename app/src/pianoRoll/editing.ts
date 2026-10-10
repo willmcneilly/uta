@@ -4,7 +4,7 @@
 import type { NoteView } from "../backend";
 import type { PlacedNote } from "./notes";
 import { snapNearest } from "./snap";
-import { PITCH_COUNT, type Viewport, pitchToY, tickToX, velocityPerPixel } from "./viewport";
+import { KEYBOARD, type Rows, type Viewport, rowToY, tickToX, velocityPerPixel } from "./viewport";
 
 /** Which part of a note the pointer is on: its body moves it, its ends resize it. */
 export type NotePart = "body" | "start" | "end";
@@ -32,7 +32,7 @@ export function hitTest(
     const left = tickToX(view, note.start);
     // As drawn: never narrower than a pixel.
     const width = Math.max(1, note.length * view.pixelsPerTick);
-    const top = pitchToY(view, note.pitch);
+    const top = rowToY(view, note.row);
     if (x < left || x >= left + width || y < top || y >= top + view.keyHeight) continue;
     // A narrow note keeps a middle third to move it by.
     const edge = Math.min(EDGE_PIXELS, width / 3);
@@ -58,7 +58,8 @@ export interface Drag {
 /**
  * Where `drag` puts its note with the pointer at `tick` and `pitch`. Positions
  * snap to multiples of `step` ticks (1 with snapping off), and a note is never
- * shorter than one step or earlier than its clip's start.
+ * shorter than one step or earlier than its clip's start. A move goes from
+ * row to row of `rows`.
  */
 export function dragNote(
   drag: Drag,
@@ -66,6 +67,7 @@ export function dragNote(
   pitch: number,
   step: number,
   clipStart: number,
+  rows: Rows,
 ): NoteView {
   const { from } = drag;
   const moved = tick - drag.tick;
@@ -73,7 +75,7 @@ export function dragNote(
   const end = start + from.length;
   switch (drag.kind) {
     case "move":
-      return moveNotes([from], drag, tick, pitch, step, clipStart)[0];
+      return moveNotes([from], drag, tick, pitch, step, clipStart, rows)[0];
     case "start": {
       const latest = Math.max(clipStart, end - step);
       const newStart = clamp(snapNearest(start + moved, step), clipStart, latest);
@@ -102,7 +104,8 @@ export function resizeNotes(
   step: number,
   clipStart: number,
 ): NoteView[] {
-  const dragged = dragNote(drag, tick, drag.pitch, step, clipStart);
+  // A resize never changes a pitch, so any rows will do.
+  const dragged = dragNote(drag, tick, drag.pitch, step, clipStart, KEYBOARD);
   const change = dragged.length - drag.from.length;
   return notes.map((note) => {
     if (note.id === drag.from.id) return dragged;
@@ -119,9 +122,11 @@ export function resizeNotes(
 /**
  * Where a move puts `notes`, all together, when `drag` (a move of one of
  * them) has the pointer at `tick` and `pitch`. The dragged note's start snaps
- * to the grid, and the rest keep their places relative to it. The move stops
- * where any note would go before its clip's start or off the keyboard, so
- * the notes never bunch up.
+ * to the grid, and the rest keep their places relative to it. Up and down,
+ * each moves as many rows of `rows` as the pointer has: a semitone a row
+ * beside the keyboard, a sound a row on a drum track. The move stops where
+ * any note would go before its clip's start or past the top or bottom row,
+ * so the notes never bunch up.
  */
 export function moveNotes(
   notes: readonly NoteView[],
@@ -130,28 +135,32 @@ export function moveNotes(
   pitch: number,
   step: number,
   clipStart: number,
+  rows: Rows,
 ): NoteView[] {
   if (notes.length === 0) return [];
   const start = clipStart + drag.from.start;
   const earliest = Math.min(...notes.map((note) => note.start));
-  const lowest = Math.min(...notes.map((note) => note.pitch));
-  const highest = Math.max(...notes.map((note) => note.pitch));
   // Clip-relative starts can't go below 0.
   const ticks = Math.max(-earliest, snapNearest(start + tick - drag.tick, step) - start);
-  const pitches = clamp(pitch - drag.pitch, -lowest, PITCH_COUNT - 1 - highest);
-  return notes.map((note) => ({ ...note, start: note.start + ticks, pitch: note.pitch + pitches }));
+  const moved = transposeNotes(notes, rows.row(pitch) - rows.row(drag.pitch), rows);
+  return moved.map((note) => ({ ...note, start: note.start + ticks }));
 }
 
 /**
- * `notes` moved `semitones` up (negative is down), all together. The move
- * stops where any note would go off the keyboard, so a chord keeps its shape.
+ * `notes` moved `steps` rows of `rows` up (negative is down), all together:
+ * semitones beside the keyboard, sounds on a drum track. The move stops
+ * where any note would go past the top or bottom row, so a chord keeps its
+ * shape.
  */
-export function transposeNotes(notes: readonly NoteView[], semitones: number): NoteView[] {
+export function transposeNotes(
+  notes: readonly NoteView[],
+  steps: number,
+  rows: Rows,
+): NoteView[] {
   if (notes.length === 0) return [];
-  const lowest = Math.min(...notes.map((note) => note.pitch));
-  const highest = Math.max(...notes.map((note) => note.pitch));
-  const change = clamp(semitones, -lowest, PITCH_COUNT - 1 - highest);
-  return notes.map((note) => ({ ...note, pitch: note.pitch + change }));
+  const on = notes.map((note) => rows.row(note.pitch));
+  const change = clamp(steps, -Math.min(...on), rows.count - 1 - Math.max(...on));
+  return notes.map((note, i) => ({ ...note, pitch: rows.pitch(on[i] + change) }));
 }
 
 /**

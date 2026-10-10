@@ -5,6 +5,7 @@ import { velocityAlpha } from "./colours";
 import type { PlacedNote } from "./notes";
 import type { PianoRollRenderer, TopMarks } from "./renderer";
 import {
+  KEYBOARD,
   KEYBOARD_WIDTH,
   RULER_HEIGHT,
   type Viewport,
@@ -73,11 +74,13 @@ const view: Viewport = {
   scrollY: 60 * 12,
   pixelsPerTick: 800 / (4 * BAR),
   keyHeight: 12,
+  rows: KEYBOARD,
 };
 const light = colors.light;
 
 function note(id: string, start: number, overrides: Partial<PlacedNote> = {}): PlacedNote {
-  return { id, pitch: 60, velocity: 100, start, length: BAR / 4, outside: false, ...overrides };
+  const placed = { id, pitch: 60, velocity: 100, start, length: BAR / 4, outside: false, ...overrides };
+  return { row: placed.pitch, ...placed };
 }
 
 const noMarks: TopMarks = { sounding: [], hovered: null, selected: new Set() };

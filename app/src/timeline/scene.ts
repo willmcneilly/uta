@@ -7,7 +7,7 @@ import type { ClipView, ProjectView } from "../backend";
 import { followPage } from "../follow";
 import { NoteIndex, type PlacedNote } from "../pianoRoll/notes";
 import { sameClip } from "../pianoRoll/scene";
-import type { Rect } from "../pianoRoll/viewport";
+import { KEYBOARD, PITCH_COUNT, type Rect } from "../pianoRoll/viewport";
 import { type ClipHit, type Span, hitClip } from "./editing";
 import type { DrawnClip, TimelineRenderer } from "./renderer";
 import {
@@ -304,12 +304,12 @@ function indexNotes(clip: ClipView): ClipNotes {
     low = Math.min(low, note.pitch);
     high = Math.max(high, note.pitch);
   }
-  return { clip, index: new NoteIndex(clip), low: Math.min(low, high), high };
+  return { clip, index: new NoteIndex(clip, KEYBOARD), low: Math.min(low, high), high };
 }
 
 /** A clip's notes with any part from `start` to `end`, leaving out those past its end. */
 function notesInside(notes: ClipNotes, start: number, end: number): PlacedNote[] {
-  return notes.index.visible(start, end, 0, 127).filter((note) => !note.outside);
+  return notes.index.visible(start, end, 0, PITCH_COUNT - 1).filter((note) => !note.outside);
 }
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {

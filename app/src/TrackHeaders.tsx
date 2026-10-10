@@ -1,5 +1,5 @@
 import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
-import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
+import type { MixerLimits, MixerView, ProjectView, TrackKind, TrackView } from "./backend";
 import { Fader } from "./design/Fader";
 import { Key } from "./design/Key";
 import { Knob } from "./design/Knob";
@@ -29,7 +29,8 @@ interface Props {
   onMixer: (track: string, mixer: MixerView, gesture?: number) => void;
   /** Solos a track on its own: ⌥-click on Solo. */
   onSoloAlone: (track: string) => void;
-  onAdd: () => void;
+  /** Adds a synth or drum track below the others. */
+  onAdd: (kind: TrackKind) => void;
   /** Moves a track to `index` in the order, counting from 0 at the top. */
   onMove: (track: string, index: number) => void;
   /** The scrolling element, which the timeline scrolls in step with its tracks. */
@@ -42,12 +43,19 @@ interface Reorder {
   to: number;
 }
 
+/** The keys under the tracks that add one of each kind. */
+const ADD_KINDS: { kind: TrackKind; label: string; title: string }[] = [
+  { kind: "synth", label: "+ Synth", title: "Add a synth track" },
+  { kind: "drums", label: "+ Drums", title: "Add a drum track" },
+];
+
 function formatDb(db: number): string {
   return `${db.toFixed(1)} dB`;
 }
 
 /**
- * Every track's header, top to bottom, with **+ Add track** below. Each has
+ * Every track's header, top to bottom, with **+ Synth** and **+ Drums** below
+ * to add a track of either kind. Each has
  * the track's name, mute, solo, volume, pan and a meter. Drag a header by
  * its name to reorder the tracks. Each is as tall as its row on the
  * timeline, below a gap as tall as the timeline's ruler, so they line up.
@@ -153,14 +161,23 @@ export function TrackHeaders({
           />
         ))}
       </ol>
-      <div className="add-track-row" style={{ height: ADD_TRACK_HEIGHT }}>
-        <Key
-          disabled={full}
-          title={full ? `A project has at most ${project.maxTracks} tracks` : undefined}
-          onClick={onAdd}
-        >
-          + Add track
-        </Key>
+      {/* Add track, as a key for each kind of track (provisional: D-24). */}
+      <div
+        className="add-track-row"
+        role="group"
+        aria-label="Add track"
+        style={{ height: ADD_TRACK_HEIGHT }}
+      >
+        {ADD_KINDS.map(({ kind, label, title }) => (
+          <Key
+            key={kind}
+            disabled={full}
+            title={full ? `A project has at most ${project.maxTracks} tracks` : title}
+            onClick={() => onAdd(kind)}
+          >
+            {label}
+          </Key>
+        ))}
       </div>
     </section>
   );

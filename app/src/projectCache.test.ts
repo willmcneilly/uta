@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClipNotes, NoteView, Update } from "./backend";
-import { trackView } from "./pianoRoll/testing";
+import { synthOf, trackView } from "./pianoRoll/testing";
 import { EMPTY_CACHE, type ProjectCache, missingNotes, receive } from "./projectCache";
 
 // The merge rule, as RFC-004 sets it out ("Where it lives in the UI").
@@ -50,7 +50,7 @@ function update(
         envelopeSeconds: [0.001, 10],
         sustain: [0, 1],
       },
-      synthDefaults: track.synth,
+      synthDefaults: synthOf(track),
       mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
       mixerDefaults: track.mixer,
       maxTracks: 32,
