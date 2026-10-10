@@ -1,7 +1,6 @@
 import {
   type KeyboardEvent,
   type MouseEvent,
-  type PointerEvent,
   useEffect,
   useId,
   useRef,
@@ -101,9 +100,10 @@ export function DragField({
     }
   };
 
-  /** Shuts the box without setting it, and resets the field. */
+  /** Shuts the box without setting it, and resets the field, which keeps focus. */
   const reset = (event: MouseEvent<HTMLElement>) => {
     shut();
+    field.current?.focus();
     props.onDoubleClick(event);
   };
 
@@ -118,10 +118,6 @@ export function DragField({
           aria-orientation="vertical"
           data-typing={isOpen || undefined}
           {...props}
-          onPointerDown={(event: PointerEvent<HTMLElement>) => {
-            shut();
-            props.onPointerDown(event);
-          }}
           onDoubleClick={reset}
         >
           {text}

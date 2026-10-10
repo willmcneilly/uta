@@ -223,6 +223,8 @@ describe("DragField", () => {
       fireEvent.mouseDown(typing, { detail: 2 });
       expect(box()).not.toBeInTheDocument();
       expect(onChange).toHaveBeenCalledExactlyOnceWith(120);
+      // Focus stays on the field, so the arrow keys still move it.
+      expect(tempo).toHaveFocus();
     });
 
     it("leaves a later double-click in the box to select text", () => {
