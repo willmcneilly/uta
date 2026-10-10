@@ -1,4 +1,4 @@
-import type { KeyboardEvent, PointerEvent } from "react";
+import { type KeyboardEvent, type PointerEvent, useState } from "react";
 import "./Divider.css";
 
 /** How far each arrow key press moves the divider, in CSS pixels. */
@@ -17,6 +17,7 @@ interface Props {
  * focus it and use the arrow keys, to give one more room than the other.
  */
 export function Divider({ height, min, max, onChange }: Props) {
+  const [dragging, setDragging] = useState(false);
   const clamp = (value: number) => Math.round(Math.min(max, Math.max(min, value)));
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -25,9 +26,11 @@ export function Divider({ height, min, max, onChange }: Props) {
     event.currentTarget.focus();
     const startY = event.clientY;
     const startHeight = height;
+    setDragging(true);
     const move = (move: globalThis.PointerEvent) =>
       onChange(clamp(startHeight - (move.clientY - startY)));
     const end = () => {
+      setDragging(false);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
@@ -50,6 +53,7 @@ export function Divider({ height, min, max, onChange }: Props) {
   return (
     <div
       className="divider"
+      data-dragging={dragging || undefined}
       role="separator"
       aria-orientation="horizontal"
       aria-label="Editor height"

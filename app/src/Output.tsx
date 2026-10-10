@@ -40,6 +40,7 @@ function SlowestBlock({ load }: { load: MeterLevel }) {
   }, [load]);
   return (
     <dd
+      className="number"
       data-testid="slowest-block"
       title="The audio thread's slowest block, as a share of the time it has. Over 100% is late."
     >
@@ -57,31 +58,35 @@ export function Output({ output, dropouts, slowestBlock, busy, onBufferSize }: P
   return (
     <dl className="output">
       <dt>Output</dt>
-      <dd data-testid="device">{describe(output)}</dd>
+      <dd data-testid="device" data-state={output.state}>
+        {describe(output)}
+      </dd>
 
       <dt>
         <label htmlFor="buffer-size">Buffer</label>
       </dt>
       <dd>
-        <select
-          id="buffer-size"
-          value={output.requestedBufferSize}
-          disabled={busy}
-          onChange={(event) => onBufferSize(Number(event.currentTarget.value))}
-        >
-          {sizes.map((size) => (
-            <option key={size} value={size} disabled={!output.bufferSizes.includes(size)}>
-              {size} samples
-            </option>
-          ))}
-        </select>
+        <span className="buffer">
+          <select
+            id="buffer-size"
+            value={output.requestedBufferSize}
+            disabled={busy}
+            onChange={(event) => onBufferSize(Number(event.currentTarget.value))}
+          >
+            {sizes.map((size) => (
+              <option key={size} value={size} disabled={!output.bufferSizes.includes(size)}>
+                {size} samples
+              </option>
+            ))}
+          </select>
+        </span>
         {output.state === "running" && output.bufferSize !== output.requestedBufferSize && (
           <span className="note"> The device is using {output.bufferSize}.</span>
         )}
       </dd>
 
       <dt>Dropouts</dt>
-      <dd data-testid="dropouts">{dropouts}</dd>
+      <dd className="number" data-testid="dropouts">{dropouts}</dd>
 
       <dt>Slowest block</dt>
       <SlowestBlock load={slowestBlock} />

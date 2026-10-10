@@ -73,7 +73,7 @@ export function Benchmark({ run, onClose }: Props) {
               <button type="button" onClick={onClose}>
                 Cancel
               </button>
-              <button type="button" onClick={start} autoFocus>
+              <button type="button" className="go" onClick={start} autoFocus>
                 Replace and Run
               </button>
             </div>

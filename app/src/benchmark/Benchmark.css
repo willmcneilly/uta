@@ -1,11 +1,17 @@
-/* Develop → Run Benchmark. */
+/*
+ * Develop → Run Benchmark. The dialog is a sheet edged in a faint line, set
+ * apart by the scrim alone, with no shadow. Its buttons are keys like the
+ * transport's (D-9); the one that goes ahead is outlined in ink. The report
+ * is in the number font, at the text size so it stays readable.
+ * provisional: D-16
+ */
 .benchmark-backdrop {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: var(--space-6);
   background: var(--scrim);
   z-index: 10;
 }
@@ -15,29 +21,35 @@
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: var(--space-5);
+  box-sizing: border-box;
+  padding: var(--space-6) var(--space-7);
   background: var(--sheet);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  box-shadow: 0 8px 32px var(--scrim);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-lg);
+  color: var(--ink);
+  font: var(--font-text);
 }
 
 .benchmark h2 {
   margin: 0;
-  font-size: 15px;
+  font: var(--font-title);
 }
 
 .benchmark p {
   margin: 0;
-  line-height: 1.4;
+}
+
+.benchmark [role="status"] {
+  color: var(--ink-2);
 }
 
 .benchmark-report {
   margin: 0;
   overflow: auto;
-  font-size: 12px;
-  line-height: 1.4;
+  font: var(--font-text);
+  /* Its columns line up only in a monospaced font. */
+  font-family: var(--font-number-family), monospace;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -45,5 +57,37 @@
 .benchmark-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-4);
+}
+
+.benchmark-actions button {
+  box-sizing: border-box;
+  min-width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0 var(--space-5);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.benchmark-actions .go {
+  border-color: var(--ink);
+}
+
+.benchmark-actions button:hover {
+  background: var(--line);
+}
+
+.benchmark-actions button:active {
+  background: var(--line-2);
+}
+
+.benchmark-actions button:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
 }

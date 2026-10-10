@@ -47,4 +47,24 @@ describe("Output", () => {
     act(() => vi.advanceTimersByTime(SLOWEST_BLOCK_REFRESH_MS));
     expect(readout).toHaveTextContent("3.1%");
   });
+
+  it("marks the device line with the output's state, so a failure reads as an error", () => {
+    const view = (state: OutputView["state"]) => (
+      <Output
+        output={{ ...output, state }}
+        dropouts={0}
+        slowestBlock={new MeterLevel()}
+        busy={false}
+        onBufferSize={() => {}}
+      />
+    );
+    const { rerender } = render(view("running"));
+    const device = screen.getByTestId("device");
+    expect(device).toHaveAttribute("data-state", "running");
+    rerender(view("waiting"));
+    expect(device).toHaveAttribute("data-state", "waiting");
+    rerender(view("failed"));
+    expect(device).toHaveAttribute("data-state", "failed");
+    expect(device).toHaveTextContent("Playback failed. Restart Uta.");
+  });
 });
