@@ -107,7 +107,6 @@ function changeTrack(id: string, change: (track: TrackView) => TrackView): Proje
   };
 }
 
-/** The name Rust gives a new track: one more than the highest number in use. */
 /** The next name for a track of `kind`, as Rust picks it: "Synth n" or "Drums n". */
 function nextName(kind: "Synth" | "Drums" = "Synth"): string {
   const numbers = project.tracks

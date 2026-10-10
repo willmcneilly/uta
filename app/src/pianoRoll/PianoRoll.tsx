@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
 import { Menu } from "../design/Menu";
+import { spacing } from "../design/tokens";
 import { useTokenVersion } from "../design/tokenChanges";
 import { ToolChip, ZoomKeys } from "../design/ToolChip";
 import { Follow } from "../follow";
@@ -877,7 +878,7 @@ export function PianoRoll({
         <p
           className="piano-roll-notice"
           role="status"
-          style={{ left: rows.width + 8, bottom: VELOCITY_LANE_HEIGHT + 8 }}
+          style={{ left: rows.width + spacing.space4, bottom: VELOCITY_LANE_HEIGHT + spacing.space4 }}
         >
           {notice.text}
         </p>

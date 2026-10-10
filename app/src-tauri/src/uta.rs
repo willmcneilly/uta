@@ -2126,7 +2126,6 @@ mod tests {
             .collect()
     }
 
-    /// An offline Uta with `count` tracks: the first, then added ones.
     /// A new project's app with its drum track taken out, and no history:
     /// for tests about synth tracks alone.
     fn synth_only() -> Uta {

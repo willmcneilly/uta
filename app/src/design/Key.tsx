@@ -2,8 +2,8 @@ import type { ButtonHTMLAttributes } from "react";
 import "./Key.css";
 
 // Every key in the app that does one thing when you press it: Play, Stop,
-// Loop, + Add track, the benchmark's buttons. A faint outline and ink words,
-// with a small drawn mark where one helps.
+// Loop, + Synth and + Drums, the benchmark's buttons. A faint outline and
+// ink words, with a small drawn mark where one helps.
 
 /** The marks a key can draw before its words. */
 export type KeyMark = "play" | "stop" | "loop";

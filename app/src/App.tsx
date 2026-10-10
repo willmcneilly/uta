@@ -614,7 +614,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           aria-labelledby={`tab-${tab}`}
         >
           {!project || !track ? (
-            <p className="empty">No track selected. Add one with + Add track.</p>
+            <p className="empty">No track selected. Add one with + Synth or + Drums.</p>
           ) : tab === "sound" ? (
             track.source.kind === "synth" ? (
               <SynthPanel
