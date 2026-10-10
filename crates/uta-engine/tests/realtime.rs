@@ -14,9 +14,9 @@ mod common;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{
-    CLAP, CLOSED_HAT, KICK, OPEN_HAT, SNARE, demo_loop, demo_song, drum_project, drum_track,
-    empty_drum_track, empty_sine_track, hit, note, project, replace_track, with_every_slot_taken,
-    with_mixer,
+    CLAP, CLOSED_HAT, HIGH_TOM, KICK, LOW_TOM, OPEN_HAT, SNARE, demo_loop, demo_song, drum_project,
+    drum_track, empty_drum_track, empty_sine_track, hit, note, project, replace_track,
+    with_every_slot_taken, with_mixer,
 };
 use uta_core::{
     Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, NoteId, PlacedClip, PlacedTrack,
@@ -655,7 +655,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     );
 }
 
-/// The kick's, snare's, clap's and hats' hits, fast repeats and flams,
+/// The kick's, snare's, clap's, hats' and toms' hits, fast repeats and flams,
 /// closed hats choking open ones, every control of each turned while they
 /// ring, live hits, a jump and Play again (which restarts the kit's noise
 /// and, when the hats are quiet, its metal), and more drum events in a
@@ -666,7 +666,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
     let beat = 960;
     let mut hits = Vec::new();
-    let pitches = [KICK, SNARE, CLAP, CLOSED_HAT, OPEN_HAT];
+    let pitches = [KICK, SNARE, CLAP, CLOSED_HAT, OPEN_HAT, LOW_TOM, HIGH_TOM];
     for (n, pitch) in pitches.into_iter().enumerate() {
         let first = 100 * n as u128;
         for i in 0..16u64 {
@@ -688,7 +688,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
     let slot = renderer.controller.slot(drum_track()).unwrap();
     renderer.controller.play().unwrap();
 
-    use DrumSound::{Clap, ClosedHat, Kick, OpenHat, Snare};
+    use DrumSound::{Clap, ClosedHat, HighTom, Kick, LowTom, OpenHat, Snare};
     let turns = [
         (Kick, DrumParam::TuneHz(80.0)),
         (Snare, DrumParam::TuneHz(260.0)),
@@ -724,8 +724,20 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         (OpenHat, DrumParam::DecaySeconds(0.6)),
         (ClosedHat, DrumParam::LevelDb(6.0)),
         (OpenHat, DrumParam::LevelDb(-60.0)),
+        (LowTom, DrumParam::TuneHz(100.0)),
+        (HighTom, DrumParam::TuneHz(165.0)),
+        (LowTom, DrumParam::DecaySeconds(0.1)),
+        (HighTom, DrumParam::DecaySeconds(0.6)),
+        (LowTom, DrumParam::LevelDb(-60.0)),
+        (HighTom, DrumParam::LevelDb(6.0)),
+        (LowTom, DrumParam::TuneHz(80.0)),
+        (HighTom, DrumParam::TuneHz(220.0)),
+        (LowTom, DrumParam::DecaySeconds(0.6)),
+        (HighTom, DrumParam::DecaySeconds(0.1)),
+        (LowTom, DrumParam::LevelDb(6.0)),
+        (HighTom, DrumParam::LevelDb(-60.0)),
     ];
-    for (round, &(sound, param)) in turns.iter().cycle().take(102).enumerate() {
+    for (round, &(sound, param)) in turns.iter().cycle().take(138).enumerate() {
         project
             .apply(&Command::SetDrumParam {
                 track: drum_track(),
@@ -736,7 +748,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
         renderer.controller.set_project(&project).unwrap();
         renderer
             .controller
-            .note_on(slot, NoteKey(round as u128), pitches[round % 5], 127)
+            .note_on(slot, NoteKey(round as u128), pitches[round % 7], 127)
             .unwrap();
         renderer
             .controller

@@ -46,6 +46,7 @@
 
 use std::f64::consts::PI;
 
+use crate::drums::resonator::Resonator;
 use crate::drums::{KickSettings, log_tau};
 use crate::ramp::Ramp;
 
@@ -161,10 +162,8 @@ struct State {
     pulse_lp: f64,
     fm_pulse_lp: f64,
     retrig_pulse: f64,
-    /// The resonator: a trapezoidal state-variable filter (Andrew Simper's,
-    /// as Plaits' is), whose band-pass output is the kick.
-    s1: f64,
-    s2: f64,
+    /// The resonator, whose band-pass output is the kick.
+    resonator: Resonator,
     lp_out: f64,
     tone_lp: f64,
     /// Whether it's ringing, or about to.
@@ -366,16 +365,12 @@ impl Kick {
 
         // The resonator. Its Q follows the frequency, so it always dies
         // away with the time constant `tau`.
-        let g = tan(PI * frequency / rates.sample_rate);
-        let r = 1.0 / (PI * frequency * tau).max(0.5);
-        let h = 1.0 / (1.0 + r * g + g * g);
         let input = (pulse - state.retrig_pulse * 0.2) * INPUT_SCALE_HZ / tune_hz;
-        let hp = (input - r * state.s1 - g * state.s1 - state.s2) * h;
-        let bp = g * hp + state.s1;
-        state.s1 = g * hp + bp;
-        let lp = g * bp + state.s2;
-        state.s2 = g * bp + lp;
-        state.lp_out = lp;
+        let ring = state
+            .resonator
+            .process(input, frequency, tau, rates.sample_rate);
+        let bp = ring.band_pass;
+        state.lp_out = ring.low_pass;
 
         // The Tone low-pass, which also lets some of the pulse through: the
         // click.
@@ -385,8 +380,7 @@ impl Kick {
         let out = state.tone_lp as f32 * level * OUTPUT_GAIN;
         if state.pulse_remaining == 0
             && state.fm_pulse_remaining == 0
-            && state.s1.abs()
-                + state.s2.abs()
+            && state.resonator.state()
                 + state.tone_lp.abs()
                 + state.pulse_raw.abs()
                 + state.pulse.abs()
@@ -403,7 +397,7 @@ impl Kick {
 /// Plaits' diode: passes positive swings, and clips negative ones softly to
 /// about -0.7.
 #[inline]
-fn diode(x: f64) -> f64 {
+pub(super) fn diode(x: f64) -> f64 {
     if x >= 0.0 {
         x
     } else {
@@ -412,22 +406,9 @@ fn diode(x: f64) -> f64 {
     }
 }
 
-/// tan(x), by its series where it's accurate to better than one part in a
-/// million: the resonator's angle stays under 0.02 at 48 kHz, so it never
-/// needs the library's `tan`.
-#[inline]
-fn tan(x: f64) -> f64 {
-    if x < 0.2 {
-        let x2 = x * x;
-        x * (1.0 + x2 * (1.0 / 3.0 + x2 * (2.0 / 15.0 + x2 * (17.0 / 315.0))))
-    } else {
-        x.tan()
-    }
-}
-
 /// The coefficient of a one-pole low-pass at `cutoff_hz`.
 #[inline]
-fn one_pole(cutoff_hz: f64, sample_rate: f64) -> f64 {
+pub(super) fn one_pole(cutoff_hz: f64, sample_rate: f64) -> f64 {
     1.0 - (-2.0 * PI * cutoff_hz / sample_rate).exp()
 }
 

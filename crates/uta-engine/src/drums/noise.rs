@@ -1,6 +1,6 @@
 //! The kit's noise source: one per kit, shared by the snare and the clap,
 //! as on the 909, where the two "produce a phasing effect when played
-//! together". See RFC-006, "What makes it sound good", point 6.
+//! together", and by the toms' skin. See RFC-006, "What makes it sound good", point 6.
 //!
 //! It's free-running: it runs whether or not anything is sounding, so each
 //! hit catches it at a different point and comes out a little different, as

@@ -7,8 +7,7 @@
 //! hit adds energy to it, never restarts it. Drum notes are one-shots: the
 //! end of a note does nothing.
 //!
-//! The sounds without a circuit yet (the toms and cymbal, for now) are
-//! silent.
+//! The sound without a circuit yet (the cymbal, for now) is silent.
 
 mod clap;
 mod filter;
@@ -16,7 +15,9 @@ mod hats;
 mod kick;
 mod metal;
 mod noise;
+mod resonator;
 mod snare;
+mod tom;
 
 use clap::Clap;
 use hats::Hats;
@@ -24,6 +25,7 @@ use kick::Kick;
 use metal::Metal;
 use noise::Noise;
 use snare::Snare;
+use tom::{Tom, TomKind, TomSettings};
 use uta_core::DrumSound;
 
 use crate::snapshot::db_to_gain;
@@ -73,6 +75,8 @@ pub struct KitSettings {
     pub clap: ClapSettings,
     pub closed_hat: ClosedHatSettings,
     pub open_hat: OpenHatSettings,
+    pub low_tom: LowTomSettings,
+    pub high_tom: HighTomSettings,
 }
 
 impl KitSettings {
@@ -94,7 +98,15 @@ impl KitSettings {
         let snare = (0.07 + snare.tone_seconds * 1.5).max(0.5);
         let clap = 0.05 + clap.decay_seconds * 1.5;
         let hats = closed_hat.decay_seconds.max(open_hat.decay_seconds) * 1.5;
-        kick.max(snare).max(clap).max(hats)
+        // The toms' skin dies away a little slower than their body, but
+        // starts well under it, so it's gone by then too.
+        let toms = self
+            .low_tom
+            .clamped()
+            .decay_seconds
+            .max(self.high_tom.clamped().decay_seconds)
+            * 1.5;
+        kick.max(snare).max(clap).max(hats).max(toms)
     }
 }
 
@@ -369,6 +381,132 @@ impl From<&uta_core::OpenHatSettings> for OpenHatSettings {
     }
 }
 
+/// The 808 low tom's settings. See `uta_core::LowTomSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LowTomSettings {
+    /// The note it settles on, in Hz, [`Self::TUNE_HZ`].
+    pub tune_hz: f32,
+    /// The seconds it takes to die away by 40 dB, [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl LowTomSettings {
+    pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::LowTomSettings::MIN_TUNE_HZ..=uta_core::LowTomSettings::MAX_TUNE_HZ;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::LowTomSettings::MIN_DECAY_SECONDS..=uta_core::LowTomSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+
+    /// The tom circuit's settings, clamped.
+    fn tom(self) -> TomSettings {
+        let Self {
+            tune_hz,
+            decay_seconds,
+            level_db,
+        } = self.clamped();
+        TomSettings {
+            tune_hz,
+            decay_seconds,
+            level_db,
+        }
+    }
+}
+
+impl Default for LowTomSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::LowTomSettings::default())
+    }
+}
+
+impl From<&uta_core::LowTomSettings> for LowTomSettings {
+    fn from(settings: &uta_core::LowTomSettings) -> Self {
+        Self {
+            tune_hz: settings.tune_hz,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
+/// The 808 high tom's settings. See `uta_core::HighTomSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HighTomSettings {
+    /// The note it settles on, in Hz, [`Self::TUNE_HZ`].
+    pub tune_hz: f32,
+    /// The seconds it takes to die away by 40 dB, [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl HighTomSettings {
+    pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::HighTomSettings::MIN_TUNE_HZ..=uta_core::HighTomSettings::MAX_TUNE_HZ;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::HighTomSettings::MIN_DECAY_SECONDS..=uta_core::HighTomSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+
+    /// The tom circuit's settings, clamped.
+    fn tom(self) -> TomSettings {
+        let Self {
+            tune_hz,
+            decay_seconds,
+            level_db,
+        } = self.clamped();
+        TomSettings {
+            tune_hz,
+            decay_seconds,
+            level_db,
+        }
+    }
+}
+
+impl Default for HighTomSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::HighTomSettings::default())
+    }
+}
+
+impl From<&uta_core::HighTomSettings> for HighTomSettings {
+    fn from(settings: &uta_core::HighTomSettings) -> Self {
+        Self {
+            tune_hz: settings.tune_hz,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
 impl From<&uta_core::KitSettings> for KitSettings {
     fn from(kit: &uta_core::KitSettings) -> Self {
         Self {
@@ -377,6 +515,8 @@ impl From<&uta_core::KitSettings> for KitSettings {
             clap: ClapSettings::from(&kit.clap),
             closed_hat: ClosedHatSettings::from(&kit.closed_hat),
             open_hat: OpenHatSettings::from(&kit.open_hat),
+            low_tom: LowTomSettings::from(&kit.low_tom),
+            high_tom: HighTomSettings::from(&kit.high_tom),
         }
     }
 }
@@ -418,7 +558,9 @@ pub(crate) struct Kit {
     clap: Clap,
     /// Both hats: one circuit.
     hats: Hats,
-    /// The noise the snare and the clap share.
+    low_tom: Tom,
+    high_tom: Tom,
+    /// The noise the snare, the clap and the toms share.
     noise: Noise,
     /// The metal the hats filter, tuned by the closed hat's Tune.
     metal: Metal,
@@ -436,6 +578,8 @@ impl Kit {
             kick: Kick::new(settings.kick, sample_rate),
             snare: Snare::new(settings.snare, sample_rate),
             clap: Clap::new(settings.clap, sample_rate),
+            low_tom: Tom::new(TomKind::Low, settings.low_tom.tom(), sample_rate),
+            high_tom: Tom::new(TomKind::High, settings.high_tom.tom(), sample_rate),
             metal: metal(hats.tune_hz(), sample_rate),
             hats,
             noise: Noise::new(),
@@ -449,6 +593,8 @@ impl Kit {
         self.snare.prepare(sample_rate);
         self.clap.prepare(sample_rate);
         self.hats.prepare(sample_rate);
+        self.low_tom.prepare(sample_rate);
+        self.high_tom.prepare(sample_rate);
         self.noise.restart();
         self.metal = metal(self.hats.tune_hz(), sample_rate);
     }
@@ -460,6 +606,8 @@ impl Kit {
         self.snare.load(settings.snare);
         self.clap.load(settings.clap);
         self.hats.load(settings.closed_hat, settings.open_hat);
+        self.low_tom.load(settings.low_tom.tom());
+        self.high_tom.load(settings.high_tom.tom());
         self.metal.load_tune(self.hats.tune_hz());
     }
 
@@ -470,6 +618,8 @@ impl Kit {
         self.clap.set_settings(settings.clap);
         self.hats
             .set_settings(settings.closed_hat, settings.open_hat);
+        self.low_tom.set_settings(settings.low_tom.tom());
+        self.high_tom.set_settings(settings.high_tom.tom());
         self.metal.set_tune(self.hats.tune_hz());
     }
 
@@ -483,6 +633,8 @@ impl Kit {
             Some(DrumSound::Clap) => self.clap.hit(strength),
             Some(DrumSound::ClosedHat) => self.hats.hit_closed(strength),
             Some(DrumSound::OpenHat) => self.hats.hit_open(strength),
+            Some(DrumSound::LowTom) => self.low_tom.hit(strength),
+            Some(DrumSound::HighTom) => self.high_tom.hit(strength),
             _ => {}
         }
     }
@@ -494,9 +646,10 @@ impl Kit {
     ///
     /// The noise restarts here. A sound ringing as playback starts carries on
     /// without a click: noise has no waveform to break, and the filters it
-    /// runs through aren't touched. The kick has no free-running parts, and
-    /// the snare's oscillators start from the same point whenever it has died
-    /// away, so neither is touched.
+    /// runs through aren't touched; the toms' skin is noise of this kind. The
+    /// kick's and toms' resonators aren't free-running, and the snare's
+    /// oscillators start from the same point whenever it has died away, so
+    /// none of them is touched.
     ///
     /// The metal restarts too. If the hats are ringing, it crossfades to
     /// its restarted self over a few milliseconds, since its square waves
@@ -512,6 +665,8 @@ impl Kit {
             || self.snare.is_sounding()
             || self.clap.is_sounding()
             || self.hats.is_sounding()
+            || self.low_tom.is_sounding()
+            || self.high_tom.is_sounding()
     }
 
     /// The next sample: every sound, added together. A sound that has died
@@ -529,6 +684,8 @@ impl Kit {
             + self.snare.next_sample(noise)
             + self.clap.next_sample(noise)
             + self.hats.next_sample(metal)
+            + self.low_tom.next_sample(noise)
+            + self.high_tom.next_sample(noise)
     }
 }
 
