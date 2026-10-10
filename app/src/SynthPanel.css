@@ -1,6 +1,6 @@
 /*
  * The synth panel: the waveform keys, then the filter and the envelope, each
- * drawn above its sliders (provisional: D-10).
+ * drawn above its faders (provisional: D-10).
  */
 .synth {
   display: flex;
@@ -24,7 +24,7 @@
 }
 
 /* Each group keeps its drawing's width, so on a narrow window the panel
-   scrolls rather than squeezing the sliders or overlapping the drawings. */
+   scrolls rather than squeezing the faders or overlapping the drawings. */
 .synth > fieldset {
   flex: none;
 }
@@ -35,7 +35,7 @@
   font: var(--font-text);
 }
 
-/* Each slider's label, slider and value sit in the fieldset's own columns,
+/* Each fader's label, fader and value sit in the fieldset's own columns,
    as wide as the drawing above them. */
 .synth .setting {
   display: contents;
@@ -53,7 +53,7 @@
 }
 
 /* The drawings. Structure is faint, the curve is ink, and the hatching
-   under it is the hatch ink. While a slider is dragged, a dashed line marks
+   under it is the hatch ink. While a fader is dragged, a dashed line marks
    the part of the drawing it moves. */
 .synth .drawing {
   grid-column: 1 / -1;

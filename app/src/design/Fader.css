@@ -1,9 +1,9 @@
 /*
- * The slider, after the sandbox's track fader: a faint rail, a tick where
- * double-click resets it, and an ink thumb pointing up at the value from
- * under the rail. provisional: D-7
+ * The fader, after the sandbox's track fader: a faint rail, a tick where
+ * a reset sets it, and an ink thumb pointing up at the value from under the
+ * rail. provisional: D-7
  */
-.slider {
+.fader {
   position: relative;
   height: 20px;
   min-width: 0;
@@ -16,14 +16,14 @@
   -webkit-user-select: none;
 }
 
-.slider-rail {
+.fader-rail {
   position: absolute;
   inset: 8px var(--space-3) auto;
   height: 0;
   border-top: var(--stroke-grid) solid var(--ink-3);
 }
 
-.slider-default {
+.fader-default {
   position: absolute;
   top: -3px;
   width: 0;
@@ -32,7 +32,7 @@
   transform: translateX(-50%);
 }
 
-.slider-thumb {
+.fader-thumb {
   position: absolute;
   top: 1px;
   width: 9px;
@@ -47,23 +47,25 @@
  * because the arrow keys now move it. The focus ring shows for focus from
  * the keyboard, or once a key is pressed after a click. provisional: D-8
  */
-.slider:hover .slider-rail,
-.slider[data-dragging] .slider-rail {
+.fader:hover .fader-rail,
+.fader[data-dragging] .fader-rail {
   border-top-color: var(--ink-2);
 }
 
-.slider:focus {
+.fader:focus {
   outline: none;
 }
 
-.slider:focus .slider-thumb {
+.fader:focus .fader-thumb {
   background: var(--selected);
 }
 
-.slider:focus-visible:not([data-pointer-focused]) {
+.fader:focus-visible:not([data-pointer-focused]) {
   outline: var(--stroke-clip-selected) solid var(--selected);
 }
 
-.slider-row output {
+.fader-row output {
+  font: var(--font-number);
+  /* After the font shorthand, which resets it. */
   font-variant-numeric: tabular-nums;
 }

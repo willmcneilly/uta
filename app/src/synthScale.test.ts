@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Limits } from "./backend";
 import {
-  SLIDER_STEPS,
+  SETTING_STEPS,
   formatAmount,
   formatHz,
   formatLevel,
@@ -17,18 +17,18 @@ const level: Limits = [0, 1];
 describe("fromPosition", () => {
   it("gives exactly the limits at the ends", () => {
     expect(fromPosition(0, cutoff, "log")).toBe(20);
-    expect(fromPosition(SLIDER_STEPS, cutoff, "log")).toBe(20_000);
+    expect(fromPosition(SETTING_STEPS, cutoff, "log")).toBe(20_000);
     expect(fromPosition(0, envelope, "log")).toBe(0.001);
-    expect(fromPosition(SLIDER_STEPS, envelope, "log")).toBe(10);
-    expect(fromPosition(SLIDER_STEPS, level, "linear")).toBe(1);
+    expect(fromPosition(SETTING_STEPS, envelope, "log")).toBe(10);
+    expect(fromPosition(SETTING_STEPS, level, "linear")).toBe(1);
   });
 
   it("moves each step by the same ratio on a log scale", () => {
     // 20 Hz to 20 kHz is three decades, so a third of the way is 200 Hz.
-    expect(fromPosition(SLIDER_STEPS / 3, cutoff, "log")).toBeCloseTo(200, 6);
-    expect(fromPosition(SLIDER_STEPS / 2, cutoff, "log")).toBeCloseTo(632.46, 1);
+    expect(fromPosition(SETTING_STEPS / 3, cutoff, "log")).toBeCloseTo(200, 6);
+    expect(fromPosition(SETTING_STEPS / 2, cutoff, "log")).toBeCloseTo(632.46, 1);
     // 1 ms to 10 s is four decades, so halfway is 100 ms.
-    expect(fromPosition(SLIDER_STEPS / 2, envelope, "log")).toBeCloseTo(0.1, 9);
+    expect(fromPosition(SETTING_STEPS / 2, envelope, "log")).toBeCloseTo(0.1, 9);
   });
 
   it("moves each step by the same amount on a linear scale", () => {
@@ -43,7 +43,7 @@ describe("toPosition", () => {
       [envelope, "log"],
       [level, "linear"],
     ] as const) {
-      for (let position = 0; position <= SLIDER_STEPS; position += 1) {
+      for (let position = 0; position <= SETTING_STEPS; position += 1) {
         const f32 = Math.fround(fromPosition(position, limits, scale));
         expect(toPosition(f32, limits, scale)).toBe(position);
       }
@@ -52,7 +52,7 @@ describe("toPosition", () => {
 
   it("clamps values outside the limits to the slider", () => {
     expect(toPosition(5, cutoff, "log")).toBe(0);
-    expect(toPosition(40_000, cutoff, "log")).toBe(SLIDER_STEPS);
+    expect(toPosition(40_000, cutoff, "log")).toBe(SETTING_STEPS);
     expect(toPosition(0, envelope, "log")).toBe(0);
     expect(toPosition(Number.NaN, level, "linear")).toBe(0);
   });

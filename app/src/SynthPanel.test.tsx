@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SynthLimits, SynthView } from "./backend";
 import { SynthPanel } from "./SynthPanel";
-import { press } from "./design/sliderTesting";
+import { press } from "./design/faderTesting";
 import { DRAWING_HEIGHT, DRAWING_WIDTH } from "./synth/Drawings";
 import { envelopeShape } from "./synth/envelopeShape";
 import { type Point, filterCurve, xOfFrequency } from "./synth/filterCurve";

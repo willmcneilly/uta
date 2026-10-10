@@ -1,7 +1,7 @@
 import { type PointerEvent, type Ref, useEffect, useRef, useState } from "react";
 import type { MixerLimits, MixerView, ProjectView, TrackView } from "./backend";
-import { Slider } from "./design/Slider";
-import { linearScale } from "./design/sliderScale";
+import { Fader } from "./design/Fader";
+import { linearScale } from "./design/numberScale";
 import { Meter } from "./Meter";
 import type { TrackLevels } from "./meterLevel";
 import { ADD_TRACK_HEIGHT, RULER_HEIGHT, TRACK_HEIGHT } from "./timeline/viewport";
@@ -9,7 +9,7 @@ import { dropIndex, formatPan } from "./trackOrder";
 import "./TrackHeaders.css";
 
 /**
- * Each header's meter, in CSS pixels. It sits under the sliders' rails, as
+ * Each header's meter, in CSS pixels. It sits under the faders' rails, as
  * wide as they are (see TrackHeaders.css), and thinner than the master's so
  * the headers stay quieter than the clips. provisional: D-12
  */
@@ -168,7 +168,7 @@ export function TrackHeaders({
 interface HeaderProps {
   track: TrackView;
   limits: MixerLimits;
-  /** A new track's mixer strip, which double-click resets each slider to. */
+  /** A new track's mixer strip, which a reset sets each fader to. */
   defaults: MixerView;
   selected: boolean;
   dragging: boolean;
@@ -231,7 +231,7 @@ function TrackHeader({
           <span>S</span>
         </button>
       </div>
-      <Slider
+      <Fader
         className="track-setting"
         label="Vol"
         ariaLabel={`${name} volume`}
@@ -241,7 +241,7 @@ function TrackHeader({
         format={formatDb}
         onChange={(volumeDb, gesture) => onMixer({ ...mixer, volumeDb }, gesture)}
       />
-      <Slider
+      <Fader
         className="track-setting"
         label="Pan"
         ariaLabel={`${name} pan`}

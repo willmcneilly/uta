@@ -188,7 +188,7 @@
   font: var(--font-text);
 }
 
-.track-setting .slider {
+.track-setting .fader {
   min-width: 0;
 }
 
@@ -200,7 +200,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Under the sliders' rails: past the label column, its gap and the slider's
+/* Under the faders' rails: past the label column, its gap and the fader's
    own room at the end. Its width is the rails' (METER_WIDTH). */
 .track-header .meter {
   margin-top: var(--space-1);

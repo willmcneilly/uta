@@ -1,9 +1,9 @@
 import { type KeyboardEvent, useRef, useState } from "react";
 import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
-import { Slider as SliderControl } from "./design/Slider";
-import type { SliderScale } from "./design/sliderScale";
+import { Fader } from "./design/Fader";
+import type { NumberScale } from "./design/numberScale";
 import {
-  SLIDER_STEPS,
+  SETTING_STEPS,
   type Scale,
   formatAmount,
   formatHz,
@@ -20,7 +20,7 @@ import "./SynthPanel.css";
 interface Props {
   synth: SynthView;
   limits: SynthLimits;
-  /** A new track's settings, which double-click resets each slider to. */
+  /** A new track's settings, which a reset sets each fader to. */
   defaults: SynthView;
   /**
    * The engine's sample rate, which the filter's curve depends on, or null
@@ -39,9 +39,9 @@ const WAVEFORMS: { value: Waveform; label: string; cycle: string }[] = [
   { value: "square", label: "Square", cycle: "M0,12 L0,0 L14,0 L14,12 L28,12 L28,0" },
 ];
 
-type SliderName = Exclude<SynthParam["name"], "waveform">;
+type SettingName = Exclude<SynthParam["name"], "waveform">;
 
-const FIELDS: Record<SliderName, Exclude<keyof SynthView, "waveform">> = {
+const FIELDS: Record<SettingName, Exclude<keyof SynthView, "waveform">> = {
   cutoff_hz: "cutoffHz",
   resonance: "resonance",
   attack_seconds: "attackSeconds",
@@ -50,22 +50,22 @@ const FIELDS: Record<SliderName, Exclude<keyof SynthView, "waveform">> = {
   release_seconds: "releaseSeconds",
 };
 
-const STAGES: Partial<Record<SliderName, StageName>> = {
+const STAGES: Partial<Record<SettingName, StageName>> = {
   attack_seconds: "attack",
   decay_seconds: "decay",
   sustain: "sustain",
   release_seconds: "release",
 };
 
-/** A slider being dragged, and the value it shows. */
+/** A fader being dragged, and the value it shows. */
 interface Dragged {
-  name: SliderName;
+  name: SettingName;
   value: number;
 }
 
-interface SliderProps {
+interface SettingProps {
   label: string;
-  name: SliderName;
+  name: SettingName;
   value: number;
   defaultValue: number;
   limits: Limits;
@@ -75,22 +75,22 @@ interface SliderProps {
   onDrag: (dragged: Dragged | null) => void;
 }
 
-/** A synth slider's positions, on its log or linear scale. */
-function synthScale(limits: Limits, scale: Scale): SliderScale {
+/** A synth fader's positions, on its log or linear scale. */
+function synthScale(limits: Limits, scale: Scale): NumberScale {
   return {
     min: limits[0],
     max: limits[1],
-    steps: SLIDER_STEPS,
+    steps: SETTING_STEPS,
     toPosition: (value) => toPosition(value, limits, scale),
     fromPosition: (position) => fromPosition(position, limits, scale),
   };
 }
 
 /**
- * One setting on a slider. It shows the value Rust last sent. An arrow key
+ * One setting on a fader. It shows the value Rust last sent. An arrow key
  * moves it a hundredth of the way, and Shift+arrow a tenth.
  */
-function Slider({
+function Setting({
   label,
   name,
   value,
@@ -100,15 +100,15 @@ function Slider({
   format,
   onChange,
   onDrag,
-}: SliderProps) {
+}: SettingProps) {
   return (
-    <SliderControl
+    <Fader
       className="setting"
       label={label}
       value={value}
       defaultValue={defaultValue}
       scale={synthScale(limits, scale)}
-      keyStep={SLIDER_STEPS / 100}
+      keyStep={SETTING_STEPS / 100}
       format={format}
       onChange={(setting, gesture) => onChange({ name, value: setting }, gesture)}
       onDrag={(shown) => onDrag(shown === null ? null : { name, value: shown })}
@@ -179,21 +179,21 @@ function WaveformPicker({
 
 /**
  * A track's synth: waveform, filter and envelope. The filter and the envelope
- * are drawn above their sliders, from the values the sliders show, so the
+ * are drawn above their faders, from the values the faders show, so the
  * drawings follow a drag before Rust replies.
  */
 export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Props) {
-  // The slider being dragged: gesture state, gone when the drag ends.
+  // The fader being dragged: gesture state, gone when the drag ends.
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const shown: SynthView = dragged ? { ...synth, [FIELDS[dragged.name]]: dragged.value } : synth;
-  const slider = (
+  const setting = (
     label: string,
-    name: SliderName,
+    name: SettingName,
     limit: Limits,
     scale: Scale,
     format: (value: number) => string,
   ) => (
-    <Slider
+    <Setting
       label={label}
       name={name}
       value={synth[FIELDS[name]]}
@@ -218,17 +218,17 @@ export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Pr
           sampleRate={sampleRate ?? DEFAULT_SAMPLE_RATE}
           marked={dragged?.name === "cutoff_hz" || dragged?.name === "resonance"}
         />
-        {slider("Cutoff", "cutoff_hz", limits.cutoffHz, "log", formatHz)}
-        {slider("Resonance", "resonance", limits.resonance, "linear", formatAmount)}
+        {setting("Cutoff", "cutoff_hz", limits.cutoffHz, "log", formatHz)}
+        {setting("Resonance", "resonance", limits.resonance, "linear", formatAmount)}
       </fieldset>
 
       <fieldset className="envelope">
         <legend>Envelope</legend>
         <EnvelopeDrawing times={shown} marked={dragged ? (STAGES[dragged.name] ?? null) : null} />
-        {slider("Attack", "attack_seconds", limits.envelopeSeconds, "log", formatSeconds)}
-        {slider("Decay", "decay_seconds", limits.envelopeSeconds, "log", formatSeconds)}
-        {slider("Sustain", "sustain", limits.sustain, "linear", formatLevel)}
-        {slider("Release", "release_seconds", limits.envelopeSeconds, "log", formatSeconds)}
+        {setting("Attack", "attack_seconds", limits.envelopeSeconds, "log", formatSeconds)}
+        {setting("Decay", "decay_seconds", limits.envelopeSeconds, "log", formatSeconds)}
+        {setting("Sustain", "sustain", limits.sustain, "linear", formatLevel)}
+        {setting("Release", "release_seconds", limits.envelopeSeconds, "log", formatSeconds)}
       </fieldset>
     </section>
   );

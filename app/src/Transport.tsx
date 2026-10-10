@@ -1,6 +1,6 @@
 import type { ProjectView } from "./backend";
-import { Slider } from "./design/Slider";
-import { linearScale } from "./design/sliderScale";
+import { Fader } from "./design/Fader";
+import { linearScale } from "./design/numberScale";
 import { type BarBeat, formatBarBeat } from "./musicalTime";
 import "./Transport.css";
 
@@ -66,7 +66,7 @@ export function Transport({
       </span>
 
       {project && (
-        <Slider
+        <Fader
           className="setting"
           label="Tempo"
           value={project.bpm}
