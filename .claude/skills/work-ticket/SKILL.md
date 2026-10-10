@@ -148,7 +148,8 @@ Then stop and wait for Will.
    - stop any dev servers and previews you started, and close the browser tabs you opened, in the built-in browser or elsewhere;
    - remove any worktree you created, and its build output. If this session itself runs in a worktree the app made, leave that one: the app removes it;
    - delete scratch branches you pushed, except a branch that holds images the PR links to, which stays so the PR keeps working;
-   - leave anything you didn't create alone.
+   - leave anything you didn't create alone;
+   - then run the `tidy` skill, which clears what earlier tickets left behind: worktrees and build output whose work is on `main`, and merged branches.
 5. **Line up the next ticket.** Query the Tickets for `Ready` ones whose **Depends on** are all `Done` and merged. Pick the next one the plan's order says to do in the same project, or the lowest ID if the plan doesn't say. Then create a chip for it with the `spawn_task` tool (the `ccd_session` one): title `Work on UTA-<n>: <name>`, a one-line tldr of its goal, and the prompt `/work-ticket UTA-<n>`, so Will only has to click it. If that tool isn't available, give him the command to paste instead. If nothing is Ready, say what the next ticket is waiting on.
 6. Tell Will, in a few lines: what merged, which tickets are now Ready, the next ticket you lined up (and any other Ready tickets that could run alongside it), what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
 
