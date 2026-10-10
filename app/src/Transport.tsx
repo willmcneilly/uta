@@ -60,7 +60,8 @@ export function Transport({
           Loop
         </button>
       )}
-      <span className="state" data-testid="transport">
+      {/* Play's mark already shows it, so this is for screen readers only. */}
+      <span className="state" role="status" data-testid="transport">
         {playing ? "Playing" : "Stopped"}
       </span>
 
