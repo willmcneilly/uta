@@ -487,8 +487,8 @@ mod tests {
         samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
     }
 
-    /// The metal through the cymbal's filters and its mix at the default
-    /// Tone, with the amplifiers left out (they're the one part that isn't
+    /// The metal through the cymbal's filters and its mix at `tone`, with
+    /// the amplifiers left out (they're the one part that isn't
     /// linear): the cymbal's version of the hats' "hat path".
     fn cymbal_path(tone: f32) -> impl FnMut(f64) -> f64 {
         let mut cymbal = Cymbal::new(

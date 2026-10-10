@@ -138,7 +138,7 @@ fn velocity_100_is_unaccented_and_127_a_full_accent() {
 
 /// Decay is how long the low band, the longest, takes to die away by
 /// 40 dB. The whole cymbal falls 40 dB from its peak a little sooner, as
-/// its peak is all three bands at once: measured 0.91 to 0.97 of the
+/// its peak is all three bands at once: measured 0.90 to 0.97 of the
 /// setting. So doubling Decay roughly doubles it: measured 1.84 times from
 /// 0.35 to 0.7 s and 2.01 times from 0.6 to 1.2 s.
 #[test]
@@ -423,8 +423,9 @@ fn playing_again_sounds_the_same() {
 /// Once it has died away, the cymbal stops: a render of one cymbal at its
 /// longest Decay ends in exact silence, at every Tune and Tone. It stops
 /// 120 dB down, three times the 40 dB of Decay, so about 3.6 s after the
-/// hit, and the filters after a little longer: measured, under 4 s. The metal runs on underneath, so this checks the cymbal stops on
-/// its envelopes, not on the metal falling quiet, which it never does.
+/// hit, and the filters after a little longer: measured, under 4 s. The
+/// metal runs on underneath, so this checks the cymbal stops on its
+/// envelopes, not on the metal falling quiet, which it never does.
 #[test]
 fn the_cymbal_dies_away_to_silence() {
     for hz in [102.65, 205.3, 410.6] {
@@ -450,7 +451,9 @@ fn the_cymbal_dies_away_to_silence() {
 /// Play restarts the metal even while only the cymbal rings, crossfading
 /// so its ring doesn't jump: Stop and Play again straight away, with a
 /// cymbal at its longest Decay still ringing, and once that ring has died
-/// away the beat sounds exactly as a render from the top does.
+/// away the beat sounds exactly as a render from the top does. The
+/// crossfade itself is checked in the engine's unit tests: this render
+/// would pass without it.
 #[test]
 fn playing_again_while_it_rings_restarts_the_metal() {
     let hits = vec![hit(0, CYMBAL, 127, 0), hit(1, CYMBAL, 127, 8 * BEAT)];

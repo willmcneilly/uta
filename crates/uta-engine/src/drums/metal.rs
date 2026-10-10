@@ -237,11 +237,12 @@ fn power_spectrum(samples: &[f64]) -> Vec<f64> {
 
 /// How far the false tones (aliasing) sit under a sound made from the
 /// metal, in dB, the way the research measured it: the metal at the 808's
-/// tuning through `path`, run at `rate`, for 5.5 s, its spectrum split into the bins at the squares' true
-/// harmonics (within the window's main lobe of each) and the rest, from
-/// 20 Hz to 20 kHz, the band you can hear. The harmonics folded back from
-/// above half the sample rate land in the rest. It's a steady tone, so
-/// the amplifier's envelope doesn't come into it, so `path` leaves it out.
+/// tuning through `path`, run at `rate`, for 5.5 s, its spectrum split into
+/// the bins at the squares' true harmonics (within the window's main lobe
+/// of each) and the rest, from 20 Hz to 20 kHz, the band you can hear. The
+/// harmonics folded back from above half the sample rate land in the rest.
+/// It's a steady tone, so the amplifier's envelope doesn't come into it,
+/// and `path` leaves it out.
 #[cfg(test)]
 pub(crate) fn signal_to_alias_db(rate: f64, mut path: impl FnMut(f64) -> f64) -> f64 {
     const N: usize = 1 << 18;
