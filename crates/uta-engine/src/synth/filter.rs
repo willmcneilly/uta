@@ -104,4 +104,102 @@ mod tests {
         let c = Coefficients::new(20_000.0, 0.0, 32_000.0);
         assert!(c.a1.is_finite() && c.a2.is_finite() && c.a3.is_finite());
     }
+
+    /// The gain in dB of a steady sine at a whole number of Hz, measured
+    /// over a second once the filter has settled. Correlating with a sine
+    /// and a cosine over whole cycles gives the exact amplitude, where the
+    /// peak sample would miss it at high frequencies.
+    fn measured_db(frequency_hz: u32, coefficients: &Coefficients, rate: u32) -> f64 {
+        let mut filter = Filter::default();
+        let (mut in_phase, mut quadrature) = (0.0f64, 0.0f64);
+        for n in 0..2 * rate {
+            let phase = 2.0 * PI * f64::from(frequency_hz) * f64::from(n) / f64::from(rate);
+            let output = f64::from(filter.process(phase.sin() as f32, coefficients));
+            if n >= rate {
+                in_phase += output * phase.sin();
+                quadrature += output * phase.cos();
+            }
+        }
+        let amplitude = 2.0 * in_phase.hypot(quadrature) / f64::from(rate);
+        20.0 * amplitude.log10()
+    }
+
+    /// The synth panel draws the filter's response from the same formula as
+    /// this filter, worked out in the UI (`app/src/synth/filterCurve.ts`).
+    /// Measuring the real filter is far too slow for a drawing that follows
+    /// a slider, and asking Rust would be a round trip on every step, so the
+    /// UI keeps its own copy of the maths. The risk is that the copy drifts
+    /// from the sound, as it did for HISE's filter display (research:
+    /// https://app.notion.com/p/3f23af969b6f81f9a4d9f08a1bc97317).
+    ///
+    /// So this test drives the real filter with sine waves and keeps the
+    /// gains it measures in `app/src/synth/filter-response.json` (beside
+    /// the curve, where the UI's tests can read it), and a TypeScript test
+    /// checks the drawn curve against that file within
+    /// 0.5 dB. If the filter changes, this test fails until the file is
+    /// regenerated with `UTA_GOLDEN=1 cargo test -p uta-engine filter`, and
+    /// then the TypeScript test fails until the drawing matches. A human
+    /// approves every change to the file, as with the golden WAVs.
+    #[test]
+    fn response_matches_the_fixture() {
+        let mut points = Vec::new();
+        for rate in [44_100, 48_000] {
+            for cutoff_hz in [100.0, 1_000.0, 5_000.0, 20_000.0] {
+                for resonance in [0.0, 0.5, 1.0] {
+                    let c = Coefficients::new(cutoff_hz, resonance, f64::from(rate));
+                    for frequency_hz in [
+                        20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 15_000, 20_000,
+                    ] {
+                        let gain_db = measured_db(frequency_hz, &c, rate);
+                        points.push(serde_json::json!({
+                            "sampleRate": rate,
+                            "cutoffHz": cutoff_hz,
+                            "resonance": resonance,
+                            "frequencyHz": frequency_hz,
+                            "gainDb": (gain_db * 1e4).round() / 1e4,
+                        }));
+                    }
+                }
+            }
+        }
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../app/src/synth/filter-response.json");
+        if std::env::var_os("UTA_GOLDEN").is_some() {
+            let fixture = serde_json::json!({
+                "about": "The engine's low-pass filter, measured with sine waves by \
+                          response_matches_the_fixture in crates/uta-engine/src/synth/filter.rs. \
+                          Regenerate with UTA_GOLDEN=1; a human approves every change.",
+                "points": points,
+            });
+            let text = serde_json::to_string_pretty(&fixture).unwrap() + "\n";
+            std::fs::write(&path, text).unwrap();
+            eprintln!("Wrote {}", path.display());
+            return;
+        }
+
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "can't read {} ({e}); regenerate with UTA_GOLDEN=1",
+                path.display()
+            )
+        });
+        let fixture: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let saved = fixture["points"].as_array().unwrap();
+        assert_eq!(saved.len(), points.len(), "regenerate with UTA_GOLDEN=1");
+        for (saved, measured) in saved.iter().zip(&points) {
+            for key in ["sampleRate", "cutoffHz", "resonance", "frequencyHz"] {
+                assert_eq!(saved[key], measured[key], "regenerate with UTA_GOLDEN=1");
+            }
+            let (was, now) = (
+                saved["gainDb"].as_f64().unwrap(),
+                measured["gainDb"].as_f64().unwrap(),
+            );
+            assert!(
+                (was - now).abs() < 0.01,
+                "{measured}: the filter now measures {now} dB, not {was} dB; \
+                 regenerate with UTA_GOLDEN=1 and check the drawing still matches"
+            );
+        }
+    }
 }

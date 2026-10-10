@@ -1,0 +1,1853 @@
+{
+  "about": "The engine's low-pass filter, measured with sine waves by response_matches_the_fixture in crates/uta-engine/src/synth/filter.rs. Regenerate with UTA_GOLDEN=1; a human approves every change.",
+  "points": [
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0069,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": -0.2633,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -12.3053,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.9728,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -40.0296,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.159,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.7157,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -83.3453,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -96.3021,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -119.1885,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": 0.2478,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": 1.5131,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -10.5291,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.7182,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -39.9674,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.1437,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.7134,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -83.3448,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -96.302,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -119.1885,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": 0.3527,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": 2.4794,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -9.5629,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.6135,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -39.9426,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.1377,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.7126,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -83.3447,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -96.302,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -119.1885,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": -0.0004,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": -0.0069,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": -0.262,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -12.388,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.6925,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -43.3163,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -56.273,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -79.1594,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0025,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0154,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0618,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.247,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": 1.5095,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -10.6312,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.4587,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -43.2738,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -56.2634,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -79.1587,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0034,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0216,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0866,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.3515,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": 2.4723,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -9.6794,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.3628,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -43.2569,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -56.2597,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -79.1585,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": -0.0004,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": -0.0059,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": -0.0949,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -14.7766,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -27.5939,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -50.4729,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0001,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0006,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0023,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0091,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0568,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.2279,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.9151,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -13.4925,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -27.3277,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -50.4543,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0001,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0008,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0032,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0127,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0796,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.3238,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": 1.3889,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -12.8587,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -27.2179,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -50.4469,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": -0.0011,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": -0.0223,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0002,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.0007,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.0028,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": 0.0186,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": 0.1,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": 0.4441,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0002,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.001,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.0038,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": 0.0259,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": 0.1406,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": 0.6429,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 44100
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0069,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": -0.2633,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -12.3052,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.9717,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -40.025,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.1406,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.5947,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -82.7626,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -94.3677,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -110.2413,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": 0.2478,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": 1.5131,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -10.5289,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.7171,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -39.9628,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.1253,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.5924,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -82.7622,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -94.3676,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -110.2413,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20,
+      "gainDb": 0.3527,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 50,
+      "gainDb": 2.4795,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 100,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 200,
+      "gainDb": -9.5627,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 500,
+      "gainDb": -27.6123,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 1000,
+      "gainDb": -39.938,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 2000,
+      "gainDb": -52.1192,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 5000,
+      "gainDb": -68.5914,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 10000,
+      "gainDb": -82.762,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 15000,
+      "gainDb": -94.3675,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 100.0,
+      "frequencyHz": 20000,
+      "gainDb": -110.2413,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": -0.0004,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": -0.0069,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": -0.2622,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -12.3749,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.5761,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -42.7383,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -54.3431,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -70.2167,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0025,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0154,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0618,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.2472,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": 1.5101,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -10.6151,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.3391,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -42.6928,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -54.3312,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -70.2148,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0034,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0216,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0866,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.3517,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 500,
+      "gainDb": 2.4734,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 1000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 2000,
+      "gainDb": -9.661,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 5000,
+      "gainDb": -28.2418,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 10000,
+      "gainDb": -42.6748,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 15000,
+      "gainDb": -54.3265,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 1000.0,
+      "frequencyHz": 20000,
+      "gainDb": -70.2141,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": -0.0004,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": -0.006,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": -0.0972,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -14.3312,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -25.7845,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -41.6469,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0001,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0006,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0023,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0092,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0576,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.231,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.9258,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -12.9708,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -25.4543,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -41.5954,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0001,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0008,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0032,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0129,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0807,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.3283,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 2000,
+      "gainDb": 1.4068,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 5000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 10000,
+      "gainDb": -12.2894,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 15000,
+      "gainDb": -25.3168,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 5000.0,
+      "frequencyHz": 20000,
+      "gainDb": -41.5749,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": -0.0,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": -0.0003,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": -0.0078,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": -0.1109,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": -3.0103,
+      "resonance": 0.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0001,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0005,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.0019,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.0077,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": 0.0513,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": 0.2619,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": 0.9886,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": 2.4169,
+      "resonance": 0.5,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 50,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 100,
+      "gainDb": 0.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 200,
+      "gainDb": 0.0001,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 500,
+      "gainDb": 0.0007,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 1000,
+      "gainDb": 0.0027,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 2000,
+      "gainDb": 0.0108,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 5000,
+      "gainDb": 0.0718,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 10000,
+      "gainDb": 0.3732,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 15000,
+      "gainDb": 1.5129,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    },
+    {
+      "cutoffHz": 20000.0,
+      "frequencyHz": 20000,
+      "gainDb": 20.0,
+      "resonance": 1.0,
+      "sampleRate": 48000
+    }
+  ]
+}
