@@ -1,6 +1,6 @@
 # Project: Drums
 
-**Status:** Created · **RFC:** [RFC-006](../rfcs/rfc-006-drums.md) · **Notion:** https://app.notion.com/p/Drums-3f53af969b6f81e1ae4edc50119a07d3
+**Status:** Created, amended 2026-10-10 (UTA-52 waits for UTA-43) · **RFC:** [RFC-006](../rfcs/rfc-006-drums.md) · **Notion:** https://app.notion.com/p/Drums-3f53af969b6f81e1ae4edc50119a07d3
 
 ## Goal
 
@@ -125,7 +125,7 @@ Checked against `main` at `290e6f7`, after UTA-45. RFC-005's project is Active: 
 
 **Out of scope:** The same comforts for clips in the timeline. Drum lanes (7), which check that both work on a drum track.
 
-**Depends on:** Nothing.
+**Depends on:** UTA-43, which rewrites parts of `PianoRoll.tsx` and the piano roll's canvas renderer, where this ticket's mouse handling goes (amended 2026-10-10).
 
 **Context:** RFC-006, Proposal: "In the window" (the third bullet); "How we'll verify it" (UI). Scratchpad notes "Option-drag duplicates notes (the whole selection) in the piano roll" and "Resize all selected notes together in the piano roll".
 
@@ -221,14 +221,14 @@ Two lines of work, after 1. The sounds go one at a time, because each waits for 
 1 Kick 808 ──┬─► 2 Snare, clap ─► 3 Hats ─► 4 Toms ─► 5 Cymbal ──┐
              │                                                   ├─► 10 Kick 909 ─► 11 Balance
 6 ⌥-drag ────┴─► 7 Drum tracks and lanes ───────────► 9 Panel ───┘
-(Ready now)      (also UTA-43)                ┌──────►
+(after UTA-43)   (also UTA-43)                ┌──────►
 8 Layout sketch ──────────────────────────────┘
 (any time)
 ```
 
-- **1 comes first** on the sound line, and 6 and 8 can start straight away beside it.
+- **1 comes first** on the sound line, and 8 can start straight away beside it. 6 waits for UTA-43.
 - **The sound line is a chain** (1 → 2 → 3 → 4 → 5 → 10), so no sound starts before Will has heard the one before. The code only needs 1 for most of them (the cymbal needs 3's metal bank), so if the cymbal needs more than two listening rounds, Will can let 10 start beside it.
-- **The window line:** 6, then 7 (after 1 and UTA-43), then 9 (after 7 and 8). Rows for sounds that aren't built yet are silent until their ticket lands.
+- **The window line:** 6 (after UTA-43), then 7 (after 1), then 9 (after 7 and 8). Rows for sounds that aren't built yet are silent until their ticket lands.
 - **11 is last.** Things heard during 1–10 that need the whole kit go on its tuning list.
 
 **Checkpoints for Will:**
@@ -295,4 +295,4 @@ The two scratchpad notes the RFC folded in (⌥-drag duplicates, resize the sele
 1. **Resolved: as recommended (Will, 2026-10-10).** **The order of the sounds.** Kick, then snare and clap, hats, toms, cymbal, and the 909 kick last. That gets the sounds of the RFC's first beat (kick, clap, hats) in front of you first, leaves the cymbal (riskiest) and the 909 kick (first to cut) at the end, and lets the toms reuse the kick's resonator while the hats' metal bank is fresh for the cymbal. Recommendation: this order.
 2. **Resolved: as recommended (Will, 2026-10-10).** **Gate the sounds by dependencies?** Making each sound ticket depend on the one before is what stops two sounds being built before you've heard the first, since only `Ready` tickets with merged dependencies can start. The cost is a long chain, so a slow cymbal would hold up the 909 kick. Recommendation: the chain, with you free to let 10 start beside 5 if the cymbal needs more than two rounds.
 3. **Resolved: as recommended (Will, 2026-10-10).** **The layout sketch as a Spike ticket?** It produces no PR, since it lives in the private design repo. As a ticket it has an ID that 9 can depend on, and a place for your choice and the screenshots. Recommendation: a Spike ticket, as 8.
-4. **Resolved: as recommended (Will, 2026-10-10).** **Ticket 6 doesn't wait for UTA-43.** It changes how the piano roll edits, not how it looks, so it shouldn't collide much with UTA-43's extraction, and it can start now. 7 and 9 wait for UTA-43. Recommendation: as planned.
+4. **Resolved, then changed: ticket 6 waits for UTA-43 (Will, 2026-10-10).** The plan first had 6 starting without UTA-43, because it changes how the piano roll edits, not how it looks. UTA-43's branch turned out to rewrite parts of `PianoRoll.tsx` and the piano roll's canvas renderer, including the selection box, which is where 6's mouse handling goes. UTA-43 is nearly done, and 7 waits for it anyway, so 6 now waits too.
