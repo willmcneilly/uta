@@ -8,7 +8,7 @@
 
 mod envelope;
 mod filter;
-mod oscillator;
+pub(crate) mod oscillator;
 mod settings;
 
 pub use settings::{SynthSettings, Waveform};

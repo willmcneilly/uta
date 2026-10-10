@@ -7,17 +7,22 @@
 //! hit adds energy to it, never restarts it. Drum notes are one-shots: the
 //! end of a note does nothing.
 //!
-//! The sounds without a circuit yet (the hats, toms and cymbal, for now)
-//! are silent.
+//! The sounds without a circuit yet (the toms and cymbal, for now) are
+//! silent.
 
 mod clap;
 mod filter;
+mod half_band;
+mod hats;
 mod kick;
+mod metal;
 mod noise;
 mod snare;
 
 use clap::Clap;
+use hats::Hats;
 use kick::Kick;
+use metal::Metal;
 use noise::Noise;
 use snare::Snare;
 use uta_core::DrumSound;
@@ -27,6 +32,17 @@ use crate::snapshot::db_to_gain;
 /// How long a change to a drum setting takes to glide to its new value, as
 /// the synth's do.
 pub const DRUM_SMOOTHING_SECONDS: f64 = crate::SYNTH_SMOOTHING_SECONDS;
+
+/// How many times the kit's sample rate the metal sounds (the hats) run at,
+/// to keep the false tones their square waves make (aliasing) out of the
+/// top end they keep. PolyBLEP removes most of it either way; whether 2× is
+/// worth it too is settled by ear (RFC-006, resolved open question 2).
+/// Until then it's chosen when the engine is built: 2 with the
+/// `oversample-metal` feature, 1 without.
+#[cfg(feature = "oversample-metal")]
+pub const OVERSAMPLING: usize = 2;
+#[cfg(not(feature = "oversample-metal"))]
+pub const OVERSAMPLING: usize = 1;
 
 /// The peak a sound reaches at full accent with its default settings,
 /// before the track's and master's volumes: -6 dB. The kit's levels are
@@ -67,6 +83,8 @@ pub struct KitSettings {
     pub kick: KickSettings,
     pub snare: SnareSettings,
     pub clap: ClapSettings,
+    pub closed_hat: ClosedHatSettings,
+    pub open_hat: OpenHatSettings,
 }
 
 impl KitSettings {
@@ -79,6 +97,7 @@ impl KitSettings {
             self.snare.clamped(),
             self.clap.clamped(),
         );
+        let (closed_hat, open_hat) = (self.closed_hat.clamped(), self.open_hat.clamped());
         // Each Decay is 40 dB, so 60 dB is half as long again. The snare's
         // shell rings about 0.5 s with its long tail, and its wires hold for
         // up to 70 ms first; the clap's tail swells for a few ms after its
@@ -86,7 +105,8 @@ impl KitSettings {
         let kick = kick.decay_seconds * 1.5;
         let snare = (0.07 + snare.tone_seconds * 1.5).max(0.5);
         let clap = 0.05 + clap.decay_seconds * 1.5;
-        kick.max(snare).max(clap)
+        let hats = closed_hat.decay_seconds.max(open_hat.decay_seconds) * 1.5;
+        kick.max(snare).max(clap).max(hats)
     }
 }
 
@@ -260,12 +280,115 @@ impl From<&uta_core::ClapSettings> for ClapSettings {
     }
 }
 
+/// The 808 closed hat's settings. Its Tune and Tone are the open hat's too.
+/// See `uta_core::ClosedHatSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClosedHatSettings {
+    /// The metal's lowest oscillator, in Hz, [`Self::TUNE_HZ`].
+    pub tune_hz: f32,
+    /// Where the filters sit, in Hz, [`Self::TONE_HZ`].
+    pub tone_hz: f32,
+    /// The seconds it takes to die away by 40 dB, [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl ClosedHatSettings {
+    pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::ClosedHatSettings::MIN_TUNE_HZ..=uta_core::ClosedHatSettings::MAX_TUNE_HZ;
+    pub const TONE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::ClosedHatSettings::MIN_TONE_HZ..=uta_core::ClosedHatSettings::MAX_TONE_HZ;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::ClosedHatSettings::MIN_DECAY_SECONDS
+            ..=uta_core::ClosedHatSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
+            tone_hz: clamp(self.tone_hz, Self::TONE_HZ, default.tone_hz),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for ClosedHatSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::ClosedHatSettings::default())
+    }
+}
+
+impl From<&uta_core::ClosedHatSettings> for ClosedHatSettings {
+    fn from(settings: &uta_core::ClosedHatSettings) -> Self {
+        Self {
+            tune_hz: settings.tune_hz,
+            tone_hz: settings.tone_hz,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
+/// The 808 open hat's settings. It shares the closed hat's Tune and Tone.
+/// See `uta_core::OpenHatSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenHatSettings {
+    /// The seconds it takes to die away by 40 dB, [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl OpenHatSettings {
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::OpenHatSettings::MIN_DECAY_SECONDS..=uta_core::OpenHatSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for OpenHatSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::OpenHatSettings::default())
+    }
+}
+
+impl From<&uta_core::OpenHatSettings> for OpenHatSettings {
+    fn from(settings: &uta_core::OpenHatSettings) -> Self {
+        Self {
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
 impl From<&uta_core::KitSettings> for KitSettings {
     fn from(kit: &uta_core::KitSettings) -> Self {
         Self {
             kick: KickSettings::from(&kit.kick),
             snare: SnareSettings::from(&kit.snare),
             clap: ClapSettings::from(&kit.clap),
+            closed_hat: ClosedHatSettings::from(&kit.closed_hat),
+            open_hat: OpenHatSettings::from(&kit.open_hat),
         }
     }
 }
@@ -305,16 +428,29 @@ pub(crate) struct Kit {
     kick: Kick,
     snare: Snare,
     clap: Clap,
+    /// Both hats: one circuit.
+    hats: Hats,
     /// The noise the snare and the clap share.
     noise: Noise,
+    /// The metal the hats filter, tuned by the closed hat's Tune.
+    metal: Metal,
+}
+
+/// The metal for a kit at `sample_rate`, tuned to `tune_hz`.
+fn metal(tune_hz: f32, sample_rate: f64) -> Metal {
+    let rate = sample_rate * OVERSAMPLING as f64;
+    Metal::new(tune_hz, rate, smoothing_samples(rate))
 }
 
 impl Kit {
     pub(crate) fn new(settings: KitSettings, sample_rate: f64) -> Self {
+        let hats = Hats::new(settings.closed_hat, settings.open_hat, sample_rate);
         Self {
             kick: Kick::new(settings.kick, sample_rate),
             snare: Snare::new(settings.snare, sample_rate),
             clap: Clap::new(settings.clap, sample_rate),
+            metal: metal(hats.tune_hz(), sample_rate),
+            hats,
             noise: Noise::new(),
         }
     }
@@ -325,7 +461,9 @@ impl Kit {
         self.kick.prepare(sample_rate);
         self.snare.prepare(sample_rate);
         self.clap.prepare(sample_rate);
+        self.hats.prepare(sample_rate);
         self.noise.restart();
+        self.metal = metal(self.hats.tune_hz(), sample_rate);
     }
 
     /// Takes on new settings straight away, with no glide: for a kit that
@@ -334,6 +472,8 @@ impl Kit {
         self.kick.load(settings.kick);
         self.snare.load(settings.snare);
         self.clap.load(settings.clap);
+        self.hats.load(settings.closed_hat, settings.open_hat);
+        self.metal.load_tune(self.hats.tune_hz());
     }
 
     /// Glides to new settings.
@@ -341,6 +481,9 @@ impl Kit {
         self.kick.set_settings(settings.kick);
         self.snare.set_settings(settings.snare);
         self.clap.set_settings(settings.clap);
+        self.hats
+            .set_settings(settings.closed_hat, settings.open_hat);
+        self.metal.set_tune(self.hats.tune_hz());
     }
 
     /// Hits the sound `pitch` plays, at `velocity`. A pitch off the kit, or
@@ -351,6 +494,8 @@ impl Kit {
             Some(DrumSound::Kick) => self.kick.hit(strength),
             Some(DrumSound::Snare) => self.snare.hit(strength),
             Some(DrumSound::Clap) => self.clap.hit(strength),
+            Some(DrumSound::ClosedHat) => self.hats.hit_closed(strength),
+            Some(DrumSound::OpenHat) => self.hats.hit_open(strength),
             _ => {}
         }
     }
@@ -364,23 +509,43 @@ impl Kit {
     /// without a click: noise has no waveform to break, and the filters it
     /// runs through aren't touched. The kick has no free-running parts, and
     /// the snare's oscillators start from the same point whenever it has died
-    /// away, so neither is touched. The metal bank (hats and cymbal) will
-    /// restart here.
+    /// away, so neither is touched.
+    ///
+    /// The metal restarts too, unless the hats are ringing: its square waves
+    /// would jump, and the hats would click. Then it carries on, and that
+    /// one start differs from a render.
     pub(crate) fn restart(&mut self) {
         self.noise.restart();
+        if !self.hats.is_sounding() {
+            self.metal.restart();
+        }
     }
 
     /// Whether any sound is ringing, or about to.
     pub(crate) fn is_sounding(&self) -> bool {
-        self.kick.is_sounding() || self.snare.is_sounding() || self.clap.is_sounding()
+        self.kick.is_sounding()
+            || self.snare.is_sounding()
+            || self.clap.is_sounding()
+            || self.hats.is_sounding()
     }
 
     /// The next sample: every sound, added together. A sound that has died
-    /// away does no work, but the noise runs on, free.
+    /// away does no work, but the noise and the metal run on, free.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         let noise = self.noise.next_sample();
-        self.kick.next_sample() + self.snare.next_sample(noise) + self.clap.next_sample(noise)
+        let mut metal = [0.0; OVERSAMPLING];
+        for step in &mut metal {
+            if self.hats.is_sounding() {
+                *step = self.metal.next_sample();
+            } else {
+                self.metal.skip();
+            }
+        }
+        self.kick.next_sample()
+            + self.snare.next_sample(noise)
+            + self.clap.next_sample(noise)
+            + self.hats.next_sample(metal)
     }
 }
 
