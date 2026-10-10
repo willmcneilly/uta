@@ -7,11 +7,19 @@
 //! hit adds energy to it, never restarts it. Drum notes are one-shots: the
 //! end of a note does nothing.
 //!
-//! The sounds without a circuit yet (all but the kick, for now) are silent.
+//! The sounds without a circuit yet (the hats, toms and cymbal, for now)
+//! are silent.
 
+mod clap;
+mod filter;
 mod kick;
+mod noise;
+mod snare;
 
+use clap::Clap;
 use kick::Kick;
+use noise::Noise;
+use snare::Snare;
 use uta_core::DrumSound;
 
 use crate::snapshot::db_to_gain;
@@ -57,6 +65,8 @@ pub fn velocity_to_strength(velocity: u8) -> f32 {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct KitSettings {
     pub kick: KickSettings,
+    pub snare: SnareSettings,
+    pub clap: ClapSettings,
 }
 
 impl KitSettings {
@@ -64,9 +74,19 @@ impl KitSettings {
     /// hit, in seconds: how long a render has to run on for it to end in
     /// silence.
     pub fn ring_seconds(&self) -> f32 {
-        let kick = self.kick.clamped();
-        // The Decay is 40 dB, so 60 dB is half as long again.
-        kick.decay_seconds * 1.5
+        let (kick, snare, clap) = (
+            self.kick.clamped(),
+            self.snare.clamped(),
+            self.clap.clamped(),
+        );
+        // Each Decay is 40 dB, so 60 dB is half as long again. The snare's
+        // shell rings about 0.5 s with its long tail, and its wires hold for
+        // up to 70 ms first; the clap's tail swells for a few ms after its
+        // last burst, 30 ms in.
+        let kick = kick.decay_seconds * 1.5;
+        let snare = (0.07 + snare.tone_seconds * 1.5).max(0.5);
+        let clap = 0.05 + clap.decay_seconds * 1.5;
+        kick.max(snare).max(clap)
     }
 }
 
@@ -86,6 +106,16 @@ pub struct KickSettings {
 /// Every sound's Level range, in dB.
 pub const LEVEL_DB: std::ops::RangeInclusive<f32> = uta_core::MIN_LEVEL_DB..=uta_core::MAX_LEVEL_DB;
 
+/// `value` inside `range`, or `fallback` if it isn't a number, so a bad value
+/// can never reach the audio.
+fn clamp(value: f32, range: std::ops::RangeInclusive<f32>, fallback: f32) -> f32 {
+    if value.is_nan() {
+        fallback
+    } else {
+        value.clamp(*range.start(), *range.end())
+    }
+}
+
 impl KickSettings {
     pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
         uta_core::KickSettings::MIN_TUNE_HZ..=uta_core::KickSettings::MAX_TUNE_HZ;
@@ -98,13 +128,6 @@ impl KickSettings {
     /// a number takes its default, so a bad value can never reach the audio.
     pub fn clamped(self) -> Self {
         let default = Self::default();
-        let clamp = |value: f32, range: std::ops::RangeInclusive<f32>, fallback: f32| {
-            if value.is_nan() {
-                fallback
-            } else {
-                value.clamp(*range.start(), *range.end())
-            }
-        };
         Self {
             tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
             tone: clamp(self.tone, Self::TONE, default.tone),
@@ -135,10 +158,114 @@ impl From<&uta_core::KickSettings> for KickSettings {
     }
 }
 
+/// The 909 snare's settings. See `uta_core::SnareSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SnareSettings {
+    /// The shell's pitch, in Hz, [`Self::TUNE_HZ`].
+    pub tune_hz: f32,
+    /// The wires' length: the seconds they take to die away by 40 dB once
+    /// their hold ends, [`Self::TONE_SECONDS`].
+    pub tone_seconds: f32,
+    /// How much rattle against the shell, [`Self::SNAPPY`].
+    pub snappy: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl SnareSettings {
+    pub const TUNE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::SnareSettings::MIN_TUNE_HZ..=uta_core::SnareSettings::MAX_TUNE_HZ;
+    pub const TONE_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::SnareSettings::MIN_TONE_SECONDS..=uta_core::SnareSettings::MAX_TONE_SECONDS;
+    pub const SNAPPY: std::ops::RangeInclusive<f32> =
+        uta_core::SnareSettings::MIN_SNAPPY..=uta_core::SnareSettings::MAX_SNAPPY;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tune_hz: clamp(self.tune_hz, Self::TUNE_HZ, default.tune_hz),
+            tone_seconds: clamp(self.tone_seconds, Self::TONE_SECONDS, default.tone_seconds),
+            snappy: clamp(self.snappy, Self::SNAPPY, default.snappy),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for SnareSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::SnareSettings::default())
+    }
+}
+
+impl From<&uta_core::SnareSettings> for SnareSettings {
+    fn from(settings: &uta_core::SnareSettings) -> Self {
+        Self {
+            tune_hz: settings.tune_hz,
+            tone_seconds: settings.tone_seconds,
+            snappy: settings.snappy,
+            level_db: settings.level_db,
+        }
+    }
+}
+
+/// The 808 clap's settings. See `uta_core::ClapSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClapSettings {
+    /// The band-pass's centre, in Hz, [`Self::TONE_HZ`].
+    pub tone_hz: f32,
+    /// The seconds its tail takes to die away by 40 dB,
+    /// [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl ClapSettings {
+    pub const TONE_HZ: std::ops::RangeInclusive<f32> =
+        uta_core::ClapSettings::MIN_TONE_HZ..=uta_core::ClapSettings::MAX_TONE_HZ;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::ClapSettings::MIN_DECAY_SECONDS..=uta_core::ClapSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tone_hz: clamp(self.tone_hz, Self::TONE_HZ, default.tone_hz),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for ClapSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::ClapSettings::default())
+    }
+}
+
+impl From<&uta_core::ClapSettings> for ClapSettings {
+    fn from(settings: &uta_core::ClapSettings) -> Self {
+        Self {
+            tone_hz: settings.tone_hz,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
 impl From<&uta_core::KitSettings> for KitSettings {
     fn from(kit: &uta_core::KitSettings) -> Self {
         Self {
             kick: KickSettings::from(&kit.kick),
+            snare: SnareSettings::from(&kit.snare),
+            clap: ClapSettings::from(&kit.clap),
         }
     }
 }
@@ -152,12 +279,19 @@ fn smoothing_samples(sample_rate: f64) -> u32 {
 /// its slot.
 pub(crate) struct Kit {
     kick: Kick,
+    snare: Snare,
+    clap: Clap,
+    /// The noise the snare and the clap share.
+    noise: Noise,
 }
 
 impl Kit {
     pub(crate) fn new(settings: KitSettings, sample_rate: f64) -> Self {
         Self {
             kick: Kick::new(settings.kick, sample_rate),
+            snare: Snare::new(settings.snare, sample_rate),
+            clap: Clap::new(settings.clap, sample_rate),
+            noise: Noise::new(),
         }
     }
 
@@ -165,25 +299,35 @@ impl Kit {
     /// was playing on has already faded out or gone.
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         self.kick.prepare(sample_rate);
+        self.snare.prepare(sample_rate);
+        self.clap.prepare(sample_rate);
+        self.noise.restart();
     }
 
     /// Takes on new settings straight away, with no glide: for a kit that
     /// isn't sounding.
     pub(crate) fn load(&mut self, settings: KitSettings) {
         self.kick.load(settings.kick);
+        self.snare.load(settings.snare);
+        self.clap.load(settings.clap);
     }
 
     /// Glides to new settings.
     pub(crate) fn set_settings(&mut self, settings: KitSettings) {
         self.kick.set_settings(settings.kick);
+        self.snare.set_settings(settings.snare);
+        self.clap.set_settings(settings.clap);
     }
 
     /// Hits the sound `pitch` plays, at `velocity`. A pitch off the kit, or
     /// a sound without a circuit yet, does nothing.
     pub(crate) fn hit(&mut self, pitch: u8, velocity: u8) {
         let strength = velocity_to_strength(velocity);
-        if let Some(DrumSound::Kick) = DrumSound::at_pitch(pitch) {
-            self.kick.hit(strength);
+        match DrumSound::at_pitch(pitch) {
+            Some(DrumSound::Kick) => self.kick.hit(strength),
+            Some(DrumSound::Snare) => self.snare.hit(strength),
+            Some(DrumSound::Clap) => self.clap.hit(strength),
+            _ => {}
         }
     }
 
@@ -192,22 +336,27 @@ impl Kit {
     /// sounds the same as a render. Called when playback starts. See RFC-006,
     /// resolved open question 3.
     ///
-    /// The kick has no free-running parts: its resonator only rings after a
-    /// hit, and isn't touched here, so a kick still ringing as playback
-    /// starts carries on without a click. The noise (snare and clap) and the
-    /// metal bank (hats and cymbal) will restart here.
-    pub(crate) fn restart(&mut self) {}
+    /// The noise restarts here. A sound ringing as playback starts carries on
+    /// without a click: noise has no waveform to break, and the filters it
+    /// runs through aren't touched. The kick has no free-running parts, and
+    /// the snare's oscillators start from the same point whenever it has died
+    /// away, so neither is touched. The metal bank (hats and cymbal) will
+    /// restart here.
+    pub(crate) fn restart(&mut self) {
+        self.noise.restart();
+    }
 
     /// Whether any sound is ringing, or about to.
     pub(crate) fn is_sounding(&self) -> bool {
-        self.kick.is_sounding()
+        self.kick.is_sounding() || self.snare.is_sounding() || self.clap.is_sounding()
     }
 
     /// The next sample: every sound, added together. A sound that has died
-    /// away does no work.
+    /// away does no work, but the noise runs on, free.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
-        self.kick.next_sample()
+        let noise = self.noise.next_sample();
+        self.kick.next_sample() + self.snare.next_sample(noise) + self.clap.next_sample(noise)
     }
 }
 

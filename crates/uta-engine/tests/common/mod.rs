@@ -76,6 +76,10 @@ pub fn hit(index: u128, pitch: u8, velocity: u8, start: Ticks) -> Note {
 
 /// The kick's note.
 pub const KICK: u8 = 36;
+/// The snare's note.
+pub const SNARE: u8 = 38;
+/// The clap's note.
+pub const CLAP: u8 = 39;
 
 /// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
 /// track, "Drums 1", under the empty synth track: its clip fills the loop
@@ -117,6 +121,42 @@ pub fn drum_project(
         project.apply(command).expect("a valid test project");
     }
     project
+}
+
+/// Plays `project` from the top for `seconds`, in mono at 48 kHz, in blocks
+/// of `block_size`.
+pub fn render_drums(project: &Project, seconds: f64, block_size: usize) -> Vec<f32> {
+    let config = uta_engine::EngineConfig {
+        sample_rate: 48_000,
+        channels: 1,
+    };
+    let mut renderer =
+        uta_engine::offline::Renderer::new(config, uta_engine::Snapshot::from(project), block_size);
+    renderer.controller.play().unwrap();
+    renderer.render_seconds(seconds);
+    renderer.into_samples()
+}
+
+/// One hit on `pitch` at the top of a bar at 60 BPM, so nothing else plays
+/// for 4 s, with these kit settings, at this velocity, rendered for
+/// `seconds` at 48 kHz.
+pub fn one_hit(
+    pitch: u8,
+    params: &[(DrumSound, DrumParam)],
+    velocity: u8,
+    seconds: f64,
+) -> Vec<f32> {
+    let project = drum_project(60.0, 1, params, vec![hit(0, pitch, velocity, 0)]);
+    render_drums(&project, seconds, 128)
+}
+
+/// Fails if `samples` jump from one sample to the next by more than `limit`.
+pub fn assert_no_click(samples: &[f32], limit: f32, what: &str) {
+    let (jump, at) = max_jump(samples);
+    assert!(
+        jump <= limit,
+        "{what}: jump of {jump} at sample {at}, limit {limit}"
+    );
 }
 
 /// `project` filled up to [`Project::MAX_TRACKS`] with empty synth tracks,
@@ -396,6 +436,84 @@ pub fn spectral_centroid(samples: &[f32], sample_rate: u32) -> f64 {
         .map(|(k, magnitude)| k as f64 * bin_hz * magnitude)
         .sum();
     weighted / total
+}
+
+/// The share of `samples`' energy above `hz`, from 0 to 1: how much of a
+/// sound is its top end. The samples are zero-padded to a power of two.
+pub fn share_above(samples: &[f32], sample_rate: u32, hz: f64) -> f64 {
+    let n = samples.len().next_power_of_two();
+    let mut padded = samples.to_vec();
+    padded.resize(n, 0.0);
+    let bins = spectrum_unwindowed(&padded);
+    let first = (hz * n as f64 / f64::from(sample_rate)).ceil() as usize;
+    let energy = |bins: &[f64]| bins.iter().map(|m| m * m).sum::<f64>();
+    energy(&bins[first.min(bins.len())..]) / energy(&bins)
+}
+
+/// The frequency of the strongest partial between `low` and `high` Hz,
+/// from the spectrum of `samples` zero-padded to a power of two, refined
+/// between bins by fitting a parabola to the peak.
+pub fn strongest_frequency(samples: &[f32], sample_rate: u32, low: f64, high: f64) -> f64 {
+    let n = samples.len().next_power_of_two();
+    let mut padded = samples.to_vec();
+    padded.resize(n, 0.0);
+    let bins = spectrum_unwindowed(&padded);
+    let bin_hz = f64::from(sample_rate) / n as f64;
+    let range = (low / bin_hz).ceil() as usize..=(high / bin_hz).floor() as usize;
+    let k = range
+        .max_by(|&a, &b| bins[a].total_cmp(&bins[b]))
+        .expect("a range of bins");
+    let (a, b, c) = (bins[k - 1].ln(), bins[k].ln(), bins[k + 1].ln());
+    let offset = 0.5 * (a - c) / (a - 2.0 * b + c);
+    (k as f64 + offset) * bin_hz
+}
+
+/// The level over time, in dB relative to full scale: the RMS of each
+/// `window_seconds`, at the time of the window's middle. For noise, whose
+/// peaks are spiky.
+pub fn rms_envelope_db(samples: &[f32], sample_rate: u32, window_seconds: f64) -> Vec<(f64, f64)> {
+    let window = ((window_seconds * f64::from(sample_rate)) as usize).max(1);
+    samples
+        .chunks(window)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let time = (i as f64 + 0.5) * window as f64 / f64::from(sample_rate);
+            (time, 20.0 * rms(chunk).max(1e-12).log10())
+        })
+        .collect()
+}
+
+/// The bursts in a sound: when each is loudest, in seconds. The level is the
+/// RMS over 2 ms, every 0.5 ms. A burst is a point that's the loudest within
+/// 4 ms either side, and more than `prominence_db` over the quietest point
+/// in the 5 ms before it and in the 5 ms after it (before the sound starts
+/// counts as silence). Noise through a band-pass wavers by a few dB over a
+/// few milliseconds, so a burst has to stand out from more than one window.
+pub fn burst_peaks(samples: &[f32], sample_rate: u32, prominence_db: f64) -> Vec<f64> {
+    let rate = f64::from(sample_rate);
+    let (window, hop) = ((0.002 * rate) as usize, (0.0005 * rate) as usize);
+    let levels: Vec<f64> = (0..samples.len().saturating_sub(window))
+        .step_by(hop)
+        .map(|start| 20.0 * rms(&samples[start..start + window]).max(1e-12).log10())
+        .collect();
+    let level = |i: isize| {
+        if i < 0 {
+            -240.0
+        } else {
+            levels.get(i as usize).copied().unwrap_or(f64::MAX)
+        }
+    };
+    let quietest = |from: isize, to: isize| (from..to).map(level).fold(f64::MAX, f64::min);
+    let loudest = |from: isize, to: isize| (from..to).map(level).fold(f64::MIN, f64::max);
+    (0..levels.len() as isize)
+        .filter(|&i| {
+            let here = level(i);
+            here >= loudest(i - 8, i + 9)
+                && here - quietest(i - 10, i) > prominence_db
+                && here - quietest(i + 1, i + 11) > prominence_db
+        })
+        .map(|i| (i as usize * hop + window / 2) as f64 / rate)
+        .collect()
 }
 
 /// [`spectrum`] without the window: for a whole sound that starts and ends
