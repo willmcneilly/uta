@@ -1,13 +1,41 @@
-/* Drag it to share the height between the timeline and the editor. */
+/*
+ * Drag it to share the height between the timeline and the editor. At rest
+ * it's the paper between the two sheets. Under the pointer a short grip is
+ * drawn across its middle, in ink while it's dragged, and keyboard focus
+ * rings it in the selected ink. Its hit area is the whole gap, 6 px tall.
+ * provisional: D-14
+ */
 .divider {
-  flex: 0 0 6px;
-  margin: -4px 0;
-  border-radius: 3px;
+  position: relative;
+  flex: 0 0 var(--space-3);
+  margin: calc(-1 * var(--space-2)) 0;
+  border-radius: var(--rounded-sm);
   cursor: row-resize;
 }
 
-.divider:hover,
+.divider::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--space-7);
+  border-top: var(--stroke-clip-selected) solid transparent;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.divider:hover::after {
+  border-top-color: var(--ink-3);
+}
+
+.divider[data-dragging]::after {
+  border-top-color: var(--ink);
+}
+
 .divider:focus-visible {
-  background: var(--line-2);
-  outline: none;
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}
+
+.divider:focus-visible::after {
+  border-top-color: var(--ink-2);
 }

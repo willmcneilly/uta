@@ -6,6 +6,7 @@ mod menu;
 mod pieces;
 mod stress;
 mod uta;
+mod window;
 
 use std::sync::Mutex;
 
@@ -18,7 +19,16 @@ use crate::uta::{FRAME_INTERVAL, Uta};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(window::state_flags())
+                // `window::place` decides whether to restore.
+                .skip_initial_state(window::MAIN)
+                .build(),
+        )
         .setup(|app| {
+            window::place(app)?;
+
             let uta = Uta::start(live::DEFAULT_BUFFER_SIZE)?;
             app.manage(AppState {
                 uta: Mutex::new(uta),

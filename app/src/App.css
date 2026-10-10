@@ -1,45 +1,42 @@
 /* The page and how its areas are laid out. Each area's own styles sit beside
    its component, and every colour is a token from DESIGN.md (design/tokens.css). */
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  font-size: 14px;
-}
-
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
+  font: var(--font-text);
 }
 
 .app {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-4);
   box-sizing: border-box;
   height: 100vh;
-  padding: 12px;
+  padding: var(--space-5);
 }
 
 /* The transport, the master and the output, wrapping on a narrow window. */
 .top {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
+/* Each area is a sheet laid on the paper, edged with a faint line. */
 .top > section,
 .output,
 .arrangement,
 .editor {
   background: var(--sheet);
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-lg);
   margin: 0;
 }
 
 .top > section,
 .output {
-  padding: 10px 14px;
+  padding: var(--space-4) var(--space-5);
 }
 
 .top > .transport {
@@ -62,22 +59,72 @@ body {
   overflow: hidden;
 }
 
+/*
+ * The editor's tabs are flat keys in the second ink. The chosen one is in
+ * ink, ruled underneath in ink where it meets the panel, like a tab on a
+ * drawing. Hover shades a key, pressing shades it more, and keyboard focus
+ * rings it in the selected ink, as D-3's keys. Each is at least space-7
+ * (24 px) tall. The track being edited is named on the right.
+ * provisional: D-13
+ */
 .tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--line-2);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) 0;
+  border-bottom: var(--stroke-grid) solid var(--line-2);
+}
+
+.tabs [role="tab"] {
+  position: relative;
+  box-sizing: border-box;
+  min-width: var(--space-7);
+  height: calc(var(--space-7) + var(--space-2));
+  margin: 0;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--rounded-md) var(--rounded-md) 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.tabs [role="tab"]:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.tabs [role="tab"]:active {
+  background: var(--line-2);
 }
 
 .tabs [role="tab"][aria-selected="true"] {
-  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The rule sits over the bar's own line, so the chosen tab reads as joined
+   to the panel below. */
+.tabs [role="tab"][aria-selected="true"]::after {
+  position: absolute;
+  right: var(--space-2);
+  bottom: calc(-1 * var(--stroke-grid));
+  left: var(--space-2);
+  border-bottom: var(--stroke-clip-selected) solid var(--ink);
+  content: "";
+}
+
+.tabs [role="tab"]:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: calc(-1 * var(--stroke-clip-selected));
 }
 
 .tabs .editing {
   margin-left: auto;
+  padding-right: var(--space-2);
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-name);
 }
 
 .tab-panel {
@@ -88,16 +135,29 @@ body {
 }
 
 .tab-panel > .synth {
-  padding: 12px 16px;
+  padding: var(--space-5) var(--space-6);
 }
 
+/* An empty panel says what to do next, quietly, in its middle, as the
+   piano roll's hint does (D-6). provisional: D-17 */
 .tab-panel > .empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
   margin: 0;
-  padding: 16px;
+  padding: var(--space-6);
   color: var(--ink-2);
+  font: var(--font-text);
+  text-align: center;
 }
 
+/* Something went wrong: the message in the error ink, marked by a heavy
+   rule in the same ink. provisional: D-17 */
 .error {
-  color: var(--error);
   margin: 0;
+  padding: var(--space-1) var(--space-4);
+  border-left: var(--stroke-clip-selected) solid var(--error);
+  color: var(--error);
+  font: var(--font-text);
 }

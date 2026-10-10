@@ -1,6 +1,10 @@
+/* A readout for whoever is measuring, under everything: the number type in
+   the second ink, so it's there to read but never competes with the music.
+   provisional: D-15 */
 .frame-time {
   margin: 0;
   color: var(--ink-2);
-  font-size: 12px;
+  font: var(--font-number);
+  /* After the font shorthand, which resets it. */
   font-variant-numeric: tabular-nums;
 }
