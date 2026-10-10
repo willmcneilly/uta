@@ -178,7 +178,7 @@
   background: transparent;
 }
 
-/* Volume and pan: the label in the second ink, the value as a number. */
+/* Volume and pan: the label in the second ink, the value in ink. */
 .track-setting {
   display: grid;
   grid-template-columns: var(--track-label-width) 1fr var(--track-value-width);
@@ -195,9 +195,6 @@
 .track-setting output {
   text-align: right;
   color: var(--ink);
-  font: var(--font-number);
-  /* After the font shorthand, which resets it. */
-  font-variant-numeric: tabular-nums;
 }
 
 /* Under the faders' rails: past the label column, its gap and the fader's

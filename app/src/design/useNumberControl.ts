@@ -24,6 +24,13 @@ import type { NumberScale } from "./numberScale";
 /** How far a Shift-drag moves a control for the same mouse movement, against a plain drag. */
 export const FINE_DRAG = 0.1;
 
+/**
+ * How far the pointer moves from the press, in CSS pixels, before a drag
+ * moves the control, so a hand's wobble during a click or double-click
+ * doesn't nudge it.
+ */
+export const DRAG_THRESHOLD = 3;
+
 export interface NumberControlOptions {
   /** The project's value, as Rust last sent it. */
   value: number;
@@ -156,8 +163,14 @@ export function useNumberControl(
     let lastX = event.clientX;
     let sent = start;
     let reported: number | null = null;
+    // It stays where it is until the pointer passes DRAG_THRESHOLD, then
+    // moves from the press, so it's still under the mouse.
+    const pressX = event.clientX;
+    let started = false;
 
     const moveTo = (x: number, fine: boolean) => {
+      started ||= Math.abs(x - pressX) >= DRAG_THRESHOLD;
+      if (!started) x = pressX;
       if (fine !== anchor.fine) anchor = { x: lastX, at: clampPosition(exact), fine };
       exact = anchor.at + (x - anchor.x) * stepsPerPixel * (fine ? FINE_DRAG : 1);
       lastX = x;
@@ -195,6 +208,8 @@ export function useNumberControl(
     setPointerFocused(false);
     if (dragging !== null) return;
     if (event.key === "Delete" || event.key === "Backspace") {
+      // With a modifier it's someone else's shortcut: ⌘⌫ deletes the track.
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       event.preventDefault();
       reset();
       return;

@@ -198,10 +198,10 @@ Faders follow the mouse along their length. Knobs and drag fields are dragged up
 ### Setting a number
 
 The fader, the knob and the drag field all set a number, so they behave the same way, from one shared piece (`useNumberControl`) with one shared set of tests:
-- **Drag** from wherever you press. Nothing jumps on press: the control moves from where it is. A drag is one undo step.
+- **Drag** from wherever you press. Nothing jumps on press: the control moves from where it is, once the pointer has moved a few pixels, so a wobble during a click doesn't nudge it. A drag is one undo step.
 - **Shift-drag** moves it in fine steps, a tenth of the speed. Shift can be pressed or let go part-way, and it carries on from where it is.
 - **Click** gives it focus. The arrow keys step it, Shift+arrow by ten steps, Page Up and Page Down by ten, Home and End to the ends.
-- **Reset** to its default with double-click, ⌥-click, or Delete or Backspace while it has focus. A reset is one undo step, and does nothing when it's already there.
+- **Reset** to its default with double-click, ⌥-click, or Delete or Backspace while it has focus (with ⌘ held they're the app's own shortcuts, such as ⌘⌫ to delete a track). A reset is one undo step, and does nothing when it's already there.
 - **The scroll wheel** leaves it alone, so scrolling a panel never changes a sound by accident.
 - **During a drag** it shows where the mouse has taken it, not what the project last said, then the project's value once you let go.
 - **The value and its unit** are always readable in the `number` type, whose digits don't shift as they change. To assistive tech it's a slider, with its range, and its value read out with the unit ("-6.0 dB").

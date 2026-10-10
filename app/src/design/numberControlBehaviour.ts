@@ -5,9 +5,14 @@
 
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Keys } from "./faderTesting";
-import { linearScale } from "./numberScale";
-import { FINE_DRAG, type NumberControlOptions } from "./useNumberControl";
+import { linearScale, type NumberScale } from "./numberScale";
+import { DRAG_THRESHOLD, FINE_DRAG, type NumberControlOptions } from "./useNumberControl";
+
+/** Keys held during a press or a move. */
+export interface Keys {
+  shiftKey?: boolean;
+  altKey?: boolean;
+}
 
 /** A drag along the control, in pixels the way it's dragged to raise the value. */
 export interface ControlDrag {
@@ -34,16 +39,18 @@ export interface NumberControlHarness {
 // A volume from -60 to 0 dB in 0.5 dB steps: 120 positions.
 const scale = linearScale(-60, 0, 0.5);
 const formatDb = (db: number) => `${db.toFixed(1)} dB`;
+// The same volume in 0.01 dB steps, so a pixel of drag is several steps.
+const fineScale = linearScale(-60, 0, 0.01);
 
 /** Runs the shared behaviour tests against the control `harness` renders. */
 export function describeNumberControl(name: string, harness: NumberControlHarness) {
   /** How many pixels of drag move it `steps` positions. */
   const pixels = (steps: number) => (steps * harness.travel) / scale.steps;
 
-  function renderControl(value = -12, defaultValue = -12) {
+  function renderControl(value = -12, defaultValue = -12, controlScale: NumberScale = scale) {
     const onChange = vi.fn<(value: number, gesture?: number) => void>();
     const onDrag = vi.fn<(value: number | null) => void>();
-    const options = { defaultValue, scale, format: formatDb, onChange, onDrag };
+    const options = { defaultValue, scale: controlScale, format: formatDb, onChange, onDrag };
     const { control, rerender } = harness.render({ ...options, value });
     /** Rust sends a new project value. */
     const project = (next: number) => rerender({ ...options, value: next });
@@ -113,6 +120,24 @@ export function describeNumberControl(name: string, harness: NumberControlHarnes
       expect(control).toHaveAttribute("aria-valuenow", "-30");
       harness.press(control, { offset: pixels(30) }).by(pixels(10)).release();
       expect(sent()).toEqual([-25]);
+    });
+
+    it("stays where it is until the pointer passes DRAG_THRESHOLD, then moves from the press", () => {
+      const { control, onChange, sent } = renderControl(-30, -12, fineScale);
+      const drag = harness.press(control).by(DRAG_THRESHOLD - 1).by(-(DRAG_THRESHOLD - 1) * 2);
+      expect(onChange).not.toHaveBeenCalled();
+      drag.by(DRAG_THRESHOLD * 2 - 1);
+      const moved = Math.round((DRAG_THRESHOLD * fineScale.steps) / harness.travel);
+      expect(sent()).toEqual([fineScale.fromPosition(fineScale.toPosition(-30) + moved)]);
+      drag.release();
+    });
+
+    it("ignores a wobble during a double-click, so the reset is the only step", () => {
+      const { control, onChange } = renderControl(-30, -12, fineScale);
+      harness.press(control).by(1).by(-2).release();
+      harness.press(control).by(DRAG_THRESHOLD - 1).release();
+      fireEvent.doubleClick(control);
+      expect(onChange).toHaveBeenCalledExactlyOnceWith(-12);
     });
 
     it("shows its own value during a drag, and the project's after", () => {
@@ -208,6 +233,17 @@ export function describeNumberControl(name: string, harness: NumberControlHarnes
         reset(control);
         expect(onChange.mock.calls).toEqual([[-12], [-12]]);
       });
+    });
+
+    it("leaves Delete and Backspace with ⌘, Ctrl or ⌥ to the app's own shortcuts", () => {
+      const { control, onChange } = renderControl(-30, -12);
+      const notPrevented = [
+        fireEvent.keyDown(control, { key: "Backspace", metaKey: true }),
+        fireEvent.keyDown(control, { key: "Delete", ctrlKey: true }),
+        fireEvent.keyDown(control, { key: "Backspace", altKey: true }),
+      ];
+      expect(notPrevented).toEqual([true, true, true]);
+      expect(onChange).not.toHaveBeenCalled();
     });
 
     it("resets once for a double-click, with ⌥ or without, before Rust replies", () => {

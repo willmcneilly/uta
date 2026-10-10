@@ -2,6 +2,7 @@
 // fader's rail is given a width here: RAIL_WIDTH pixels, from x = 0.
 
 import { fireEvent } from "@testing-library/react";
+import type { Keys } from "./numberControlBehaviour";
 
 /** How wide a fader's rail is in tests, in CSS pixels: a pixel is a thousandth of the way. */
 export const RAIL_WIDTH = 1000;
@@ -19,12 +20,6 @@ function measure(fader: HTMLElement): HTMLElement {
 export function thumbX(fader: HTMLElement): number {
   const thumb = measure(fader).querySelector<HTMLElement>(".fader-thumb");
   return (parseFloat(thumb?.style.left ?? "0") / 100) * RAIL_WIDTH;
-}
-
-/** Keys held during a press or a move. */
-export interface Keys {
-  shiftKey?: boolean;
-  altKey?: boolean;
 }
 
 export interface Drag {

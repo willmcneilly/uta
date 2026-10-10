@@ -151,7 +151,7 @@
   width: 100px;
 }
 
-/* Tempo and volume: the label in the second ink, the value as a number. */
+/* Tempo and volume: the label in the second ink, the value in ink. */
 .transport .setting,
 .master .volume {
   color: var(--ink-2);
@@ -165,9 +165,6 @@
 .transport .setting output,
 .master .volume output {
   color: var(--ink);
-  font: var(--font-number);
-  /* After the font shorthand, which resets it. */
-  font-variant-numeric: tabular-nums;
 }
 
 .master-meter {

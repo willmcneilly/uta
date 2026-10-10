@@ -48,7 +48,6 @@
 .synth .setting output {
   min-width: 56px;
   color: var(--ink);
-  font: var(--font-number);
   text-align: right;
 }
 
