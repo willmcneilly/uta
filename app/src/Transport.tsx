@@ -1,5 +1,6 @@
 import type { ProjectView } from "./backend";
 import { DragField } from "./design/DragField";
+import { Key } from "./design/Key";
 import { linearScale } from "./design/numberScale";
 import { type BarBeat, formatBarBeat } from "./musicalTime";
 import "./Transport.css";
@@ -35,30 +36,23 @@ export function Transport({
 }: Props) {
   return (
     <section className="transport" aria-label="Transport">
-      <button
-        type="button"
-        className="play"
-        data-playing={playing || undefined}
-        title="Play (Space)"
-        onClick={onPlay}
-      >
+      <Key mark="play" playing={playing} title="Play (Space)" onClick={onPlay}>
         Play
-      </button>
-      <button type="button" className="stop" title="Stop (Space)" onClick={onStop}>
+      </Key>
+      <Key mark="stop" title="Stop (Space)" onClick={onStop}>
         Stop
-      </button>
+      </Key>
       {project && (
-        <button
-          type="button"
-          className="loop-switch"
-          aria-pressed={project.loopEnabled}
+        <Key
+          mark="loop"
+          pressed={project.loopEnabled}
           title={
             project.loopEnabled ? "Switch the loop off" : "Switch the loop on"
           }
           onClick={() => onLoopEnabled(!project.loopEnabled)}
         >
           Loop
-        </button>
+        </Key>
       )}
       {/* Play's mark already shows it, so this is for screen readers only. */}
       <span className="state" role="status" data-testid="transport">

@@ -1,0 +1,89 @@
+/*
+ * A round key: an ink-3 ring with its letter in ink-2,
+ * filled solid ink with the letter in paper while on. Hover darkens the
+ * ring and shades it; press shades it more. On, hover lifts the fill to
+ * ink-2 and press presses it back to ink. Keyboard focus rings the key in
+ * the selected ink. The drawn circle is 18 px inside a space-7 (24 px)
+ * square to hit: the button itself stays square, because a rounded one
+ * wouldn't respond in its corners. provisional: D-12
+ */
+.round-key {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-number);
+  cursor: pointer;
+  appearance: none;
+}
+
+.round-key::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  box-sizing: border-box;
+  border: var(--stroke-grid) solid var(--ink-3);
+  border-radius: 50%;
+}
+
+/* The letter, above the drawn circle. */
+.round-key span {
+  position: relative;
+}
+
+.round-key:hover::before {
+  border-color: var(--ink-2);
+  background: var(--line);
+}
+
+.round-key:active::before {
+  background: var(--line-2);
+}
+
+.round-key[aria-pressed="true"] {
+  color: var(--paper);
+}
+
+.round-key[aria-pressed="true"]::before {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.round-key[aria-pressed="true"]:hover::before {
+  border-color: var(--ink-2);
+  background: var(--ink-2);
+}
+
+.round-key[aria-pressed="true"]:active::before {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+/* The ring goes round the drawn circle, not the square hit area. */
+.round-key:focus-visible {
+  outline: none;
+}
+
+.round-key:focus-visible::before {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: var(--space-1);
+}
+
+/* Nothing disables them today; disabled beats on and off. */
+.round-key:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.round-key:disabled::before,
+.round-key[aria-pressed]:disabled::before {
+  border-color: var(--line-2);
+  background: transparent;
+}
