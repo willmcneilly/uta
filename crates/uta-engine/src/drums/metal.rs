@@ -57,8 +57,7 @@ pub(crate) struct Metal {
     tune_octaves: Ramp,
     /// The value of `tune_octaves` the increments were worked out for.
     tuned_to: f32,
-    /// The steps it takes a second: the kit's sample rate times its
-    /// oversampling.
+    /// The steps it takes a second: the kit's sample rate.
     rate: f64,
 }
 

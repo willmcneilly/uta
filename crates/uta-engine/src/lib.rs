@@ -22,7 +22,7 @@ mod synth;
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
 pub use drums::{
     ClapSettings, ClosedHatSettings, DRUM_SMOOTHING_SECONDS, KickSettings, KitSettings,
-    OVERSAMPLING, OpenHatSettings, REFERENCE_PEAK, SnareSettings, velocity_to_strength,
+    OpenHatSettings, REFERENCE_PEAK, SnareSettings, velocity_to_strength,
 };
 pub use mixer::MixerStrip;
 pub use processor::{

@@ -38,13 +38,15 @@
 //!   "not at all part of the 808 circuit".
 //! - **Every edge is smoothed** over 0.1 ms, as the 808 cymbal's attack is
 //!   (Werner).
-//! - **Optionally at twice the sample rate.** See [`OVERSAMPLING`].
+//!
+//! It runs at the kit's sample rate. Running it at twice that (2×
+//! oversampling) takes the false tones (aliasing) from 35 dB under the sound
+//! to 54 dB, but in a blind A/B Will couldn't hear the difference, so it
+//! isn't worth its cost (RFC-006, resolved open question 2; UTA-49).
 
 use crate::drums::filter::{Svf, prewarp};
-use crate::drums::half_band::HalfBand;
 use crate::drums::{
-    ClosedHatSettings, EDGE_SECONDS, OVERSAMPLING, OpenHatSettings, decay_per_sample, log_tau,
-    smoothing,
+    ClosedHatSettings, EDGE_SECONDS, OpenHatSettings, decay_per_sample, log_tau, smoothing,
 };
 use crate::ramp::Ramp;
 
@@ -71,7 +73,7 @@ const CHOKE_SECONDS: f64 = 0.002;
 /// The output level that puts a default closed hat at full accent at the
 /// kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured, not
 /// derived: see the `the_closed_hat_at_full_accent_peaks_at_the_reference`
-/// test. The same at either oversampling, so the A/B is at one level.
+/// test.
 const OUTPUT_GAIN: f32 = 2.4431;
 /// Below this, summed over its envelopes and the high-pass after the
 /// amplifier, the hats have died away and stop doing work: far under
@@ -116,9 +118,6 @@ impl Controls {
 #[derive(Debug, Clone, Copy)]
 struct Rates {
     sample_rate: f64,
-    /// The rate the filters and the amplifier run at: the sample rate
-    /// times [`OVERSAMPLING`].
-    rate: f64,
     strength: f64,
     edge: f64,
     choke: f64,
@@ -128,7 +127,6 @@ impl Rates {
     fn new(sample_rate: f64) -> Self {
         Self {
             sample_rate,
-            rate: sample_rate * OVERSAMPLING as f64,
             strength: smoothing(STRENGTH_SECONDS, sample_rate),
             edge: smoothing(EDGE_SECONDS, sample_rate),
             choke: decay_per_sample(CHOKE_SECONDS, sample_rate),
@@ -199,8 +197,6 @@ pub(crate) struct Hats {
     rates: Rates,
     derived: Derived,
     state: State,
-    /// The way back down from the oversampled rate.
-    down: HalfBand,
 }
 
 impl Hats {
@@ -221,7 +217,6 @@ impl Hats {
                 high_pass: 0.0,
             },
             state: State::silent(),
-            down: HalfBand::new(),
         }
     }
 
@@ -329,17 +324,17 @@ impl Hats {
         if centre != derived.centre {
             derived.centre = centre;
             let hz = centre.exp2();
-            derived.band = prewarp(hz, rates.rate);
-            derived.high_pass = prewarp(hz * HIGH_PASS_RATIO, rates.rate);
+            derived.band = prewarp(hz, rates.sample_rate);
+            derived.high_pass = prewarp(hz * HIGH_PASS_RATIO, rates.sample_rate);
         }
         (f64::from(closed_level), f64::from(open_level))
     }
 
-    /// The next sample, from the metal's next [`OVERSAMPLING`] steps. Hats
+    /// The next sample, from the metal's next sample. Hats
     /// that have died away return silence without doing the work, and the
     /// kit doesn't work the metal out for them.
     #[inline]
-    pub(crate) fn next_sample(&mut self, metal: [f64; OVERSAMPLING]) -> f32 {
+    pub(crate) fn next_sample(&mut self, metal: f64) -> f32 {
         let (closed_level, open_level) = self.controls();
         let (rates, derived) = (&self.rates, &self.derived);
         let state = &mut self.state;
@@ -360,8 +355,7 @@ impl Hats {
         state.drive += rates.strength * (state.drive_target - state.drive);
         state.brightness += rates.strength * (state.brightness_target - state.brightness);
 
-        // The band-pass, the amplifier and the high-pass, at the oversampled
-        // rate, then back down.
+        // The band-pass, the amplifier and the high-pass.
         let (drive, envelope) = (state.drive, state.envelope);
         let out = self.filter(metal, |band| swing_vca(band * drive, envelope));
 
@@ -371,30 +365,19 @@ impl Hats {
         if state.closed + state.open + state.envelope + state.high_pass.state() < SILENT {
             // Died away: stop, and stop doing work until the next hit.
             *state = State::silent();
-            self.down.clear();
         }
         out as f32 * OUTPUT_GAIN
     }
 
-    /// The metal's next [`OVERSAMPLING`] steps through the band-pass,
-    /// `amplifier` and the high-pass, at the oversampled rate, and back
-    /// down to one sample.
+    /// The metal through the band-pass, `amplifier` and the high-pass.
     #[inline]
-    fn filter(&mut self, metal: [f64; OVERSAMPLING], amplifier: impl Fn(f64) -> f64) -> f64 {
+    fn filter(&mut self, metal: f64, amplifier: impl Fn(f64) -> f64) -> f64 {
         let (derived, state) = (&self.derived, &mut self.state);
-        let mut out = [0.0; OVERSAMPLING];
-        for (out, metal) in out.iter_mut().zip(metal) {
-            let band = state.band.process(metal, derived.band, BAND_Q).band_pass / BAND_Q;
-            *out = state
-                .high_pass
-                .process(amplifier(band), derived.high_pass, HIGH_PASS_Q)
-                .high_pass;
-        }
-        if OVERSAMPLING == 1 {
-            out[0]
-        } else {
-            self.down.process([out[0], out[OVERSAMPLING - 1]])
-        }
+        let band = state.band.process(metal, derived.band, BAND_Q).band_pass / BAND_Q;
+        state
+            .high_pass
+            .process(amplifier(band), derived.high_pass, HIGH_PASS_Q)
+            .high_pass
     }
 }
 
@@ -414,13 +397,7 @@ mod tests {
     /// Runs `hats` for `seconds` on `metal`, as the kit does.
     fn run(hats: &mut Hats, metal: &mut Metal, seconds: f64) -> Vec<f32> {
         (0..(seconds * RATE) as usize)
-            .map(|_| {
-                let mut steps = [0.0; OVERSAMPLING];
-                for step in &mut steps {
-                    *step = metal.next_sample();
-                }
-                hats.next_sample(steps)
-            })
+            .map(|_| hats.next_sample(metal.next_sample()))
             .collect()
     }
 
@@ -444,11 +421,7 @@ mod tests {
         (0..samples)
             .map(|_| {
                 hats.controls();
-                let mut steps = [0.0; OVERSAMPLING];
-                for step in &mut steps {
-                    *step = metal.next_sample();
-                }
-                hats.filter(steps, |band| band)
+                hats.filter(metal.next_sample(), |band| band)
             })
             .collect()
     }
@@ -534,31 +507,25 @@ mod tests {
 
     /// The false tones stay at or below what was measured here, so they
     /// can't quietly come back. Measured: 35.2 dB under the sound with
-    /// PolyBLEP, 53.8 dB with PolyBLEP at 2×, and 11.6 dB for naive squares,
-    /// as Plaits and the 808 models make them. (The research measured 9, 18
+    /// PolyBLEP, against 11.6 dB for naive squares, as Plaits and the 808
+    /// models make them, and 53.8 dB with PolyBLEP at 2×, which Will
+    /// couldn't tell apart by ear (UTA-49). (The research measured 9, 18
     /// and 30 dB for the same three, against a 64× reference rather than by
-    /// harmonic; the naive figures agree, and both say each step helps.) At
-    /// 2× what's left is mostly between 19 and 24 kHz, where the half-band
-    /// filter lets some through on the way down.
+    /// harmonic; the naive figures agree, and both say each step helps.)
     #[test]
     fn the_false_tones_stay_down() {
-        let measured = if OVERSAMPLING == 2 { 53.8 } else { 35.2 };
+        let measured = 35.2;
         let db = signal_to_alias_db();
         assert!(db > measured - 0.5, "{db:.1} dB, measured {measured} dB");
     }
 
-    /// Measured without oversampling. At 2× the same hit peaks 0.95 dB
-    /// lower, but it isn't quieter: the peak of a sound this bright falls
-    /// between samples differently, and the two A/B renders' RMS levels
-    /// measured within 0.08 dB of each other.
     #[test]
     fn the_closed_hat_at_full_accent_peaks_at_the_reference() {
         let mut hats = hats();
         hats.hit_closed(1.0);
         let peak = peak(&run(&mut hats, &mut metal(), 0.5));
         let db = 20.0 * (peak / REFERENCE_PEAK).log10();
-        let below = if OVERSAMPLING == 2 { 0.95 } else { 0.0 };
-        assert!((db + below).abs() < 0.1, "peak {peak}, {db:.2} dB");
+        assert!(db.abs() < 0.1, "peak {peak}, {db:.2} dB");
     }
 
     /// Once they have died away far below hearing they stop, and do no work

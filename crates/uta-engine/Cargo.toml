@@ -15,11 +15,6 @@ rtsan-standalone = "0.3"
 # Sound devices. Pinned to 0.18.x (CLAUDE.md).
 cpal = "0.18.2"
 
-[features]
-# The hats at twice the sample rate, for the oversampling A/B (RFC-006,
-# resolved open question 2). Goes once the A/B is settled.
-oversample-metal = []
-
 [dev-dependencies]
 # nih-plug's fork: the crates.io release is from 2021 and can't nest
 # assert_no_alloc and permit_alloc. Default features off so it stays active in

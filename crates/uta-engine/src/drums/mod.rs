@@ -12,7 +12,6 @@
 
 mod clap;
 mod filter;
-mod half_band;
 mod hats;
 mod kick;
 mod metal;
@@ -32,17 +31,6 @@ use crate::snapshot::db_to_gain;
 /// How long a change to a drum setting takes to glide to its new value, as
 /// the synth's do.
 pub const DRUM_SMOOTHING_SECONDS: f64 = crate::SYNTH_SMOOTHING_SECONDS;
-
-/// How many times the kit's sample rate the metal sounds (the hats) run at,
-/// to keep the false tones their square waves make (aliasing) out of the
-/// top end they keep. PolyBLEP removes most of it either way; whether 2× is
-/// worth it too is settled by ear (RFC-006, resolved open question 2).
-/// Until then it's chosen when the engine is built: 2 with the
-/// `oversample-metal` feature, 1 without.
-#[cfg(feature = "oversample-metal")]
-pub const OVERSAMPLING: usize = 2;
-#[cfg(not(feature = "oversample-metal"))]
-pub const OVERSAMPLING: usize = 1;
 
 /// The peak a sound reaches at full accent with its default settings,
 /// before the track's and master's volumes: -6 dB. The kit's levels are
@@ -438,8 +426,7 @@ pub(crate) struct Kit {
 
 /// The metal for a kit at `sample_rate`, tuned to `tune_hz`.
 fn metal(tune_hz: f32, sample_rate: f64) -> Metal {
-    let rate = sample_rate * OVERSAMPLING as f64;
-    Metal::new(tune_hz, rate, smoothing_samples(rate))
+    Metal::new(tune_hz, sample_rate, smoothing_samples(sample_rate))
 }
 
 impl Kit {
@@ -532,14 +519,12 @@ impl Kit {
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         let noise = self.noise.next_sample();
-        let mut metal = [0.0; OVERSAMPLING];
-        for step in &mut metal {
-            if self.hats.is_sounding() {
-                *step = self.metal.next_sample();
-            } else {
-                self.metal.skip();
-            }
-        }
+        let metal = if self.hats.is_sounding() {
+            self.metal.next_sample()
+        } else {
+            self.metal.skip();
+            0.0
+        };
         self.kick.next_sample()
             + self.snare.next_sample(noise)
             + self.clap.next_sample(noise)

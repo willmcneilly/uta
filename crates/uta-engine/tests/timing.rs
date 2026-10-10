@@ -48,7 +48,7 @@ enum Load {
     /// with every sound at its longest Decay so they never fall silent, and
     /// the kick's, snare's and hats' Tune and the clap's and hats' Tone
     /// gliding. It grows as the sounds arrive. See RFC-006, "Risks &
-    /// unknowns" (CPU). Its name says how oversampled the metal is.
+    /// unknowns" (CPU).
     Drums,
     /// The same song, timing only the first block after Play from bar
     /// 10.5, where the notes already sounding there are started. Play is
@@ -64,9 +64,6 @@ impl Load {
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
             Self::Check7 => "Check 7 (588k notes)",
-            Self::Drums if uta_engine::OVERSAMPLING == 2 => {
-                "32 drum tracks × every sound, metal at 2×"
-            }
             Self::Drums => "32 drum tracks × every sound",
             Self::Check7FirstBlock => "Check 7, first block after Play from bar 10.5",
         }
