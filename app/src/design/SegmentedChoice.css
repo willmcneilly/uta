@@ -18,8 +18,11 @@
   font: var(--font-text);
 }
 
+/* Each option as wide as the widest. */
 .segmented-row {
-  display: flex;
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
   border: var(--stroke-grid) solid var(--ink-3);
   border-radius: var(--rounded-md);
 }
@@ -27,7 +30,6 @@
 .segmented label {
   position: relative;
   display: flex;
-  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
