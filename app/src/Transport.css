@@ -161,6 +161,8 @@
 .master .volume output {
   color: var(--ink);
   font: var(--font-number);
+  /* After the font shorthand, which resets it. */
+  font-variant-numeric: tabular-nums;
 }
 
 .master-meter {
