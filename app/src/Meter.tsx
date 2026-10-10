@@ -4,6 +4,7 @@ import { useTokenVersion } from "./design/tokenChanges";
 import { type MeterLevel, SILENT, meterFraction, nextShown } from "./meterLevel";
 import "./Meter.css";
 
+/** The master meter's height, and every meter's unless it says otherwise. */
 const HEIGHT = 10;
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   label: string;
   /** In CSS pixels. */
   width?: number;
+  /** In CSS pixels. */
+  height?: number;
 }
 
 /**
@@ -19,7 +22,7 @@ interface Props {
  * for about a second, then falls. A new colour scheme, or a change from the
  * tuning panel, repaints it in the new colours.
  */
-export function Meter({ level, label, width = 240 }: Props) {
+export function Meter({ level, label, width = 240, height = HEIGHT }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tokens = useTokenVersion();
 
@@ -30,7 +33,7 @@ export function Meter({ level, label, width = 240 }: Props) {
 
     const scale = window.devicePixelRatio || 1;
     canvas.width = width * scale;
-    canvas.height = HEIGHT * scale;
+    canvas.height = height * scale;
     context.scale(scale, scale);
     const colours = readColours(canvas);
 
@@ -44,20 +47,20 @@ export function Meter({ level, label, width = 240 }: Props) {
       const fraction = meterFraction(shown.db);
       // Most meters sit still most of the time: only repaint when they move.
       if (fraction !== painted) {
-        paint(context, width, fraction, colours);
+        paint(context, width, height, fraction, colours);
         painted = fraction;
       }
       request = requestAnimationFrame(draw);
     };
     request = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(request);
-  }, [level, width, tokens]);
+  }, [level, width, height, tokens]);
 
   return (
     <canvas
       ref={canvasRef}
       className="meter"
-      style={{ width, height: HEIGHT }}
+      style={{ width, height }}
       role="img"
       aria-label={label}
     />
@@ -67,11 +70,12 @@ export function Meter({ level, label, width = 240 }: Props) {
 function paint(
   context: CanvasRenderingContext2D,
   width: number,
+  height: number,
   fraction: number,
   colours: Colours,
 ): void {
   context.fillStyle = colours.line2;
-  context.fillRect(0, 0, width, HEIGHT);
+  context.fillRect(0, 0, width, height);
   // Signal up to -18 dB, hot above. The scale stops at 0 dB, so clipping
   // shows on the clip light, not here.
   const zones: [number, string][] = [
@@ -83,7 +87,7 @@ function paint(
     const end = Math.min(to, fraction);
     if (end > from) {
       context.fillStyle = colour;
-      context.fillRect(from * width, 0, (end - from) * width, HEIGHT);
+      context.fillRect(from * width, 0, (end - from) * width, height);
     }
     from = to;
   }
