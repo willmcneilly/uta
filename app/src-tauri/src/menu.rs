@@ -1,7 +1,8 @@
 //! The native menu bar. Undo, Redo, Copy, Paste and Duplicate are our own
 //! items, not the system's, so ⌘Z, ⇧⌘Z, ⌘C, ⌘V and ⌘D reach the project
 //! core, the timeline and the piano roll instead of the web view's text
-//! editing. The Track menu adds, deletes and duplicates tracks.
+//! editing. The Track menu adds synth and drum tracks, and deletes and
+//! duplicates them.
 
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};
@@ -13,7 +14,8 @@ pub const REDO: &str = "redo";
 pub const COPY: &str = "copy";
 pub const PASTE: &str = "paste";
 pub const DUPLICATE: &str = "duplicate";
-pub const ADD_TRACK: &str = "add-track";
+pub const ADD_SYNTH_TRACK: &str = "add-synth-track";
+pub const ADD_DRUM_TRACK: &str = "add-drum-track";
 pub const DELETE_TRACK: &str = "delete-track";
 pub const DUPLICATE_TRACK: &str = "duplicate-track";
 pub const ADD_STRESS_NOTES: &str = "add-stress-notes";
@@ -24,7 +26,8 @@ pub const RUN_BENCHMARK: &str = "run-benchmark";
 pub struct MenuState<R: Runtime> {
     undo: MenuItem<R>,
     redo: MenuItem<R>,
-    add_track: MenuItem<R>,
+    add_synth_track: MenuItem<R>,
+    add_drum_track: MenuItem<R>,
     duplicate_track: MenuItem<R>,
 }
 
@@ -34,7 +37,8 @@ impl<R: Runtime> MenuState<R> {
     pub fn update(&self, view: MenuView) -> tauri::Result<()> {
         self.undo.set_enabled(view.can_undo)?;
         self.redo.set_enabled(view.can_redo)?;
-        self.add_track.set_enabled(view.can_add_track)?;
+        self.add_synth_track.set_enabled(view.can_add_track)?;
+        self.add_drum_track.set_enabled(view.can_add_track)?;
         self.duplicate_track.set_enabled(view.can_add_track)
     }
 }
@@ -60,8 +64,11 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, MenuStat
     let duplicate = MenuItemBuilder::with_id(DUPLICATE, "Duplicate")
         .accelerator("CmdOrCtrl+D")
         .build(app)?;
-    let add_track = MenuItemBuilder::with_id(ADD_TRACK, "Add Track")
+    let add_synth_track = MenuItemBuilder::with_id(ADD_SYNTH_TRACK, "Add Synth Track")
         .accelerator("CmdOrCtrl+T")
+        .build(app)?;
+    let add_drum_track = MenuItemBuilder::with_id(ADD_DRUM_TRACK, "Add Drum Track")
+        .accelerator("CmdOrCtrl+Shift+T")
         .build(app)?;
     let duplicate_track = MenuItemBuilder::with_id(DUPLICATE_TRACK, "Duplicate Track")
         .accelerator("CmdOrCtrl+Shift+D")
@@ -92,7 +99,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, MenuStat
         .select_all()
         .build()?;
     let track = SubmenuBuilder::new(app, "Track")
-        .item(&add_track)
+        .item(&add_synth_track)
+        .item(&add_drum_track)
         .item(&duplicate_track)
         .item(&delete_track)
         .build()?;
@@ -114,7 +122,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, MenuStat
         MenuState {
             undo,
             redo,
-            add_track,
+            add_synth_track,
+            add_drum_track,
             duplicate_track,
         },
     ))

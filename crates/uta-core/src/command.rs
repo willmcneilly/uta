@@ -259,6 +259,12 @@ pub enum CommandError {
     EmptyClip(ClipId),
     /// A clip that ends after [`crate::time::MAX_TICKS`].
     ClipTooLate(ClipId),
+    /// A clip moved to a track of the other kind: from a synth track to a
+    /// drum track, or back.
+    ClipToOtherKind {
+        clip: ClipId,
+        track: TrackId,
+    },
     /// A note to remove or set isn't in the clip.
     UnknownNote(NoteId),
     /// A note to add has the same ID as one already in the project, in any
@@ -380,6 +386,10 @@ impl std::fmt::Display for CommandError {
             ),
             Self::EmptyNote(id) => write!(f, "note {id} has no length"),
             Self::NoteTooLate(id) => write!(f, "note {id} ends too late"),
+            Self::ClipToOtherKind { clip, track } => write!(
+                f,
+                "clip {clip} can't move to track {track}: it's a different kind of track"
+            ),
             Self::NoteOffKit { note, pitch } => write!(
                 f,
                 "note {note}: pitch {pitch} isn't one of the drum kit's notes ({})",

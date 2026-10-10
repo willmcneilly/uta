@@ -21,6 +21,8 @@ import {
   announceChange,
   projectView,
   recordingFactory,
+  drumTrackView,
+  synthOf,
   trackView,
 } from "../pianoRoll/testing";
 import { pitchToY, tickToX as rollTickToX } from "../pianoRoll/viewport";
@@ -110,7 +112,10 @@ beforeEach(() => {
   ]);
   const second = {
     ...trackView("track-2", "Synth 2", [clip("clip-2", 8 * BAR, 2 * BAR)]),
-    synth: { ...trackView("", "").synth, waveform: "square" as const },
+    source: {
+      kind: "synth" as const,
+      synth: { ...synthOf(trackView("", "")), waveform: "square" as const },
+    },
   };
   project = projectView({ tracks: [first, second], songEnd: 11 * BAR });
   beforeGesture = new Map();
@@ -536,6 +541,32 @@ describe("the timeline", () => {
   });
 
   describe("moving a clip", () => {
+    it("skips over tracks of the other kind", async () => {
+      // Synth 1, then Drums 1, then Synth 2: clip-1 can't land on the drums.
+      project = withTracks([
+        project.tracks[0],
+        drumTrackView("drums", "Drums 1", [clip("beat", 0, BAR)]),
+        project.tracks[1],
+      ]);
+      await renderApp();
+      await press(BAR, 0);
+      // Over the drum track, it stays on Synth 1.
+      await moveTo(BAR, 1);
+      expect(sent("set_clips")).toEqual([]);
+      // Past it, it lands on Synth 2.
+      await moveTo(BAR, 2);
+      await release();
+      expect(sent("set_clips").map((move) => (move.clips as ClipPosition[])[0].track)).toEqual([
+        "track-2",
+      ]);
+      // And a drum clip only goes to a drum track: here, none but its own.
+      await press(0.5 * BAR, 1);
+      await moveTo(0.5 * BAR, 0);
+      await moveTo(0.5 * BAR, 2);
+      await release();
+      expect(sent("set_clips")).toHaveLength(1);
+    });
+
     it("drags it along its track, snapped to bars, as one gesture that trims nothing", async () => {
       await renderApp();
       await press(BAR, 0);

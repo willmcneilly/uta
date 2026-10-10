@@ -9,17 +9,19 @@ import { type Hit, VELOCITY_HIT_PIXELS, hitTest, hitVelocity } from "./editing";
 import { NoteIndex, type PlacedNote } from "./notes";
 import type { PianoRollRenderer } from "./renderer";
 import {
+  KEYBOARD,
   PITCH_COUNT,
   type Rect,
+  type Rows,
   type Viewport,
   clampViewport,
   inRect,
   noteArea,
   velocityLane,
-  visiblePitches,
+  visibleRows,
   visibleTicks,
   xToTick,
-  yToPitch,
+  yToRow,
 } from "./viewport";
 
 /** The pitch shown at the top when the piano roll opens: C6, so C3 to C6 or so is in view. */
@@ -29,6 +31,7 @@ const INITIAL_KEY_HEIGHT = 12;
 export class PianoRollScene {
   private project: ProjectView | null = null;
   private clip: ClipView | null = null;
+  private rows: Rows = KEYBOARD;
   private index: NoteIndex | null = null;
   private view: Viewport | null = null;
   private renderer: PianoRollRenderer | null = null;
@@ -43,11 +46,12 @@ export class PianoRollScene {
   private hovered: PlacedNote | null = null;
 
   /**
-   * A new project view from Rust, and the clip to show from it: the notes,
-   * the loop or the clip itself may have changed. Opening another clip
-   * shows the whole of it.
+   * A new project view from Rust, and the clip to show from it, on `rows`
+   * (the keyboard, or its track's drum lanes): the notes, the loop or the
+   * clip itself may have changed. Opening another clip shows the whole of
+   * it.
    */
-  setProject(project: ProjectView, clip: ClipView): void {
+  setProject(project: ProjectView, clip: ClipView, rows: Rows = KEYBOARD): void {
     const gridChanged =
       this.project?.loopStart !== project.loopStart ||
       this.project.loopLength !== project.loopLength ||
@@ -55,10 +59,16 @@ export class PianoRollScene {
       this.clip?.start !== clip.start ||
       this.clip.length !== clip.length;
     const opened = this.clip !== null && this.clip.id !== clip.id;
+    const newRows = !sameRows(this.rows, rows);
+    if (newRows) {
+      this.rows = rows;
+      if (this.view) this.view = withRows(this.view, rows);
+      this.markAllDirty();
+    }
     // Every view from Rust is a fresh object, so compare what's in it: a
     // volume or tempo change mustn't re-sort and redraw thousands of notes.
-    if (!this.clip || !sameClip(this.clip, clip)) {
-      this.index = new NoteIndex(clip);
+    if (!this.clip || !sameClip(this.clip, clip) || newRows) {
+      this.index = new NoteIndex(clip, this.rows);
       this.notesDirty = true;
       // The note under the pointer may have moved or gone; the next move finds it again.
       this.setHovered(null);
@@ -78,7 +88,7 @@ export class PianoRollScene {
     this.size = { width, height, pixelRatio };
     this.renderer?.resize(width, height, pixelRatio);
     if (this.view) this.view = { ...this.view, width, height };
-    else if (this.clip) this.view = initialView(this.clip, width, height);
+    else if (this.clip) this.view = initialView(this.clip, width, height, this.rows);
     this.clampView();
     this.markAllDirty();
   }
@@ -156,10 +166,10 @@ export class PianoRollScene {
     const { view, index } = this;
     if (!view || !index || !this.inNoteArea(x, y)) return null;
     const tick = xToTick(view, x);
-    const pitch = yToPitch(view, y);
+    const row = yToRow(view, y);
     // A pixel either side, for notes drawn wider than they are long.
     const slack = 1 / view.pixelsPerTick;
-    return hitTest(view, index.visible(tick - slack, tick + slack, pitch, pitch), x, y);
+    return hitTest(view, index.visible(tick - slack, tick + slack, row, row), x, y);
   }
 
   /** The note whose velocity bar is under `x`, if any. */
@@ -171,7 +181,7 @@ export class PianoRollScene {
     const slack = (VELOCITY_HIT_PIXELS + 1) / view.pixelsPerTick;
     return hitVelocity(
       view,
-      index.visible(tick - slack, tick + slack, 0, PITCH_COUNT - 1),
+      index.visible(tick - slack, tick + slack, 0, view.rows.count - 1),
       this.selected,
       x,
     );
@@ -191,7 +201,7 @@ export class PianoRollScene {
     const bottom = Math.min(area.y + area.height, box.y + box.height);
     if (right <= left || bottom <= top) return [];
     return index
-      .visible(xToTick(view, left), xToTick(view, right), yToPitch(view, bottom - 1e-6), yToPitch(view, top))
+      .visible(xToTick(view, left), xToTick(view, right), yToRow(view, bottom - 1e-6), yToRow(view, top))
       .map((note) => note.id);
   }
 
@@ -217,20 +227,20 @@ export class PianoRollScene {
     }
     if (this.notesDirty) {
       const ticks = visibleTicks(view);
-      const pitches = visiblePitches(view);
+      const rows = visibleRows(view);
       renderer.drawNotes({
         view,
-        notes: index.visible(ticks.start, ticks.end, pitches.low, pitches.high),
-        velocities: index.visible(ticks.start, ticks.end, 0, PITCH_COUNT - 1),
+        notes: index.visible(ticks.start, ticks.end, rows.low, rows.high),
+        velocities: index.visible(ticks.start, ticks.end, 0, view.rows.count - 1),
         selected: this.selected,
         empty: index.size === 0,
       });
       this.notesDirty = false;
     }
     if (this.topDirty || playhead !== this.lastPlayhead || playing !== this.lastPlaying) {
-      const pitches = visiblePitches(view);
+      const rows = visibleRows(view);
       renderer.drawTop(view, playhead, this.box, {
-        sounding: playing ? index.sounding(playhead, pitches.low, pitches.high) : [],
+        sounding: playing ? index.sounding(playhead, rows.low, rows.high) : [],
         hovered: this.hovered,
         selected: this.selected,
       });
@@ -258,17 +268,40 @@ function contentTicks(project: ProjectView, clip: ClipView, index: NoteIndex): n
   return Math.max(project.loopStart + project.loopLength, clip.start + clip.length, index.end) + bar;
 }
 
-/** The clip fills the width, with C3 to C6 or so in view. */
-function initialView(clip: ClipView, width: number, height: number): Viewport {
+/** The clip fills the width, with C3 to C6 or so in view, or every drum lane. */
+function initialView(clip: ClipView, width: number, height: number, rows: Rows): Viewport {
   const view: Viewport = {
     width,
     height,
     scrollTicks: 0,
-    scrollY: (PITCH_COUNT - 1 - INITIAL_TOP_PITCH) * INITIAL_KEY_HEIGHT,
+    scrollY: 0,
     pixelsPerTick: 1,
     keyHeight: INITIAL_KEY_HEIGHT,
+    rows: KEYBOARD,
   };
-  return fitClip(view, clip);
+  return fitClip(withRows(view, rows), clip);
+}
+
+/**
+ * `view` on `rows`, scrolled to where they start: C3 to C6 or so beside the
+ * keyboard, or the top lane, from where all of them show. Its time stays
+ * as it is.
+ */
+function withRows(view: Viewport, rows: Rows): Viewport {
+  return {
+    ...view,
+    rows,
+    keyHeight: INITIAL_KEY_HEIGHT,
+    scrollY: rows.lanes ? 0 : (PITCH_COUNT - 1 - INITIAL_TOP_PITCH) * INITIAL_KEY_HEIGHT,
+  };
+}
+
+/** Whether two sets of rows are the same: the keyboard, or the same lanes in the same order. */
+function sameRows(a: Rows, b: Rows): boolean {
+  if (a === b) return true;
+  if (!a.lanes || !b.lanes || a.lanes.length !== b.lanes.length) return false;
+  const other = b.lanes;
+  return a.lanes.every((lane, i) => lane.name === other[i].name && lane.pitch === other[i].pitch);
 }
 
 /** `view` scrolled and zoomed so `clip` fills its width. The pitches stay as they are. */
@@ -288,7 +321,8 @@ function sameView(a: Viewport, b: Viewport): boolean {
     a.scrollTicks === b.scrollTicks &&
     a.scrollY === b.scrollY &&
     a.pixelsPerTick === b.pixelsPerTick &&
-    a.keyHeight === b.keyHeight
+    a.keyHeight === b.keyHeight &&
+    a.rows === b.rows
   );
 }
 

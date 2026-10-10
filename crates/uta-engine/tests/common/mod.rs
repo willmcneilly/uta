@@ -17,8 +17,9 @@ pub fn demo_loop() -> Project {
     list.build().expect("the demo loop builds")
 }
 
-/// The demo song, built from its committed command list: three tracks, each
-/// with its own sound, panned apart.
+/// The demo song, built from its committed command list: three synth
+/// tracks, each with its own sound, panned apart, and a new project's empty
+/// drum track.
 pub fn demo_song() -> Project {
     let json = include_str!("../../../../examples/demo-song.json");
     let list: CommandList = serde_json::from_str(json).expect("the demo song parses");
@@ -36,10 +37,28 @@ pub fn note(index: u128, pitch: u8, start: Ticks, length: Ticks) -> Note {
     }
 }
 
+/// A new project without its drum track: Synth 1 alone, with its empty
+/// 4-bar clip, as a new project was before drum tracks. The tests built on
+/// it are about the synth, and an empty drum track would change nothing
+/// they hear.
+pub fn synth_project() -> Project {
+    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let drums = project
+        .tracks()
+        .iter()
+        .filter(|track| matches!(track.source(), Source::Drums(_)))
+        .map(Track::id)
+        .collect();
+    project
+        .apply(&Command::RemoveTracks { tracks: drums })
+        .expect("a new project has a drum track");
+    project
+}
+
 /// A project at `bpm` with a loop of `bars`, the synth settings in `params`,
 /// and `notes`, built through commands as the app would.
 pub fn project(bpm: f32, bars: u32, params: &[SynthParam], notes: Vec<Note>) -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let track = project.tracks()[0].id();
     let clip = project.tracks()[0].clips()[0].id();
     let mut commands = vec![Command::SetTempo { bpm }, Command::SetLoopLength { bars }];
@@ -91,7 +110,7 @@ pub fn drum_project(
     params: &[(DrumSound, DrumParam)],
     hits: Vec<Note>,
 ) -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let track = drum_track();
     let bar = project.transport().time_signature().ticks_per_bar();
     let clip = Clip::new(

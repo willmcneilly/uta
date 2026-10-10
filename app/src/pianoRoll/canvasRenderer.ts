@@ -7,17 +7,16 @@ import { type Theme, isBlackKey, octaveName, readTheme, velocityAlpha } from "./
 import type { PlacedNote } from "./notes";
 import type { GridScene, Layers, NotesScene, PianoRollRenderer, TopMarks } from "./renderer";
 import {
-  KEYBOARD_WIDTH,
   RULER_HEIGHT,
   type Rect,
   type Viewport,
   gridStep,
   noteArea,
-  pitchToY,
+  rowToY,
   tickToX,
   velocityLane,
   velocityToY,
-  visiblePitches,
+  visibleRows,
   visibleTicks,
 } from "./viewport";
 
@@ -77,7 +76,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     const context = this.contexts.grid;
     const theme = this.theme;
     const area = noteArea(view);
-    const { low, high } = visiblePitches(view);
+    const { low, high } = visibleRows(view);
     const ticks = visibleTicks(view);
     const bar = ticksPerQuarter * beatsPerBar;
     const line = theme.gridWidth;
@@ -91,9 +90,18 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.clip();
 
     // Rows: shaded to match the darker keys, a line under each B (the
-    // octave boundary).
-    for (let pitch = low; pitch <= high; pitch++) {
-      const y = pitchToY(view, pitch);
+    // octave boundary). Drum lanes have a line between each two, as faint
+    // as the octave lines (provisional: D-23).
+    for (let row = low; row <= high; row++) {
+      const y = rowToY(view, row);
+      if (view.rows.lanes) {
+        if (row > 0) {
+          context.fillStyle = theme.octaveLine;
+          context.fillRect(area.x, Math.round(y + view.keyHeight) - line, area.width, line);
+        }
+        continue;
+      }
+      const pitch = view.rows.pitch(row);
       if (isBlackKey(pitch) === theme.shadeBlackKeyRows) {
         context.fillStyle = theme.rowShade;
         context.fillRect(area.x, y, area.width, view.keyHeight);
@@ -146,7 +154,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.fillRect(0, lane.y, this.width, lane.height);
     context.fillStyle = theme.edge;
     context.fillRect(0, lane.y, this.width, line);
-    context.fillRect(KEYBOARD_WIDTH - line, lane.y, line, lane.height);
+    context.fillRect(view.rows.width - line, lane.y, line, lane.height);
 
     context.save();
     context.beginPath();
@@ -212,48 +220,60 @@ class Canvas2DRenderer implements PianoRollRenderer {
    * the keyboard's full width and one row tall, so each lines up with its
    * row in the notes. Black keys are always the darker ones, a line parts
    * two white keys that meet (E and F, B and C), and each C is named in the
-   * second ink beside the notes (provisional: D-5).
+   * second ink beside the notes (provisional: D-5). Beside drum lanes it's
+   * the sheet with a line between each two, under the lanes' labels, which
+   * are buttons over it (provisional: D-23).
    */
   private drawKeyboard(view: Viewport, low: number, high: number): void {
     const context = this.contexts.grid;
     const theme = this.theme;
     const area = noteArea(view);
+    const width = view.rows.width;
+    const lanes = view.rows.lanes !== null;
     const line = theme.gridWidth;
 
     context.save();
     context.beginPath();
-    context.rect(0, area.y, KEYBOARD_WIDTH, area.height);
+    context.rect(0, area.y, width, area.height);
     context.clip();
-    context.fillStyle = theme.whiteKey;
-    context.fillRect(0, area.y, KEYBOARD_WIDTH, area.height);
+    context.fillStyle = lanes ? theme.background : theme.whiteKey;
+    context.fillRect(0, area.y, width, area.height);
     context.font = theme.labelFont;
     context.textBaseline = "middle";
     context.textAlign = "right";
-    for (let pitch = low; pitch <= high; pitch++) {
-      const y = pitchToY(view, pitch);
+    for (let row = low; row <= high; row++) {
+      const y = rowToY(view, row);
+      if (lanes) {
+        if (row > 0) {
+          context.fillStyle = theme.edge;
+          context.fillRect(0, Math.round(y + view.keyHeight) - line, width, line);
+        }
+        continue;
+      }
+      const pitch = view.rows.pitch(row);
       if (isBlackKey(pitch)) {
         context.fillStyle = theme.blackKey;
-        context.fillRect(0, y, KEYBOARD_WIDTH, view.keyHeight);
+        context.fillRect(0, y, width, view.keyHeight);
       } else if (!isBlackKey(pitch - 1)) {
         context.fillStyle = theme.keyLine;
-        context.fillRect(0, Math.round(y + view.keyHeight) - line, KEYBOARD_WIDTH, line);
+        context.fillRect(0, Math.round(y + view.keyHeight) - line, width, line);
       }
       if (pitch % 12 === 0 && view.keyHeight >= 8) {
         context.fillStyle = theme.keyText;
-        context.fillText(octaveName(pitch), KEYBOARD_WIDTH - KEY_LABEL_INSET, y + view.keyHeight / 2);
+        context.fillText(octaveName(pitch), width - KEY_LABEL_INSET, y + view.keyHeight / 2);
       }
     }
     context.textAlign = "left";
     context.fillStyle = theme.edge;
-    context.fillRect(KEYBOARD_WIDTH - line, area.y, line, area.height);
+    context.fillRect(width - line, area.y, line, area.height);
     context.restore();
 
     // The corner above the keyboard, closed off by the ruler's foot and the keys' edge.
     context.fillStyle = theme.background;
-    context.fillRect(0, 0, KEYBOARD_WIDTH, RULER_HEIGHT);
+    context.fillRect(0, 0, width, RULER_HEIGHT);
     context.fillStyle = theme.edge;
-    context.fillRect(0, RULER_HEIGHT - line, KEYBOARD_WIDTH, line);
-    context.fillRect(KEYBOARD_WIDTH - line, 0, line, RULER_HEIGHT);
+    context.fillRect(0, RULER_HEIGHT - line, width, line);
+    context.fillRect(width - line, 0, line, RULER_HEIGHT);
   }
 
   /**
@@ -424,7 +444,7 @@ function noteRect(view: Viewport, note: PlacedNote): Rect {
   const gap = view.keyHeight > 3 ? 1 : 0;
   return {
     x: tickToX(view, note.start),
-    y: pitchToY(view, note.pitch) + gap,
+    y: rowToY(view, note.row) + gap,
     width: Math.max(1, note.length * view.pixelsPerTick - gap),
     height: view.keyHeight - gap,
   };

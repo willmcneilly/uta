@@ -4,11 +4,13 @@ import {
   type Ref,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { ClipView, NoteView, ProjectView } from "../backend";
 import { Menu } from "../design/Menu";
+import { spacing } from "../design/tokens";
 import { useTokenVersion } from "../design/tokenChanges";
 import { ToolChip, ZoomKeys } from "../design/ToolChip";
 import { Follow } from "../follow";
@@ -31,8 +33,13 @@ import type { RendererFactory } from "./renderer";
 import { PianoRollScene } from "./scene";
 import { DEFAULT_SNAP, SNAPS, type Snap, snapDown, snapStep } from "./snap";
 import {
+  KEYBOARD,
+  type Lane,
+  RULER_HEIGHT,
   type Rect,
+  type Rows,
   VELOCITY_LANE_HEIGHT,
+  drumLanes,
   noteArea,
   xToTick,
   yToPitch,
@@ -77,6 +84,11 @@ interface Props {
   project: ProjectView;
   /** The clip it shows and edits. */
   clip: ClipView;
+  /**
+   * Its track's drum lanes, bottom to top, from the outline, shown in place
+   * of the keyboard. Left out for a synth track.
+   */
+  lanes?: readonly Lane[];
   editor: NoteEditor;
   /** Where the playhead is, between the engine's reports. */
   clock: PlayheadClock;
@@ -102,6 +114,8 @@ const SEMITONE = 1;
 const OCTAVE = 12;
 /** The cursor while ⌥-dragging copies of notes, as the system shows for copying. */
 const COPY_CURSOR = "copy";
+/** How long a notice, such as notes a paste left out, stays up. */
+const NOTICE_MS = 5000;
 
 /** A drag in progress: of notes, velocities or a selection box. */
 interface DragState {
@@ -143,11 +157,18 @@ export function PianoRoll({
   ref,
   project,
   clip,
+  lanes,
   editor,
   clock,
   frames,
   createRenderer = createCanvas2DRenderer,
 }: Props) {
+  // The scene keeps its rows while new ones have the same lanes, so a new
+  // outline doesn't make it rebuild anything.
+  const rows: Rows = useMemo(() => (lanes ? drumLanes(lanes) : KEYBOARD), [lanes]);
+  // Something worth saying about the last edit in a clip, such as notes a
+  // paste left out. It's only shown while that clip is.
+  const [notice, setNotice] = useState<{ clip: string; text: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLCanvasElement>(null);
   const notesRef = useRef<HTMLCanvasElement>(null);
@@ -180,7 +201,7 @@ export function PianoRoll({
   };
   // The pointer, keyboard and menu handlers read the latest of these,
   // including those added to the window for the length of a drag.
-  const latest = useRef({ project, clip, editor: editing, snap });
+  const latest = useRef({ project, clip, rows, editor: editing, snap });
   // Which notes are selected, and what was copied, are the piano roll's own:
   // neither is part of the project.
   const selected = useRef<ReadonlySet<string>>(new Set());
@@ -194,10 +215,17 @@ export function PianoRoll({
   );
 
   useEffect(() => {
-    latest.current = { project, clip, editor: editing, snap };
+    latest.current = { project, clip, rows, editor: editing, snap };
   });
 
-  useEffect(() => scene.setProject(project, clip), [scene, project, clip]);
+  useEffect(() => scene.setProject(project, clip, rows), [scene, project, clip, rows]);
+
+  // A notice goes after a while.
+  useEffect(() => {
+    if (notice === null) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   // Another clip's notes aren't selected. What was copied stays, to paste
   // into this one.
@@ -540,6 +568,7 @@ export function PianoRoll({
           yToPitch(view, y),
           stepFor(keys),
           clip.start,
+          latest.current.rows,
         );
         if (keys.altKey !== copying) {
           if (copying !== null) changes.cancel();
@@ -584,6 +613,7 @@ export function PianoRoll({
       yToPitch(view, y),
       stepFor(keys),
       latest.current.clip.start,
+      latest.current.rows,
     );
   };
 
@@ -680,8 +710,9 @@ export function PianoRoll({
   };
 
   /**
-   * The arrow keys move the selected notes: ↑ and ↓ a semitone, or an octave
-   * with Shift, playing the first of them where it lands; ← and → a grid
+   * The arrow keys move the selected notes: ↑ and ↓ a semitone (a row on a
+   * drum track), or an octave (12 rows) with Shift, playing the first of
+   * them where it lands; ← and → a grid
    * step (a sixteenth with snapping off). Each press is one undo step. The
    * notes trim what they cover only once they're deselected or something
    * else is done, so moving through a chord leaves it whole. With ⌘, Ctrl or
@@ -690,13 +721,13 @@ export function PianoRoll({
   const nudge = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const notes = selectedNotes();
-    const { project, editor, snap } = latest.current;
+    const { project, rows, editor, snap } = latest.current;
     let next: NoteView[];
     switch (event.key) {
       case "ArrowUp":
       case "ArrowDown": {
         const step = event.shiftKey ? OCTAVE : SEMITONE;
-        next = transposeNotes(notes, event.key === "ArrowUp" ? step : -step);
+        next = transposeNotes(notes, event.key === "ArrowUp" ? step : -step, rows);
         break;
       }
       case "ArrowLeft":
@@ -737,13 +768,18 @@ export function PianoRoll({
     paste() {
       const view = scene.getView();
       if (dragging.current || !view || clipboard.current.length === 0) return;
-      const { project, clip, snap } = latest.current;
+      const { project, clip, rows, snap } = latest.current;
       const step = snapStep(snap, project.ticksPerQuarter);
       const at = snapDown(clock.at(performance.now()), step);
       const notes = pasteNotes(clipboard.current, at, clip.start, () =>
         crypto.randomUUID(),
       );
-      land(notes);
+      // On a drum track, only the notes on its lanes come across: Rust
+      // refuses a note on any other pitch (RFC-006, "In the project").
+      const kept = notes.filter((note) => rows.row(note.pitch) >= 0);
+      const left = notes.length - kept.length;
+      setNotice(left > 0 ? { clip: clip.id, text: leftOut(left, kept.length) } : null);
+      if (kept.length > 0) land(kept);
     },
     duplicate() {
       if (dragging.current) return;
@@ -804,16 +840,58 @@ export function PianoRoll({
             onOut={() => zoomTimeBy(1 / ZOOM_STEP)}
             onIn={() => zoomTimeBy(ZOOM_STEP)}
           />
-          <ZoomKeys
-            label="Pitch"
-            what="pitch"
-            onOut={() => zoomPitchBy(1 / ZOOM_STEP)}
-            onIn={() => zoomPitchBy(ZOOM_STEP)}
-          />
+          {/* Drum lanes always fit the height, so they don't zoom. */}
+          {!rows.lanes && (
+            <ZoomKeys
+              label="Pitch"
+              what="pitch"
+              onOut={() => zoomPitchBy(1 / ZOOM_STEP)}
+              onIn={() => zoomPitchBy(ZOOM_STEP)}
+            />
+          )}
         </ToolChip>
       </div>
+      {/* Over the keyboard's place, lined up with the lanes, which share out
+          the height between the ruler and the velocity lane (provisional:
+          D-23). Top to bottom, so the kick is at the bottom. */}
+      {rows.lanes && (
+        <div
+          className="drum-lanes"
+          role="group"
+          aria-label="Drum sounds"
+          style={{ top: RULER_HEIGHT, bottom: VELOCITY_LANE_HEIGHT, width: rows.width }}
+        >
+          {[...rows.lanes].reverse().map((lane) => (
+            <button
+              key={lane.pitch}
+              type="button"
+              className="drum-lane"
+              title={`Play the ${lane.name.toLowerCase()}`}
+              onClick={() => editor.audition(lane.pitch, NEW_NOTE_VELOCITY)}
+            >
+              {lane.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {notice?.clip === clip.id && (
+        <p
+          className="piano-roll-notice"
+          role="status"
+          style={{ left: rows.width + spacing.space4, bottom: VELOCITY_LANE_HEIGHT + spacing.space4 }}
+        >
+          {notice.text}
+        </p>
+      )}
     </section>
   );
+}
+
+/** What a paste onto a drum track says about the notes it left out. */
+function leftOut(left: number, kept: number): string {
+  const notes = left === 1 ? "1 note" : `${left} notes`;
+  const where = left === 1 ? "isn't on one of the drum kit's rows" : "aren't on the drum kit's rows";
+  return kept > 0 ? `Left out ${notes} that ${where}.` : `Nothing pasted: the ${notes} ${where}.`;
 }
 
 /** The note that starts first, and the lowest of those that start together. */

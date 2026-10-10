@@ -11,10 +11,9 @@ mod common;
 
 use common::*;
 use uta_core::time::Ticks;
-use uta_core::{ClipPosition, Command, Note, Project, ProjectId};
+use uta_core::{ClipPosition, Command, Note, Project};
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, NoteKey, Snapshot, pitch_to_hz};
-use uuid::Uuid;
 
 const BLOCK_SIZES: [usize; 3] = [32, 128, 1024];
 /// A bar of 4/4, in ticks.
@@ -38,7 +37,7 @@ fn config() -> EngineConfig {
 /// region is `looped` (start bar from 0, and length), switched on, or off
 /// with `None`.
 fn song(clip_bars: u32, looped: Option<(u32, u32)>, notes: Vec<Note>) -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let track = project.tracks()[0].id();
     let clip = project.tracks()[0].clips()[0].id();
     let mut commands = vec![Command::SetClips {

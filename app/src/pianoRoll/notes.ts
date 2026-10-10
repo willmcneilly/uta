@@ -1,4 +1,5 @@
 import type { ClipView } from "../backend";
+import type { Rows } from "./viewport";
 
 /** A note placed on the song's timeline, ready to draw. */
 export interface PlacedNote {
@@ -8,20 +9,22 @@ export interface PlacedNote {
   /** In ticks from the start of the song. */
   start: number;
   length: number;
+  /** The piano roll's row it's on: its pitch beside the keyboard, or its drum lane. */
+  row: number;
   /** Past the clip's end: kept, but not played. */
   outside: boolean;
 }
 
 /**
  * A clip's notes sorted by start, so the ones in view can be found without
- * looking at them all.
+ * looking at them all, each on its row of `rows`.
  */
 export class NoteIndex {
   private readonly notes: PlacedNote[];
   /** The longest note, which bounds how far back a note in view can start. */
   private readonly maxLength: number;
 
-  constructor(clip: ClipView) {
+  constructor(clip: ClipView, rows: Rows) {
     this.notes = clip.notes
       .map((note) => ({
         id: note.id,
@@ -29,6 +32,7 @@ export class NoteIndex {
         velocity: note.velocity,
         start: clip.start + note.start,
         length: note.length,
+        row: rows.row(note.pitch),
         outside: note.start >= clip.length,
       }))
       .sort((a, b) => a.start - b.start);
@@ -46,7 +50,7 @@ export class NoteIndex {
 
   /**
    * The notes with any part between the ticks `start` and `end` (exclusive)
-   * and a pitch from `low` to `high`, in order of start.
+   * on a row from `low` to `high`, in order of start.
    */
   visible(start: number, end: number, low: number, high: number): PlacedNote[] {
     // Nothing starting before this can reach `start`.
@@ -55,7 +59,7 @@ export class NoteIndex {
     for (; index < this.notes.length; index++) {
       const note = this.notes[index];
       if (note.start >= end) break;
-      if (note.start + note.length > start && note.pitch >= low && note.pitch <= high) {
+      if (note.start + note.length > start && note.row >= low && note.row <= high) {
         found.push(note);
       }
     }
@@ -63,7 +67,7 @@ export class NoteIndex {
   }
 
   /**
-   * The notes sounding at the tick `at` with a pitch from `low` to `high`:
+   * The notes sounding at the tick `at` on a row from `low` to `high`:
    * those that have started and not yet ended. Notes past the clip's end
    * aren't played, so they never sound.
    */
@@ -73,7 +77,7 @@ export class NoteIndex {
     for (; index < this.notes.length; index++) {
       const note = this.notes[index];
       if (note.start > at) break;
-      if (note.start + note.length > at && !note.outside && note.pitch >= low && note.pitch <= high) {
+      if (note.start + note.length > at && !note.outside && note.row >= low && note.row <= high) {
         found.push(note);
       }
     }

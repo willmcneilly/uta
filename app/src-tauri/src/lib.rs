@@ -113,9 +113,10 @@ fn menu_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> Result<(), String> {
         menu::COPY | menu::PASTE | menu::DUPLICATE => {
             commands::pass_menu_item(app, commands::EDIT_MENU, id)
         }
-        menu::ADD_TRACK | menu::DELETE_TRACK | menu::DUPLICATE_TRACK => {
-            commands::pass_menu_item(app, commands::TRACK_MENU, id)
-        }
+        menu::ADD_SYNTH_TRACK
+        | menu::ADD_DRUM_TRACK
+        | menu::DELETE_TRACK
+        | menu::DUPLICATE_TRACK => commands::pass_menu_item(app, commands::TRACK_MENU, id),
         menu::ADD_STRESS_NOTES | menu::RUN_BENCHMARK => {
             commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
         }
@@ -150,7 +151,7 @@ mod tests {
     use tauri::{App, Listener};
 
     use super::*;
-    use crate::uta::Uta;
+    use crate::uta::{TrackKind, Uta};
 
     /// The app on Tauri's mock runtime, with no sound device, recording
     /// every `project-changed` payload it emits. It has no menu bar: macOS
@@ -177,7 +178,7 @@ mod tests {
         let view = commands::set_volume(app.handle().clone(), -6.0, None).unwrap();
         assert_eq!(view.outline.volume_db, -6.0);
         let id = uta_core::TrackId::random();
-        let view = commands::add_track(app.handle().clone(), id).unwrap();
+        let view = commands::add_track(app.handle().clone(), id, TrackKind::Drums).unwrap();
         assert!(view.outline.tracks.iter().any(|track| track.id == id));
         assert!(lock(&events).is_empty());
     }

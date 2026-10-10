@@ -12,8 +12,9 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, MixerStrip, Note, NoteId, PlacedClip,
-    PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, ClipPosition, Command, CommandError, DrumParam, DrumSound, KIT, KitSettings,
+    MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source, SynthParam,
+    SynthSettings, Track, TrackId, Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -99,16 +100,110 @@ pub struct Outline<C = ClipOutline> {
     pub tracks: Vec<TrackOutline<C>>,
 }
 
-/// A track as the UI shows it: its name, mixer strip, synth and clips.
+/// A track as the UI shows it: its name, mixer strip, sound and clips.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackOutline<C = ClipOutline> {
     pub id: TrackId,
     pub name: String,
     pub mixer: MixerView,
-    pub synth: SynthView,
+    pub source: SourceView,
     /// In order of start, then ID.
     pub clips: Vec<C>,
+}
+
+/// What makes a track's sound, as the UI shows it: the synth's settings, or
+/// the drum kit. Serialises as `{"kind":"synth","synth":{...}}` or
+/// `{"kind":"drums","kit":{...}}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SourceView {
+    Synth { synth: SynthView },
+    Drums { kit: KitView },
+}
+
+impl From<&Source> for SourceView {
+    fn from(source: &Source) -> Self {
+        match source {
+            Source::Synth(settings) => Self::Synth {
+                synth: settings.into(),
+            },
+            Source::Drums(kit) => Self::Drums { kit: kit.into() },
+        }
+    }
+}
+
+/// A drum track's kit, as the UI shows it: its rows, so the UI never has to
+/// know them itself (RFC-006, "In the project").
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KitView {
+    /// From the bottom of the piano roll to the top: kick to cymbal.
+    pub rows: Vec<KitRowView>,
+}
+
+/// One row of the kit: its sound, its name, the note that plays it, and the
+/// sound's settings.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KitRowView {
+    pub sound: DrumSound,
+    pub name: &'static str,
+    /// The General MIDI drum note that plays it.
+    pub pitch: u8,
+    /// Each of the sound's settings, in the order of its panel. Empty for a
+    /// sound that has none yet.
+    pub settings: Vec<DrumSettingView>,
+}
+
+/// One setting of one drum sound: its value, the limits it has on that
+/// sound, and what a reset sets it to. Each is in its sound's own unit.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrumSettingView {
+    /// The setting and its value, as `SetDrumParam` carries them:
+    /// `"name":"tune_hz","value":49.0`.
+    #[serde(flatten)]
+    pub param: DrumParam,
+    pub limits: (f32, f32),
+    /// A new drum track's value.
+    pub default: f32,
+}
+
+impl From<&KitSettings> for KitView {
+    fn from(kit: &KitSettings) -> Self {
+        let params = kit.params();
+        let defaults = KitSettings::default().params();
+        Self {
+            rows: KIT
+                .iter()
+                .map(|row| KitRowView {
+                    sound: row.sound,
+                    name: row.name,
+                    pitch: row.pitch,
+                    settings: params
+                        .iter()
+                        .zip(&defaults)
+                        .filter(|((sound, _), _)| *sound == row.sound)
+                        .map(|((sound, param), (_, default))| DrumSettingView {
+                            param: *param,
+                            limits: KitSettings::range(*sound, param)
+                                .expect("every setting a kit has has a range"),
+                            default: default.value(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Which kind of track to add, as the UI sends it: `"synth"` or `"drums"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TrackKind {
+    Synth,
+    Drums,
 }
 
 /// A track's volume, pan, mute and solo, as the UI shows and sends them.
@@ -528,15 +623,15 @@ impl Uta {
         Ok(())
     }
 
-    /// Adds a synth track with the default sound and mixer, and no clips,
-    /// below the others. The caller picks its ID, so it can select it.
-    pub fn add_track(&mut self, id: TrackId) -> Result<(), String> {
+    /// Adds a synth or drum track with the default sound and mixer, and no
+    /// clips, below the others. The caller picks its ID, so it can select it.
+    pub fn add_track(&mut self, id: TrackId, kind: TrackKind) -> Result<(), String> {
         let project = self.session.project();
-        let track = Track::new(
-            id,
-            project.next_track_name(),
-            Source::Synth(SynthSettings::default()),
-        );
+        let source = match kind {
+            TrackKind::Synth => Source::Synth(SynthSettings::default()),
+            TrackKind::Drums => Source::Drums(KitSettings::default()),
+        };
+        let track = Track::new(id, project.next_track_name(source.kind()), source);
         let index = project.tracks().len();
         self.change(
             Command::AddTracks {
@@ -556,9 +651,10 @@ impl Uta {
             .iter()
             .position(|other| other.id() == track)
             .ok_or_else(|| CommandError::UnknownTrack(track).to_string())?;
-        let copy = project.tracks()[index].copy(
+        let original = &project.tracks()[index];
+        let copy = original.copy(
             id,
-            project.next_track_name(),
+            project.next_track_name(original.source().kind()),
             ClipId::random,
             NoteId::random,
         );
@@ -1045,21 +1141,12 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         tracks: project
             .tracks()
             .iter()
-            .map(|track| {
-                // UTA-53 gives a drum track its own outline. Until then the
-                // app can't add one, and a drum track shows the synth's
-                // defaults.
-                let synth = match track.source() {
-                    Source::Synth(synth) => *synth,
-                    Source::Drums(_) => SynthSettings::default(),
-                };
-                TrackOutline {
-                    id: track.id(),
-                    name: track.name().to_owned(),
-                    mixer: track.mixer().into(),
-                    synth: (&synth).into(),
-                    clips: track.clips().iter().map(&mut clip).collect(),
-                }
+            .map(|track| TrackOutline {
+                id: track.id(),
+                name: track.name().to_owned(),
+                mixer: track.mixer().into(),
+                source: track.source().into(),
+                clips: track.clips().iter().map(&mut clip).collect(),
             })
             .collect(),
     }
@@ -1259,7 +1346,10 @@ mod tests {
         assert_eq!((view.ticks_per_quarter, view.beats_per_bar), (960, 4));
         assert_eq!(view.tracks[0].clips[0].length, view.loop_length);
         assert!(view.tracks[0].clips[0].notes.is_empty());
-        assert_eq!(view.tracks[0].synth, (&SynthSettings::default()).into());
+        assert_eq!(
+            synth_of(&view.tracks[0]),
+            (&SynthSettings::default()).into()
+        );
     }
 
     #[test]
@@ -1272,8 +1362,11 @@ mod tests {
         assert_eq!(outline["bpm"], 120.0);
         assert_eq!(outline["loopLength"], 4 * 4 * TICKS_PER_QUARTER);
         assert_eq!(outline["loopEnabled"], true);
-        assert_eq!(outline["tracks"][0]["synth"]["waveform"], "saw");
-        assert_eq!(outline["tracks"][0]["synth"]["cutoffHz"], 20_000.0);
+        let source = &outline["tracks"][0]["source"];
+        assert_eq!(source["kind"], "synth");
+        assert_eq!(source["synth"]["waveform"], "saw");
+        assert_eq!(source["synth"]["cutoffHz"], 20_000.0);
+        assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
         assert!(clip["notes"].is_null(), "the outline holds no notes");
@@ -1474,7 +1567,7 @@ mod tests {
             .unwrap();
         uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
             .unwrap();
-        let view = uta.project().tracks[0].synth;
+        let view = synth_of(&uta.project().tracks[0]);
         assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
         let engine_synth = |uta: &Uta| match uta.controller.snapshot().tracks()[0].sound {
             uta_engine::TrackSound::Synth(synth) => synth,
@@ -1485,10 +1578,10 @@ mod tests {
         assert_eq!(engine.cutoff_hz, 800.0);
 
         uta.undo();
-        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 20_000.0);
+        assert_eq!(synth_of(&uta.project().tracks[0]).cutoff_hz, 20_000.0);
         assert_eq!(engine_synth(&uta).cutoff_hz, 20_000.0);
         uta.redo();
-        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 800.0);
+        assert_eq!(synth_of(&uta.project().tracks[0]).cutoff_hz, 800.0);
     }
 
     #[test]
@@ -1520,10 +1613,10 @@ mod tests {
         }
 
         uta.undo();
-        let synth = uta.project().tracks[0].synth;
+        let synth = synth_of(&uta.project().tracks[0]);
         assert_eq!((synth.cutoff_hz, synth.sustain), (500.0, 0.7));
         uta.undo();
-        assert_eq!(uta.project().tracks[0].synth.cutoff_hz, 20_000.0);
+        assert_eq!(synth_of(&uta.project().tracks[0]).cutoff_hz, 20_000.0);
         assert!(!uta.project().can_undo);
     }
 
@@ -1584,14 +1677,17 @@ mod tests {
         );
         uta.undo();
         assert_eq!(uta.project().tracks, before.tracks);
-        assert_eq!(uta.controller.snapshot().tracks().len(), 1);
+        assert_eq!(
+            uta.controller.snapshot().tracks().len(),
+            before.tracks.len()
+        );
         uta.redo();
         assert_eq!(shape(&uta.project()), vec![(64, vec![64; 64]); 12]);
     }
 
     #[test]
     fn a_test_song_builds_over_an_empty_song() {
-        let mut uta = offline();
+        let mut uta = synth_only();
         uta.remove_track(uta.project().tracks[0].id).unwrap();
         uta.build_test_song(TestSong::Wide).unwrap();
         assert_eq!(uta.project().tracks.len(), 32);
@@ -1650,6 +1746,14 @@ mod tests {
             velocity: 100,
             start,
             length,
+        }
+    }
+
+    /// The synth settings of `track`, a synth track.
+    fn synth_of<C>(track: &TrackOutline<C>) -> SynthView {
+        match &track.source {
+            SourceView::Synth { synth } => *synth,
+            SourceView::Drums { .. } => panic!("{} isn't a synth track", track.name),
         }
     }
 
@@ -2022,23 +2126,43 @@ mod tests {
             .collect()
     }
 
-    /// An offline Uta with `count` tracks: the first, then added ones.
+    /// A new project's app with its drum track taken out, and no history:
+    /// for tests about synth tracks alone.
+    fn synth_only() -> Uta {
+        let mut project = Project::new();
+        let drums = project.tracks()[1].id();
+        project
+            .apply(&Command::RemoveTracks {
+                tracks: vec![drums],
+            })
+            .unwrap();
+        let session = Session::new(project);
+        let (controller, processor) = new_engine(&session);
+        Uta::new(
+            session,
+            controller,
+            Playback::Offline(processor),
+            live::DEFAULT_BUFFER_SIZE,
+        )
+    }
+
+    /// The app with `count` synth tracks, "Synth 1" onwards.
     fn with_tracks(count: usize) -> Uta {
-        let mut uta = offline();
+        let mut uta = synth_only();
         for _ in 1..count {
-            uta.add_track(TrackId::random()).unwrap();
+            uta.add_track(TrackId::random(), TrackKind::Synth).unwrap();
         }
         uta
     }
 
     #[test]
     fn the_project_view_carries_every_track_in_order() {
-        let mut uta = offline();
+        let mut uta = synth_only();
         let clip = clip_id(&uta);
         uta.add_notes(clip, vec![note(1, 60, 0, 240)], None)
             .unwrap();
         let second = TrackId::random();
-        uta.add_track(second).unwrap();
+        uta.add_track(second, TrackKind::Synth).unwrap();
         uta.set_track_mixer(second, mixer(-6.0, -0.5, true, false), None)
             .unwrap();
 
@@ -2052,7 +2176,7 @@ mod tests {
         assert_eq!(first.mixer, (&MixerStrip::default()).into());
         assert_eq!(other.id, second);
         assert_eq!(other.mixer, (&mixer(-6.0, -0.5, true, false)).into());
-        assert_eq!(other.synth, (&SynthSettings::default()).into());
+        assert_eq!(synth_of(other), (&SynthSettings::default()).into());
         assert_eq!(first.clips.len(), 1);
         assert_eq!(first.clips[0].notes, vec![note(1, 60, 0, 240)]);
         assert!(other.clips.is_empty(), "a new track has no clips");
@@ -2212,22 +2336,131 @@ mod tests {
     #[test]
     fn tracks_are_added_below_the_others_with_the_next_name() {
         let mut uta = offline();
+        assert_eq!(names(&uta), ["Synth 1", "Drums 1"]);
         let id = TrackId::random();
-        uta.add_track(id).unwrap();
-        uta.add_track(TrackId::random()).unwrap();
-        assert_eq!(names(&uta), ["Synth 1", "Synth 2", "Synth 3"]);
-        assert_eq!(uta.project().tracks[1].id, id);
+        uta.add_track(id, TrackKind::Synth).unwrap();
+        let drums = TrackId::random();
+        uta.add_track(drums, TrackKind::Drums).unwrap();
+        assert_eq!(names(&uta), ["Synth 1", "Drums 1", "Synth 2", "Drums 2"]);
+        assert_eq!(uta.project().tracks[2].id, id);
         assert!(uta.controller.slot(id).is_some(), "the engine has it");
-        assert!(uta.add_track(id).is_err(), "IDs are never reused");
+        let added = &uta.project().tracks[3];
+        assert!(matches!(added.source, SourceView::Drums { .. }));
+        assert!(added.clips.is_empty());
+        assert!(uta.controller.slot(drums).is_some());
+        assert!(
+            uta.add_track(id, TrackKind::Drums).is_err(),
+            "IDs are never reused"
+        );
 
         uta.undo();
-        assert_eq!(names(&uta), ["Synth 1", "Synth 2"]);
+        assert_eq!(names(&uta), ["Synth 1", "Drums 1", "Synth 2"]);
+    }
+
+    #[test]
+    fn track_kinds_arrive_from_the_ui_by_name() {
+        let kind = |name: &str| serde_json::from_value::<TrackKind>(serde_json::json!(name));
+        assert_eq!(kind("synth").unwrap(), TrackKind::Synth);
+        assert_eq!(kind("drums").unwrap(), TrackKind::Drums);
+        assert!(kind("cowbell").is_err());
+    }
+
+    #[test]
+    fn a_duplicated_drum_track_is_named_as_a_drum_track() {
+        let mut uta = offline();
+        let drums = uta.project().tracks[1].id;
+        uta.duplicate_track(drums, TrackId::random()).unwrap();
+        assert_eq!(names(&uta), ["Synth 1", "Drums 1", "Drums 2"]);
+        assert_eq!(
+            uta.project().tracks[2].source,
+            uta.project().tracks[1].source
+        );
+    }
+
+    #[test]
+    fn the_outline_carries_a_drum_tracks_kit() {
+        let mut uta = offline();
+        let SourceView::Drums { kit } = &uta.project().tracks[1].source else {
+            panic!("Drums 1 is a drum track");
+        };
+        // Every row of the kit, bottom to top, as the core defines it.
+        let rows: Vec<_> = kit
+            .rows
+            .iter()
+            .map(|row| (row.sound, row.name, row.pitch))
+            .collect();
+        let expected: Vec<_> = KIT
+            .iter()
+            .map(|row| (row.sound, row.name, row.pitch))
+            .collect();
+        assert_eq!(rows, expected);
+        // Each sound's settings, with their limits and defaults; the
+        // sounds without a circuit yet have none.
+        let kick = &kit.rows[0];
+        assert_eq!(kick.settings.len(), 4);
+        assert_eq!(
+            kick.settings[0],
+            DrumSettingView {
+                param: DrumParam::TuneHz(49.0),
+                limits: (40.0, 80.0),
+                default: 49.0,
+            }
+        );
+        for row in &kit.rows {
+            let params: Vec<_> = KitSettings::default()
+                .params()
+                .into_iter()
+                .filter(|(sound, _)| *sound == row.sound)
+                .map(|(_, param)| param)
+                .collect();
+            let shown: Vec<_> = row.settings.iter().map(|setting| setting.param).collect();
+            assert_eq!(shown, params, "{}", row.name);
+        }
+
+        let json = serde_json::to_value(uta.update().outline).unwrap();
+        let source = &json["tracks"][1]["source"];
+        assert_eq!(source["kind"], "drums");
+        let row = &source["kit"]["rows"][0];
+        assert_eq!(row["sound"], "kick");
+        assert_eq!(row["name"], "Kick");
+        assert_eq!(row["pitch"], 36);
+        assert_eq!(
+            row["settings"][0],
+            serde_json::json!({
+                "name": "tune_hz",
+                "value": 49.0,
+                "limits": [40.0, 80.0],
+                "default": 49.0,
+            })
+        );
+        assert_eq!(source["kit"]["rows"][7]["name"], "Cymbal");
+    }
+
+    #[test]
+    fn a_clip_drag_onto_a_track_of_the_other_kind_is_refused() {
+        let mut uta = offline();
+        let synth_clip = uta.project().tracks[0].clips[0].id;
+        let drums = uta.project().tracks[1].id;
+        let before = uta.project();
+        let error = uta
+            .set_clips(
+                vec![ClipPosition {
+                    id: synth_clip,
+                    track: drums,
+                    start: 0,
+                    length: 4 * 4 * TICKS_PER_QUARTER,
+                }],
+                Some(1),
+            )
+            .unwrap_err();
+        assert!(error.contains("different kind of track"), "{error}");
+        assert_eq!(uta.project(), before);
     }
 
     #[test]
     fn no_more_than_the_most_tracks_are_added() {
         let mut uta = with_tracks(Project::MAX_TRACKS);
-        assert!(uta.add_track(TrackId::random()).is_err());
+        assert!(uta.add_track(TrackId::random(), TrackKind::Synth).is_err());
         let first = first_track(&uta);
         assert!(uta.duplicate_track(first, TrackId::random()).is_err());
         assert_eq!(uta.project().tracks.len(), Project::MAX_TRACKS);
@@ -2252,7 +2485,7 @@ mod tests {
         assert_eq!(names(&uta), ["Synth 1", "Synth 3", "Synth 2"]);
         let (source, copy) = (&view.tracks[0], &view.tracks[1]);
         assert_eq!(copy.id, copy_id, "straight below the original");
-        assert_eq!(copy.synth, source.synth);
+        assert_eq!(copy.source, source.source);
         assert_eq!(copy.mixer, source.mixer);
         assert_eq!(copy.clips.len(), 1);
         let (from, to) = (&source.clips[0], &copy.clips[0]);
@@ -2665,7 +2898,7 @@ mod tests {
     #[test]
     fn adding_a_track_sends_only_its_notes() {
         let mut uta = stress_song();
-        uta.add_track(TrackId::random()).unwrap();
+        uta.add_track(TrackId::random(), TrackKind::Synth).unwrap();
         assert!(uta.update().notes.is_empty(), "a new track has no clips");
 
         let id = TrackId::random();

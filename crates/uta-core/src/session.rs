@@ -189,7 +189,7 @@ mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
     use crate::{
-        Clip, ClipId, ClipPosition, MixerStrip, Note, PlacedTrack, Source, SynthParam,
+        Clip, ClipId, ClipPosition, MixerStrip, Note, PlacedTrack, Source, SourceKind, SynthParam,
         SynthSettings, Track, TrackId, Waveform,
     };
     use proptest::prelude::*;
@@ -752,7 +752,7 @@ mod tests {
         let second = testing::track_id(0);
         let track = Track::new(
             second,
-            session.project().next_track_name(),
+            session.project().next_track_name(SourceKind::Synth),
             Source::Synth(SynthSettings {
                 waveform: Waveform::Sine,
                 ..SynthSettings::default()
@@ -786,7 +786,7 @@ mod tests {
                 tracks: vec![second],
             })
             .unwrap();
-        assert_eq!(session.project().tracks().len(), 1);
+        assert_eq!(session.project().tracks().len(), before.tracks().len() - 1);
         only(session.undo());
         assert_eq!(session.project(), &before);
         assert_eq!(session.project().tracks()[1].id(), second, "in its place");

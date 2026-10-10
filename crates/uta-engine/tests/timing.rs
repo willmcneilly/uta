@@ -9,14 +9,15 @@ mod common;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use common::synth_project;
+
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
     Clip, ClipId, Command, DrumParam, DrumSound, KIT, Note, NoteId, PlacedClip, PlacedTrack,
-    Project, ProjectId, SynthParam, TrackId,
+    Project, SynthParam, TrackId,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
-use uuid::Uuid;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
@@ -74,7 +75,7 @@ impl Load {
 /// clip holding the same 3,000 stress notes. The loop stays on its first 4
 /// bars, which play the same notes as any other 4.
 fn check_7() -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let track = project.tracks()[0].id();
     let first = project.tracks()[0].clips()[0].id();
     project
@@ -115,7 +116,7 @@ fn check_7() -> Project {
 /// 32 tracks, each holding the same 8-note saw chord through the whole
 /// loop at full sustain, centred.
 fn many_tracks() -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let track = project.tracks()[0].id();
     let clip = project.tracks()[0].clips()[0].id();
     let loop_length = project.transport().loop_length();
@@ -156,7 +157,7 @@ fn many_tracks() -> Project {
 /// 32 drum tracks, each hitting every kit note on every 16th of the loop,
 /// with every sound at its longest Decay.
 fn drum_tracks() -> Project {
-    let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+    let mut project = synth_project();
     let synth = project.tracks()[0].id();
     let loop_length = project.transport().loop_length();
     let sixteenth = TICKS_PER_QUARTER / 4;

@@ -774,8 +774,17 @@ mod tests {
     use uta_core::{ClipId, Command, Note, NoteId, ProjectId, SynthParam};
     use uuid::Uuid;
 
+    /// A new project without its drum track: Synth 1 alone, with its empty
+    /// clip. The tests here are about synth tracks.
     fn project() -> Project {
-        Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)))
+        let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+        let drums = project.tracks()[1].id();
+        project
+            .apply(&Command::RemoveTracks {
+                tracks: vec![drums],
+            })
+            .unwrap();
+        project
     }
 
     fn clip(project: &Project) -> ClipId {
@@ -844,13 +853,19 @@ mod tests {
     fn a_new_project_is_an_empty_four_bar_loop_at_the_default_volume() {
         let snapshot = Snapshot::default();
         assert_eq!(snapshot.gain, db_to_gain(Snapshot::DEFAULT_VOLUME_DB));
-        let [track] = snapshot.tracks() else {
-            panic!("one track");
+        let [synth, drums] = snapshot.tracks() else {
+            panic!("a synth track and a drum track");
         };
-        assert_eq!(track.sound, TrackSound::Synth(SynthSettings::default()));
-        assert_eq!(track.mixer, MixerStrip::default());
-        assert_eq!(track.slot(), 0);
-        assert!(track.notes().events().is_empty());
+        assert_eq!(synth.sound, TrackSound::Synth(SynthSettings::default()));
+        assert_eq!(
+            drums.sound,
+            TrackSound::Drums(KitSettings::from(&uta_core::KitSettings::default()))
+        );
+        for (slot, track) in [synth, drums].into_iter().enumerate() {
+            assert_eq!(track.mixer, MixerStrip::default());
+            assert_eq!(track.slot(), slot);
+            assert!(track.notes().events().is_empty());
+        }
         let sequence = &snapshot.sequence;
         assert_eq!(sequence.sample_rate(), DEFAULT_SAMPLE_RATE);
         // 4 bars at 120 BPM is 8 s.

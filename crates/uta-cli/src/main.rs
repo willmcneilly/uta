@@ -584,7 +584,7 @@ mod tests {
         let project = build(json).unwrap();
         assert_eq!(
             describe_project(&project),
-            "28 notes on 1 track in a 2-bar loop at 112 BPM"
+            "28 notes on 2 tracks in a 2-bar loop at 112 BPM"
         );
         // Twice round the loop, which starts at the top: 4 bars of 4/4 at
         // 112 BPM.
@@ -612,7 +612,7 @@ mod tests {
         assert!((default_seconds(&project) - 5.0 * seconds_per_bar).abs() < 1e-4);
         assert_eq!(
             describe_project(&project),
-            "0 notes on 1 track in a 5-bar song at 120 BPM"
+            "0 notes on 2 tracks in a 5-bar song at 120 BPM"
         );
     }
 
@@ -622,7 +622,7 @@ mod tests {
         let project = build(json).unwrap();
         assert_eq!(
             describe_project(&project),
-            "60 notes on 3 tracks in a 4-bar loop at 112 BPM"
+            "60 notes on 4 tracks in a 4-bar loop at 112 BPM"
         );
     }
 

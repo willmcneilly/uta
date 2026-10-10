@@ -123,13 +123,17 @@ impl Renderer {
 
 /// Plays `snapshot` from the top of the song for `seconds`, round the loop
 /// if it's on, then stops and renders the notes' release and the drums'
-/// ring (the longest of any track's), so it ends in silence. With the loop off it stops by itself at
+/// ring (the longest of any track with notes), so it ends in silence. With
+/// the loop off it stops by itself at
 /// the song's end, and anything after that is silent. What `uta render`
 /// writes.
 pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
+    // A track with no notes to play never sounds, so it adds no tail: a new
+    // project's empty drum track doesn't lengthen a synth render.
     let release = snapshot
         .tracks()
         .iter()
+        .filter(|track| !track.notes().events().is_empty())
         .map(|track| track.sound.tail_seconds())
         .fold(0.0, f32::max);
     let tail = f64::from(release) + RELEASE_MARGIN_SECONDS;

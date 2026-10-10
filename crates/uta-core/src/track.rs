@@ -54,8 +54,8 @@ impl Track {
         self.id
     }
 
-    /// The track's name, such as "Synth 2". It's chosen when the track is
-    /// added (see [`crate::Project::next_track_name`]) and stays the same
+    /// The track's name, such as "Synth 2" or "Drums 1". It's chosen when
+    /// the track is added (see [`crate::Project::next_track_name`]) and stays the same
     /// when tracks are reordered or deleted.
     pub fn name(&self) -> &str {
         &self.name
@@ -133,7 +133,33 @@ pub enum Source {
     Drums(KitSettings),
 }
 
+/// Which kind of source a track has. Clips move only between tracks of the
+/// same kind (RFC-003 and RFC-006, "In the project").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SourceKind {
+    Synth,
+    Drums,
+}
+
+impl SourceKind {
+    /// What a track of this kind is called, before its number: "Synth" or
+    /// "Drums".
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Synth => "Synth",
+            Self::Drums => "Drums",
+        }
+    }
+}
+
 impl Source {
+    pub fn kind(&self) -> SourceKind {
+        match self {
+            Self::Synth(_) => SourceKind::Synth,
+            Self::Drums(_) => SourceKind::Drums,
+        }
+    }
+
     /// Checks every setting is in range.
     pub(crate) fn validate(&self) -> Result<(), CommandError> {
         match self {

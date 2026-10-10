@@ -99,7 +99,7 @@ interface ProjectFields {
   maxTracks: number;
 }
 
-/** A track: its name, mixer strip, synth and clips. */
+/** A track: its name, mixer strip, sound and clips. */
 export interface TrackView extends TrackFields {
   /** In order of start, then ID. They may overlap. */
   clips: ClipView[];
@@ -108,10 +108,52 @@ export interface TrackView extends TrackFields {
 /** What a track in the outline and in the project view share. */
 interface TrackFields {
   id: string;
-  /** Such as "Synth 2". It stays the same when tracks move or go. */
+  /** Such as "Synth 2" or "Drums 1". It stays the same when tracks move or go. */
   name: string;
   mixer: MixerView;
-  synth: SynthView;
+  source: SourceView;
+}
+
+/** What makes a track's sound: the synth, or the drum kit. */
+export type SourceView = { kind: "synth"; synth: SynthView } | { kind: "drums"; kit: KitView };
+
+/** Which kind of track to add. */
+export type TrackKind = SourceView["kind"];
+
+/** A drum track's kit. Rust says what its rows are; the UI never assumes them. */
+export interface KitView {
+  /** From the bottom of the piano roll to the top: kick to cymbal. */
+  rows: KitRowView[];
+}
+
+export type DrumSound =
+  | "kick"
+  | "snare"
+  | "clap"
+  | "low_tom"
+  | "high_tom"
+  | "closed_hat"
+  | "open_hat"
+  | "cymbal";
+
+/** One row of the kit: its sound, name, the note that plays it, and the sound's settings. */
+export interface KitRowView {
+  sound: DrumSound;
+  name: string;
+  /** The General MIDI drum note that plays it. */
+  pitch: number;
+  /** In the order of its panel. Empty for a sound that has none yet. */
+  settings: DrumSettingView[];
+}
+
+/** One setting of one drum sound, in that sound's own unit. */
+export interface DrumSettingView {
+  name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db";
+  value: number;
+  /** The limits it has on this sound. */
+  limits: Limits;
+  /** A new drum track's value, which its control resets to. */
+  default: number;
 }
 
 /** A track's volume, pan, mute and solo. */
@@ -247,7 +289,11 @@ export type EditMenuItem = "copy" | "paste" | "duplicate";
 /** Sent with the item's ID when an item is chosen from the Track menu. */
 export const TRACK_MENU = "track-menu";
 
-export type TrackMenuItem = "add-track" | "delete-track" | "duplicate-track";
+export type TrackMenuItem =
+  | "add-synth-track"
+  | "add-drum-track"
+  | "delete-track"
+  | "duplicate-track";
 
 /** Sent with the item's ID when an item is chosen from the Develop menu. */
 export const DEVELOP_MENU = "develop-menu";
@@ -317,9 +363,9 @@ export function soloTrackAlone(track: string): Promise<Update> {
   return invoke<Update>("solo_track_alone", { track });
 }
 
-/** Adds a synth track below the others, with the ID picked here. */
-export function addTrack(id: string): Promise<Update> {
-  return invoke<Update>("add_track", { id });
+/** Adds a synth or drum track below the others, with the ID picked here. */
+export function addTrack(id: string, kind: TrackKind): Promise<Update> {
+  return invoke<Update>("add_track", { id, kind });
 }
 
 /** Adds a copy of `track` below it, with the ID `id`. Rust picks its clips' and notes' IDs. */

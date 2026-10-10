@@ -6,6 +6,9 @@ import { emit } from "@tauri-apps/api/event";
 import type {
   ClipNotes,
   ClipView,
+  DrumSettingView,
+  KitRowView,
+  Limits,
   MixerView,
   NoteView,
   Outline,
@@ -95,7 +98,76 @@ export const SYNTH_DEFAULTS: SynthView = {
 
 /** A track with the default sound and mixer, and `clips`. */
 export function trackView(id: string, name: string, clips: ClipView[] = []): TrackView {
-  return { id, name, mixer: { ...MIXER_DEFAULTS }, synth: { ...SYNTH_DEFAULTS }, clips };
+  return {
+    id,
+    name,
+    mixer: { ...MIXER_DEFAULTS },
+    source: { kind: "synth", synth: { ...SYNTH_DEFAULTS } },
+    clips,
+  };
+}
+
+/** A synth track's settings. */
+export function synthOf(track: TrackView): SynthView {
+  if (track.source.kind !== "synth") throw new Error(`${track.name} isn't a synth track`);
+  return track.source.synth;
+}
+
+/** A setting of a drum sound at its default, as Rust sends it. */
+function setting(name: DrumSettingView["name"], value: number, limits: Limits): DrumSettingView {
+  return { name, value, limits, default: value };
+}
+
+/** The kit's rows as Rust sends them, bottom to top. */
+export const KIT_ROWS: KitRowView[] = [
+  {
+    sound: "kick",
+    name: "Kick",
+    pitch: 36,
+    settings: [
+      setting("tune_hz", 49, [40, 80]),
+      setting("tone", 0.2, [0, 1]),
+      setting("decay_seconds", 0.3, [0.05, 0.8]),
+      setting("level_db", 0, [-60, 6]),
+    ],
+  },
+  {
+    sound: "snare",
+    name: "Snare",
+    pitch: 38,
+    settings: [
+      setting("tune_hz", 180, [140, 260]),
+      setting("tone", 0.16, [0.04, 0.4]),
+      setting("snappy", 0.5, [0, 1]),
+      setting("level_db", 0, [-60, 6]),
+    ],
+  },
+  {
+    sound: "clap",
+    name: "Clap",
+    pitch: 39,
+    settings: [
+      setting("tone", 1000, [700, 2000]),
+      setting("decay_seconds", 0.2, [0.05, 0.4]),
+      setting("level_db", 0, [-60, 6]),
+    ],
+  },
+  { sound: "low_tom", name: "Low tom", pitch: 45, settings: [] },
+  { sound: "high_tom", name: "High tom", pitch: 50, settings: [] },
+  { sound: "closed_hat", name: "Closed hat", pitch: 42, settings: [] },
+  { sound: "open_hat", name: "Open hat", pitch: 46, settings: [] },
+  { sound: "cymbal", name: "Cymbal", pitch: 49, settings: [] },
+];
+
+/** A drum track with the default kit and mixer, and `clips`. */
+export function drumTrackView(id: string, name: string, clips: ClipView[] = []): TrackView {
+  return {
+    id,
+    name,
+    mixer: { ...MIXER_DEFAULTS },
+    source: { kind: "drums", kit: { rows: KIT_ROWS } },
+    clips,
+  };
 }
 
 /** A project with one track, "Synth 1", whose one 4-bar clip holds `notes`. */

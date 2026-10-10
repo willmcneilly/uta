@@ -32,7 +32,9 @@ import {
   Updates,
   announceChange,
   projectView,
+  drumTrackView,
   recordingFactory,
+  synthOf,
   trackView,
   withFirstClipNotes,
 } from "./pianoRoll/testing";
@@ -105,10 +107,12 @@ function changeTrack(id: string, change: (track: TrackView) => TrackView): Proje
   };
 }
 
-/** The name Rust gives a new track: one more than the highest number in use. */
-function nextName(): string {
-  const numbers = project.tracks.map((track) => Number(track.name.replace("Synth ", "")));
-  return `Synth ${Math.max(0, ...numbers) + 1}`;
+/** The next name for a track of `kind`, as Rust picks it: "Synth n" or "Drums n". */
+function nextName(kind: "Synth" | "Drums" = "Synth"): string {
+  const numbers = project.tracks
+    .filter((track) => track.name.startsWith(`${kind} `))
+    .map((track) => Number(track.name.replace(`${kind} `, "")));
+  return `${kind} ${Math.max(0, ...numbers) + 1}`;
 }
 
 // jsdom doesn't lay anything out, so the piano roll is given a size.
@@ -165,7 +169,10 @@ beforeEach(() => {
           const value = param.name === "waveform" ? param.value : Math.fround(param.value);
           project = changeTrack(args.track as string, (track) => ({
             ...track,
-            synth: { ...track.synth, [SYNTH_FIELDS[param.name]]: value },
+            source: {
+              kind: "synth",
+              synth: { ...synthOf(track), [SYNTH_FIELDS[param.name]]: value },
+            },
           }));
           return updates.send(project);
         }
@@ -192,7 +199,12 @@ beforeEach(() => {
           project = {
             ...project,
             canUndo: true,
-            tracks: [...project.tracks, trackView(args.id as string, nextName())],
+            tracks: [
+              ...project.tracks,
+              args.kind === "drums"
+                ? drumTrackView(args.id as string, nextName("Drums"))
+                : trackView(args.id as string, nextName()),
+            ],
           };
           return updates.send(project);
         case "duplicate_track": {
@@ -807,14 +819,17 @@ describe("App", () => {
     it("follows undo and redo, which Rust announces", async () => {
       await renderSound();
       const undone = projectView();
-      undone.tracks[0].synth = {
-        waveform: "square",
-        cutoffHz: 200,
-        resonance: 0.8,
-        attackSeconds: 1,
-        decaySeconds: 0.01,
-        sustain: 0.25,
-        releaseSeconds: 2.5,
+      undone.tracks[0].source = {
+        kind: "synth",
+        synth: {
+          waveform: "square",
+          cutoffHz: 200,
+          resonance: 0.8,
+          attackSeconds: 1,
+          decaySeconds: 0.01,
+          sustain: 0.25,
+          releaseSeconds: 2.5,
+        },
       };
       project = undone;
       await announceChange();
@@ -1057,7 +1072,7 @@ describe("App", () => {
           },
         ]),
         mixer: { volumeDb: -6, pan: -0.5, mute: true, solo: false },
-        synth: { ...first.synth, waveform: "square" },
+        source: { kind: "synth", synth: { ...synthOf(first), waveform: "square" } },
       };
       const third: TrackView = {
         ...trackView("track-3", "Synth 3"),
@@ -1232,10 +1247,11 @@ describe("App", () => {
 
     it("adds a track below the others, and selects it", async () => {
       await renderApp();
-      fireEvent.click(screen.getByRole("button", { name: "+ Add track" }));
+      fireEvent.click(screen.getByRole("button", { name: "+ Synth" }));
       await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2"]));
       const [added] = sent("add_track");
       expect(added.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(added.kind).toBe("synth");
       expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
       expect(header("Synth 1")).not.toHaveAttribute("aria-current");
       expect(screen.getByText("Synth 2 has no clips yet.")).toBeInTheDocument();
@@ -1244,7 +1260,9 @@ describe("App", () => {
     it("can't add more than the most tracks", async () => {
       project = { ...project, maxTracks: 1 };
       await renderApp();
-      expect(screen.getByRole("button", { name: "+ Add track" })).toBeDisabled();
+      const add = within(screen.getByRole("group", { name: "Add track" }));
+      expect(add.getByRole("button", { name: "+ Synth" })).toBeDisabled();
+      expect(add.getByRole("button", { name: "+ Drums" })).toBeDisabled();
     });
 
     it("adds, duplicates and deletes tracks from the Track menu", async () => {
@@ -1272,9 +1290,13 @@ describe("App", () => {
       // The last track's place goes to the one above.
       expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
 
-      await act(() => emit("track-menu", "add-track"));
+      await act(() => emit("track-menu", "add-synth-track"));
       await waitFor(() => expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3"]));
-      expect(sent("add_track")).toHaveLength(1);
+      await act(() => emit("track-menu", "add-drum-track"));
+      await waitFor(() =>
+        expect(headerNames()).toEqual(["Synth 1", "Synth 2", "Synth 3", "Drums 1"]),
+      );
+      expect(sent("add_track").map((added) => added.kind)).toEqual(["synth", "drums"]);
     });
 
     describe("reordering", () => {
@@ -1378,7 +1400,7 @@ describe("App", () => {
 
     it("doesn't select a track again when it comes back after an undo", async () => {
       await renderApp();
-      fireEvent.click(screen.getByRole("button", { name: "+ Add track" }));
+      fireEvent.click(screen.getByRole("button", { name: "+ Synth" }));
       await waitFor(() => expect(header("Synth 2")).toHaveAttribute("aria-current", "true"));
       const withBoth = project;
       project = projectView();
@@ -1394,7 +1416,8 @@ describe("App", () => {
     it("doesn't add a track from the Track menu when the project is full", async () => {
       project = { ...project, maxTracks: 1 };
       await renderApp();
-      await act(() => emit("track-menu", "add-track"));
+      await act(() => emit("track-menu", "add-synth-track"));
+      await act(() => emit("track-menu", "add-drum-track"));
       expect(commands()).not.toContain("add_track");
     });
 

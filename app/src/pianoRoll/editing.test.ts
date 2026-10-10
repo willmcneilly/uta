@@ -17,7 +17,9 @@ import type { PlacedNote } from "./notes";
 import {
   KEYBOARD_WIDTH,
   RULER_HEIGHT,
+  KEYBOARD,
   type Viewport,
+  drumLanes,
   pitchToY,
   tickToX,
   velocityPerPixel,
@@ -32,6 +34,7 @@ const view: Viewport = {
   scrollY: 0,
   pixelsPerTick: 0.1,
   keyHeight: 12,
+  rows: KEYBOARD,
 };
 
 const placed = (id: string, pitch: number, start: number, length: number): PlacedNote => ({
@@ -40,6 +43,7 @@ const placed = (id: string, pitch: number, start: number, length: number): Place
   velocity: 100,
   start,
   length,
+  row: pitch,
   outside: false,
 });
 
@@ -100,46 +104,46 @@ describe("dragging a note", () => {
   const drag = (kind: Drag["kind"], tick = 1000, pitch = 60): Drag => ({ kind, from, tick, pitch });
 
   it("moves in time, snapping the start to the nearest line", () => {
-    expect(dragNote(drag("move"), 1000 + 100, 60, 240, 0)).toEqual({ ...from, start: 960 });
-    expect(dragNote(drag("move"), 1000 + 130, 60, 240, 0)).toEqual({ ...from, start: 1200 });
-    expect(dragNote(drag("move"), 1000 - 500, 60, 240, 0)).toEqual({ ...from, start: 480 });
+    expect(dragNote(drag("move"), 1000 + 100, 60, 240, 0, KEYBOARD)).toEqual({ ...from, start: 960 });
+    expect(dragNote(drag("move"), 1000 + 130, 60, 240, 0, KEYBOARD)).toEqual({ ...from, start: 1200 });
+    expect(dragNote(drag("move"), 1000 - 500, 60, 240, 0, KEYBOARD)).toEqual({ ...from, start: 480 });
   });
 
   it("moves in pitch, within MIDI's 0 to 127", () => {
-    expect(dragNote(drag("move"), 1000, 67, 240, 0)).toEqual({ ...from, pitch: 67 });
-    expect(dragNote(drag("move"), 1000, 200, 240, 0).pitch).toBe(127);
-    expect(dragNote(drag("move"), 1000, -40, 240, 0).pitch).toBe(0);
+    expect(dragNote(drag("move"), 1000, 67, 240, 0, KEYBOARD)).toEqual({ ...from, pitch: 67 });
+    expect(dragNote(drag("move"), 1000, 200, 240, 0, KEYBOARD).pitch).toBe(127);
+    expect(dragNote(drag("move"), 1000, -40, 240, 0, KEYBOARD).pitch).toBe(0);
   });
 
   it("never moves before the clip's start", () => {
-    expect(dragNote(drag("move"), 1000 - 5000, 60, 240, 0).start).toBe(0);
+    expect(dragNote(drag("move"), 1000 - 5000, 60, 240, 0, KEYBOARD).start).toBe(0);
     // A clip starting at bar 2: the note's start stays from the clip's start.
-    expect(dragNote(drag("move"), 1000 - 5000, 60, 240, 3840).start).toBe(0);
-    expect(dragNote(drag("move"), 1000 + 240, 60, 240, 3840).start).toBe(1200);
+    expect(dragNote(drag("move"), 1000 - 5000, 60, 240, 3840, KEYBOARD).start).toBe(0);
+    expect(dragNote(drag("move"), 1000 + 240, 60, 240, 3840, KEYBOARD).start).toBe(1200);
   });
 
   it("moves by whole ticks with snapping off", () => {
-    expect(dragNote(drag("move"), 1000 + 100.4, 60, 1, 0)).toEqual({ ...from, start: 1060 });
+    expect(dragNote(drag("move"), 1000 + 100.4, 60, 1, 0, KEYBOARD)).toEqual({ ...from, start: 1060 });
   });
 
   it("resizes its end, keeping its start, never shorter than a step", () => {
-    expect(dragNote(drag("end"), 1000 + 250, 60, 240, 0)).toEqual({ ...from, length: 720 });
-    expect(dragNote(drag("end"), 1000 - 2000, 60, 240, 0)).toEqual({ ...from, length: 240 });
-    expect(dragNote(drag("end"), 1000 - 2000, 60, 1, 0)).toEqual({ ...from, length: 1 });
+    expect(dragNote(drag("end"), 1000 + 250, 60, 240, 0, KEYBOARD)).toEqual({ ...from, length: 720 });
+    expect(dragNote(drag("end"), 1000 - 2000, 60, 240, 0, KEYBOARD)).toEqual({ ...from, length: 240 });
+    expect(dragNote(drag("end"), 1000 - 2000, 60, 1, 0, KEYBOARD)).toEqual({ ...from, length: 1 });
   });
 
   it("resizes its start, keeping its end, never shorter than a step", () => {
-    expect(dragNote(drag("start"), 1000 - 250, 60, 240, 0)).toEqual({
+    expect(dragNote(drag("start"), 1000 - 250, 60, 240, 0, KEYBOARD)).toEqual({
       ...from,
       start: 720,
       length: 720,
     });
-    expect(dragNote(drag("start"), 1000 + 2000, 60, 240, 0)).toEqual({
+    expect(dragNote(drag("start"), 1000 + 2000, 60, 240, 0, KEYBOARD)).toEqual({
       ...from,
       start: 1200,
       length: 240,
     });
-    expect(dragNote(drag("start"), 1000 - 5000, 60, 240, 0)).toEqual({
+    expect(dragNote(drag("start"), 1000 - 5000, 60, 240, 0, KEYBOARD)).toEqual({
       ...from,
       start: 0,
       length: 1440,
@@ -147,14 +151,14 @@ describe("dragging a note", () => {
   });
 
   it("ignores pitch while resizing", () => {
-    expect(dragNote(drag("end"), 1000, 72, 240, 0).pitch).toBe(60);
-    expect(dragNote(drag("start"), 1000, 72, 240, 0).pitch).toBe(60);
+    expect(dragNote(drag("end"), 1000, 72, 240, 0, KEYBOARD).pitch).toBe(60);
+    expect(dragNote(drag("start"), 1000, 72, 240, 0, KEYBOARD).pitch).toBe(60);
   });
 
   it("drags out a drawn note's length like its end", () => {
     const drawn: Drag = { kind: "draw", from: { ...from, length: 240 }, tick: 1000, pitch: 60 };
-    expect(dragNote(drawn, 1000 + 500, 60, 240, 0).length).toBe(720);
-    expect(dragNote(drawn, 1000 - 500, 60, 240, 0).length).toBe(240);
+    expect(dragNote(drawn, 1000 + 500, 60, 240, 0, KEYBOARD).length).toBe(720);
+    expect(dragNote(drawn, 1000 - 500, 60, 240, 0, KEYBOARD).length).toBe(240);
   });
 
   it("compares every value of two notes", () => {
@@ -180,7 +184,7 @@ describe("moving several notes", () => {
 
   it("moves them all by the dragged note's snapped move", () => {
     // "b" goes from 960 to 1300, and snaps to 1200: 240 later, 2 up.
-    expect(moveNotes(group, drag, 1340, 66, 240, 0)).toEqual([
+    expect(moveNotes(group, drag, 1340, 66, 240, 0, KEYBOARD)).toEqual([
       n("a", 62, 720),
       n("b", 66, 1200),
       n("c", 69, 2160),
@@ -188,15 +192,15 @@ describe("moving several notes", () => {
   });
 
   it("stops the move where the earliest would pass the clip's start", () => {
-    const moved = moveNotes(group, drag, 0, 64, 240, 0);
+    const moved = moveNotes(group, drag, 0, 64, 240, 0, KEYBOARD);
     expect(moved.map((note) => note.start)).toEqual([0, 480, 1440]);
   });
 
   it("stops the move where any would go off the keyboard", () => {
-    expect(moveNotes(group, drag, 1000, 127, 240, 0).map((note) => note.pitch)).toEqual([
+    expect(moveNotes(group, drag, 1000, 127, 240, 0, KEYBOARD).map((note) => note.pitch)).toEqual([
       120, 124, 127,
     ]);
-    expect(moveNotes(group, drag, 1000, 0, 240, 0).map((note) => note.pitch)).toEqual([0, 4, 7]);
+    expect(moveNotes(group, drag, 1000, 0, 240, 0, KEYBOARD).map((note) => note.pitch)).toEqual([0, 4, 7]);
   });
 
   it("moves one note as dragging it alone does", () => {
@@ -206,8 +210,8 @@ describe("moving several notes", () => {
       [-500, 60],
       [500, 200],
     ]) {
-      expect(moveNotes([group[0]], one, tick, pitch, 240, 3840)).toEqual([
-        dragNote(one, tick, pitch, 240, 3840),
+      expect(moveNotes([group[0]], one, tick, pitch, 240, 3840, KEYBOARD)).toEqual([
+        dragNote(one, tick, pitch, 240, 3840, KEYBOARD),
       ]);
     }
   });
@@ -271,7 +275,7 @@ describe("resizing several notes", () => {
       const one: Drag = { kind, from: group[1], tick: 2000, pitch: 60 };
       for (const tick of [100, 1500, 2600, 5000]) {
         expect(resizeNotes([group[1]], one, tick, 240, 0)).toEqual([
-          dragNote(one, tick, 60, 240, 0),
+          dragNote(one, tick, 60, 240, 0, KEYBOARD),
         ]);
       }
     }
@@ -289,15 +293,15 @@ describe("moving notes by pitch", () => {
   const chord = [n("a", 60), n("b", 64), n("c", 67)];
 
   it("moves every note by the same number of semitones", () => {
-    expect(transposeNotes(chord, 12)).toEqual([n("a", 72), n("b", 76), n("c", 79)]);
-    expect(transposeNotes(chord, -1)).toEqual([n("a", 59), n("b", 63), n("c", 66)]);
+    expect(transposeNotes(chord, 12, KEYBOARD)).toEqual([n("a", 72), n("b", 76), n("c", 79)]);
+    expect(transposeNotes(chord, -1, KEYBOARD)).toEqual([n("a", 59), n("b", 63), n("c", 66)]);
   });
 
   it("stops where any note would go off the keyboard", () => {
     const high = [n("a", 120), n("b", 124)];
-    expect(transposeNotes(high, 12).map((note) => note.pitch)).toEqual([123, 127]);
+    expect(transposeNotes(high, 12, KEYBOARD).map((note) => note.pitch)).toEqual([123, 127]);
     const low = [n("a", 5), n("b", 9)];
-    expect(transposeNotes(low, -12).map((note) => note.pitch)).toEqual([0, 4]);
+    expect(transposeNotes(low, -12, KEYBOARD).map((note) => note.pitch)).toEqual([0, 4]);
   });
 });
 
@@ -349,5 +353,50 @@ describe("velocity bars", () => {
     const notes = [{ id: "a", pitch: 60, velocity: 100, start: 0, length: 240 }];
     expect(dragVelocities(view, notes, 1000)[0].velocity).toBe(127);
     expect(dragVelocities(view, notes, -1000)[0].velocity).toBe(1);
+  });
+});
+
+describe("moving notes between drum lanes", () => {
+  // Bottom to top, with the notes out of order, as a kit's are.
+  const kit = drumLanes([
+    { name: "Kick", pitch: 36 },
+    { name: "Snare", pitch: 38 },
+    { name: "Low tom", pitch: 45 },
+    { name: "Closed hat", pitch: 42 },
+  ]);
+  const n = (id: string, pitch: number, start = 0): NoteView => ({
+    id,
+    pitch,
+    velocity: 100,
+    start,
+    length: 240,
+  });
+
+  it("drags a note a lane at a time, from one sound to the next", () => {
+    const from = n("snare", 38);
+    const drag: Drag = { kind: "move", from, tick: 0, pitch: 38 };
+    expect(dragNote(drag, 0, 45, 240, 0, kit).pitch).toBe(45);
+    expect(dragNote(drag, 0, 42, 240, 0, kit).pitch).toBe(42);
+    expect(dragNote(drag, 0, 36, 240, 0, kit).pitch).toBe(36);
+  });
+
+  it("moves a group by lanes, stopping where any would pass the top or bottom", () => {
+    const group = [n("kick", 36), n("snare", 38, 240)];
+    const drag: Drag = { kind: "move", from: group[1], tick: 0, pitch: 38 };
+    // Pointer on the top lane: the snare goes up two lanes, so the kick does too.
+    expect(moveNotes(group, drag, 0, 42, 240, 0, kit).map((note) => note.pitch)).toEqual([
+      45, 42,
+    ]);
+    // Down one lane would take the kick off the bottom.
+    expect(moveNotes(group, drag, 0, 36, 240, 0, kit).map((note) => note.pitch)).toEqual([
+      36, 38,
+    ]);
+  });
+
+  it("moves a lane with each arrow press, and an octave's worth stops at the edge", () => {
+    const group = [n("kick", 36), n("tom", 45)];
+    expect(transposeNotes(group, 1, kit).map((note) => note.pitch)).toEqual([38, 42]);
+    expect(transposeNotes(group, 12, kit).map((note) => note.pitch)).toEqual([38, 42]);
+    expect(transposeNotes(group, -1, kit).map((note) => note.pitch)).toEqual([36, 45]);
   });
 });

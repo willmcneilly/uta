@@ -8,7 +8,7 @@ import { spacing } from "../design/tokens";
 export const RULER_HEIGHT = spacing.rulerHeight;
 /** Each track's row, and its header, are this tall, so the two line up. */
 export const TRACK_HEIGHT = spacing.trackHeight;
-/** The space below the last track, where the headers have **+ Add track**. */
+/** The space below the last track, where the headers have **+ Synth** and **+ Drums**. */
 export const ADD_TRACK_HEIGHT = spacing.addTrackHeight;
 
 /** At 960 ticks a quarter: 128 bars fit in about 1000 px. */

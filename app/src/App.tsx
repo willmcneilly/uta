@@ -10,6 +10,7 @@ import {
   type OutputView,
   type ProjectView,
   type SynthParam,
+  type TrackKind,
   type TrackView,
   type Update,
   addClip,
@@ -354,11 +355,11 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     setSelectedClipIds([]);
   };
 
-  const newTrack = () => {
+  const newTrack = (kind: TrackKind) => {
     // The Track menu's Add is disabled then too, but its shortcut may beat the update.
     if (!project || project.tracks.length >= project.maxTracks) return;
     const id = crypto.randomUUID();
-    addTrack(id).then(showAndSelect(id), report);
+    addTrack(id, kind).then(showAndSelect(id), report);
   };
 
   const moveTrackTo = (id: string, index: number) => {
@@ -368,7 +369,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // The Track and Develop menus act on the selected track and the clip in
   // the Notes tab. The listeners read the latest of them.
   const menuActions = {
-    "add-track": newTrack,
+    "add-synth-track": () => newTrack("synth"),
+    "add-drum-track": () => newTrack("drums"),
     "duplicate-track": () => {
       if (!track) return;
       const id = crypto.randomUUID();
@@ -612,20 +614,27 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           aria-labelledby={`tab-${tab}`}
         >
           {!project || !track ? (
-            <p className="empty">No track selected. Add one with + Add track.</p>
+            <p className="empty">No track selected. Add one with + Synth or + Drums.</p>
           ) : tab === "sound" ? (
-            <SynthPanel
-              synth={track.synth}
-              limits={project.synthLimits}
-              defaults={project.synthDefaults}
-              sampleRate={status?.output.sampleRate ?? null}
-              onChange={changeSynth}
-            />
+            track.source.kind === "synth" ? (
+              <SynthPanel
+                synth={track.source.synth}
+                limits={project.synthLimits}
+                defaults={project.synthDefaults}
+                sampleRate={status?.output.sampleRate ?? null}
+                onChange={changeSynth}
+              />
+            ) : (
+              <p className="empty">
+                The drum panel is coming. For now, play the kit from its labels on the Notes tab.
+              </p>
+            )
           ) : clip ? (
             <PianoRoll
               ref={pianoRoll}
               project={project}
               clip={clip}
+              lanes={track.source.kind === "drums" ? track.source.kit.rows : undefined}
               editor={editor}
               clock={clock}
               frames={frames}
