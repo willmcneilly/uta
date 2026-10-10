@@ -270,6 +270,25 @@ impl From<&uta_core::KitSettings> for KitSettings {
     }
 }
 
+/// How long the sounds smooth every envelope edge over, so even an instant
+/// attack is a fast curve: about the 808 cymbal's attack (Werner).
+const EDGE_SECONDS: f64 = 0.1e-3;
+
+/// How much a decay of 40 dB is in time constants: ln(100).
+const LN_100: f64 = 4.605_170_185_988_091;
+
+/// The time constant for a decay of 40 dB in `decay_seconds`, as its log, so
+/// it glides evenly.
+fn log_tau(decay_seconds: f32) -> f32 {
+    (f64::from(decay_seconds) / LN_100).ln() as f32
+}
+
+/// The multiplier a sample for an exponential decay with time constant
+/// `tau_seconds`.
+fn decay_per_sample(tau_seconds: f64, sample_rate: f64) -> f64 {
+    (-1.0 / (tau_seconds * sample_rate)).exp()
+}
+
 /// Samples for a setting to glide, at `sample_rate`.
 fn smoothing_samples(sample_rate: f64) -> u32 {
     (DRUM_SMOOTHING_SECONDS * sample_rate).round().max(1.0) as u32

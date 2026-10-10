@@ -38,19 +38,19 @@ fn one_clap(params: &[(DrumSound, DrumParam)], velocity: u8, seconds: f64) -> Ve
 
 // The bursts.
 
-/// The clap's first `seconds`, as the average of 16 hits: each sample is the
+/// The clap's first `seconds`, as the average of 32 hits: each sample is the
 /// RMS of that sample across them. Each hit catches the kit's noise at a
 /// different point, and noise through a narrow band-pass has so few
 /// independent swings in a couple of milliseconds that one hit's level
-/// wavers by several dB from the noise alone; averaging 16 steadies it to
+/// wavers by several dB from the noise alone; averaging 32 steadies it to
 /// about a dB, so the envelope underneath shows.
 fn average_clap(params: &[(DrumSound, DrumParam)], velocity: u8, seconds: f64) -> Vec<f32> {
-    const HITS: usize = 16;
+    const HITS: usize = 32;
     let hits = (0..HITS)
         .map(|i| hit(i as u128, CLAP, velocity, i as u64 * BEAT))
         .collect();
     // A hit every beat at 120 BPM: each has died away before the next.
-    let samples = render_drums(&drum_project(120.0, 4, params, hits), 8.0, 128);
+    let samples = render_drums(&drum_project(120.0, 8, params, hits), 16.0, 128);
     let length = self::seconds(seconds);
     (0..length)
         .map(|n| {
@@ -67,9 +67,11 @@ fn average_clap(params: &[(DrumSound, DrumParam)], velocity: u8, seconds: f64) -
 /// dB (measured), so each stands out by more than 6 dB from the 5 ms either
 /// side of it, and the tail swells too smoothly to make a burst of its own.
 /// Measured: four bursts, loudest about 1 ms after they start at 0, 10, 20
-/// and 30 ms, at every Tone and Decay and every velocity from 64 up. 8 to 12
-/// ms apart allows for what's left of the noise moving each one's loudest
-/// point.
+/// and 30 ms, at every Tone and Decay and every velocity from 64 up. With
+/// some other noise seeds, at the narrowest band-pass (700 Hz) the first
+/// burst, which has no tail under it yet, doesn't stand out by 6 dB, and
+/// three are found. 8 to 12 ms apart allows for what's left of the noise
+/// moving each one's loudest point.
 #[test]
 fn the_clap_is_three_or_four_bursts_10_ms_apart() {
     let cases: [(&str, Vec<(DrumSound, DrumParam)>); 5] = [
@@ -88,7 +90,6 @@ fn the_clap_is_three_or_four_bursts_10_ms_apart() {
                 .collect();
             let what = format!("{what}, velocity {velocity}: bursts at {bursts:?}");
             assert!((3..=4).contains(&bursts.len()), "{what}");
-            assert!(bursts[0] < 0.004, "{what}");
             for pair in bursts.windows(2) {
                 let gap = pair[1] - pair[0];
                 assert!((0.008..=0.012).contains(&gap), "{what}");
@@ -115,9 +116,10 @@ fn one_burst_is_not_a_clap() {
 /// Decay sets how long the tail rings. Measured from 50 ms in, after the
 /// bursts, to 40 dB under the tail's loudest point there, it comes out a
 /// little short of the setting, as the tail has already begun to fall by
-/// then: 0.08 s at 0.1 and 0.37 s at 0.4. So within 20% of it from 0.1 s up
-/// (at 0.05 s, the first 50 ms are most of it), and doubling Decay doubles
-/// it, within 20%.
+/// then: 0.08 s at 0.1 and 0.37 s at 0.4. So within 20% of it from 0.1 s up.
+/// Doubling Decay doubles it, within 20%, except from 0.05 s, where the
+/// first 50 ms are most of the tail and what's left is short enough for the
+/// noise to move it: up to 2.5 times with other noise seeds, so 2.7.
 #[test]
 fn decay_lengthens_the_tail() {
     let measured: Vec<f64> = [0.05, 0.1, 0.2, 0.4]
@@ -139,7 +141,7 @@ fn decay_lengthens_the_tail() {
     assert!(
         measured
             .windows(2)
-            .all(|pair| (1.6..2.4).contains(&(pair[1] / pair[0]))),
+            .all(|pair| (1.6..2.7).contains(&(pair[1] / pair[0]))),
         "{measured:?}"
     );
 }
@@ -150,7 +152,8 @@ fn decay_lengthens_the_tail() {
 /// at every step. The centroid sits far above the band-pass itself, in the
 /// kHz range: a band-pass's skirts fall slowly, and there are many more
 /// hertz above 1 kHz than below. Measured: from 3.9 kHz at 700 Hz to 5.2 kHz
-/// at 2 kHz, at least 5% a step.
+/// at 2 kHz. The smallest step, 700 Hz to 1 kHz, is 7% with this noise and
+/// down to 4% with others, so at least 3% a step.
 #[test]
 fn tone_brightens_the_clap() {
     let centroids: Vec<f64> = [700.0, 1000.0, 1400.0, 2000.0]
@@ -158,7 +161,7 @@ fn tone_brightens_the_clap() {
         .map(|tone| spectral_centroid(&one_clap(&[clap(DrumParam::Tone(tone))], 100, 1.0), RATE))
         .collect();
     assert!(
-        centroids.windows(2).all(|pair| pair[1] > pair[0] * 1.05),
+        centroids.windows(2).all(|pair| pair[1] > pair[0] * 1.03),
         "{centroids:?}"
     );
 }
@@ -192,14 +195,16 @@ fn a_harder_hit_is_brighter_not_just_louder() {
 
 /// Velocity 100 is an unaccented hit, and 127 a full accent, through the
 /// kit's shared curve: the accent peaks at the kit's reference level, give
-/// or take the noise, and the unaccented hit 9 to 14 dB under it (10.5 dB
+/// or take the noise (whose peaks are up to 3 dB either way of it, measured
+/// over several noise seeds), and the unaccented hit 9 to 14 dB under it (10.5 dB
 /// from the strength, and its band-pass sits lower, where it passes a little
 /// less of the noise).
 #[test]
 fn velocity_100_is_unaccented_and_127_a_full_accent() {
     let accent = peak(&one_clap(&[], 127, 0.5));
     let unaccented = peak(&one_clap(&[], 100, 0.5));
-    assert!((accent - REFERENCE_PEAK).abs() < 0.08, "{accent}");
+    let from_reference = 20.0 * (accent / REFERENCE_PEAK).log10();
+    assert!(from_reference.abs() < 3.5, "{from_reference:.1} dB");
     let below = 20.0 * (accent / unaccented).log10();
     assert!((9.0..14.0).contains(&below), "{below:.1} dB");
 }
@@ -209,9 +214,11 @@ fn velocity_100_is_unaccented_and_127_a_full_accent() {
 /// A clap is noise through a band-pass, and noise is nothing but steps: at
 /// its centre a band-passed noise can swing from one peak most of the way to
 /// the other in a sample. So its steepest step is the noise's: measured, up
-/// to half its peak (at Tone 2 kHz). This catches only steps bigger than the
-/// noise's own: a burst whose edge isn't smoothed doesn't step further than
-/// the noise does.
+/// to half its peak (at Tone 2 kHz). It catches steps bigger than the
+/// noise's own, which a burst whose edge isn't smoothed does make: with the
+/// edge smoothing taken out, this test, the repeats and the control turns
+/// all fail. A level that jumps without gliding can hide inside the noise's
+/// steps; `every_control_glides_in` is the check for that.
 const HIT_STEP_LIMIT: f32 = 0.7;
 
 #[test]
@@ -330,13 +337,35 @@ fn turning_the_controls_while_it_rings_does_not_click() {
     }
 }
 
+/// Every control glides in when it's turned while the clap rings, rather
+/// than jumping: compared with the same render without the turn (the noise
+/// runs the same in both), the turn makes little of its difference in the
+/// first tenth of the 20 ms glide. A jump in Tone or Level hides inside the
+/// noise's own steps, so the click limits can't see it, and this does. (A
+/// jump in Decay would change how fast the tail falls, not its level, so it
+/// couldn't click; it's checked anyway.)
+#[test]
+fn every_control_glides_in() {
+    let glide = seconds(uta_engine::DRUM_SMOOTHING_SECONDS);
+    // 48 ms in, in the tail after the bursts.
+    let at = 18 * 128;
+    let base = [clap(DrumParam::DecaySeconds(0.4))];
+    for (what, param) in [
+        ("Tone", DrumParam::Tone(2000.0)),
+        ("Decay", DrumParam::DecaySeconds(0.05)),
+        ("Level", DrumParam::LevelDb(6.0)),
+    ] {
+        let difference = turn_difference(CLAP, &base, clap(param), at, 0.3);
+        assert_glides(&difference, glide, what);
+    }
+}
+
 // The kit's noise.
 
 /// The snare and the clap take their noise from the kit's one noise source,
 /// as on the 909: it runs a sample at a time whatever is playing, so hit
-/// together, they sound exactly as each does alone, added. Neither takes
-/// noise from the other, and both hear the same noise at the same moment
-/// (the 909's "phasing" when they play together).
+/// together, they sound exactly as each does alone, added, and neither takes
+/// noise from the other.
 #[test]
 fn the_snare_and_clap_together_are_each_alone_added() {
     let render = |pitches: &[u8]| {
@@ -351,6 +380,42 @@ fn the_snare_and_clap_together_are_each_alone_added() {
     let added: Vec<f32> = snare.iter().zip(&clap).map(|(a, b)| a + b).collect();
     assert!(peak(&both) > 0.5);
     assert!(max_difference(&both, &added) < 1e-6);
+}
+
+/// And they hear the same noise at the same moment: hit at once, with their
+/// filters overlapping (the snare's wires alone at its lowest Tune, 1.4 to
+/// 4.9 kHz, and the clap's band-pass at 2 kHz), the two move together.
+/// Measured, their correlation over 100 ms of ring is about 0.6. Two
+/// separate noises would measure near 0: give or take about 0.1 over that
+/// many independent swings.
+#[test]
+fn the_snare_and_clap_hear_the_same_noise() {
+    let params = [
+        (DrumSound::Snare, DrumParam::Snappy(1.0)),
+        (DrumSound::Snare, DrumParam::TuneHz(140.0)),
+        (DrumSound::Snare, DrumParam::Tone(0.4)),
+        clap(DrumParam::Tone(2000.0)),
+        clap(DrumParam::DecaySeconds(0.4)),
+    ];
+    let render = |pitch| {
+        let project = drum_project(120.0, 1, &params, vec![hit(0, pitch, 127, BEAT)]);
+        render_drums(&project, 1.0, 128)
+    };
+    let (snare, clap) = (render(SNARE), render(CLAP));
+    let ring = seconds(0.55)..seconds(0.65);
+    let correlation = correlation(&snare[ring.clone()], &clap[ring]);
+    assert!(correlation > 0.3, "correlation {correlation:.2}");
+}
+
+/// The correlation of two signals, from -1 to 1.
+fn correlation(a: &[f32], b: &[f32]) -> f64 {
+    let dot = |x: &[f32], y: &[f32]| {
+        x.iter()
+            .zip(y)
+            .map(|(&p, &q)| f64::from(p) * f64::from(q))
+            .sum::<f64>()
+    };
+    dot(a, b) / (dot(a, a) * dot(b, b)).sqrt()
 }
 
 /// Once it has died away, a clap stops: a render of one hit ends in exact

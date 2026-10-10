@@ -29,8 +29,8 @@
 //! - **The noise is the kit's,** shared with the snare, as on the 909.
 //! - **Times are in seconds,** so it sounds the same at any sample rate.
 
-use crate::drums::ClapSettings;
 use crate::drums::filter::{OnePole, Svf, prewarp};
+use crate::drums::{ClapSettings, EDGE_SECONDS, decay_per_sample, log_tau};
 use crate::ramp::Ramp;
 
 /// When each burst starts, after the hit, in seconds: three 10 ms apart,
@@ -53,8 +53,6 @@ const BRIGHTER_OCTAVES: f64 = 0.4;
 const UNACCENTED: f64 = 0.3;
 /// How fast the band-pass follows a new hit's strength, so it never jumps.
 const BRIGHTNESS_SECONDS: f64 = 0.002;
-/// Smooths every envelope edge.
-const EDGE_SECONDS: f64 = 0.1e-3;
 /// The output level that puts a default clap at full accent at the kit's
 /// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
 /// the `the_clap_at_full_accent_peaks_at_the_reference` test.
@@ -62,8 +60,6 @@ const OUTPUT_GAIN: f32 = 1.6034;
 /// Below this, summed over its envelopes, the clap has died away and stops
 /// doing work: far under anything audible.
 const SILENT: f64 = 1.0e-6;
-/// How much a decay of 40 dB is in time constants: ln(100).
-const LN_100: f64 = 4.605_170_185_988_091;
 
 /// The clap's controls, as they glide.
 #[derive(Debug, Clone, Copy)]
@@ -301,21 +297,9 @@ impl Clap {
     }
 }
 
-/// The multiplier a sample for an exponential decay with time constant
-/// `tau_seconds`.
-fn decay_per_sample(tau_seconds: f64, sample_rate: f64) -> f64 {
-    (-1.0 / (tau_seconds * sample_rate)).exp()
-}
-
 /// The coefficient of a one-pole smoother with time constant `seconds`.
 fn smoothing(seconds: f64, sample_rate: f64) -> f64 {
     1.0 - decay_per_sample(seconds, sample_rate)
-}
-
-/// The tail's time constant for a decay of 40 dB in `decay_seconds`, as its
-/// log.
-fn log_tau(decay_seconds: f32) -> f32 {
-    (f64::from(decay_seconds) / LN_100).ln() as f32
 }
 
 #[cfg(test)]

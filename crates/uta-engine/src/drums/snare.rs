@@ -43,8 +43,8 @@
 //! - **Times are in seconds,** so it sounds the same at any sample rate.
 //! - Plaits' "sustain" mode is left out: Uta's drums are one-shots.
 
-use crate::drums::SnareSettings;
 use crate::drums::filter::{OnePole, Svf, prewarp};
+use crate::drums::{EDGE_SECONDS, LN_100, SnareSettings, decay_per_sample};
 use crate::ramp::Ramp;
 
 /// Plaits' FM amount at its Harmonics 0.5: 0.5².
@@ -68,8 +68,6 @@ const MAX_HOLD_SECONDS: f64 = 0.07;
 /// How far a soft hit tilts the wires down against the shell: at full
 /// accent they're Plaits' level, and at the softest, 40% under it.
 const SOFT_WIRES: f64 = 0.4;
-/// Smooths every envelope edge.
-const EDGE_SECONDS: f64 = 0.1e-3;
 /// The output level that puts a default snare at full accent at the kit's
 /// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
 /// the `the_snare_at_full_accent_peaks_at_the_reference` test.
@@ -77,8 +75,6 @@ const OUTPUT_GAIN: f32 = 0.6322;
 /// Below this, summed over its envelopes, the snare has died away and stops
 /// doing work: far under anything audible (its envelopes start at up to 1).
 const SILENT: f64 = 1.0e-6;
-/// How much a decay of 40 dB is in time constants: ln(100).
-const LN_100: f64 = 4.605_170_185_988_091;
 
 /// The snare's controls, as they glide.
 #[derive(Debug, Clone, Copy)]
@@ -401,12 +397,6 @@ impl Snare {
 fn distorted_sine(phase: f64) -> f64 {
     let triangle = (if phase < 0.5 { phase } else { 1.0 - phase }) * 4.0 - 1.3;
     2.0 * triangle / (1.0 + triangle.abs())
-}
-
-/// The multiplier a sample for an exponential decay with time constant
-/// `tau_seconds`.
-fn decay_per_sample(tau_seconds: f64, sample_rate: f64) -> f64 {
-    (-1.0 / (tau_seconds * sample_rate)).exp()
 }
 
 #[cfg(test)]

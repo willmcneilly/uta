@@ -46,7 +46,7 @@
 
 use std::f64::consts::PI;
 
-use crate::drums::KickSettings;
+use crate::drums::{KickSettings, log_tau};
 use crate::ramp::Ramp;
 
 /// How long the trigger pulse lasts (Q39 / Q40).
@@ -96,9 +96,6 @@ const OUTPUT_GAIN: f32 = 0.6695;
 /// doing work. Far under anything audible (its loudest internal swings are
 /// around 1), and well above the slow "denormal" numbers.
 const SILENT: f64 = 1.0e-7;
-
-/// How much a decay of 40 dB is in time constants: ln(100).
-const LN_100: f64 = 4.605_170_185_988_091;
 
 /// The kick's controls, as they glide.
 #[derive(Debug, Clone, Copy)]
@@ -432,12 +429,6 @@ fn tan(x: f64) -> f64 {
 #[inline]
 fn one_pole(cutoff_hz: f64, sample_rate: f64) -> f64 {
     1.0 - (-2.0 * PI * cutoff_hz / sample_rate).exp()
-}
-
-/// The resonator's time constant for a decay of 40 dB in `decay_seconds`, as
-/// its log.
-fn log_tau(decay_seconds: f32) -> f32 {
-    (f64::from(decay_seconds) / LN_100).ln() as f32
 }
 
 #[cfg(test)]

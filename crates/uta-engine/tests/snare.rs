@@ -205,14 +205,16 @@ fn a_harder_hit_is_brighter_not_just_louder() {
 
 /// Velocity 100 is an unaccented hit, and 127 a full accent, through the
 /// kit's shared curve: the accent peaks at the kit's reference level, give
-/// or take the noise (which is somewhere else in its run each time), and the
+/// or take the noise (whose peaks are up to 3 dB either way of it, measured
+/// over several noise seeds), and the
 /// unaccented hit 8 to 12 dB under it (the 909's accent is about 11 dB, as
 /// the 808's 4 V to 14 V is, and the wires tilt down a little more).
 #[test]
 fn velocity_100_is_unaccented_and_127_a_full_accent() {
     let accent = peak(&one_snare(&[], 127, 0.5));
     let unaccented = peak(&one_snare(&[], 100, 0.5));
-    assert!((accent - REFERENCE_PEAK).abs() < 0.05, "{accent}");
+    let from_reference = 20.0 * (accent / REFERENCE_PEAK).log10();
+    assert!(from_reference.abs() < 3.5, "{from_reference:.1} dB");
     let below = 20.0 * (accent / unaccented).log10();
     assert!((8.0..12.0).contains(&below), "{below:.1} dB");
 }
@@ -227,9 +229,11 @@ const SHELL_STEP_LIMIT: f32 = 0.1;
 /// Noise is nothing but steps: at the top of its band it can swing from one
 /// peak to the other in a sample or two. So with the wires in, the snare's
 /// steepest step is the noise's: measured, up to 1.2 times its peak (on the
-/// softest hits, where the crack's noise is most of the sound). This
-/// catches only steps bigger than the noise's own; the shell's limit is the
-/// one that catches a click in the drum.
+/// softest hits, where the crack's noise is most of the sound). It catches
+/// steps bigger than the noise's own, as unsmoothed envelope edges make:
+/// with the edge smoothing taken out, this test and the flams fail. A
+/// setting that jumps without gliding can hide inside the noise's steps;
+/// `every_control_glides_in` is the check for that.
 const WIRES_STEP_LIMIT: f32 = 1.5;
 
 #[test]
@@ -402,6 +406,31 @@ fn turning_the_controls_while_it_rings_does_not_click() {
             _ => lone_step(&base),
         };
         assert_no_click(samples, ringing_limit(loudest, what == "Snappy"), what);
+    }
+}
+
+/// Every control glides in when it's turned while the snare rings, rather
+/// than jumping: compared with the same render without the turn (the noise
+/// runs the same in both), the turn makes little of its difference in the
+/// first tenth of the 20 ms glide. Unlike a jump in the sound, a jump in
+/// Snappy or Level hides inside the noise's own steps, so the click limits
+/// can't see it, and this does. (A jump in Tone would change how fast the
+/// wires fall, not their level, so it couldn't click; it's checked anyway.)
+#[test]
+fn every_control_glides_in() {
+    let glide = seconds(uta_engine::DRUM_SMOOTHING_SECONDS);
+    // 32 ms in, during the wires' hold.
+    let at = 12 * 128;
+    let base = [snare(DrumParam::Tone(0.4))];
+    for (what, param) in [
+        ("Tune", DrumParam::TuneHz(260.0)),
+        ("Tone", DrumParam::Tone(0.04)),
+        ("Snappy up", DrumParam::Snappy(1.0)),
+        ("Snappy down", DrumParam::Snappy(0.0)),
+        ("Level", DrumParam::LevelDb(6.0)),
+    ] {
+        let difference = turn_difference(SNARE, &base, snare(param), at, 0.3);
+        assert_glides(&difference, glide, what);
     }
 }
 

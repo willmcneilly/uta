@@ -150,6 +150,64 @@ pub fn one_hit(
     render_drums(&project, seconds, 128)
 }
 
+/// How a drum setting change sounds, against the same render without it:
+/// one hit on `pitch` at the top of a bar with the kit settings in `base`,
+/// and `turn` applied at sample `at` (a whole number of 128-sample blocks).
+/// Returns the change's difference: `with` minus `without`, sample by sample,
+/// from `at` on. The kit's noise runs the same in both, so the difference is
+/// the turn alone.
+pub fn turn_difference(
+    pitch: u8,
+    base: &[(DrumSound, DrumParam)],
+    turn: (DrumSound, DrumParam),
+    at: usize,
+    seconds: f64,
+) -> Vec<f32> {
+    assert_eq!(at % 128, 0, "turns land on a block boundary");
+    let mut project = drum_project(60.0, 1, base, vec![hit(0, pitch, 127, 0)]);
+    let without = render_drums(&project, seconds, 128);
+    let config = uta_engine::EngineConfig {
+        sample_rate: 48_000,
+        channels: 1,
+    };
+    let mut renderer =
+        uta_engine::offline::Renderer::new(config, uta_engine::Snapshot::from(&project), 128);
+    renderer.controller.play().unwrap();
+    renderer.render(at);
+    project
+        .apply(&Command::SetDrumParam {
+            track: drum_track(),
+            sound: turn.0,
+            param: turn.1,
+        })
+        .unwrap();
+    renderer.controller.set_project(&project).unwrap();
+    renderer.render_seconds(seconds - at as f64 / 48_000.0);
+    let with = renderer.into_samples();
+    assert_eq!(&with[..at], &without[..at]);
+    with[at..]
+        .iter()
+        .zip(&without[at..])
+        .map(|(a, b)| a - b)
+        .collect()
+}
+
+/// Fails unless a change glides in: in the first tenth of its glide, a
+/// setting that glides has moved a tenth of the way, so the difference it
+/// makes (see [`turn_difference`]) is still small. A setting that jumps
+/// makes its whole difference at once. `glide` is the glide's length in
+/// samples.
+pub fn assert_glides(difference: &[f32], glide: usize, what: &str) {
+    let early = peak(&difference[..glide / 10]);
+    let full = peak(&difference[..2 * glide]);
+    assert!(full > 1e-4, "{what}: the turn changed nothing");
+    assert!(
+        early < 0.3 * full,
+        "{what}: {:.0}% of its difference in the first tenth of the glide",
+        100.0 * early / full
+    );
+}
+
 /// Fails if `samples` jump from one sample to the next by more than `limit`.
 pub fn assert_no_click(samples: &[f32], limit: f32, what: &str) {
     let (jump, at) = max_jump(samples);
