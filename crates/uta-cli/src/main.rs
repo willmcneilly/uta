@@ -1,6 +1,7 @@
 //! The `uta` command. `render` writes a project to a WAV without a sound
-//! device; `play` plays it through the default output, round the loop until
-//! Ctrl-C or to the song's end. Both build the project from a command list
+//! device; `render-all` does the same for every command list in a folder;
+//! `play` plays it through the default output, round the loop until Ctrl-C
+//! or to the song's end. They build the project from a command list
 //! (`--commands`).
 
 use std::io::Write;
@@ -45,6 +46,15 @@ enum Command {
         #[arg(long)]
         no_loop: bool,
     },
+    /// Render every command list in a folder (each `.json` file in it), to a
+    /// WAV of the same name in another, as `render` would with its defaults.
+    /// For the listening renders in `examples/listen/`.
+    RenderAll {
+        /// The folder of JSON command lists, such as `examples/listen/kick`.
+        commands: PathBuf,
+        /// The folder to write the WAVs to. It's created if it isn't there.
+        out: PathBuf,
+    },
     /// Play the project through the default output: round the loop until
     /// Ctrl-C, or with the loop off (or starting after it) to the end of the
     /// song. Follows the output when you switch, unplug or replug it.
@@ -78,6 +88,7 @@ fn main() -> ExitCode {
         } => {
             load(commands.as_deref(), no_loop).and_then(|project| render(&project, &file, seconds))
         }
+        Command::RenderAll { commands, out } => render_all(&commands, &out),
         Command::Play {
             commands,
             buffer,
@@ -162,6 +173,43 @@ fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), St
         file.display()
     );
     Ok(())
+}
+
+/// Renders every `.json` command list in `commands` to a WAV of the same
+/// name in `out`, in name order. Stops at the first that fails.
+fn render_all(commands: &Path, out: &Path) -> Result<(), String> {
+    let mut lists = command_lists(commands)?;
+    lists.sort();
+    if lists.is_empty() {
+        return Err(format!("no .json command lists in {}", commands.display()));
+    }
+    std::fs::create_dir_all(out)
+        .map_err(|error| format!("couldn't create {}: {error}", out.display()))?;
+    for list in &lists {
+        let project = load(Some(list), false)?;
+        let name = list.file_stem().expect("a .json file has a name");
+        render(&project, &out.join(name).with_extension("wav"), None)?;
+    }
+    Ok(())
+}
+
+/// The `.json` files in `folder`.
+fn command_lists(folder: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = std::fs::read_dir(folder)
+        .map_err(|error| format!("couldn't read {}: {error}", folder.display()))?;
+    let mut lists = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|error| format!("couldn't read {}: {error}", folder.display()))?
+            .path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
+        {
+            lists.push(path);
+        }
+    }
+    Ok(lists)
 }
 
 /// A one-line summary: the tracks, notes, tempo, and the loop or the song's
@@ -576,6 +624,26 @@ mod tests {
             describe_project(&project),
             "60 notes on 3 tracks in a 4-bar loop at 112 BPM"
         );
+    }
+
+    /// Every listening render builds, and `render-all` finds them all.
+    #[test]
+    fn the_kick_listening_lists_build() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/kick");
+        let lists = command_lists(&folder).unwrap();
+        assert!(lists.len() >= 9, "{lists:?}");
+        for list in lists {
+            let project = load(Some(&list), false).unwrap();
+            assert!(default_seconds(&project) > 1.0, "{}", list.display());
+        }
+    }
+
+    #[test]
+    fn render_all_needs_a_folder_of_lists() {
+        let empty = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let error = render_all(&empty, Path::new("unused")).unwrap_err();
+        assert!(error.starts_with("no .json command lists"), "{error}");
+        assert!(render_all(Path::new("no/such/folder"), Path::new("unused")).is_err());
     }
 
     #[test]

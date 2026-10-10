@@ -72,9 +72,23 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":3,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
+        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":4,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
         let list: CommandList = serde_json::from_str(json).unwrap();
         assert_eq!(list.commands, [Command::SetTempo { bpm: 100.0 }]);
         assert_eq!(serde_json::to_string(&list).unwrap(), json);
+    }
+
+    /// A list written in format 3 loads, and saved again in format 4 it
+    /// builds exactly the same project.
+    #[test]
+    fn a_format_3_list_loads_and_builds_the_same_in_format_4() {
+        let json = include_str!("../../../examples/demo-song.json");
+        assert!(json.contains(r#""format": 3"#), "the demo song is format 3");
+        let list: CommandList = serde_json::from_str(json).unwrap();
+        let resaved = serde_json::to_string(&list).unwrap();
+        assert!(resaved.contains(r#""format":4"#));
+        let again: CommandList = serde_json::from_str(&resaved).unwrap();
+        assert_eq!(again, list);
+        assert_eq!(again.build().unwrap(), list.build().unwrap());
     }
 }

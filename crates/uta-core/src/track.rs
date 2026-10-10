@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::time::{MAX_TICKS, Ticks};
-use crate::{ClipId, CommandError, NoteId, SynthSettings, TrackId};
+use crate::{ClipId, CommandError, DrumSound, KitSettings, NoteId, SynthSettings, TrackId};
 
 /// A chain that makes sound: a source, then effects, then a mixer strip.
 /// It holds the clips that play through it.
@@ -128,6 +128,38 @@ impl Track {
 pub enum Source {
     /// The built-in synth. Plugins come later.
     Synth(SynthSettings),
+    /// The drum machine: the fixed kit (see [`crate::KIT`]), with its
+    /// settings. See RFC-006.
+    Drums(KitSettings),
+}
+
+impl Source {
+    /// Checks every setting is in range.
+    pub(crate) fn validate(&self) -> Result<(), CommandError> {
+        match self {
+            Self::Synth(settings) => settings
+                .validate()
+                .map_err(CommandError::SynthParamOutOfRange),
+            Self::Drums(kit) => kit
+                .validate()
+                .map_err(|(sound, param, _)| CommandError::DrumParamOutOfRange { sound, param }),
+        }
+    }
+
+    /// Checks `note` can play here. A synth plays any pitch, but a drum
+    /// track only takes the kit's notes, so a note can never sit hidden and
+    /// silent on it. See RFC-006, "In the project".
+    pub(crate) fn check_note(&self, note: &Note) -> Result<(), CommandError> {
+        match self {
+            Self::Drums(_) if DrumSound::at_pitch(note.pitch).is_none() => {
+                Err(CommandError::NoteOffKit {
+                    note: note.id,
+                    pitch: note.pitch,
+                })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// An effect on a track. There are none yet, so an effects list is always

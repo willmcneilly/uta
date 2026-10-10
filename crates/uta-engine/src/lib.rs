@@ -10,6 +10,7 @@
 //!   to [`offline::Renderer`] for rendering without a device.
 
 mod control;
+mod drums;
 pub mod live;
 mod mixer;
 pub mod offline;
@@ -19,6 +20,9 @@ mod snapshot;
 mod synth;
 
 pub use control::{Controller, NoteError, QueueFull, VolumeError};
+pub use drums::{
+    DRUM_SMOOTHING_SECONDS, KickSettings, KitSettings, REFERENCE_PEAK, velocity_to_strength,
+};
 pub use mixer::MixerStrip;
 pub use processor::{
     FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, TRACK_BUFFER_FRAMES,
@@ -26,7 +30,7 @@ pub use processor::{
 };
 pub use snapshot::{
     ClipNotes, NoteEvent, NoteEventKind, NoteSpan, Sequence, Snapshot, SoundingNotes, TrackNotes,
-    TrackSnapshot, db_to_gain,
+    TrackSnapshot, TrackSound, db_to_gain,
 };
 pub use synth::{
     NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
@@ -40,8 +44,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 
 /// How many tracks can play at once: each has its own slot on the audio
-/// thread, with its own voices, set aside when the stream starts. See RFC-003,
-/// "Tracks".
+/// thread, with its own voices and its own kit, set aside when the stream
+/// starts, so a slot can play either kind of track. See RFC-003, "Tracks",
+/// and RFC-006, "In the engine".
 pub const TRACK_SLOTS: usize = uta_core::Project::MAX_TRACKS;
 // Sets of slots are sent as a `u32` bitmask.
 const _: () = assert!(TRACK_SLOTS <= 32);
@@ -75,8 +80,8 @@ pub enum Command {
     Locate(uta_core::time::Ticks),
     /// Swap in a new "what to play" snapshot at the start of the next block.
     SetSnapshot(Box<Snapshot>),
-    /// Start a note on the synth of the track in `slot`, whether or not the
-    /// transport is playing.
+    /// Start a note on the track in `slot`, whether or not the transport is
+    /// playing: on its synth, or a hit on its kit.
     NoteOn {
         slot: usize,
         key: NoteKey,
@@ -125,8 +130,8 @@ pub struct Status {
     pub sample_rate: u32,
     /// How many snapshots have been swapped in so far.
     pub snapshots: u64,
-    /// The slots with a voice still sounding, as a bitmask (bit `n` is slot
-    /// `n`).
+    /// The slots with a voice or a drum still sounding, as a bitmask (bit
+    /// `n` is slot `n`).
     pub sounding_slots: u32,
 }
 

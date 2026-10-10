@@ -14,7 +14,7 @@ app/src-tauri         the app's Rust side (crate `uta-app`)
 DESIGN.md             design tokens and the reasons for them (generates app/src/design/tokens.*)
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
-examples              command lists for `uta render/play --commands`
+examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
 .github/workflows     CI
 ```
 
@@ -39,6 +39,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # the `uta` command: offline render
 cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
+cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report
 cargo test -p uta-core --release --test timing -- --ignored --nocapture     # copy-on-write timing report

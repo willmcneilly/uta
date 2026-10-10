@@ -11,11 +11,12 @@ use rtrb::{Consumer, Producer};
 use uta_core::TrackId;
 use uta_core::time::Ticks;
 
+use crate::drums::Kit;
 use crate::ramp::Ramp;
 use crate::synth::{NoteOn, Synth, VOICES};
 use crate::{
-    COMMAND_CAPACITY, Command, NoteEventKind, Snapshot, Status, SynthSettings, TRACK_SLOTS,
-    TrackNotes, TrackSnapshot,
+    COMMAND_CAPACITY, Command, KitSettings, NoteEventKind, Snapshot, Status, SynthSettings,
+    TRACK_SLOTS, TrackNotes, TrackSnapshot, TrackSound,
 };
 
 /// How long the output takes to fade out before a stream is replaced, and
@@ -90,9 +91,13 @@ pub struct Processor {
     swaps: u64,
 }
 
-/// One track's place on the audio thread: its voices, its place in its
-/// events, its gains and its buffer. See RFC-003, "The shared model,
+/// One track's place on the audio thread: its voices, its kit, its place in
+/// its events, its gains and its buffer. See RFC-003, "The shared model,
 /// extended", point 4.
+///
+/// Every slot has both a synth and a kit, built when the processor is, so it
+/// can play either kind of track. Notes go to whichever its track has. The
+/// other may still be sounding from the slot's last track, and plays out.
 ///
 /// Like the voices, everything here is a plain value, never a reference into
 /// the snapshot, so nothing on the audio thread shares ownership of snapshot
@@ -102,6 +107,9 @@ struct Slot {
     /// slot whose track is gone keeps playing its last notes' releases.
     track: Option<TrackId>,
     synth: Synth,
+    kit: Kit,
+    /// Whether its track is a drum track, so notes are hits on the kit.
+    drums: bool,
     /// The next event in its track's events: every event before it is
     /// earlier than the playhead.
     bookmark: usize,
@@ -109,7 +117,8 @@ struct Slot {
     budget: usize,
     /// The track's gain for the left and right, from its mixer strip.
     gains: [Ramp; 2],
-    /// The synth's output for the part of the block being rendered.
+    /// The synth's and kit's output for the part of the block being
+    /// rendered.
     buffer: [f32; TRACK_BUFFER_FRAMES],
     /// The loudest sample since status was last delivered, after the gains.
     peak: f32,
@@ -117,10 +126,20 @@ struct Slot {
 
 impl Slot {
     fn new(track: Option<&TrackSnapshot>, soloing: bool, sample_rate: f64) -> Self {
-        let synth = track.map_or_else(SynthSettings::default, |track| track.synth);
+        let sound = track.map(|track| track.sound);
+        let synth = match sound {
+            Some(TrackSound::Synth(settings)) => settings,
+            _ => SynthSettings::default(),
+        };
+        let kit = match sound {
+            Some(TrackSound::Drums(kit)) => kit,
+            _ => KitSettings::default(),
+        };
         Self {
             track: track.map(TrackSnapshot::id),
             synth: Synth::new(synth, sample_rate),
+            kit: Kit::new(kit, sample_rate),
+            drums: matches!(sound, Some(TrackSound::Drums(_))),
             bookmark: 0,
             budget: MAX_NOTE_EVENTS_PER_BLOCK,
             gains: gain_ramps(track, soloing, sample_rate),
@@ -133,39 +152,74 @@ impl Slot {
     fn load(&mut self, track: Option<&TrackSnapshot>, soloing: bool) {
         let Some(track) = track else {
             // The track is gone: its notes release and fade out here, and
-            // the control side doesn't hand the slot on until they have.
+            // its drums ring out. The control side doesn't hand the slot on
+            // until they have.
             if self.track.take().is_some() {
                 self.synth.release_all();
             }
             return;
         };
         let gains = track.mixer.gains(soloing);
-        if self.track == Some(track.id()) || self.synth.is_sounding() {
-            if self.track != Some(track.id()) {
-                // A new track while another's notes still sound here: they
-                // fade out quickly, and the sound and gains glide.
-                self.synth.fade_out();
-                self.track = Some(track.id());
+        let same_track = self.track == Some(track.id());
+        let sounding = self.synth.is_sounding() || self.kit.is_sounding();
+        if !same_track && self.synth.is_sounding() {
+            // A new track while another's notes still sound here: they fade
+            // out quickly. Another track's drums just ring out.
+            self.synth.fade_out();
+        }
+        self.track = Some(track.id());
+        self.drums = matches!(track.sound, TrackSound::Drums(_));
+        // The track's synth or kit glides to its settings if it's the same
+        // track, or it's still sounding. Otherwise it starts with them, even
+        // if the other is still sounding here: a synth note mustn't start
+        // part-way through a glide from another track's waveform.
+        match track.sound {
+            TrackSound::Synth(settings) if same_track || self.synth.is_sounding() => {
+                self.synth.set_settings(settings);
             }
-            self.synth.set_settings(track.synth);
-            for (ramp, gain) in self.gains.iter_mut().zip(gains) {
+            TrackSound::Synth(settings) => self.synth.load(settings),
+            TrackSound::Drums(kit) if same_track || self.kit.is_sounding() => {
+                self.kit.set_settings(kit);
+            }
+            TrackSound::Drums(kit) => self.kit.load(kit),
+        }
+        // The gains glide if anything in the slot is sounding.
+        for (ramp, gain) in self.gains.iter_mut().zip(gains) {
+            if same_track || sounding {
                 ramp.set_target(gain);
-            }
-        } else {
-            // A new track in a silent slot starts with its own sound.
-            self.track = Some(track.id());
-            self.synth.load(track.synth);
-            for (ramp, gain) in self.gains.iter_mut().zip(gains) {
+            } else {
                 ramp.jump_to(gain);
             }
         }
+    }
+
+    /// Plays a note start from the sequencer or a live note: a note on the
+    /// synth, or a hit on the kit.
+    fn note_on(&mut self, note: NoteOn) {
+        if self.drums {
+            self.kit.hit(note.pitch, note.velocity);
+        } else {
+            self.synth.note_on(note);
+        }
+    }
+
+    /// Whether anything in the slot is sounding.
+    fn is_sounding(&self) -> bool {
+        self.synth.is_sounding() || self.kit.is_sounding()
     }
 
     /// Starts every note in `notes` already under way at `playhead`, with an
     /// ordinary note on, up to the slot's budget. The rest are skipped and
     /// counted in `dropped`. Each ends at its own end event. See RFC-003,
     /// "Playing a song" (note chasing).
+    ///
+    /// Drum tracks don't chase: starting in the middle of a drum note
+    /// doesn't play the hit late, because that sounds wrong. See RFC-006,
+    /// "In the engine".
     fn chase(&mut self, notes: &TrackNotes, playhead: u64, dropped: &mut u64) {
+        if self.drums {
+            return;
+        }
         let mut sounding = notes.sounding_at(playhead);
         // Bounded by the budget.
         for note in sounding.by_ref().take(self.budget) {
@@ -198,12 +252,14 @@ impl Slot {
                     key,
                     pitch,
                     velocity,
-                } => self.synth.note_on(NoteOn {
+                } => self.note_on(NoteOn {
                     key,
                     pitch,
                     velocity,
                     sequenced: true,
                 }),
+                // Drum notes are one-shots: their ends do nothing.
+                NoteEventKind::Off { .. } if self.drums => {}
                 NoteEventKind::Off { key } => self.synth.note_off(key),
             }
             self.bookmark += 1;
@@ -222,10 +278,19 @@ impl Slot {
     /// A start in step 2 that doesn't get a voice is counted in `dropped`:
     /// only notes the voices can't hold are. Bounded by the voices, plus a
     /// few binary searches.
+    ///
+    /// A drum track skips the events due instead: its hits are one-shots, so
+    /// there's nothing to release, and a late hit sounds wrong. Every event
+    /// skipped is counted in `dropped`, ends too. One binary search.
     fn catch_up(&mut self, notes: &TrackNotes, playhead: u64, dropped: &mut u64) {
         let events = notes.events();
         let due = self.bookmark
             + events[self.bookmark..].partition_point(|event| event.sample <= playhead);
+        if self.drums {
+            *dropped += (due - self.bookmark) as u64;
+            self.bookmark = due;
+            return;
+        }
         // Ends sort before starts on the same sample, so the starts on the
         // playhead are the last of the events due. A start before it that's
         // still due was missed, and step 3 finds its note.
@@ -288,12 +353,23 @@ impl Slot {
         });
     }
 
-    /// Renders the synth into the buffer, then adds it to `left` and `right`
-    /// through the track's gains. At most [`TRACK_BUFFER_FRAMES`] frames.
+    /// Renders the synth and the kit into the buffer, then adds it to `left`
+    /// and `right` through the track's gains. At most
+    /// [`TRACK_BUFFER_FRAMES`] frames. Whichever of them isn't sounding does
+    /// no work, beyond its settings' glide.
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let buffer = &mut self.buffer[..left.len()];
-        for sample in buffer.iter_mut() {
-            *sample = self.synth.next_sample();
+        if self.synth.is_sounding() || !self.drums {
+            for sample in buffer.iter_mut() {
+                *sample = self.synth.next_sample();
+            }
+        } else {
+            buffer.fill(0.0);
+        }
+        if self.kit.is_sounding() || self.drums {
+            for sample in buffer.iter_mut() {
+                *sample += self.kit.next_sample();
+            }
         }
         let [left_gain, right_gain] = &mut self.gains;
         let mut peak = self.peak;
@@ -394,6 +470,7 @@ impl Processor {
             let track = self.snapshot.track_in(index);
             slot.gains = gain_ramps(track, soloing, sample_rate);
             slot.synth.prepare(sample_rate);
+            slot.kit.prepare(sample_rate);
         }
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
@@ -555,9 +632,16 @@ impl Processor {
     /// bound for the loop's end if the loop is on and `playhead` is before
     /// it, and for the song's end otherwise. See RFC-003, "Playing a song",
     /// and open question 1.
+    ///
+    /// Each kit's free-running parts restart from the same point, so what
+    /// you hear from a place is what a render plays from there. See
+    /// RFC-006, resolved open question 3.
     fn play_from(&mut self, playhead: u64) {
         let sequence = &self.snapshot.sequence;
         self.looping = sequence.loop_enabled() && playhead < sequence.loop_samples().end;
+        for slot in self.slots.iter_mut() {
+            slot.kit.restart();
+        }
         self.start_from(playhead);
     }
 
@@ -659,7 +743,7 @@ impl Processor {
         left.fill(0.0);
         right.fill(0.0);
         for slot in self.slots.iter_mut() {
-            if slot.track.is_some() || slot.synth.is_sounding() {
+            if slot.track.is_some() || slot.is_sounding() {
                 slot.render(left, right);
             }
         }
@@ -769,7 +853,7 @@ impl Processor {
                     if let Some(slot) = self.slots.get_mut(slot)
                         && slot.track.is_some()
                     {
-                        slot.synth.note_on(NoteOn {
+                        slot.note_on(NoteOn {
                             key,
                             pitch,
                             velocity,
@@ -801,7 +885,7 @@ impl Processor {
         let mut sounding_slots = 0u32;
         for (index, slot) in self.slots.iter().enumerate() {
             track_peaks[index] = slot.peak;
-            if slot.synth.is_sounding() {
+            if slot.is_sounding() {
                 sounding_slots |= 1 << index;
             }
         }

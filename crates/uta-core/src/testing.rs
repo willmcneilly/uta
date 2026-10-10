@@ -4,8 +4,9 @@ use proptest::prelude::*;
 use uuid::Uuid;
 
 use crate::{
-    Clip, ClipId, ClipPosition, Command, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack,
-    Project, ProjectId, Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, KIT, KitSettings, MixerStrip, Note,
+    NoteId, PlacedClip, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings, Track,
+    TrackId, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -104,16 +105,35 @@ fn any_synth_settings() -> impl Strategy<Value = SynthSettings> {
     })
 }
 
+/// Valid kit settings: the defaults with a few settings changed.
+fn any_kit_settings() -> impl Strategy<Value = KitSettings> {
+    prop::collection::vec(any_drum_param(), 0..3).prop_map(|params| {
+        let mut kit = KitSettings::default();
+        for (sound, param) in params {
+            let _ = kit.set(sound, param);
+        }
+        kit
+    })
+}
+
+/// A synth or, now and then, a drum kit.
+fn any_source() -> impl Strategy<Value = Source> {
+    prop_oneof![
+        3 => any_synth_settings().prop_map(Source::Synth),
+        1 => any_kit_settings().prop_map(Source::Drums),
+    ]
+}
+
 fn any_track() -> impl Strategy<Value = Track> {
     (
         (0u128..6).prop_map(track_id),
-        prop_oneof![20 => (1u32..6).prop_map(|n| format!("Synth {n}")), 1 => Just(String::new())],
-        any_synth_settings(),
+        prop_oneof![20 => (1u32..6).prop_map(|n| format!("Track {n}")), 1 => Just(String::new())],
+        any_source(),
         any_mixer(),
         prop::collection::vec(any_clip(), 0..2),
     )
-        .prop_map(|(id, name, settings, mixer, clips)| {
-            Track::new(id, name, Source::Synth(settings))
+        .prop_map(|(id, name, source, mixer, clips)| {
+            Track::new(id, name, source)
                 .with_mixer(mixer)
                 .with_clips(clips)
         })
@@ -133,7 +153,8 @@ fn one_or_two<T: std::fmt::Debug + Clone>(
 fn any_note() -> impl Strategy<Value = Note> {
     (
         pooled_note_id(),
-        prop_oneof![30 => 0u8..=127, 1 => 128u8..=255],
+        // The kit's notes often, so drum tracks get notes too.
+        prop_oneof![20 => 0u8..=127, 10 => prop::sample::select(KIT.map(|row| row.pitch).to_vec()), 1 => 128u8..=255],
         prop_oneof![30 => 1u8..=127, 1 => Just(0u8), 1 => 128u8..=255],
         // Some past the 4-bar clip's end.
         0u64..20_000,
@@ -168,6 +189,23 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
     ]
 }
 
+/// A drum setting for any sound: mostly the kick's, which has settings,
+/// with values a bit wider than its limits, so some are rejected.
+fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
+    let sound = prop_oneof![
+        8 => Just(DrumSound::Kick),
+        1 => prop::sample::select(KIT.map(|row| row.sound).to_vec()),
+    ];
+    let param = prop_oneof![
+        (35.0f32..85.0).prop_map(DrumParam::TuneHz),
+        (-0.1f32..1.1).prop_map(DrumParam::Tone),
+        (0.0f32..1.0).prop_map(DrumParam::DecaySeconds),
+        (-70.0f32..10.0).prop_map(DrumParam::LevelDb),
+        Just(DrumParam::TuneHz(f32::NAN)),
+    ];
+    (sound, param)
+}
+
 /// Any command against [`project`], across several tracks and clips:
 /// mostly valid, some rejected, and now and then aimed at a clip or track
 /// that doesn't exist. Tracks and clips come from small pools, so later
@@ -195,6 +233,7 @@ pub fn any_command() -> impl Strategy<Value = Command> {
             .prop_map(|bpm| Command::SetTempo { bpm }),
         1 => (0u32..=20).prop_map(|bars| Command::SetLoopLength { bars }),
         1 => (any_track_id(), any_synth_param()).prop_map(|(track, param)| Command::SetSynthParam { track, param }),
+        1 => (any_track_id(), any_drum_param()).prop_map(|(track, (sound, param))| Command::SetDrumParam { track, sound, param }),
         // Mostly at the top, which is always in range.
         4 => one_or_two((prop_oneof![3 => Just(0usize), 1 => 0usize..4], any_track()).prop_map(|(index, track)| PlacedTrack { index, track }))
             .prop_map(|tracks| Command::AddTracks { tracks }),
@@ -257,7 +296,7 @@ mod tests {
                 .map(|clip| clip.notes().len())
                 .sum::<usize>();
         }
-        assert_eq!(applied.len(), 16, "every kind of command applies");
+        assert_eq!(applied.len(), 17, "every kind of command applies");
         assert!(most_tracks >= 5, "at most {most_tracks} tracks");
         assert!(most_clips >= 5, "at most {most_clips} clips");
         assert!(notes_elsewhere > 0);
