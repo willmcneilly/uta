@@ -412,6 +412,17 @@ fn the_toms_match_their_golden_wav() {
     check_golden("toms", config(), &list.build().unwrap());
 }
 
+/// The cymbal's groove from its listening renders: a crash, a ride on the
+/// beats, soft hits and a ghost, round a 1-bar loop. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
+#[test]
+fn the_cymbal_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/listen/cymbal/09-groove.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("cymbal", config(), &list.build().unwrap());
+}
+
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.

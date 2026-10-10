@@ -6,10 +6,9 @@
 //! track. Every circuit is plain numbers and keeps running between hits: a
 //! hit adds energy to it, never restarts it. Drum notes are one-shots: the
 //! end of a note does nothing.
-//!
-//! The sound without a circuit yet (the cymbal, for now) is silent.
 
 mod clap;
+mod cymbal;
 mod filter;
 mod hats;
 mod kick;
@@ -20,6 +19,7 @@ mod snare;
 mod tom;
 
 use clap::Clap;
+use cymbal::Cymbal;
 use hats::Hats;
 use kick::Kick;
 use metal::Metal;
@@ -77,6 +77,7 @@ pub struct KitSettings {
     pub open_hat: OpenHatSettings,
     pub low_tom: LowTomSettings,
     pub high_tom: HighTomSettings,
+    pub cymbal: CymbalSettings,
 }
 
 impl KitSettings {
@@ -106,7 +107,10 @@ impl KitSettings {
             .decay_seconds
             .max(self.high_tom.clamped().decay_seconds)
             * 1.5;
-        kick.max(snare).max(clap).max(hats).max(toms)
+        // The cymbal's low band is its longest, and its mid band's long
+        // envelope follows it, well under it.
+        let cymbal = self.cymbal.clamped().decay_seconds * 1.5;
+        kick.max(snare).max(clap).max(hats).max(toms).max(cymbal)
     }
 }
 
@@ -507,6 +511,57 @@ impl From<&uta_core::HighTomSettings> for HighTomSettings {
     }
 }
 
+/// The 808 cymbal's settings. Its Tune is the closed hat's. See
+/// `uta_core::CymbalSettings`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CymbalSettings {
+    /// How bright it is, mainly its high band's level, [`Self::TONE`].
+    pub tone: f32,
+    /// The seconds its low band takes to die away by 40 dB,
+    /// [`Self::DECAY_SECONDS`].
+    pub decay_seconds: f32,
+    /// Its level, in dB, [`LEVEL_DB`].
+    pub level_db: f32,
+}
+
+impl CymbalSettings {
+    pub const TONE: std::ops::RangeInclusive<f32> =
+        uta_core::CymbalSettings::MIN_TONE..=uta_core::CymbalSettings::MAX_TONE;
+    pub const DECAY_SECONDS: std::ops::RangeInclusive<f32> =
+        uta_core::CymbalSettings::MIN_DECAY_SECONDS..=uta_core::CymbalSettings::MAX_DECAY_SECONDS;
+
+    /// These settings with every value inside its range. A value that isn't
+    /// a number takes its default.
+    pub fn clamped(self) -> Self {
+        let default = Self::default();
+        Self {
+            tone: clamp(self.tone, Self::TONE, default.tone),
+            decay_seconds: clamp(
+                self.decay_seconds,
+                Self::DECAY_SECONDS,
+                default.decay_seconds,
+            ),
+            level_db: clamp(self.level_db, LEVEL_DB, default.level_db),
+        }
+    }
+}
+
+impl Default for CymbalSettings {
+    fn default() -> Self {
+        Self::from(&uta_core::CymbalSettings::default())
+    }
+}
+
+impl From<&uta_core::CymbalSettings> for CymbalSettings {
+    fn from(settings: &uta_core::CymbalSettings) -> Self {
+        Self {
+            tone: settings.tone,
+            decay_seconds: settings.decay_seconds,
+            level_db: settings.level_db,
+        }
+    }
+}
+
 impl From<&uta_core::KitSettings> for KitSettings {
     fn from(kit: &uta_core::KitSettings) -> Self {
         Self {
@@ -517,6 +572,7 @@ impl From<&uta_core::KitSettings> for KitSettings {
             open_hat: OpenHatSettings::from(&kit.open_hat),
             low_tom: LowTomSettings::from(&kit.low_tom),
             high_tom: HighTomSettings::from(&kit.high_tom),
+            cymbal: CymbalSettings::from(&kit.cymbal),
         }
     }
 }
@@ -560,9 +616,11 @@ pub(crate) struct Kit {
     hats: Hats,
     low_tom: Tom,
     high_tom: Tom,
+    cymbal: Cymbal,
     /// The noise the snare, the clap and the toms share.
     noise: Noise,
-    /// The metal the hats filter, tuned by the closed hat's Tune.
+    /// The metal the hats and the cymbal filter, tuned by the closed hat's
+    /// Tune.
     metal: Metal,
 }
 
@@ -580,6 +638,7 @@ impl Kit {
             clap: Clap::new(settings.clap, sample_rate),
             low_tom: Tom::new(TomKind::Low, settings.low_tom.tom(), sample_rate),
             high_tom: Tom::new(TomKind::High, settings.high_tom.tom(), sample_rate),
+            cymbal: Cymbal::new(settings.cymbal, sample_rate),
             metal: metal(hats.tune_hz(), sample_rate),
             hats,
             noise: Noise::new(),
@@ -595,6 +654,7 @@ impl Kit {
         self.hats.prepare(sample_rate);
         self.low_tom.prepare(sample_rate);
         self.high_tom.prepare(sample_rate);
+        self.cymbal.prepare(sample_rate);
         self.noise.restart();
         self.metal = metal(self.hats.tune_hz(), sample_rate);
     }
@@ -608,6 +668,7 @@ impl Kit {
         self.hats.load(settings.closed_hat, settings.open_hat);
         self.low_tom.load(settings.low_tom.tom());
         self.high_tom.load(settings.high_tom.tom());
+        self.cymbal.load(settings.cymbal);
         self.metal.load_tune(self.hats.tune_hz());
     }
 
@@ -620,11 +681,12 @@ impl Kit {
             .set_settings(settings.closed_hat, settings.open_hat);
         self.low_tom.set_settings(settings.low_tom.tom());
         self.high_tom.set_settings(settings.high_tom.tom());
+        self.cymbal.set_settings(settings.cymbal);
         self.metal.set_tune(self.hats.tune_hz());
     }
 
-    /// Hits the sound `pitch` plays, at `velocity`. A pitch off the kit, or
-    /// a sound without a circuit yet, does nothing.
+    /// Hits the sound `pitch` plays, at `velocity`. A pitch off the kit does
+    /// nothing.
     pub(crate) fn hit(&mut self, pitch: u8, velocity: u8) {
         let strength = velocity_to_strength(velocity);
         match DrumSound::at_pitch(pitch) {
@@ -635,7 +697,8 @@ impl Kit {
             Some(DrumSound::OpenHat) => self.hats.hit_open(strength),
             Some(DrumSound::LowTom) => self.low_tom.hit(strength),
             Some(DrumSound::HighTom) => self.high_tom.hit(strength),
-            _ => {}
+            Some(DrumSound::Cymbal) => self.cymbal.hit(strength),
+            None => {}
         }
     }
 
@@ -651,12 +714,17 @@ impl Kit {
     /// oscillators start from the same point whenever it has died away, so
     /// none of them is touched.
     ///
-    /// The metal restarts too. If the hats are ringing, it crossfades to
-    /// its restarted self over a few milliseconds, since its square waves
-    /// jumping would make the hats click.
+    /// The metal restarts too. If the hats or the cymbal are ringing, it
+    /// crossfades to its restarted self over a few milliseconds, since its
+    /// square waves jumping would make them click.
     pub(crate) fn restart(&mut self) {
         self.noise.restart();
-        self.metal.restart(self.hats.is_sounding());
+        self.metal.restart(self.metal_heard());
+    }
+
+    /// Whether anything is listening to the metal.
+    fn metal_heard(&self) -> bool {
+        self.hats.is_sounding() || self.cymbal.is_sounding()
     }
 
     /// Whether any sound is ringing, or about to.
@@ -667,6 +735,7 @@ impl Kit {
             || self.hats.is_sounding()
             || self.low_tom.is_sounding()
             || self.high_tom.is_sounding()
+            || self.cymbal.is_sounding()
     }
 
     /// The next sample: every sound, added together. A sound that has died
@@ -674,7 +743,7 @@ impl Kit {
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         let noise = self.noise.next_sample();
-        let metal = if self.hats.is_sounding() {
+        let metal = if self.metal_heard() {
             self.metal.next_sample()
         } else {
             self.metal.skip();
@@ -686,6 +755,7 @@ impl Kit {
             + self.hats.next_sample(metal)
             + self.low_tom.next_sample(noise)
             + self.high_tom.next_sample(noise)
+            + self.cymbal.next_sample(metal)
     }
 }
 
@@ -741,6 +811,20 @@ mod tests {
         assert!(!kit.is_sounding());
         kit.restart();
         assert!(!kit.metal.is_crossfading());
+    }
+
+    /// The cymbal listens to the same metal, so Play crossfades it while
+    /// the cymbal rings, with the hats quiet.
+    #[test]
+    fn a_restart_crossfades_the_metal_while_the_cymbal_rings() {
+        let mut kit = Kit::new(KitSettings::default(), 48_000.0);
+        kit.hit(49, 127);
+        for _ in 0..4800 {
+            kit.next_sample();
+        }
+        assert!(!kit.hats.is_sounding());
+        kit.restart();
+        assert!(kit.metal.is_crossfading());
     }
 
     #[test]

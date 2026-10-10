@@ -629,7 +629,7 @@ mod tests {
     /// Every listening render builds, and `render-all` finds them all.
     #[test]
     fn the_listening_lists_build() {
-        for sound in ["kick", "snare", "clap", "hats", "toms"] {
+        for sound in ["kick", "snare", "clap", "hats", "toms", "cymbal"] {
             let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../examples/listen")
                 .join(sound);

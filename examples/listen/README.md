@@ -132,3 +132,28 @@ What to listen for, against how you remember an 808:
 - **Velocity:** softer hits should be duller and bend less, as well as quieter; accents knock harder and have a little more of the hiss.
 - **Repeats and flams:** no clicks. The 32nds should roll, each hit blending into the last ring, not stutter like a machine gun. A flam at 10 ms should sound like one fat hit.
 - **The beat:** the fill should sit under the kick and clap like an 808's toms, not poke out as a different machine. It will be loud: balancing the kit is a later ticket.
+
+## Cymbal (808)
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | An accent at the defaults (Tone 0.5, Decay 0.8 s), a bar later an ordinary hit, then a bar of quarter notes with a crash on the one. |
+| `02-tune` | Tune 102.65, 145, 205.3, 290 and 410.6 Hz: the closed hat's Tune, which the cymbal shares, as the metal is one bank on the 808. Two hits a bar. |
+| `03-tone` | Tone 0, 0.25, 0.5, 0.75 and 1, the same. |
+| `04-decay` | Decay 0.35, 0.5, 0.8, 1.0 and 1.2 s, one hit a bar at 80 BPM. |
+| `05-level` | Level 0, -6, -12 and -24 dB. |
+| `06-velocity` | A cymbal every two beats, velocity 8 up to 127. |
+| `07-repeats` | 8ths, 16ths, then 32nds, at the longest Decay so they pile up. |
+| `08-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart. |
+| `09-groove` | A 1-bar cymbal pattern at 100 BPM, looped: a crash, quarter notes, a soft off-beat and a ghost. Also the cymbal's golden WAV. |
+| `10-beat` | Kick, clap, closed hats and an open hat, with the cymbal on the one of each bar and a last 8th, at 110 BPM, looped. The cymbal is at -6 dB here so the beat doesn't clip; the kit's balance (cymbal 10 to 12 dB under the kick) is set in UTA-57. |
+
+What to listen for, against how you remember an 808 cymbal:
+
+- **Defaults:** a bright "tssshhh" with a sharp start: a short, fizzy sizzle on top that's gone in a fraction of a second, over a lower, metallic wash that rings on for about a second. It should sound like the same family as the hats (it's the same six oscillators), but bigger and longer, and more like a gong-ish metal plate than a real cymbal. If it's harsh, glassy or "digital", or if the wash sounds like a steady tone rather than a shimmer, say so.
+- **Tune:** the whole metal moves, like the hats; the bands stay put, so it's more a change of colour than of pitch.
+- **Tone:** from a dull, dark wash at 0 to a fizzy one at 1. Mostly the sizzle at the start changes; the tail changes less.
+- **Decay:** the wash from a short crash at 0.35 s to a long ring at 1.2 s; the sizzle at the start stays short at every setting.
+- **Velocity:** softer hits should be darker and smoother as well as quieter; accents brighter and a little rougher.
+- **Repeats and flams:** no clicks. The 32nds should wash together into one roar, not buzz like a machine gun. A flam at 10 ms should sound like one thick hit.
+- **The beat:** it should sit with the hats as one machine.

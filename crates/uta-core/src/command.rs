@@ -1014,7 +1014,8 @@ mod tests {
             r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
             r#""open_hat":{"decay_seconds":0.35,"level_db":0.0},"#,
             r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":0.0},"#,
-            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":0.0}}"#,
+            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":0.0},"#,
+            r#""cymbal":{"tone":0.5,"decay_seconds":0.8,"level_db":0.0}}"#,
         );
         let cases = [
             (

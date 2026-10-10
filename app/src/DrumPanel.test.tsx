@@ -158,11 +158,15 @@ describe("the drum panel", () => {
       "Open hat level",
     ]);
     expect(strip("Open hat").getByText("Tune and Tone: the closed hat’s")).toBeInTheDocument();
-    expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(1);
 
-    // A sound without its circuit yet has a name and nothing to turn.
-    expect(strip("Cymbal").queryAllByRole("slider")).toEqual([]);
-    expect(strip("Cymbal").getByText("No controls yet")).toBeInTheDocument();
+    // The cymbal plays the same metal, so its Tune is the closed hat's too.
+    expect(strip("Cymbal").getAllByRole("slider").map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Cymbal tone",
+      "Cymbal decay",
+      "Cymbal level",
+    ]);
+    expect(strip("Cymbal").getByText("Tune: the closed hat’s")).toBeInTheDocument();
+    expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(2);
   });
 
   it("draws a sound it has never seen, from the outline alone", async () => {
@@ -194,6 +198,15 @@ describe("the drum panel", () => {
     ]);
     // Halfway up its log scale from 80 to 100 Hz.
     expect(knobAt(slider("Low tom tune"))).toBeCloseTo(Math.log(90 / 80) / Math.log(100 / 80), 2);
+  });
+
+  it("draws a sound with no settings as a name and nothing to turn", async () => {
+    project = withKit(
+      KIT_ROWS.map((row) => (row.sound === "cymbal" ? { ...row, settings: [], shares: null } : row)),
+    );
+    await renderSound();
+    expect(strip("Cymbal").queryAllByRole("slider")).toEqual([]);
+    expect(strip("Cymbal").getByText("No controls yet")).toBeInTheDocument();
   });
 
   it("sends a knob drag to Rust as one gesture, and shows what comes back", async () => {

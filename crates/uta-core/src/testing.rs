@@ -190,8 +190,9 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
 }
 
 /// A drum setting for any sound: mostly one the sound has (the kick's,
-/// snare's, clap's, hats' and toms'), with values a bit wider than its limits, so
-/// some are rejected, and now and then any setting on any sound.
+/// snare's, clap's, hats', toms' and cymbal's), with values a bit wider than
+/// its limits, so some are rejected, and now and then any setting on any
+/// sound.
 fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
     let level = || (-70.0f32..10.0).prop_map(DrumParam::LevelDb);
     let kick = prop_oneof![
@@ -226,6 +227,11 @@ fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
             level(),
         ]
     };
+    let cymbal = prop_oneof![
+        (-0.1f32..1.1).prop_map(DrumParam::Tone),
+        (0.3f32..1.3).prop_map(DrumParam::DecaySeconds),
+        level(),
+    ];
     let any = prop_oneof![
         (35.0f32..280.0).prop_map(DrumParam::TuneHz),
         (-0.1f32..1.1).prop_map(DrumParam::Tone),
@@ -241,6 +247,7 @@ fn any_drum_param() -> impl Strategy<Value = (DrumSound, DrumParam)> {
         3 => open_hat.prop_map(|param| (DrumSound::OpenHat, param)),
         3 => tom(75.0..105.0).prop_map(|param| (DrumSound::LowTom, param)),
         3 => tom(160.0..225.0).prop_map(|param| (DrumSound::HighTom, param)),
+        3 => cymbal.prop_map(|param| (DrumSound::Cymbal, param)),
         1 => (prop::sample::select(KIT.map(|row| row.sound).to_vec()), any),
     ]
 }

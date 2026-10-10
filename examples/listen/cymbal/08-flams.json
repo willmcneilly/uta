@@ -1,0 +1,101 @@
+{
+  "project": "2377d9e5-a157-5b99-a878-2cee10ade998",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 100
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "0455d4d0-f803-5f38-922b-0b2c1590dcaa",
+              "name": "Cymbal",
+              "source": {
+                "drums": {}
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "88af1ea4-132d-561c-a08c-96da889ed10d",
+                  "start": 0,
+                  "length": 11520,
+                  "notes": [
+                    {
+                      "id": "8dbb30df-f22e-5ee2-b3ea-167e80559e16",
+                      "pitch": 49,
+                      "velocity": 64,
+                      "start": 896,
+                      "length": 240
+                    },
+                    {
+                      "id": "a32e04d0-1eea-57d7-9f79-e01bd84834ee",
+                      "pitch": 49,
+                      "velocity": 127,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "8d964f63-c570-5a1d-bff8-0370781cb0f5",
+                      "pitch": 49,
+                      "velocity": 64,
+                      "start": 4768,
+                      "length": 240
+                    },
+                    {
+                      "id": "59a553bc-ea42-5df2-ae70-ef5ed80348b9",
+                      "pitch": 49,
+                      "velocity": 127,
+                      "start": 4800,
+                      "length": 240
+                    },
+                    {
+                      "id": "d066e25d-9799-5677-b0e0-795eecbba12b",
+                      "pitch": 49,
+                      "velocity": 64,
+                      "start": 8624,
+                      "length": 240
+                    },
+                    {
+                      "id": "d15b4366-4198-580d-8bc0-9536d10c9eff",
+                      "pitch": 49,
+                      "velocity": 127,
+                      "start": 8640,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -107,6 +107,8 @@ pub const OPEN_HAT: u8 = 46;
 pub const LOW_TOM: u8 = 45;
 /// The high tom's note.
 pub const HIGH_TOM: u8 = 50;
+/// The cymbal's note.
+pub const CYMBAL: u8 = 49;
 
 /// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
 /// track, "Drums 1", under the empty synth track: its clip fills the loop

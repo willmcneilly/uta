@@ -33,9 +33,9 @@ mod trim;
 pub use command::{COMMAND_FORMAT, ClipPosition, Command, CommandError, PlacedClip, PlacedTrack};
 pub use command_list::CommandList;
 pub use drums::{
-    ClapSettings, ClosedHatSettings, DrumParam, DrumParamError, DrumSound, HighTomSettings, KIT,
-    KickSettings, KitRow, KitSettings, LowTomSettings, MAX_LEVEL_DB, MIN_LEVEL_DB, OpenHatSettings,
-    SnareSettings,
+    ClapSettings, ClosedHatSettings, CymbalSettings, DrumParam, DrumParamError, DrumSound,
+    HighTomSettings, KIT, KickSettings, KitRow, KitSettings, LowTomSettings, MAX_LEVEL_DB,
+    MIN_LEVEL_DB, OpenHatSettings, SnareSettings,
 };
 pub use id::{ClipId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
