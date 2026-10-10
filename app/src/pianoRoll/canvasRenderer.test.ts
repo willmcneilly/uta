@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { colors, spacing } from "../design/tokens";
+import { type ColorName, colorVariables, colors, spacing } from "../design/tokens";
 import { createCanvas2DRenderer } from "./canvasRenderer";
 import { velocityAlpha } from "./colours";
 import type { PlacedNote } from "./notes";
@@ -158,6 +158,44 @@ describe("the piano roll's canvas renderer", () => {
     expect(c4?.style).toBe(light.ink2);
     expect(c4?.args[1]).toBeLessThan(KEYBOARD_WIDTH);
     expect(c4?.args[2]).toBe(pitchToY(view, 60) + view.keyHeight / 2);
+  });
+
+  it("keeps black keys and their rows the darker ones in both themes", () => {
+    const rowAt = (pitch: number) =>
+      grid.find(
+        (m) =>
+          m.call === "fillRect" &&
+          m.args[0] === noteArea(view).x &&
+          m.args[1] === pitchToY(view, pitch) &&
+          m.args[3] === view.keyHeight,
+      )?.style;
+    const keyAt = (pitch: number) =>
+      grid
+        .filter(
+          (m) =>
+            m.call === "fillRect" && m.args[0] === 0 && m.args[1] === pitchToY(view, pitch) && m.args[3] === view.keyHeight,
+        )
+        .at(-1)?.style;
+
+    setUp();
+    drawGrid();
+    // Light: C#4's key and row are shaded, D4's aren't.
+    expect(keyAt(61)).toBe(light.ink3);
+    expect(rowAt(61)).toBe(light.line);
+    expect(rowAt(62)).toBeUndefined();
+
+    // Dark: ink-3 is the lighter, so the white keys take it and their rows are shaded.
+    const dark = colors.dark;
+    for (const name of Object.keys(colorVariables) as ColorName[]) {
+      document.documentElement.style.setProperty(colorVariables[name], dark[name]);
+    }
+    setUp();
+    drawGrid();
+    expect(keyAt(61)).toBe(dark.sheet);
+    const whiteKeys = grid.find((m) => m.call === "fillRect" && m.args[0] === 0 && m.args[1] === RULER_HEIGHT);
+    expect(whiteKeys?.style).toBe(dark.ink3);
+    expect(rowAt(62)).toBe(dark.line);
+    expect(rowAt(61)).toBeUndefined();
   });
 
   it("draws the loop as the timeline's dimension line, faint while it's off", () => {

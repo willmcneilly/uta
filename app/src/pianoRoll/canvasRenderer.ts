@@ -101,11 +101,12 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.rect(area.x, area.y, area.width, area.height);
     context.clip();
 
-    // Rows: black keys shaded, a line under each B (the octave boundary).
+    // Rows: shaded to match the darker keys, a line under each B (the
+    // octave boundary).
     for (let pitch = low; pitch <= high; pitch++) {
       const y = pitchToY(view, pitch);
-      if (isBlackKey(pitch)) {
-        context.fillStyle = theme.blackKeyRow;
+      if (isBlackKey(pitch) === theme.shadeBlackKeyRows) {
+        context.fillStyle = theme.rowShade;
         context.fillRect(area.x, y, area.width, view.keyHeight);
       }
       if (pitch % 12 === 0) {
@@ -280,9 +281,9 @@ class Canvas2DRenderer implements PianoRollRenderer {
   /**
    * The keys, drawn like rows rather than a real keyboard: every key is
    * the keyboard's full width and one row tall, so each lines up with its
-   * row in the notes. Black keys are ink-3, a faint line parts two white
-   * keys that meet (E and F, B and C), and each C is named in the second
-   * ink beside the notes (provisional: D-5).
+   * row in the notes. Black keys are always the darker ones, a line parts
+   * two white keys that meet (E and F, B and C), and each C is named in the
+   * second ink beside the notes (provisional: D-5).
    */
   private drawKeyboard(view: Viewport, low: number, high: number): void {
     const context = this.contexts.grid;
@@ -294,7 +295,7 @@ class Canvas2DRenderer implements PianoRollRenderer {
     context.beginPath();
     context.rect(0, area.y, KEYBOARD_WIDTH, area.height);
     context.clip();
-    context.fillStyle = theme.background;
+    context.fillStyle = theme.whiteKey;
     context.fillRect(0, area.y, KEYBOARD_WIDTH, area.height);
     context.font = theme.labelFont;
     context.textBaseline = "middle";

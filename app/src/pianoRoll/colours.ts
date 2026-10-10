@@ -12,7 +12,13 @@ import { readFonts, readLineWidths } from "../design/readTokens";
 export interface Theme {
   /** The drawing surface: the notes, the keys, the ruler and the velocity lane. */
   background: string;
-  blackKeyRow: string;
+  /**
+   * Whether the rows shaded with `rowShade` are the black keys' (on light
+   * paper) or the white keys' (on dark), to match the darker keys
+   * (provisional: D-5).
+   */
+  shadeBlackKeyRows: boolean;
+  rowShade: string;
   /** Over the grid outside the clip. */
   outsideClip: string;
   barLine: string;
@@ -25,8 +31,14 @@ export interface Theme {
   barTick: string;
   beatTick: string;
   rulerText: string;
+  /**
+   * The keys. Black keys are always the darker ones: ink-3 on the sheet in
+   * light, and the sheet among ink-3 white keys in dark, where ink-3 is the
+   * lighter (provisional: D-5).
+   */
+  whiteKey: string;
   blackKey: string;
-  /** The line under each white key. */
+  /** The line between two white keys that meet. */
   keyLine: string;
   keyText: string;
   playhead: string;
@@ -69,10 +81,12 @@ export interface Theme {
 /** The piano roll's colours, line weights and fonts, by what each part means in DESIGN.md. */
 export function readTheme(element: Element): Theme {
   const c = readColours(element);
+  const dark = luminance(c.sheet) < luminance(c.ink);
   const widths = readLineWidths(element);
   return {
     background: c.sheet,
-    blackKeyRow: c.line,
+    shadeBlackKeyRows: !dark,
+    rowShade: c.line,
     outsideClip: c.line2,
     barLine: c.ink3,
     beatLine: c.line2,
@@ -82,9 +96,11 @@ export function readTheme(element: Element): Theme {
     barTick: c.ink3,
     beatTick: c.line2,
     rulerText: c.ink2,
-    blackKey: c.ink3,
-    keyLine: c.line2,
-    keyText: c.ink2,
+    whiteKey: dark ? c.ink3 : c.sheet,
+    blackKey: dark ? c.sheet : c.ink3,
+    keyLine: dark ? c.sheet : c.line2,
+    // Dark text on dark theme's lighter white keys, so the names stay legible.
+    keyText: dark ? c.sheet : c.ink2,
     playhead: c.live,
     loop: c.ink,
     loopOff: c.ink3,
@@ -118,6 +134,17 @@ export const HARDEST_FILL = 0.6;
 export function velocityAlpha(velocity: number): number {
   const t = Math.min(1, Math.max(0, (velocity - 1) / 126));
   return SOFTEST_FILL + (HARDEST_FILL - SOFTEST_FILL) * t;
+}
+
+/**
+ * How light a `#rrggbb` (or `#rrggbbaa`) colour is, from 0 to 1, to tell
+ * which theme's tokens these are. Unparseable colours count as light.
+ */
+export function luminance(colour: string): number {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(colour.trim());
+  if (!match) return 1;
+  const [r, g, b] = match.slice(1).map((hex) => parseInt(hex, 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 /** Whether `pitch` is a black key: C♯, D♯, F♯, G♯ or A♯. */
