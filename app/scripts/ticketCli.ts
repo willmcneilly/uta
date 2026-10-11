@@ -52,8 +52,8 @@ Commands:
       command's script, npm script, cargo package (-p) and test target
       (--test), and any path in it, exist. Shell lines in bash blocks are
       commands too. Placeholders (<n>, …), globs and paths git ignores are
-      skipped, and so is a name that's gone: struck through (~~`lastDrag`~~)
-      or renamed (`sliderScale` → `numberScale`). It also refuses totals
+      skipped, and so is a name that's gone: struck through (~~\`lastDrag\`~~)
+      or renamed (\`sliderScale\` → \`numberScale\`). It also refuses totals
       ("509 tests"): name the tests, don't count them. Checks the working
       tree, or the commit --ref names.
 
