@@ -77,7 +77,7 @@ const VERDICT = {
       },
     },
     golden_changed: { type: 'boolean', description: 'A golden WAV changed, which Will must approve' },
-    checks_green: { type: 'boolean', description: 'Every CI check run locally passed' },
+    checks_green: { type: 'boolean', description: 'CI passed on the reviewed commit, or every check run locally in its place did' },
     review_url: { type: 'string' },
     body: { type: 'string', description: 'Dry runs: the full review body' },
   },

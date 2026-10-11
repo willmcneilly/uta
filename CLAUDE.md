@@ -15,7 +15,7 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
-scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`), each with `--help`; their logic is in app/scripts
+scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
@@ -40,6 +40,9 @@ scripts/dev-app start                               # open this checkout's app o
 scripts/dev-app status                              # is it up, which commit and port, any errors since it started
 scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
 scripts/ticket ready                                # a ticket's Notion and GitHub steps: show, ready, claim, tick, evidence-check, sync, merge, decision new
+scripts/review-setup <pr>                           # a review round's PR, history, CI and worktree, in one go
+scripts/ci-wait <pr> [--commit <sha>]               # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
+scripts/mutate --named rt-alloc                     # break the code on purpose, run its tests, put it back: CAUGHT or MISSED
 
 # Rust
 cargo fmt --all                                     # format

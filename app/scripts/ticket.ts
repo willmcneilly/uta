@@ -580,12 +580,20 @@ export function verificationNotes(markdown: string, pr: { number: number; url: s
 
 const NOTES_HEADING = /^##\s+Verification notes\s*$/i;
 
-/** The Verification notes section of a page's Notion Markdown, from its heading to the next heading of level 1 or 2. */
+/**
+ * The Verification notes section of a page's Notion Markdown, from its
+ * heading to the next heading of level 1 or 2 outside a code block (a shell
+ * comment in one is a `#` line too).
+ */
 export function notesSection(markdown: string): string | undefined {
   const lines = markdown.split("\n");
   const start = lines.findIndex((line) => NOTES_HEADING.test(line.trim()));
   if (start === -1) return undefined;
-  const after = lines.slice(start + 1).findIndex((line) => /^#{1,2}\s/.test(line));
+  let fenced = false;
+  const after = lines.slice(start + 1).findIndex((line) => {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) fenced = !fenced;
+    return !fenced && /^#{1,2}\s/.test(line);
+  });
   return lines.slice(start, after === -1 ? undefined : start + 1 + after).join("\n");
 }
 

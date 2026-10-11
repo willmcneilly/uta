@@ -492,6 +492,11 @@ describe("notesSection", () => {
     expect(notesSection("## Verification notes\n- a\n## After\nx")).toBe("## Verification notes\n- a");
     expect(notesSection("## Goal")).toBeUndefined();
   });
+
+  it("doesn't end at a # line inside a code block", () => {
+    const notes = "## Verification notes\n### For Will to try\n```bash\n# build it first\ncargo build\n```\n- after";
+    expect(notesSection(`## Goal\nG\n${notes}`)).toBe(notes);
+  });
 });
 
 describe("sync", () => {
