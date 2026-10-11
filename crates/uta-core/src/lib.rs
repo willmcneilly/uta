@@ -11,6 +11,8 @@
 //!   within one clip. Clip commands never trim notes.
 //! - [`Clip::copy`] and [`Track::copy`] copy with new IDs throughout, for
 //!   pasting and duplicating.
+//! - Each track has a chain of up to [`MAX_EFFECTS`] insert [`Effect`]s,
+//!   between its source and its mixer strip. See RFC-007.
 //! - Positions and lengths are musical: whole ticks, turned into samples by
 //!   the [`time::TempoMap`]. See RFC-002, "The shared model".
 //!
@@ -20,6 +22,7 @@
 mod command;
 mod command_list;
 mod drums;
+mod effect;
 mod id;
 mod project;
 mod session;
@@ -31,19 +34,24 @@ pub mod time;
 mod track;
 mod trim;
 
-pub use command::{COMMAND_FORMAT, ClipPosition, Command, CommandError, PlacedClip, PlacedTrack};
+pub use command::{
+    COMMAND_FORMAT, ClipPosition, Command, CommandError, PlacedClip, PlacedEffect, PlacedTrack,
+};
 pub use command_list::CommandList;
 pub use drums::{
     ClapSettings, ClosedHatSettings, CymbalSettings, DrumParam, DrumParamError, DrumSound,
     HighTomSettings, KIT, Kick909Settings, KickModel, KickSettings, KitRow, KitSettings,
     LowTomSettings, MAX_LEVEL_DB, MIN_LEVEL_DB, OpenHatSettings, SnareSettings,
 };
-pub use id::{ClipId, NoteId, ProjectId, TrackId};
+pub use effect::{
+    Chain, DelayParam, DelaySettings, Effect, EffectKind, EffectSettings, MAX_EFFECTS,
+};
+pub use id::{ClipId, EffectId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};
 pub use setting::{Choice, Description, Kind as SettingKind, Scale, Unit};
 pub use synth::{SynthParam, SynthSettings, Waveform};
-pub use track::{Clip, Effect, MixerStrip, Note, Notes, Source, SourceKind, Track};
+pub use track::{Clip, MixerStrip, Note, Notes, Source, SourceKind, Track};
 
 /// The crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

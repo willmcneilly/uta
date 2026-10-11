@@ -109,6 +109,7 @@ fn check_7() -> Project {
             track: first.copy(
                 TrackId::random(),
                 format!("Synth {}", index + 1),
+                uta_core::EffectId::random,
                 ClipId::random,
                 NoteId::random,
             ),
@@ -150,6 +151,7 @@ fn many_tracks() -> Project {
             track: first.copy(
                 TrackId::random(),
                 format!("Synth {}", index + 1),
+                uta_core::EffectId::random,
                 ClipId::random,
                 NoteId::random,
             ),
@@ -248,6 +250,7 @@ fn drum_tracks(model: KickModel) -> Project {
             track: first.copy(
                 TrackId::random(),
                 format!("Drums {}", index + 1),
+                uta_core::EffectId::random,
                 ClipId::random,
                 NoteId::random,
             ),

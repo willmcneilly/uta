@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::time::{MAX_TICKS, Ticks};
 use crate::{
-    ClipId, CommandError, DrumParamError, DrumSound, KitSettings, NoteId, SynthSettings, TrackId,
+    ClipId, CommandError, DrumParamError, DrumSound, Effect, EffectId, KitSettings, NoteId,
+    SynthSettings, TrackId,
 };
 
 /// A chain that makes sound: a source, then effects, then a mixer strip.
@@ -18,6 +19,8 @@ pub struct Track {
     pub(crate) id: TrackId,
     pub(crate) name: String,
     pub(crate) source: Source,
+    /// Its chain: at most [`crate::MAX_EFFECTS`], in the order the sound
+    /// goes through them.
     pub(crate) effects: Vec<Effect>,
     pub(crate) mixer: MixerStrip,
     /// In order of start, then ID, so the order they were added in doesn't
@@ -44,6 +47,14 @@ impl Track {
         Self { mixer, ..self }
     }
 
+    /// This track with `effects` as its chain, in order.
+    pub fn with_effects(self, effects: impl IntoIterator<Item = Effect>) -> Self {
+        Self {
+            effects: effects.into_iter().collect(),
+            ..self
+        }
+    }
+
     /// This track with `clips` added to it.
     pub fn with_clips(mut self, clips: impl IntoIterator<Item = Clip>) -> Self {
         for clip in clips {
@@ -67,9 +78,13 @@ impl Track {
         &self.source
     }
 
-    /// The effects after the source, in order. Always empty for now.
+    /// Its chain: the effects after the source, in order.
     pub fn effects(&self) -> &[Effect] {
         &self.effects
+    }
+
+    pub fn effect(&self, id: EffectId) -> Option<&Effect> {
+        self.effects.iter().find(|effect| effect.id() == id)
     }
 
     pub fn mixer(&self) -> &MixerStrip {
@@ -85,13 +100,15 @@ impl Track {
         self.clips.iter().find(|clip| clip.id == id)
     }
 
-    /// A copy of this track with new IDs for it, its clips and every note,
-    /// for duplicating it. `name` is the copy's name, and `new_clip_id` and
-    /// `new_note_id` give the copy's clips and notes their IDs.
+    /// A copy of this track with new IDs for it, its effects, its clips and
+    /// every note, for duplicating it. `name` is the copy's name, and
+    /// `new_effect_id`, `new_clip_id` and `new_note_id` give the copy's
+    /// effects, clips and notes their IDs.
     pub fn copy(
         &self,
         id: TrackId,
         name: impl Into<String>,
+        mut new_effect_id: impl FnMut() -> EffectId,
         mut new_clip_id: impl FnMut() -> ClipId,
         mut new_note_id: impl FnMut() -> NoteId,
     ) -> Self {
@@ -99,7 +116,11 @@ impl Track {
             id,
             name: name.into(),
             source: self.source.clone(),
-            effects: self.effects.clone(),
+            effects: self
+                .effects
+                .iter()
+                .map(|effect| effect.copy(new_effect_id()))
+                .collect(),
             mixer: self.mixer,
             clips: Vec::new(),
         }
@@ -195,11 +216,6 @@ impl Source {
         }
     }
 }
-
-/// An effect on a track. There are none yet, so an effects list is always
-/// empty: this type has no values.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Effect {}
 
 /// A track's volume, pan, mute and solo, applied after its effects.
 ///

@@ -544,6 +544,7 @@ fn changing_tracks_while_playing_does_not_click_or_leave_notes_stuck() {
     let duplicate = project.track(track_id(1)).unwrap().copy(
         track_id(5),
         project.next_track_name(uta_core::SourceKind::Synth),
+        uta_core::EffectId::random,
         ClipId::random,
         NoteId::random,
     );

@@ -395,6 +395,7 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
                 let copy = source.copy(
                     TrackId::random(),
                     project.next_track_name(source.source().kind()),
+                    uta_core::EffectId::random,
                     ClipId::random,
                     NoteId::random,
                 );
@@ -559,6 +560,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                         track: source.copy(
                             TrackId::random(),
                             project.next_track_name(source.source().kind()),
+                            uta_core::EffectId::random,
                             ClipId::random,
                             NoteId::random,
                         ),
@@ -1087,4 +1089,231 @@ fn audio_callback_plays_and_hands_the_processor_back_without_allocating() {
     let mut processor = home.pop().expect("the processor didn't come home");
     process_block(&mut processor, &mut buffer);
     assert_eq!(controller.poll().position, (21 * BLOCK) as u64);
+}
+
+/// Adding Delays while the loop plays, a full chain at once and on several
+/// tracks in one block; turning their settings and Mix; removing some and
+/// adding others in the same block; removing a track with its chain and
+/// undoing it: each new effect's state arrives with its snapshot, nothing
+/// on the audio thread allocates or frees, and every state handed over comes
+/// back to be freed.
+#[test]
+fn adding_and_removing_delays_while_playing_does_not_allocate_and_every_state_comes_back() {
+    use uta_core::{Chain, DelayParam, Effect, EffectId, EffectKind, PlacedEffect};
+
+    rtsan_standalone::ensure_initialized();
+    let mut project = demo_song();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+
+    let mut next = 0u128;
+    let mut delay = || {
+        next += 1;
+        Effect::default_of(
+            EffectId::from_uuid(uuid::Uuid::from_u128(7000 + next)),
+            EffectKind::Delay,
+        )
+    };
+    let effects = |project: &uta_core::Project| -> Vec<EffectId> {
+        project
+            .tracks()
+            .iter()
+            .flat_map(|track| track.effects())
+            .map(Effect::id)
+            .collect()
+    };
+    let change = |project: &mut uta_core::Project, renderer: &mut Renderer, command| {
+        let inverse = project.apply(&command).unwrap();
+        renderer.controller.set_project(project).unwrap();
+        inverse
+    };
+
+    for round in 0..3 {
+        let tracks: Vec<_> = project.tracks().iter().map(|track| track.id()).collect();
+        // A full chain on the first track, and two on each of the others,
+        // all in one snapshot.
+        let mut placed = Vec::new();
+        for (n, &track) in tracks.iter().enumerate() {
+            let count = if n == 0 { uta_core::MAX_EFFECTS } else { 2 };
+            placed.extend((0..count).map(|index| PlacedEffect {
+                chain: Chain::Track(track),
+                index,
+                effect: delay(),
+            }));
+        }
+        change(
+            &mut project,
+            &mut renderer,
+            Command::AddEffects { effects: placed },
+        );
+        assert_eq!(
+            renderer.controller.effect_states_out(),
+            effects(&project).len()
+        );
+        for _ in 0..20 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        assert!(
+            renderer.controller.poll().peak > 0.0,
+            "the processor made no sound"
+        );
+
+        // Turn every Delay's time, feedback and Mix, a snapshot each.
+        for (n, effect) in effects(&project).into_iter().enumerate() {
+            let f = n as f32 / 32.0;
+            for command in [
+                Command::SetDelayParam {
+                    effect,
+                    param: DelayParam::TimeSeconds(0.01 + f),
+                },
+                Command::SetDelayParam {
+                    effect,
+                    param: DelayParam::Feedback(f.min(1.0)),
+                },
+                Command::SetEffectMix {
+                    effect,
+                    mix: 1.0 - f.min(1.0),
+                },
+            ] {
+                change(&mut project, &mut renderer, command);
+            }
+            process_block(renderer.processor(), &mut buffer);
+        }
+
+        // Remove half of them and add new ones in their place, two
+        // snapshots in one block.
+        let all = effects(&project);
+        let removed: Vec<_> = all.iter().copied().step_by(2).collect();
+        change(
+            &mut project,
+            &mut renderer,
+            Command::RemoveEffects { effects: removed },
+        );
+        let refill = tracks
+            .iter()
+            .map(|&track| PlacedEffect {
+                chain: Chain::Track(track),
+                index: 0,
+                effect: delay(),
+            })
+            .collect();
+        change(
+            &mut project,
+            &mut renderer,
+            Command::AddEffects { effects: refill },
+        );
+        for _ in 0..10 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+
+        // Remove a track with its chain, and undo it: its effects come back
+        // with new states.
+        let removal = Command::RemoveTracks {
+            tracks: vec![tracks[round % tracks.len()]],
+        };
+        let undo = change(&mut project, &mut renderer, removal);
+        process_block(renderer.processor(), &mut buffer);
+        change(&mut project, &mut renderer, undo);
+        for _ in 0..10 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        renderer.controller.poll();
+        assert_eq!(
+            renderer.controller.effect_states_out(),
+            effects(&project).len(),
+            "round {round}"
+        );
+
+        // Then every effect goes, and every state comes back.
+        let all = effects(&project);
+        change(
+            &mut project,
+            &mut renderer,
+            Command::RemoveEffects { effects: all },
+        );
+        process_block(renderer.processor(), &mut buffer);
+        renderer.controller.poll();
+        assert_eq!(renderer.controller.effect_states_out(), 0, "round {round}");
+    }
+}
+
+/// When nobody collects the effect states sent back, the processor must
+/// neither free them nor block: it leaves a swap queued until there's room
+/// for every state it holds. Four swaps fill the queue (every chain filled
+/// and emptied, twice); the fifth fills them again, and waits, and so does
+/// the sixth behind it, which would send back more than there's room for.
+#[test]
+fn full_used_state_queue_defers_swaps_without_freeing() {
+    use uta_core::{
+        Chain, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect, Project, Source,
+        SynthSettings, Track,
+    };
+    use uta_engine::{MAX_EFFECT_STATES, USED_STATE_CAPACITY};
+
+    rtsan_standalone::ensure_initialized();
+    // Every slot with a track and a full chain holds MAX_EFFECT_STATES
+    // states. A low rate keeps each Delay's tape small: 256 of them at a
+    // time.
+    let config = EngineConfig {
+        sample_rate: 1000,
+        channels: 2,
+    };
+    let mut project = Project::new();
+    let tracks = (project.tracks().len()..Project::MAX_TRACKS)
+        .map(|index| PlacedTrack {
+            index,
+            track: Track::new(
+                TrackId::random(),
+                format!("Synth {index}"),
+                Source::Synth(SynthSettings::default()),
+            ),
+        })
+        .collect();
+    project.apply(&Command::AddTracks { tracks }).unwrap();
+    let mut renderer = Renderer::new(config, Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+
+    let fill = |project: &mut Project| {
+        let effects = project
+            .tracks()
+            .iter()
+            .flat_map(|track| {
+                (0..MAX_EFFECTS).map(|index| PlacedEffect {
+                    chain: Chain::Track(track.id()),
+                    index,
+                    effect: Effect::default_of(EffectId::random(), EffectKind::Delay),
+                })
+            })
+            .collect();
+        project.apply(&Command::AddEffects { effects }).unwrap()
+    };
+    // Every state goes in one swap, and comes back in the next.
+    let mut swaps = 0;
+    for _ in 0..3 {
+        let empty = fill(&mut project);
+        renderer.controller.set_project(&project).unwrap();
+        project.apply(&empty).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        swaps += 2;
+    }
+    assert_eq!(USED_STATE_CAPACITY, 2 * MAX_EFFECT_STATES);
+    assert_eq!(
+        renderer.controller.effect_states_out(),
+        3 * MAX_EFFECT_STATES
+    );
+
+    // Swaps 2 and 4 fill the queue with 2 × 256 states, so swap 5 waits for
+    // room for the 256 it might send back, and swap 6 behind it. Nothing is
+    // freed here: without the wait, swap 6's states would be.
+    process_block(renderer.processor(), &mut buffer);
+    process_block(renderer.processor(), &mut buffer);
+    assert_eq!(renderer.controller.free_used_snapshots(), swaps - 2);
+    assert_eq!(renderer.controller.effect_states_out(), MAX_EFFECT_STATES);
+
+    // With the queue emptied, the last two swaps go through and every state
+    // comes back.
+    process_block(renderer.processor(), &mut buffer);
+    assert_eq!(renderer.controller.free_used_snapshots(), 2);
+    assert_eq!(renderer.controller.effect_states_out(), 0);
 }

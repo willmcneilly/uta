@@ -7,7 +7,8 @@ use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
-    DEFAULT_SAMPLE_RATE, KitSettings, MixerStrip, NoteKey, SynthSettings, TRACK_SLOTS, Waveform,
+    DEFAULT_SAMPLE_RATE, EffectSnapshot, KitSettings, MixerStrip, NoteKey, SynthSettings,
+    TRACK_SLOTS, Waveform,
 };
 
 /// Everything the audio thread needs to know about what to play.
@@ -28,15 +29,19 @@ pub struct Snapshot {
     slots: [Option<u8>; TRACK_SLOTS],
 }
 
-/// One track as the engine plays it: its sound, its mixer strip and its
-/// notes, and the slot on the audio thread it plays in. See RFC-003, "The
-/// shared model, extended", points 4 and 5.
+/// One track as the engine plays it: its sound, its chain, its mixer strip
+/// and its notes, and the slot on the audio thread it plays in. See RFC-003,
+/// "The shared model, extended", points 4 and 5, and RFC-007, "Patterns for
+/// every effect after this one", point 3.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrackSnapshot {
     id: TrackId,
     slot: usize,
     /// What makes its sound, and how it sounds.
     pub sound: TrackSound,
+    /// Its chain, in order: each effect's settings as plain numbers. Their
+    /// states live on the audio thread, found by each effect's ID.
+    pub effects: Vec<EffectSnapshot>,
     /// The track's volume, pan, mute and solo.
     pub mixer: MixerStrip,
     notes: Arc<TrackNotes>,
@@ -169,6 +174,7 @@ impl Snapshot {
                     id: track.id(),
                     slot,
                     sound,
+                    effects: track.effects().iter().map(EffectSnapshot::from).collect(),
                     mixer: MixerStrip::from(track.mixer()),
                     notes,
                 }
