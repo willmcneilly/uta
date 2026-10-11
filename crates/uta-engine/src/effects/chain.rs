@@ -879,6 +879,26 @@ mod tests {
         assert_eq!(chain.processed(), processed, "asleep again");
     }
 
+    /// Sound too quiet to count, arriving after a Delay has gone to sleep,
+    /// wakes it, so the chain never skips it while it holds sound: blocks
+    /// of every size give the same audio. From the first review.
+    #[test]
+    fn a_quiet_sound_after_sleep_gives_the_same_audio_at_every_block_size() {
+        let mut input = click(8000);
+        input[2100] = 1e-7;
+        input[2101] = -1e-7;
+        let render = |block| {
+            let mut chain = Chain::new(&[delay(1, 0.001, 0.5, 0.5)], RATE);
+            let (mut used, _returned) = queue();
+            run(&mut chain, &mut used, &input, block)
+        };
+        let reference = render(256);
+        assert!(reference[2100..].iter().any(|&sample| sample != 0.0));
+        for block in [1, 7, 32, 100] {
+            assert!(render(block) == reference, "blocks of {block}");
+        }
+    }
+
     /// A removed effect that has faded out waits, silent, while there's no
     /// room to send its state back, and goes once there is: it's never
     /// freed here.

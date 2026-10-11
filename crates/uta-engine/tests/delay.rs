@@ -36,15 +36,21 @@ fn effect_id(n: u128) -> EffectId {
 }
 
 /// `project` with a Delay at the end of its first track's chain.
-fn with_delay(
+fn with_delay(project: Project, n: u128, time_seconds: f32, feedback: f32, mix: f32) -> Project {
+    let track = project.tracks()[0].id();
+    with_delay_on(project, Chain::Track(track), n, time_seconds, feedback, mix)
+}
+
+/// `project` with a Delay at the end of `chain`.
+fn with_delay_on(
     mut project: Project,
+    chain: Chain,
     n: u128,
     time_seconds: f32,
     feedback: f32,
     mix: f32,
 ) -> Project {
-    let track = project.tracks()[0].id();
-    let index = project.tracks()[0].effects().len();
+    let index = project.chain(chain).expect("the chain exists").len();
     let effect = Effect::new(
         effect_id(n),
         EffectSettings::Delay(DelaySettings {
@@ -56,7 +62,7 @@ fn with_delay(
     project
         .apply(&Command::AddEffects {
             effects: vec![PlacedEffect {
-                chain: Chain::Track(track),
+                chain,
                 index,
                 effect,
             }],
@@ -284,6 +290,60 @@ fn a_render_runs_on_until_the_echoes_die_away() {
     let end = wet.samples.len();
     assert!(peak(&wet.samples[end - 2 * 4800..]) < SILENCE);
     assert!(peak(&wet.samples[end - 2 * 48_000..]) > 1e-8);
+}
+
+/// A render runs on for the master's echoes too: with a Delay only on the
+/// master, it's as long as with one on the track. From the first review.
+#[test]
+fn a_render_runs_on_until_the_masters_echoes_die_away() {
+    let seconds = 0.5;
+    let wet = offline::render_song(
+        stereo(),
+        Snapshot::from(&with_delay_on(stab(), Chain::Master, 0, 0.3, 0.6, 0.5)),
+        seconds,
+    );
+    assert!(!wet.cut_off);
+    let tail = wet.samples.len() as f64 / 2.0 / 48_000.0 - seconds;
+    assert!((6.5..9.0).contains(&tail), "a tail of {tail} s");
+    let end = wet.samples.len();
+    assert!(peak(&wet.samples[end - 2 * 48_000..]) > 1e-8);
+}
+
+/// A device switch makes every Delay's state again for the new rate, in
+/// `Processor::prepare`, on a track and on the master. Made at 48 kHz, a
+/// Delay's tape holds under 3 s at 96 kHz, and its time would still be
+/// counted at 48 kHz: after the switch, a 5 s echo comes back exactly 5 s
+/// later at 96 kHz. From the first review.
+#[test]
+fn a_device_switch_makes_every_delay_again_for_the_new_rate() {
+    let render = |project: &Project| {
+        let mut renderer = Renderer::new(mono(48_000), Snapshot::from(project), 128);
+        // What the supervisor does between streams.
+        renderer.processor().prepare(96_000, 1);
+        // The controller hears of the new rate and sends the snapshot
+        // again, retimed, and the output fades back in.
+        renderer.render(2048);
+        let start = renderer.samples().len();
+        renderer.controller.play().unwrap();
+        renderer.render(96_000 * 5 + 48_000);
+        renderer.samples()[start..].to_vec()
+    };
+    let dry = render(&stab());
+    let at = 5 * 96_000;
+    assert!(peak(&dry[..at]) > 0.01, "the stab plays");
+    for chain in [Chain::Track(stab().tracks()[0].id()), Chain::Master] {
+        let wet = render(&with_delay_on(stab(), chain, 0, 5.0, 0.0, 1.0));
+        assert_eq!(
+            peak(&wet[..at]),
+            0.0,
+            "nothing before the echo on {chain:?}"
+        );
+        assert_eq!(
+            max_difference(&wet[at..], &dry[..dry.len() - at]),
+            0.0,
+            "the echo is the stab 5 s on at 96 kHz, on {chain:?}"
+        );
+    }
 }
 
 /// Echoes that never fade stop the render at the limit, which says so.

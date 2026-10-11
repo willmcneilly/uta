@@ -180,7 +180,8 @@ impl Effect for Delay {
     ///
     /// Once nothing above −120 dB has gone in or come out for a little
     /// longer than the time, every echo on its way has passed the playback
-    /// head, and it goes to sleep on that sample.
+    /// head, and it goes to sleep on that sample, clearing what's left on
+    /// the tape. Anything but exact silence going in wakes it.
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let mask = self.mask;
         let length = mask + 1;
@@ -208,6 +209,7 @@ impl Effect for Delay {
             let filled = self.filled;
             let all_filled = whole < filled;
             let mut frame_loud = false;
+            let mut frame_written = false;
             for (sample, tape) in [left, right].into_iter().zip(&mut self.tapes) {
                 let at = |offset: usize| {
                     if all_filled || whole + 1 - offset <= filled {
@@ -227,12 +229,20 @@ impl Effect for Delay {
                 tape[self.write] = written;
                 *sample = echo;
                 frame_loud |= input.abs() > SILENCE || echo.abs() > SILENCE;
+                frame_written |= written != 0.0;
             }
             self.write = (self.write + 1) & mask;
             self.filled = (self.filled + 1).min(length);
             if frame_loud {
                 quiet = 0;
-            } else if quiet != u32::MAX {
+            } else if quiet == u32::MAX {
+                // Asleep, the tape is clear. Anything put on it, however
+                // quiet, wakes it, so it only sleeps with a clear tape, and
+                // it's never skipped while it holds sound.
+                if frame_written {
+                    quiet = 0;
+                }
+            } else {
                 quiet += 1;
                 if quiet as f32 > time.max(settled_time) + READ_MARGIN as f32 {
                     self.sleep();
@@ -461,6 +471,62 @@ mod tests {
             "asleep at {asleep_at}, the last echo at {last}"
         );
         assert!(left[asleep_at..].iter().all(|&sample| sample == 0.0));
+    }
+
+    /// Asleep, its tape is clear: sound too quiet to count as sound, put
+    /// on the tape, wakes it, and it sleeps again only once that has
+    /// passed the playback head, clearing the tape as it goes.
+    #[test]
+    fn anything_put_on_the_tape_wakes_it() {
+        let mut delay = delay(0.01, 0.5, 48_000.0);
+        assert!(!delay.is_ringing());
+        let mut out = Vec::new();
+        let mut ringing = 0;
+        for block in 0..20 {
+            let (mut left, mut right) = (vec![0.0; 128], vec![0.0; 128]);
+            if block == 0 {
+                left[10] = 1e-7;
+            }
+            delay.process(&mut left, &mut right);
+            if block == 0 {
+                assert!(delay.is_ringing(), "1e-7 is on the tape");
+            } else if delay.is_ringing() {
+                ringing += 1;
+            }
+            out.extend(left);
+        }
+        // Nothing above −120 dB comes in or out, so it sleeps a little
+        // longer than the time after it woke: on sample 10 + 485, in the
+        // third block after the first.
+        assert_eq!(ringing, 2, "rang for {ringing} more blocks");
+        assert_eq!(out[490], 1e-7, "its echo");
+        // Going to sleep cleared the tape: the next echo, at half that,
+        // never comes.
+        assert!(out[496..].iter().all(|&sample| sample == 0.0));
+    }
+
+    /// Asleep, a new time doesn't glide, as there's nothing on the tape to
+    /// move: the next click comes back exactly on it. Awake, it glides.
+    #[test]
+    fn asleep_its_settings_go_straight_to_where_theyre_going() {
+        let rate = 48_000.0;
+        let mut asleep = delay(0.01, 0.0, rate);
+        asleep.set_settings(DelaySettings {
+            time_seconds: 0.02,
+            feedback: 0.0,
+        });
+        let [left, _] = click_through(&mut asleep, 2000, 128);
+        assert_eq!(echoes(&left), [(960, 1.0)]);
+
+        let mut awake = delay(0.01, 0.0, rate);
+        let mut left = vec![1e-3; 16];
+        let mut right = left.clone();
+        awake.process(&mut left, &mut right);
+        awake.set_settings(DelaySettings {
+            time_seconds: 0.02,
+            feedback: 0.0,
+        });
+        assert!(awake.time.is_moving(), "awake, the time glides");
     }
 
     #[test]
