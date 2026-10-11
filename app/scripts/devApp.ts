@@ -26,7 +26,6 @@ const READY = /Running `[^`]*\/uta-app`/;
 const FAILURES: { pattern: RegExp; reason: string }[] = [
   { pattern: /^error: could not compile/m, reason: "The Rust build failed." },
   { pattern: /error when starting dev server/, reason: "Vite failed to start." },
-  { pattern: /Port \d+ is already in use/, reason: "Vite's port was taken." },
   { pattern: /^\s*Error /m, reason: "tauri dev reported an error." },
 ];
 
@@ -85,10 +84,10 @@ export function findDevApps(procs: Proc[], checkouts: string[]): Map<string, Pro
   const byPid = new Map(procs.map((proc) => [proc.pid, proc]));
   const owner = new Map<number, string>();
 
-  // Longest first, so a worktree inside the main checkout's folder wins.
-  const sorted = [...checkouts].sort((a, b) => b.length - a.length);
+  // The suffixes keep a worktree inside the main checkout's folder from
+  // matching the main checkout.
   const checkoutIn = (command: string) =>
-    sorted.find(
+    checkouts.find(
       (checkout) =>
         command.includes(`${checkout}/app/node_modules/.bin/`) ||
         command.includes(`${checkout}/target/`),

@@ -14,6 +14,7 @@ import {
 
 const MAIN = "/Users/will/Sites/uta";
 const TREE = "/Users/will/Sites/uta/.claude/worktrees/a";
+const SHARED = "/Users/will/Sites/uta/.claude/worktrees/b";
 const OTHER = "/Users/will/Sites/deadwax";
 
 describe("stripAnsi", () => {
@@ -106,11 +107,15 @@ describe("findDevApps", () => {
       // Another session's tests in this worktree, and an editor open on it.
       `  400    70 node ${TREE}/app/node_modules/.bin/vitest run`,
       `  401    70 /Applications/Zed.app/Contents/MacOS/zed ${TREE}`,
+      // An app built into a shared target folder, so only its tauri dev names the checkout.
+      `  600     1 node ${SHARED}/app/node_modules/.bin/tauri dev`,
+      `  601   600 cargo run --no-default-features --color always --`,
+      `  602   601 /Users/will/Library/Caches/uta-target/debug/uta-app`,
       // An orphaned app whose tauri dev is gone, built into a shared target folder.
       `  500     1 /Users/will/Library/Caches/uta-target/debug/uta-app`,
     ].join("\n"),
   );
-  const apps = findDevApps(ps, [MAIN, TREE]);
+  const apps = findDevApps(ps, [MAIN, TREE, SHARED]);
   const pids = (checkout: string) => apps.get(checkout)?.map((p) => p.pid);
 
   it("finds a checkout's whole tree, from tauri dev down", () => {
@@ -131,8 +136,8 @@ describe("findDevApps", () => {
     expect(pids(UNKNOWN)).toEqual([500]);
   });
 
-  it("gives a worktree inside the main checkout's folder to the worktree", () => {
-    expect(findDevApps(ps, [TREE, MAIN]).get(TREE)?.map((p) => p.pid)).toEqual(pids(TREE));
+  it("places an app in a shared target folder by the tauri dev above it", () => {
+    expect(pids(SHARED)).toEqual([600, 601, 602]);
   });
 });
 
