@@ -12,9 +12,9 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, DrumParam, DrumSound, KIT, KickModel,
-    KickSettings, KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session,
-    Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, ClipPosition, Command, CommandError, Description, DrumParam, DrumSound, KIT,
+    KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source,
+    SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -86,10 +86,6 @@ pub struct Outline<C = ClipOutline> {
     pub ticks_per_quarter: Ticks,
     /// Always 4 for now (4/4).
     pub beats_per_bar: u32,
-    /// The limits of the synth's settings, the same for every track.
-    pub synth_limits: SynthLimits,
-    /// A new track's synth settings, which the synth's controls reset to.
-    pub synth_defaults: SynthView,
     /// The limits of a track's volume and pan.
     pub mixer_limits: MixerLimits,
     /// A new track's mixer strip, which its controls reset to.
@@ -113,24 +109,54 @@ pub struct TrackOutline<C = ClipOutline> {
 }
 
 /// What makes a track's sound, as the UI shows it: the synth's settings, or
-/// the drum kit. Serialises as `{"kind":"synth","synth":{...}}` or
+/// the drum kit. Serialises as `{"kind":"synth","settings":[...]}` or
 /// `{"kind":"drums","kit":{...}}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SourceView {
-    Synth { synth: SynthView },
-    Drums { kit: KitView },
+    Synth {
+        /// Each of the synth's settings, described, in the order
+        /// `SynthSettings::params` gives them.
+        settings: Vec<SettingView<SynthParam>>,
+    },
+    Drums {
+        kit: KitView,
+    },
 }
 
 impl From<&Source> for SourceView {
     fn from(source: &Source) -> Self {
         match source {
             Source::Synth(settings) => Self::Synth {
-                synth: settings.into(),
+                settings: settings
+                    .params()
+                    .into_iter()
+                    .map(|param| SettingView {
+                        param,
+                        description: param.describe(),
+                    })
+                    .collect(),
             },
             Source::Drums(kit) => Self::Drums { kit: kit.into() },
         }
     }
+}
+
+/// One setting with its value, as its command carries them, and its
+/// description from the core: label, how it sounds, and its unit, limits,
+/// scale and default, or its choices. The panel draws a setting it has never
+/// seen from this alone.
+///
+/// Serialises flat: `{"name":"cutoff_hz","value":20000.0,"label":"Cutoff",
+/// "sounds":"…","kind":"number","unit":"hz","scale":"log",...}`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct SettingView<P> {
+    /// The setting and its value, as `SetSynthParam` or `SetDrumParam`
+    /// carries them: `"name":"tune_hz","value":49.0`.
+    #[serde(flatten)]
+    pub param: P,
+    #[serde(flatten)]
+    pub description: Description,
 }
 
 /// A drum track's kit, as the UI shows it: its rows, so the UI never has to
@@ -151,57 +177,14 @@ pub struct KitRowView {
     pub name: &'static str,
     /// The General MIDI drum note that plays it.
     pub pitch: u8,
-    /// Each of the sound's settings, in the order of its panel. Empty for a
-    /// sound that has none yet.
-    pub settings: Vec<DrumSettingView>,
+    /// Each of the sound's settings that's a number, in the order of its
+    /// panel. Empty for a sound that has none yet.
+    pub settings: Vec<SettingView<DrumParam>>,
     /// Settings it takes from another sound, which its panel says, if any.
     pub shares: Option<SharedSettingsView>,
     /// Its choice of model, for a sound that has one: the kick. `settings`
     /// are the chosen model's.
-    pub model: Option<ModelChoiceView>,
-}
-
-/// A sound's choice of model, as its panel's segmented choice shows it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelChoiceView {
-    /// What the panel calls it: "Model".
-    pub label: &'static str,
-    /// The chosen model, as `SetDrumParam` carries it: `"808"`.
-    pub value: KickModel,
-    /// Every model, in the panel's order, with what it calls each.
-    pub options: Vec<ModelOptionView>,
-    /// A new drum track's model.
-    pub default: KickModel,
-}
-
-/// One model a sound can be.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelOptionView {
-    pub value: KickModel,
-    pub label: &'static str,
-}
-
-impl ModelChoiceView {
-    /// `sound`'s choice of model in `kit`, if it has one.
-    fn of(kit: &KitSettings, sound: DrumSound) -> Option<Self> {
-        (sound == DrumSound::Kick).then(|| Self {
-            label: drum_label(&DrumParam::Model(KickModel::default())),
-            value: kit.kick.model,
-            options: KickModel::ALL
-                .iter()
-                .map(|&value| ModelOptionView {
-                    value,
-                    label: match value {
-                        KickModel::Tr808 => "808",
-                        KickModel::Tr909 => "909",
-                    },
-                })
-                .collect(),
-            default: KickSettings::default().model,
-        })
-    }
+    pub model: Option<SettingView<DrumParam>>,
 }
 
 /// Settings one sound takes from another: the open hat plays with the
@@ -216,99 +199,37 @@ pub struct SharedSettingsView {
 }
 
 impl SharedSettingsView {
-    /// What `sound` takes from another sound, if anything.
-    fn of(sound: DrumSound) -> Option<Self> {
-        match sound {
-            DrumSound::OpenHat => Some(Self {
-                sound: DrumSound::ClosedHat,
-                labels: vec![
-                    drum_label(&DrumParam::TuneHz(0.0)),
-                    drum_label(&DrumParam::Tone(0.0)),
-                ],
-            }),
-            DrumSound::Cymbal => Some(Self {
-                sound: DrumSound::ClosedHat,
-                labels: vec![drum_label(&DrumParam::TuneHz(0.0))],
-            }),
-            _ => None,
-        }
-    }
-}
-
-/// One setting of one drum sound: what the panel calls it, its value, the
-/// limits it has on that sound (on the kick, its chosen model's), what a
-/// reset sets it to, and the unit all of them are in, so the panel draws a
-/// sound it has never seen.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DrumSettingView {
-    /// The setting and its value, as `SetDrumParam` carries them:
-    /// `"name":"tune_hz","value":49.0`.
-    #[serde(flatten)]
-    pub param: DrumParam,
-    /// What the panel calls it: "Tune", "Level".
-    pub label: &'static str,
-    pub limits: (f32, f32),
-    /// A new drum track's value.
-    pub default: f32,
-    pub unit: DrumUnit,
-}
-
-/// The unit a drum setting's value is in. Tone is the one that differs by
-/// sound: from 0 to 1 on the kick, seconds on the snare, Hz on the clap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DrumUnit {
-    Hz,
-    Seconds,
-    Db,
-    /// From 0 to 1: how much of something, such as the snare's Snappy.
-    Fraction,
-}
-
-impl DrumUnit {
-    /// The unit of `param` on `sound` in `kit`, or `None` if the sound
-    /// doesn't have it, or it's the kick's model, which has none. A sound
-    /// that gains a setting adds its unit here, or the outline test fails.
-    fn of(kit: &KitSettings, sound: DrumSound, param: &DrumParam) -> Option<Self> {
-        kit.range(sound, param)?;
-        Some(match param {
-            DrumParam::TuneHz(_) => Self::Hz,
-            DrumParam::DecaySeconds(_) => Self::Seconds,
-            DrumParam::LevelDb(_) => Self::Db,
-            DrumParam::Snappy(_) | DrumParam::Sweep(_) | DrumParam::Attack(_) => Self::Fraction,
-            DrumParam::Model(_) => return None,
-            DrumParam::Tone(_) => match sound {
-                DrumSound::Kick | DrumSound::Cymbal => Self::Fraction,
-                DrumSound::Snare => Self::Seconds,
-                DrumSound::Clap | DrumSound::ClosedHat => Self::Hz,
-                _ => return None,
-            },
+    /// What `sound` takes from another sound in `kit`, if anything.
+    fn of(kit: &KitSettings, sound: DrumSound) -> Option<Self> {
+        let shared: &[DrumParam] = match sound {
+            DrumSound::OpenHat => &[DrumParam::TuneHz(0.0), DrumParam::Tone(0.0)],
+            DrumSound::Cymbal => &[DrumParam::TuneHz(0.0)],
+            _ => return None,
+        };
+        let from = DrumSound::ClosedHat;
+        Some(Self {
+            sound: from,
+            labels: shared
+                .iter()
+                .map(|param| {
+                    kit.describe(from, param)
+                        .expect("the closed hat has what it shares")
+                        .label
+                })
+                .collect(),
         })
-    }
-}
-
-/// What the drum panel calls `param`.
-fn drum_label(param: &DrumParam) -> &'static str {
-    match param {
-        DrumParam::TuneHz(_) => "Tune",
-        DrumParam::Tone(_) => "Tone",
-        DrumParam::DecaySeconds(_) => "Decay",
-        DrumParam::Snappy(_) => "Snappy",
-        DrumParam::LevelDb(_) => "Level",
-        DrumParam::Sweep(_) => "Sweep",
-        DrumParam::Attack(_) => "Attack",
-        DrumParam::Model(_) => "Model",
     }
 }
 
 impl From<&KitSettings> for KitView {
     fn from(kit: &KitSettings) -> Self {
         let params = kit.params();
-        // The defaults of the kick's chosen model, so they line up.
-        let defaults = KitSettings::default()
-            .with_kick_model(kit.kick.model)
-            .params();
+        let describe = |sound, param: DrumParam| SettingView {
+            param,
+            description: kit
+                .describe(sound, &param)
+                .expect("every setting a kit has is described"),
+        };
         Self {
             rows: KIT
                 .iter()
@@ -318,23 +239,12 @@ impl From<&KitSettings> for KitView {
                     pitch: row.pitch,
                     settings: params
                         .iter()
-                        .zip(&defaults)
-                        .filter(|((sound, _), _)| *sound == row.sound)
-                        .map(|((sound, param), (_, default))| DrumSettingView {
-                            param: *param,
-                            label: drum_label(param),
-                            limits: kit
-                                .range(*sound, param)
-                                .expect("every setting a kit has has a range"),
-                            default: default
-                                .value()
-                                .expect("every setting a kit has is a number"),
-                            unit: DrumUnit::of(kit, *sound, param)
-                                .expect("every setting a kit has has a unit"),
-                        })
+                        .filter(|(sound, _)| *sound == row.sound)
+                        .map(|&(sound, param)| describe(sound, param))
                         .collect(),
-                    shares: SharedSettingsView::of(row.sound),
-                    model: ModelChoiceView::of(kit, row.sound),
+                    shares: SharedSettingsView::of(kit, row.sound),
+                    model: (row.sound == DrumSound::Kick)
+                        .then(|| describe(row.sound, DrumParam::Model(kit.kick.model))),
                 })
                 .collect(),
         }
@@ -394,57 +304,6 @@ impl MixerLimits {
     const ALL: Self = Self {
         volume_db: (MixerStrip::MIN_VOLUME_DB, MixerStrip::MAX_VOLUME_DB),
         pan: (MixerStrip::MIN_PAN, MixerStrip::MAX_PAN),
-    };
-}
-
-/// The synth's settings, in the units of the "Synth settings" table in
-/// `docs/plans/make-a-loop.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SynthView {
-    pub waveform: Waveform,
-    pub cutoff_hz: f32,
-    pub resonance: f32,
-    pub attack_seconds: f32,
-    pub decay_seconds: f32,
-    pub sustain: f32,
-    pub release_seconds: f32,
-}
-
-impl From<&SynthSettings> for SynthView {
-    fn from(settings: &SynthSettings) -> Self {
-        Self {
-            waveform: settings.waveform,
-            cutoff_hz: settings.cutoff_hz,
-            resonance: settings.resonance,
-            attack_seconds: settings.attack_seconds,
-            decay_seconds: settings.decay_seconds,
-            sustain: settings.sustain,
-            release_seconds: settings.release_seconds,
-        }
-    }
-}
-
-/// The inclusive `[min, max]` of each synth setting that has a range.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SynthLimits {
-    pub cutoff_hz: (f32, f32),
-    pub resonance: (f32, f32),
-    /// For attack, decay and release.
-    pub envelope_seconds: (f32, f32),
-    pub sustain: (f32, f32),
-}
-
-impl SynthLimits {
-    const ALL: Self = {
-        use SynthSettings as S;
-        Self {
-            cutoff_hz: (S::MIN_CUTOFF_HZ, S::MAX_CUTOFF_HZ),
-            resonance: (S::MIN_RESONANCE, S::MAX_RESONANCE),
-            envelope_seconds: (S::MIN_ENVELOPE_SECONDS, S::MAX_ENVELOPE_SECONDS),
-            sustain: (S::MIN_SUSTAIN, S::MAX_SUSTAIN),
-        }
     };
 }
 
@@ -1296,8 +1155,6 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         song_end: project.song_end(),
         ticks_per_quarter: TICKS_PER_QUARTER,
         beats_per_bar: transport.time_signature().beats_per_bar,
-        synth_limits: SynthLimits::ALL,
-        synth_defaults: (&SynthSettings::default()).into(),
         mixer_limits: MixerLimits::ALL,
         mixer_defaults: (&MixerStrip::default()).into(),
         max_tracks: Project::MAX_TRACKS,
@@ -1355,6 +1212,7 @@ pub const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uta_core::{KickModel, SettingKind, Unit};
 
     fn offline() -> Uta {
         Uta::offline()
@@ -1509,10 +1367,7 @@ mod tests {
         assert_eq!((view.ticks_per_quarter, view.beats_per_bar), (960, 4));
         assert_eq!(view.tracks[0].clips[0].length, view.loop_length);
         assert!(view.tracks[0].clips[0].notes.is_empty());
-        assert_eq!(
-            synth_of(&view.tracks[0]),
-            (&SynthSettings::default()).into()
-        );
+        assert_eq!(synth_of(&view.tracks[0]), SynthSettings::default());
     }
 
     #[test]
@@ -1527,8 +1382,8 @@ mod tests {
         assert_eq!(outline["loopEnabled"], true);
         let source = &outline["tracks"][0]["source"];
         assert_eq!(source["kind"], "synth");
-        assert_eq!(source["synth"]["waveform"], "saw");
-        assert_eq!(source["synth"]["cutoffHz"], 20_000.0);
+        assert_eq!(source["settings"][0]["value"], "saw");
+        assert_eq!(source["settings"][1]["value"], 20_000.0);
         assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
@@ -1684,17 +1539,73 @@ mod tests {
         assert!(!uta.frame().playing);
     }
 
+    /// The outline describes each synth setting, as it does each drum
+    /// setting: its label, how it sounds, its unit, limits, scale and
+    /// default, or its choices. Every setting the synth has is there, in
+    /// order, with its value.
     #[test]
-    fn the_project_view_carries_the_synth_limits() {
-        let json = serde_json::to_value(offline().update().outline).unwrap();
-        let limits = &json["synthLimits"];
-        assert_eq!(limits["cutoffHz"], serde_json::json!([20.0, 20_000.0]));
-        assert_eq!(limits["resonance"], serde_json::json!([0.0, 1.0]));
-        assert_eq!(limits["sustain"], serde_json::json!([0.0, 1.0]));
-        let envelope = limits["envelopeSeconds"].as_array().unwrap();
-        assert_eq!(envelope[1], 10.0);
-        // 0.001 as an f32 isn't exactly 0.001 as a JSON number.
-        assert!((envelope[0].as_f64().unwrap() - 0.001).abs() < 1e-9);
+    fn the_outline_describes_every_synth_setting() {
+        let outline = offline().update().outline;
+        let SourceView::Synth { settings } = &outline.tracks[0].source else {
+            panic!("a new project's track is a synth");
+        };
+        let params: Vec<_> = settings.iter().map(|setting| setting.param).collect();
+        assert_eq!(params, SynthSettings::default().params());
+        for setting in settings {
+            assert_eq!(setting.description, setting.param.describe());
+        }
+
+        let json = serde_json::to_value(&outline.tracks[0].source).unwrap();
+        assert_eq!(json["kind"], "synth");
+        let waveform = &json["settings"][0];
+        assert_eq!(waveform["name"], "waveform");
+        assert_eq!(waveform["value"], "saw");
+        assert_eq!(waveform["kind"], "choice");
+        assert_eq!(waveform["default"], "saw");
+        assert_eq!(
+            waveform["options"][3],
+            serde_json::json!({"value": "square", "label": "Square"})
+        );
+        let cutoff = &json["settings"][1];
+        assert_eq!(cutoff["name"], "cutoff_hz");
+        assert_eq!(cutoff["value"], 20_000.0);
+        assert_eq!(cutoff["label"], "Cutoff");
+        assert_eq!(cutoff["kind"], "number");
+        assert_eq!(cutoff["unit"], "hz");
+        assert_eq!(cutoff["scale"], "log");
+        assert_eq!(cutoff["limits"], serde_json::json!([20.0, 20_000.0]));
+        assert_eq!(cutoff["default"], 20_000.0);
+        // Each setting has a unit or choices, and says how it sounds.
+        for setting in json["settings"].as_array().unwrap() {
+            assert!(setting["sounds"].as_str().is_some_and(|s| !s.is_empty()));
+            match setting["kind"].as_str() {
+                Some("number") => assert!(setting["unit"].is_string(), "{setting}"),
+                Some("choice") => assert!(setting["options"].is_array(), "{setting}"),
+                kind => panic!("{kind:?}"),
+            }
+        }
+        let units: Vec<_> = json["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|setting| setting["unit"].as_str())
+            .collect();
+        assert_eq!(
+            units,
+            [
+                None,
+                Some("hz"),
+                Some("amount"),
+                Some("seconds"),
+                Some("seconds"),
+                Some("fraction"),
+                Some("seconds"),
+            ]
+        );
+        // The synth's limits and defaults travel with each setting now.
+        let outline = serde_json::to_value(&outline).unwrap();
+        assert!(outline.get("synthLimits").is_none());
+        assert!(outline.get("synthDefaults").is_none());
     }
 
     #[test]
@@ -1706,11 +1617,20 @@ mod tests {
             json["mixerDefaults"],
             serde_json::json!({"volumeDb": 0.0, "pan": 0.0, "mute": false, "solo": false})
         );
-        let synth = &json["synthDefaults"];
-        assert_eq!(synth["waveform"], "saw");
-        assert_eq!(synth["cutoffHz"], 20_000.0);
-        assert_eq!(synth["resonance"], 0.0);
-        assert_eq!(synth["sustain"], 0.7_f32 as f64);
+        let synth = &json["tracks"][0]["source"]["settings"];
+        let default = |name: &str| {
+            synth
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|setting| setting["name"] == name)
+                .unwrap()["default"]
+                .clone()
+        };
+        assert_eq!(default("waveform"), "saw");
+        assert_eq!(default("cutoff_hz"), 20_000.0);
+        assert_eq!(default("resonance"), 0.0);
+        assert_eq!(default("sustain"), 0.7_f32 as f64);
 
         // They're the values a new project and a new track start with.
         let outline = offline().update().outline;
@@ -1718,7 +1638,6 @@ mod tests {
             outline.default_volume_db,
             Project::default().master_volume_db()
         );
-        assert_eq!(outline.synth_defaults, (&SynthSettings::default()).into());
         assert_eq!(outline.mixer_defaults, (&MixerStrip::default()).into());
     }
 
@@ -1726,12 +1645,19 @@ mod tests {
     fn synth_settings_go_through_the_project_to_the_engine() {
         let mut uta = offline();
         let track = uta.project().tracks[0].id;
-        uta.set_synth_param(track, SynthParam::Waveform(Waveform::Square), None)
-            .unwrap();
+        uta.set_synth_param(
+            track,
+            SynthParam::Waveform(uta_core::Waveform::Square),
+            None,
+        )
+        .unwrap();
         uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
             .unwrap();
         let view = synth_of(&uta.project().tracks[0]);
-        assert_eq!((view.waveform, view.cutoff_hz), (Waveform::Square, 800.0));
+        assert_eq!(
+            (view.waveform, view.cutoff_hz),
+            (uta_core::Waveform::Square, 800.0)
+        );
         let engine_synth = |uta: &Uta| match uta.controller.snapshot().tracks()[0].sound {
             uta_engine::TrackSound::Synth(synth) => synth,
             uta_engine::TrackSound::Drums(_) => panic!("a synth track"),
@@ -1792,7 +1718,7 @@ mod tests {
         let param: SynthParam =
             serde_json::from_value(serde_json::json!({"name": "waveform", "value": "triangle"}))
                 .unwrap();
-        assert_eq!(param, SynthParam::Waveform(Waveform::Triangle));
+        assert_eq!(param, SynthParam::Waveform(uta_core::Waveform::Triangle));
     }
 
     fn shape(view: &ProjectView) -> Vec<(usize, Vec<usize>)> {
@@ -1912,12 +1838,25 @@ mod tests {
         }
     }
 
-    /// The synth settings of `track`, a synth track.
-    fn synth_of<C>(track: &TrackOutline<C>) -> SynthView {
-        match &track.source {
-            SourceView::Synth { synth } => *synth,
-            SourceView::Drums { .. } => panic!("{} isn't a synth track", track.name),
+    /// The synth settings of `track`, a synth track, put back together from
+    /// the values the outline sends.
+    fn synth_of<C>(track: &TrackOutline<C>) -> SynthSettings {
+        let SourceView::Synth { settings } = &track.source else {
+            panic!("{} isn't a synth track", track.name);
+        };
+        let mut synth = SynthSettings::default();
+        for setting in settings {
+            match setting.param {
+                SynthParam::Waveform(waveform) => synth.waveform = waveform,
+                SynthParam::CutoffHz(hz) => synth.cutoff_hz = hz,
+                SynthParam::Resonance(value) => synth.resonance = value,
+                SynthParam::AttackSeconds(seconds) => synth.attack_seconds = seconds,
+                SynthParam::DecaySeconds(seconds) => synth.decay_seconds = seconds,
+                SynthParam::Sustain(level) => synth.sustain = level,
+                SynthParam::ReleaseSeconds(seconds) => synth.release_seconds = seconds,
+            }
         }
+        synth
     }
 
     fn first_track(uta: &Uta) -> TrackId {
@@ -2339,7 +2278,7 @@ mod tests {
         assert_eq!(first.mixer, (&MixerStrip::default()).into());
         assert_eq!(other.id, second);
         assert_eq!(other.mixer, (&mixer(-6.0, -0.5, true, false)).into());
-        assert_eq!(synth_of(other), (&SynthSettings::default()).into());
+        assert_eq!(synth_of(other), SynthSettings::default());
         assert_eq!(first.clips.len(), 1);
         assert_eq!(first.clips[0].notes, vec![note(1, 60, 0, 240)]);
         assert!(other.clips.is_empty(), "a new track has no clips");
@@ -2561,15 +2500,12 @@ mod tests {
         // sounds without a circuit yet have none.
         let kick = &kit.rows[0];
         assert_eq!(kick.settings.len(), 4);
+        assert_eq!(kick.settings[0].param, DrumParam::TuneHz(49.0));
         assert_eq!(
-            kick.settings[0],
-            DrumSettingView {
-                param: DrumParam::TuneHz(49.0),
-                label: "Tune",
-                limits: (40.0, 80.0),
-                default: 49.0,
-                unit: DrumUnit::Hz,
-            }
+            kick.settings[0].description,
+            KitSettings::default()
+                .describe(DrumSound::Kick, &DrumParam::TuneHz(49.0))
+                .unwrap()
         );
         for row in &kit.rows {
             let params: Vec<_> = KitSettings::default()
@@ -2589,17 +2525,33 @@ mod tests {
         assert_eq!(row["sound"], "kick");
         assert_eq!(row["name"], "Kick");
         assert_eq!(row["pitch"], 36);
+        let tune = row["settings"][0].as_object().unwrap();
+        assert!(tune["sounds"].as_str().is_some_and(|s| !s.is_empty()));
+        let without_sounds: serde_json::Map<_, _> = tune
+            .iter()
+            .filter(|(key, _)| *key != "sounds")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
         assert_eq!(
-            row["settings"][0],
+            serde_json::Value::Object(without_sounds),
             serde_json::json!({
                 "name": "tune_hz",
                 "value": 49.0,
                 "label": "Tune",
+                "kind": "number",
+                "unit": "hz",
+                "scale": "log",
                 "limits": [40.0, 80.0],
                 "default": 49.0,
-                "unit": "hz",
             })
         );
+        // Every setting of every sound has a unit and says how it sounds.
+        for row in source["kit"]["rows"].as_array().unwrap() {
+            for setting in row["settings"].as_array().unwrap() {
+                assert!(setting["unit"].is_string(), "{setting}");
+                assert!(setting["sounds"].is_string(), "{setting}");
+            }
+        }
         // Tone is in a different unit on each sound that has it.
         let tone_unit = |row: usize| {
             let settings = source["kit"]["rows"][row]["settings"].as_array().unwrap();
@@ -2663,15 +2615,17 @@ mod tests {
             kit.rows[0].clone()
         };
         let json = serde_json::to_value(uta.update().outline).unwrap();
+        let model = &json["tracks"][1]["source"]["kit"]["rows"][0]["model"];
+        assert_eq!(model["name"], "model");
+        assert_eq!(model["label"], "Model");
+        assert_eq!(model["value"], "808");
+        assert_eq!(model["kind"], "choice");
         assert_eq!(
-            json["tracks"][1]["source"]["kit"]["rows"][0]["model"],
-            serde_json::json!({
-                "label": "Model",
-                "value": "808",
-                "options": [{"value": "808", "label": "808"}, {"value": "909", "label": "909"}],
-                "default": "808",
-            })
+            model["options"],
+            serde_json::json!([{"value": "808", "label": "808"}, {"value": "909", "label": "909"}])
         );
+        assert_eq!(model["default"], "808");
+        assert!(model["sounds"].is_string());
         // No other sound has a model.
         let rows = json["tracks"][1]["source"]["kit"]["rows"]
             .as_array()
@@ -2686,21 +2640,26 @@ mod tests {
         )
         .unwrap();
         let row = kick(&uta);
-        assert_eq!(row.model.unwrap().value, KickModel::Tr909);
-        let labels: Vec<_> = row.settings.iter().map(|setting| setting.label).collect();
+        assert_eq!(row.model.unwrap().param, DrumParam::Model(KickModel::Tr909));
+        let labels: Vec<_> = row
+            .settings
+            .iter()
+            .map(|setting| setting.description.label)
+            .collect();
         assert_eq!(labels, ["Tune", "Sweep", "Attack", "Decay", "Level"]);
-        assert_eq!(
-            row.settings[0],
-            DrumSettingView {
-                param: DrumParam::TuneHz(55.0),
-                label: "Tune",
-                limits: (45.0, 70.0),
-                default: 55.0,
-                unit: DrumUnit::Hz,
-            }
-        );
-        assert_eq!(row.settings[1].unit, DrumUnit::Fraction);
-        assert_eq!(row.settings[3].limits, (0.1, 1.5));
+        let number = |setting: &SettingView<DrumParam>| match setting.description.kind {
+            SettingKind::Number {
+                unit,
+                limits,
+                default,
+                ..
+            } => (unit, limits, default),
+            SettingKind::Choice { .. } => panic!("{setting:?} is a number"),
+        };
+        assert_eq!(row.settings[0].param, DrumParam::TuneHz(55.0));
+        assert_eq!(number(&row.settings[0]), (Unit::Hz, (45.0, 70.0), 55.0));
+        assert_eq!(number(&row.settings[1]).0, Unit::Fraction);
+        assert_eq!(number(&row.settings[3]).1, (0.1, 1.5));
         let engine_model = |uta: &Uta| match uta.controller.snapshot().tracks()[1].sound {
             uta_engine::TrackSound::Drums(kit) => kit.kick_model,
             uta_engine::TrackSound::Synth(_) => panic!("a drum track"),
@@ -2714,7 +2673,7 @@ mod tests {
         uta.undo();
         uta.undo();
         let row = kick(&uta);
-        assert_eq!(row.model.unwrap().value, KickModel::Tr808);
+        assert_eq!(row.model.unwrap().param, DrumParam::Model(KickModel::Tr808));
         assert_eq!(row.settings[0].param, DrumParam::TuneHz(49.0));
         assert_eq!(engine_model(&uta), KickModel::Tr808);
     }

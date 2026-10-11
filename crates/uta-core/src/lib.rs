@@ -23,6 +23,7 @@ mod drums;
 mod id;
 mod project;
 mod session;
+mod setting;
 mod synth;
 #[cfg(test)]
 mod testing;
@@ -40,6 +41,7 @@ pub use drums::{
 pub use id::{ClipId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};
+pub use setting::{Choice, Description, Kind as SettingKind, Scale, Unit};
 pub use synth::{SynthParam, SynthSettings, Waveform};
 pub use track::{Clip, Effect, MixerStrip, Note, Notes, Source, SourceKind, Track};
 

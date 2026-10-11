@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::setting::{Choice, Description, Scale, Unit};
+
 /// The oscillator's wave shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -15,6 +17,41 @@ pub enum Waveform {
     Saw,
     Square,
 }
+
+impl Waveform {
+    /// Every wave, in the panel's order.
+    pub const ALL: [Waveform; 4] = [Self::Sine, Self::Triangle, Self::Saw, Self::Square];
+
+    /// The wave as `SetSynthParam` carries it: `"saw"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::Sine => "sine",
+            Self::Triangle => "triangle",
+            Self::Saw => "saw",
+            Self::Square => "square",
+        }
+    }
+}
+
+/// Every wave, as the panel offers them.
+const WAVEFORMS: [Choice; 4] = [
+    Choice {
+        value: "sine",
+        label: "Sine",
+    },
+    Choice {
+        value: "triangle",
+        label: "Triangle",
+    },
+    Choice {
+        value: "saw",
+        label: "Saw",
+    },
+    Choice {
+        value: "square",
+        label: "Square",
+    },
+];
 
 /// Everything that shapes the synth's sound.
 ///
@@ -152,6 +189,80 @@ impl SynthParam {
         }
     }
 
+    /// The setting described: its label, how it sounds, its unit, range,
+    /// scale and default, or its choices. The value it carries doesn't
+    /// matter.
+    pub fn describe(&self) -> Description {
+        use Scale::{Linear, Log};
+        let defaults = SynthSettings::default();
+        let default = defaults
+            .params()
+            .into_iter()
+            .find(|param| param.same_setting(self))
+            .expect("every setting has a default");
+        let number = |label, sounds, unit, scale| {
+            let (value, min, max) = default.range().expect("a number has a range");
+            Description::number(label, sounds, unit, scale, (min, max), value)
+        };
+        match self {
+            Self::Waveform(_) => Description::choice(
+                "Waveform",
+                "The oscillator's shape, where the sound starts before the filter \
+                 takes anything away. Sine is pure and round, triangle soft and \
+                 hollow, saw bright and buzzy, the richest to filter, and square \
+                 hollow and reedy.",
+                &WAVEFORMS,
+                defaults.waveform.value(),
+            ),
+            Self::CutoffHz(_) => number(
+                "Cutoff",
+                "How bright it is: the low-pass filter takes away everything above \
+                 it. Low is dark and muffled, like a bass through a wall; high lets \
+                 the whole wave through.",
+                Unit::Hz,
+                Log,
+            ),
+            Self::Resonance(_) => number(
+                "Resonance",
+                "How much the filter rings at the cutoff. A little adds bite and a \
+                 vocal edge; a lot whistles at the cutoff's pitch and thins out \
+                 the lows.",
+                Unit::Amount,
+                Linear,
+            ),
+            Self::AttackSeconds(_) => number(
+                "Attack",
+                "How quickly each note fades in. Short is a pluck or a stab; long \
+                 is a swell, like bowed strings or a pad.",
+                Unit::Seconds,
+                Log,
+            ),
+            Self::DecaySeconds(_) => number(
+                "Decay",
+                "How quickly a note falls from its peak to the Sustain level. \
+                 Short with a low Sustain is a pluck; long gives each note a slow \
+                 fade while it's held.",
+                Unit::Seconds,
+                Log,
+            ),
+            Self::Sustain(_) => number(
+                "Sustain",
+                "How loud a held note stays once it has decayed. Full holds like \
+                 an organ; none dies away even while the key is down, like a \
+                 plucked string.",
+                Unit::Fraction,
+                Linear,
+            ),
+            Self::ReleaseSeconds(_) => number(
+                "Release",
+                "How long a note rings on after the key is let go. Short is tight \
+                 and staccato; long leaves a tail that runs into the next notes.",
+                Unit::Seconds,
+                Log,
+            ),
+        }
+    }
+
     /// Whether the value is within the setting's range. NaN never is.
     fn in_range(&self) -> bool {
         self.range()
@@ -162,6 +273,7 @@ impl SynthParam {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::setting::Kind;
 
     #[test]
     fn defaults_match_the_plan() {
@@ -206,6 +318,73 @@ mod tests {
         ] {
             assert!(settings.set(param).is_ok(), "{param:?} was rejected");
         }
+    }
+
+    #[test]
+    fn every_setting_is_described_with_its_range_and_default() {
+        let settings = SynthSettings::default();
+        for param in settings.params() {
+            let description = param.describe();
+            assert!(!description.label.is_empty(), "{param:?} has no label");
+            assert!(
+                description.sounds.ends_with('.'),
+                "{param:?} doesn't say how it sounds"
+            );
+            match (description.kind, param.range()) {
+                (
+                    Kind::Number {
+                        limits, default, ..
+                    },
+                    Some((value, min, max)),
+                ) => {
+                    assert_eq!(limits, (min, max), "{param:?}");
+                    assert_eq!(default, value, "{param:?}");
+                }
+                (Kind::Choice { default, .. }, None) => {
+                    assert_eq!(default, settings.waveform.value())
+                }
+                (kind, range) => panic!("{param:?} is described as {kind:?} with {range:?}"),
+            }
+        }
+        let units: Vec<_> = settings
+            .params()
+            .iter()
+            .filter_map(|param| match param.describe().kind {
+                Kind::Number { unit, scale, .. } => Some((unit, scale)),
+                Kind::Choice { .. } => None,
+            })
+            .collect();
+        use crate::setting::{Scale::*, Unit::*};
+        assert_eq!(
+            units,
+            [
+                (Hz, Log),
+                (Amount, Linear),
+                (Seconds, Log),
+                (Seconds, Log),
+                (Fraction, Linear),
+                (Seconds, Log),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_waveforms_choices_are_its_values_in_order() {
+        let Kind::Choice { options, .. } = SynthParam::Waveform(Waveform::Saw).describe().kind
+        else {
+            panic!("the waveform is a choice");
+        };
+        let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = Waveform::ALL
+            .iter()
+            .map(|wave| serde_json::to_value(wave).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = Waveform::ALL.iter().map(|wave| wave.value()).collect();
+        assert_eq!(values, names);
     }
 
     #[test]
