@@ -15,12 +15,12 @@ mod common;
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use common::{
     CLAP, CLOSED_HAT, CYMBAL, HIGH_TOM, KICK, LOW_TOM, OPEN_HAT, SNARE, demo_loop, demo_song,
-    drum_project, drum_track, empty_drum_track, empty_sine_track, hit, note, project,
-    replace_track, with_every_slot_taken, with_mixer,
+    drum_project, drum_project_with_kit, drum_track, empty_drum_track, empty_sine_track, hit, note,
+    project, replace_track, with_every_slot_taken, with_mixer,
 };
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, KickModel, NoteId, PlacedClip,
-    PlacedTrack, SynthParam, TrackId,
+    Clip, ClipId, ClipPosition, Command, DrumParam, DrumSound, KickModel, KitSettings, NoteId,
+    PlacedClip, PlacedTrack, SynthParam, TrackId,
 };
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
@@ -655,8 +655,8 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
     );
 }
 
-/// Every sound's hits, fast repeats and flams, closed hats choking open
-/// ones, every control of each turned while they ring, the kick's model
+/// Every sound's hits, fast repeats and flams, all eight sounds hitting at
+/// once on every 16th from the default kit, closed hats choking open ones, every control of each turned while they ring, the kick's model
 /// switched while it rings, live hits, a jump
 /// and Play again (which restarts the kit's noise and its metal,
 /// crossfading if the hats or the cymbal ring), and more drum events in a
@@ -685,7 +685,7 @@ fn drum_hits_flams_and_control_turns_do_not_allocate() {
     for i in 0..MAX_NOTE_EVENTS_PER_BLOCK as u128 {
         hits.push(hit(1000 + i, KICK, 100, beat / 4));
     }
-    let mut project = drum_project(120.0, 1, &[], hits);
+    let mut project = drum_project_with_kit(KitSettings::default(), 120.0, 1, &[], hits);
     let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
     let mut buffer = vec![0.0; BLOCK * 2];
     let slot = renderer.controller.slot(drum_track()).unwrap();
