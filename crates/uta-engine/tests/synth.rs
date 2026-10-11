@@ -669,6 +669,33 @@ fn noise_follows_its_level() {
     assert_eq!(peak(&noise(0.0)), 0.0);
 }
 
+/// Each voice's noise comes from its own seed: two noise notes at once add
+/// up as two different noises, 3 dB louder than one, not as one noise twice
+/// over, 6 dB louder.
+#[test]
+fn each_voice_has_its_own_noise() {
+    let settings = SynthSettings {
+        noise_level: 1.0,
+        ..only_osc1(0.0)
+    };
+    let notes = |count: u128| {
+        let mut renderer = renderer(settings, 128);
+        for key in 0..count {
+            renderer
+                .controller
+                .note_on(0, NoteKey(key), 60, 127)
+                .unwrap();
+        }
+        renderer.render_seconds(1.0);
+        rms(&renderer.into_samples()[seconds(0.4)..])
+    };
+    let db = 20.0 * (notes(2) / notes(1)).log10();
+    assert!(
+        (db - 3.01).abs() < 0.5,
+        "two noise notes are {db:.2} dB louder than one"
+    );
+}
+
 /// Two oscillators at full level, detuned, or one with the sub, sound about
 /// as loud as one oscillator alone: the mixer turns the mix down once its
 /// levels add up to more than one. Oscillator 2 alone at full level is as
@@ -888,8 +915,13 @@ fn the_sub_noise_and_waves_glide_when_turned() {
         ),
     ];
     let glide = (uta_engine::SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    // Where the sub an octave down and the sub two down disagree, so the
+    // sub's Octave changes the sound at once unless it crossfades: the note
+    // is at 110 Hz, so sample 2816 is in oscillator 1's seventh cycle, from
+    // sample 2618 to 3054, where the first is high and the second low.
+    let at = 128 * 22;
     for (what, from, to) in turns {
-        assert_glides(&turn_difference(from, to, 128 * 40), glide, what);
+        assert_glides(&turn_difference(from, to, at), glide, what);
     }
 }
 

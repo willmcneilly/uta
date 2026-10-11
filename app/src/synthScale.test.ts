@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Limits, NumberSettingView } from "./backend";
+import type { Limits } from "./backend";
 import {
   SETTING_STEPS,
   formatAmount,
@@ -9,7 +9,6 @@ import {
   formatSeconds,
   formatSemitones,
   fromPosition,
-  settingScale,
   toPosition,
 } from "./synthScale";
 
@@ -71,35 +70,6 @@ describe("toPosition", () => {
     expect(toPosition(40_000, cutoff, "log")).toBe(SETTING_STEPS);
     expect(toPosition(0, envelope, "log")).toBe(0);
     expect(toPosition(Number.NaN, level, "linear")).toBe(0);
-  });
-});
-
-describe("settingScale", () => {
-  const octave: NumberSettingView = {
-    kind: "number",
-    name: "osc1_octave",
-    label: "Osc 1 octave",
-    sounds: "",
-    value: 0,
-    unit: "octaves",
-    scale: "linear",
-    limits: [-2, 2],
-    default: 0,
-    step: 1,
-  };
-
-  it("only gives whole steps for a setting with a step", () => {
-    const scale = settingScale(octave);
-    const values = new Set<number>();
-    for (let position = 0; position <= SETTING_STEPS; position += 1) {
-      values.add(scale.fromPosition(position));
-    }
-    expect([...values]).toEqual([-2, -1, 0, 1, 2]);
-  });
-
-  it("gives any value for a setting without one", () => {
-    const free = { ...octave, step: undefined };
-    expect(settingScale(free).fromPosition(600)).toBeCloseTo(0.4, 9);
   });
 });
 

@@ -49,20 +49,14 @@ export function toPosition(value: number, limits: Limits, scale: Scale): number 
   return Math.min(SETTING_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
 }
 
-/**
- * A setting's positions, on the scale and within the limits Rust describes it
- * with. A setting with a step only takes the values a whole number of steps
- * from its minimum, such as whole octaves.
- */
-export function settingScale({ limits, scale, step }: NumberSettingView): NumberScale {
-  const snap = (value: number) =>
-    step === undefined ? value : limits[0] + Math.round((value - limits[0]) / step) * step;
+/** A setting's positions, on the scale and within the limits Rust describes it with. */
+export function settingScale({ limits, scale }: NumberSettingView): NumberScale {
   return {
     min: limits[0],
     max: limits[1],
     steps: SETTING_STEPS,
     toPosition: (value) => toPosition(value, limits, scale),
-    fromPosition: (position) => snap(fromPosition(position, limits, scale)),
+    fromPosition: (position) => fromPosition(position, limits, scale),
   };
 }
 
