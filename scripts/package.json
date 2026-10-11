@@ -1,0 +1,5 @@
+{
+  "//": "The repository scripts are ES modules, for Node and TypeScript alike.",
+  "private": true,
+  "type": "module"
+}

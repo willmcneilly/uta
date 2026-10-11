@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs the checks this change needs. See scripts/src/check.ts, or --help.
+exec node "$(dirname "$0")/src/check.ts" "$@"

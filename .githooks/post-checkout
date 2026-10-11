@@ -1,0 +1,7 @@
+#!/bin/sh
+# A new worktree starts from a warm build (scripts/warm). git passes the
+# previous HEAD, which is all zeros only when the worktree was just created.
+# Never fails: its exit status would become git worktree add's.
+[ "$1" = 0000000000000000000000000000000000000000 ] || exit 0
+"$(git rev-parse --show-toplevel)/scripts/warm" || true
+exit 0
