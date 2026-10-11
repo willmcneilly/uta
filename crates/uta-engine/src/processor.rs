@@ -12,7 +12,7 @@ use uta_core::TrackId;
 use uta_core::time::Ticks;
 
 use crate::drums::Kit;
-use crate::effects::chain::Chain;
+use crate::effects::chain::{Chain, ChainAt};
 use crate::ramp::Ramp;
 use crate::synth::{NoteOn, Synth, VOICES};
 use crate::{
@@ -58,6 +58,9 @@ pub struct Processor {
     /// The left and right of the mix, before the master volume. Boxed, so
     /// the processor stays small to move between streams.
     mix: Box<[[f32; TRACK_BUFFER_FRAMES]; 2]>,
+    /// The master's chain, between the mix and the master volume. Boxed for
+    /// the same reason.
+    master: Box<Chain>,
 
     playing: bool,
     /// Where it's playing, in samples from the start of the song, timed at
@@ -366,11 +369,23 @@ impl Slot {
 
     /// Renders the synth and the kit into the buffer, runs it through the
     /// chain, then adds it to `left` and `right` through the track's
-    /// balance. At most [`TRACK_BUFFER_FRAMES`] frames.
-    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+    /// balance. At most [`TRACK_BUFFER_FRAMES`] frames. The chain sends the
+    /// states of effects that have faded out back on `used`.
+    fn render(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        used: &mut Producer<Box<EffectState>>,
+    ) {
         self.render_source(left.len());
-        self.chain.process(&mut self.buffer, left.len());
+        self.chain.process(&mut self.buffer, left.len(), used);
         self.balance_into(left, right);
+    }
+
+    /// Whether it has anything to render: a track, a sound still dying
+    /// away, or effects still fading out of its chain.
+    fn is_busy(&self) -> bool {
+        self.track.is_some() || self.is_sounding() || !self.chain.is_empty()
     }
 
     /// Renders the synth and the kit into both sides of the buffer, for
@@ -450,6 +465,7 @@ impl Processor {
                 .map(|slot| Slot::new(snapshot.track_in(slot), soloing, sample_rate))
                 .collect(),
             mix: Box::new([[0.0; TRACK_BUFFER_FRAMES]; 2]),
+            master: Box::new(Chain::new(&snapshot.effects, sample_rate)),
             playing: false,
             paused: false,
             playhead: 0,
@@ -477,8 +493,11 @@ impl Processor {
     /// The snapshot is retimed to the new rate, and the playhead keeps its
     /// place in the music, as it does when a new snapshot changes the tempo.
     /// The sound fades in, so the switch doesn't click. Every note falls
-    /// silent.
-    pub(crate) fn prepare(&mut self, sample_rate: u32, channels: usize) {
+    /// silent, and every effect's state is made again for the new rate, so
+    /// its echoes are gone: this allocates and frees, so it never runs on
+    /// the audio thread. See RFC-007, "Patterns for every effect after this
+    /// one", point 5.
+    pub fn prepare(&mut self, sample_rate: u32, channels: usize) {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
         let retimed = self.snapshot.at_sample_rate(sample_rate);
@@ -505,10 +524,9 @@ impl Processor {
             slot.gains = gain_ramps(track, soloing, sample_rate);
             slot.synth.prepare(sample_rate);
             slot.kit.prepare(sample_rate);
-            // The tapes keep the length they were made with. UTA-69 makes
-            // new states for the new rate here.
             slot.chain.prepare(sample_rate);
         }
+        self.master.prepare(sample_rate);
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
         self.output_gain.set_target(1.0);
@@ -767,7 +785,8 @@ impl Processor {
     /// Renders every slot with a track or a sound into `output`, which holds
     /// whole frames: each track is stereo, its volume, balance (pan), mute
     /// and solo set each side's level, and they're added together, then the
-    /// master volume, then a hard clip at full scale. The first two channels
+    /// master's chain, then the master volume, then a hard clip at full
+    /// scale. The first two channels
     /// get the left and right, and any more are silent. A single channel gets
     /// their average, so a centred track sounds the same in mono. See RFC-003, "The master and headroom".
     ///
@@ -775,15 +794,21 @@ impl Processor {
     /// so it doesn't change the sound either.
     fn render(&mut self, output: &mut [f32]) {
         let frames = output.len() / self.channels;
-        let [left, right] = &mut *self.mix;
-        let (left, right) = (&mut left[..frames], &mut right[..frames]);
-        left.fill(0.0);
-        right.fill(0.0);
-        for slot in self.slots.iter_mut() {
-            if slot.track.is_some() || slot.is_sounding() {
-                slot.render(left, right);
+        {
+            let [left, right] = &mut *self.mix;
+            let (left, right) = (&mut left[..frames], &mut right[..frames]);
+            left.fill(0.0);
+            right.fill(0.0);
+            for slot in self.slots.iter_mut() {
+                if slot.is_busy() {
+                    slot.render(left, right, &mut self.used_states);
+                }
             }
         }
+        self.master
+            .process(&mut self.mix, frames, &mut self.used_states);
+        let [left, right] = &*self.mix;
+        let (left, right) = (&left[..frames], &right[..frames]);
 
         let mut peak = self.peak;
         let mut clips = self.clips;
@@ -876,10 +901,22 @@ impl Processor {
                     for (index, slot) in self.slots.iter_mut().enumerate() {
                         let track = self.snapshot.track_in(index);
                         slot.load(track, soloing);
+                        // A track that's gone takes its chain with it: its
+                        // effects fade out quickly, echoes and all.
                         let effects = track.map_or(&[][..], |track| track.effects.as_slice());
-                        slot.chain
-                            .load(index, effects, &mut swap.states, &mut self.used_states);
+                        slot.chain.load(
+                            ChainAt::Slot(index),
+                            effects,
+                            &mut swap.states,
+                            &mut self.used_states,
+                        );
                     }
+                    self.master.load(
+                        ChainAt::Master,
+                        &self.snapshot.effects,
+                        &mut swap.states,
+                        &mut self.used_states,
+                    );
                     self.find_bookmarks();
                     self.release_changed_notes();
                     if self.playing {
@@ -955,6 +992,7 @@ impl Processor {
             snapshots: self.swaps,
             sounding_slots,
             ringing_chains,
+            master_ringing: self.master.is_ringing(),
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;

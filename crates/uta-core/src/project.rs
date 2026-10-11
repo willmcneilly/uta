@@ -714,9 +714,9 @@ impl Project {
         index(&self.master_effects)
             .map(|index| (Chain::Master, index))
             .or_else(|| {
-                self.tracks.iter().find_map(|track| {
-                    Some((Chain::Track(track.id), index(&track.effects)?))
-                })
+                self.tracks
+                    .iter()
+                    .find_map(|track| Some((Chain::Track(track.id), index(&track.effects)?)))
             })
     }
 
@@ -3268,7 +3268,10 @@ mod tests {
             CommandError::ChainFull(Chain::Master),
         );
         let error = CommandError::ChainFull(Chain::Master).to_string();
-        assert!(error.contains("master's chain can hold at most 8"), "{error}");
+        assert!(
+            error.contains("master's chain can hold at most 8"),
+            "{error}"
+        );
     }
 
     #[test]

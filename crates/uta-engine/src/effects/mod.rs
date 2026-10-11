@@ -15,11 +15,13 @@
 //!   The audio thread owns a state it was handed, but never frees one.
 //!
 //! Every kind of effect does the same five things ([`Effect`]); the chain
-//! ([`chain::Chain`]) does the rest for all of them, Mix included.
+//! ([`chain::Chain`]) does the rest for all of them: on/off, Mix, the fades
+//! when one is added, removed, moved or switched, and sleeping.
 
 pub(crate) mod chain;
 mod delay;
 
+pub use chain::{CHAIN_CAPACITY, EFFECT_FADE_SECONDS};
 pub use delay::{DELAY_TAPE_SECONDS, DelaySettings};
 
 use uta_core::EffectId;
@@ -46,13 +48,18 @@ pub(crate) trait Effect {
 
     /// Whether it's still making sound of its own: a delay's echoes. While
     /// it is, the track keeps sounding after Stop, and a render runs on.
+    ///
+    /// Once it isn't, it's **asleep**: given silence (every sample exactly
+    /// 0), it must give silence and change nothing it carries forward, so
+    /// the chain can skip it without changing the sound. That means its
+    /// settings mustn't be gliding while it's asleep: with nothing ringing,
+    /// they can go straight to where they're going. See RFC-007,
+    /// "Stopping, switching off, and tails" (Sleeping).
     fn is_ringing(&self) -> bool;
 
-    /// Forgets everything it has heard, as if new.
-    #[allow(
-        dead_code,
-        reason = "switching an effect back on starts it from silence (UTA-69)"
-    )]
+    /// Forgets everything it has heard, as if new: what switching it off
+    /// does once it has faded out, so switching it on starts from silence.
+    /// Like everything here, it must be quick, whatever memory it has.
     fn clear(&mut self);
 }
 
@@ -145,6 +152,21 @@ impl EffectState {
     pub(crate) fn is_ringing(&self) -> bool {
         match &self.0 {
             Kind::Delay(delay) => delay.is_ringing(),
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        match &mut self.0 {
+            Kind::Delay(delay) => delay.clear(),
+        }
+    }
+
+    /// How many samples it has processed so far, for tests that check an
+    /// effect does no work while it's switched off or asleep.
+    #[cfg(test)]
+    pub(crate) fn processed(&self) -> u64 {
+        match &self.0 {
+            Kind::Delay(delay) => delay.processed(),
         }
     }
 }

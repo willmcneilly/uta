@@ -85,19 +85,28 @@ pub(crate) struct Delay {
     mask: usize,
     /// Where the recording head writes next.
     write: usize,
+    /// How many of the samples just behind the recording head hold sound
+    /// written since the tape was last cleared. The playback head hears
+    /// anything further back as silence, so clearing the tape is setting
+    /// this to 0, not writing over 5 seconds of it on the audio thread.
+    filled: usize,
     sample_rate: f64,
     settings: DelaySettings,
     /// How far behind the recording head the playback head is, in samples.
     time: Ramp,
     feedback: Ramp,
     /// Samples in a row with nothing above [`SILENCE`] going in or coming
-    /// out. While it's shorter than the time, echoes are still on the tape.
+    /// out, or `u32::MAX` once it's asleep: the echoes have died away and
+    /// the tape is clear.
     quiet: u32,
+    #[cfg(test)]
+    processed: u64,
 }
 
 impl Delay {
     /// A Delay with `settings`, with a tape long enough for the longest time
-    /// at `sample_rate`. Allocates: control side only.
+    /// at `sample_rate`. It starts asleep, with a clear tape. Allocates:
+    /// control side only.
     pub(crate) fn new(settings: DelaySettings, sample_rate: f64) -> Self {
         let samples = ((DELAY_TAPE_SECONDS + WOBBLE_ROOM_SECONDS) * sample_rate).ceil() as usize;
         let length = (samples + 2 * READ_MARGIN).next_power_of_two();
@@ -106,11 +115,14 @@ impl Delay {
             tapes: [tape(), tape()],
             mask: length - 1,
             write: 0,
+            filled: 0,
             sample_rate,
             settings: settings.clamped(),
             time: Ramp::new(0.0, 1),
             feedback: Ramp::new(0.0, 1),
             quiet: u32::MAX,
+            #[cfg(test)]
+            processed: 0,
         };
         delay.prepare(sample_rate);
         delay
@@ -127,6 +139,25 @@ impl Delay {
     /// The samples a glide of `seconds` takes at the current rate.
     fn glide(&self, seconds: f64) -> u32 {
         (seconds * self.sample_rate).round() as u32
+    }
+
+    /// How many samples it has processed: the recording head has moved on
+    /// one for each.
+    #[cfg(test)]
+    pub(crate) fn processed(&self) -> u64 {
+        self.processed
+    }
+
+    /// Goes to sleep: the echoes have died away, so it clears the tape, and
+    /// its time and Feedback go straight to their settings, as there's
+    /// nothing on the tape to glide. Asleep, silence in gives silence out
+    /// and changes nothing, so the chain can skip it. Real-time safe, and
+    /// does no work proportional to the tape.
+    fn sleep(&mut self) {
+        self.filled = 0;
+        self.quiet = u32::MAX;
+        self.time.jump_to(self.time_samples(self.settings));
+        self.feedback.jump_to(self.settings.feedback);
     }
 }
 
@@ -146,9 +177,19 @@ impl Effect for Delay {
     /// writes the input plus Feedback times the echo at the recording head,
     /// and leaves the echo as the output. A click in comes back after
     /// exactly the time, then again Feedback times as loud, and so on.
+    ///
+    /// Once nothing above −120 dB has gone in or come out for a little
+    /// longer than the time, every echo on its way has passed the playback
+    /// head, and it goes to sleep on that sample.
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let mask = self.mask;
+        let length = mask + 1;
+        let settled_time = self.time_samples(self.settings);
         let mut quiet = self.quiet;
+        #[cfg(test)]
+        {
+            self.processed += left.len() as u64;
+        }
         // Bounded by the block.
         for (left, right) in left.iter_mut().zip(right.iter_mut()) {
             let time = self.time.next_value();
@@ -158,10 +199,23 @@ impl Effect for Delay {
             // after it. A whole number of samples reads that sample exactly.
             let whole = time.ceil();
             let fraction = whole - time;
-            let read = self.write.wrapping_sub(whole as usize);
+            let whole = whole as usize;
+            let read = self.write.wrapping_sub(whole);
+            // Cubic interpolation reads the samples `whole + 1` to
+            // `whole - 2` behind the recording head. Usually all of them
+            // were written since the tape was cleared; when they weren't,
+            // the ones that weren't are silence.
+            let filled = self.filled;
+            let all_filled = whole < filled;
             let mut frame_loud = false;
             for (sample, tape) in [left, right].into_iter().zip(&mut self.tapes) {
-                let at = |offset: usize| tape[read.wrapping_add(offset).wrapping_sub(1) & mask];
+                let at = |offset: usize| {
+                    if all_filled || whole + 1 - offset <= filled {
+                        tape[read.wrapping_add(offset).wrapping_sub(1) & mask]
+                    } else {
+                        0.0
+                    }
+                };
                 let echo = cubic(at(0), at(1), at(2), at(3), fraction);
                 let input = *sample;
                 let mut written = input + feedback * echo;
@@ -175,35 +229,41 @@ impl Effect for Delay {
                 frame_loud |= input.abs() > SILENCE || echo.abs() > SILENCE;
             }
             self.write = (self.write + 1) & mask;
-            quiet = if frame_loud {
-                0
-            } else {
-                quiet.saturating_add(1)
-            };
+            self.filled = (self.filled + 1).min(length);
+            if frame_loud {
+                quiet = 0;
+            } else if quiet != u32::MAX {
+                quiet += 1;
+                if quiet as f32 > time.max(settled_time) + READ_MARGIN as f32 {
+                    self.sleep();
+                    quiet = u32::MAX;
+                }
+            }
         }
         self.quiet = quiet;
     }
 
+    /// While it's awake, the time and Feedback glide, so the playback head
+    /// moves rather than jumps. Asleep, they go straight there.
     fn set_settings(&mut self, settings: DelaySettings) {
         let settings = settings.clamped();
         self.settings = settings;
-        self.time.set_target(self.time_samples(settings));
-        self.feedback.set_target(settings.feedback);
+        if self.is_ringing() {
+            self.time.set_target(self.time_samples(settings));
+            self.feedback.set_target(settings.feedback);
+        } else {
+            self.time.jump_to(self.time_samples(settings));
+            self.feedback.jump_to(settings.feedback);
+        }
     }
 
-    /// Ringing until nothing above −120 dB has gone in or come out for a
-    /// little longer than the time: by then every echo on its way has
-    /// passed the playback head.
+    /// Ringing until it goes to sleep: see [`Delay::process`].
     fn is_ringing(&self) -> bool {
-        let time = self.time.value().max(self.time_samples(self.settings));
-        (self.quiet as f32) <= time + READ_MARGIN as f32
+        self.quiet != u32::MAX
     }
 
     fn clear(&mut self) {
-        for tape in &mut self.tapes {
-            tape.fill(0.0);
-        }
-        self.quiet = u32::MAX;
+        self.sleep();
     }
 }
 
@@ -355,6 +415,52 @@ mod tests {
             "rang for {ringing_blocks} blocks of 10 ms"
         );
         assert!(!delay.is_ringing());
+    }
+
+    /// Sleeping never cuts off a quiet tail: a click at −60 dB with 90%
+    /// feedback echoes 66 times above −120 dB, over 1.3 s, and every echo
+    /// is heard at its level. Only once nothing above −120 dB has come out
+    /// for a little longer than the time does it go to sleep, and from then
+    /// on it's silent.
+    #[test]
+    fn a_long_quiet_tail_plays_out_before_it_sleeps() {
+        let rate = 48_000.0;
+        let spacing = 960;
+        let mut delay = delay(0.02, 0.9, rate);
+        let frames = 70_000;
+        let mut left = vec![0.0; frames];
+        let mut right = vec![0.0; frames];
+        left[0] = 1e-3;
+        right[0] = 1e-3;
+        // A sample at a time, to find the one it falls asleep on.
+        let mut asleep_at = None;
+        for (at, (left, right)) in left.chunks_mut(1).zip(right.chunks_mut(1)).enumerate() {
+            delay.process(left, right);
+            if asleep_at.is_none() && at > 0 && !delay.is_ringing() {
+                asleep_at = Some(at);
+            }
+        }
+        let expected: Vec<(usize, f32)> = (1..)
+            .map(|n| (n * spacing, 1e-3 * 0.9f32.powi(n as i32 - 1)))
+            .take_while(|&(_, level)| level > SILENCE)
+            .collect();
+        assert_eq!(expected.len(), 66);
+        let heard = echoes(&left);
+        assert_eq!(heard.len(), expected.len());
+        for ((at, level), (want_at, want)) in heard.into_iter().zip(expected.iter().copied()) {
+            assert_eq!(at, want_at);
+            assert!(
+                (level - want).abs() <= want * 1e-4,
+                "echo at {at}: {level}, not {want}"
+            );
+        }
+        let last = 66 * spacing;
+        let asleep_at = asleep_at.expect("it falls asleep");
+        assert!(
+            (last + spacing..=last + spacing + READ_MARGIN + 1).contains(&asleep_at),
+            "asleep at {asleep_at}, the last echo at {last}"
+        );
+        assert!(left[asleep_at..].iter().all(|&sample| sample == 0.0));
     }
 
     #[test]

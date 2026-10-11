@@ -26,7 +26,10 @@ pub use drums::{
     Kick909Settings, KickSettings, KitSettings, LowTomSettings, OpenHatSettings, REFERENCE_PEAK,
     SnareSettings, velocity_to_strength,
 };
-pub use effects::{DELAY_TAPE_SECONDS, DelaySettings, EffectSettings, EffectSnapshot, EffectState};
+pub use effects::{
+    CHAIN_CAPACITY, DELAY_TAPE_SECONDS, DelaySettings, EFFECT_FADE_SECONDS, EffectSettings,
+    EffectSnapshot, EffectState,
+};
 pub use mixer::MixerStrip;
 pub use processor::{
     FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, TRACK_BUFFER_FRAMES,
@@ -63,12 +66,14 @@ pub const STATUS_CAPACITY: usize = 256;
 /// How many used snapshots can wait to be freed. When it's full the processor
 /// leaves further swaps queued until the control side catches up.
 pub const USED_SNAPSHOT_CAPACITY: usize = 64;
-/// The most effect states the audio thread holds at once: a full chain on
-/// every slot.
-pub const MAX_EFFECT_STATES: usize = TRACK_SLOTS * uta_core::MAX_EFFECTS;
-/// How many effect states can wait to be freed. A swap can send back every
-/// state the audio thread holds, so the processor leaves a swap queued until
-/// there's room for that many.
+/// The most effect states the audio thread holds at once: every chain, each
+/// slot's and the master's, holding its effects and as many again fading
+/// out.
+pub const MAX_EFFECT_STATES: usize = (TRACK_SLOTS + 1) * CHAIN_CAPACITY;
+/// How many effect states can wait to be freed. The processor leaves a swap
+/// queued until there's room for every state the audio thread holds, and a
+/// removed effect's state waits on the audio thread, silent, until there's
+/// room to send it back.
 pub const USED_STATE_CAPACITY: usize = 2 * MAX_EFFECT_STATES;
 
 /// A message from the control side to the audio thread.
@@ -159,6 +164,8 @@ pub struct Status {
     /// The slots whose chain is still ringing, such as a delay's echoes, as
     /// a bitmask. The track keeps sounding until they've died away.
     pub ringing_chains: u32,
+    /// Whether the master's chain is still ringing.
+    pub master_ringing: bool,
 }
 
 /// Engine setup.

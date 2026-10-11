@@ -156,12 +156,16 @@ pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Re
     renderer.render_seconds(seconds);
     renderer.controller.stop().expect("queue was drained");
     renderer.render_seconds(tail);
-    // Each block's status says whether a chain is still ringing. With no
-    // effects, none ever is, so the render ends here as it always has.
+    // Each block's status says whether a chain, a track's or the master's,
+    // is still ringing. With no effects, none ever is, so the render ends
+    // here as it always has.
     let limit = renderer.frames_for(MAX_TAIL_SECONDS);
     let mut tail_frames = renderer.frames_for(tail);
     let mut cut_off = false;
-    while renderer.take_status().ringing_chains != 0 {
+    while {
+        let status = renderer.take_status();
+        status.ringing_chains != 0 || status.master_ringing
+    } {
         if tail_frames >= limit {
             cut_off = true;
             break;

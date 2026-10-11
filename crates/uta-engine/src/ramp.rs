@@ -53,6 +53,11 @@ impl Ramp {
         self.remaining > 0
     }
 
+    /// The samples left until it reaches its target: 0 once it has.
+    pub(crate) fn remaining(&self) -> u32 {
+        self.remaining
+    }
+
     /// Returns the value for this sample and advances by one.
     #[inline]
     pub(crate) fn next_value(&mut self) -> f32 {
