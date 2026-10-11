@@ -12,8 +12,8 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, Description, DrumParam, DrumSound, KIT,
-    KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source,
+    Clip, ClipId, ClipPosition, Command, CommandError, Description, DrumParam, DrumSound, EffectId,
+    KIT, KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source,
     SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
@@ -399,7 +399,7 @@ enum Playback {
     Live(LiveOutput),
     /// Held here instead of playing, for tests to drive by hand.
     #[cfg_attr(not(test), allow(dead_code))]
-    Offline(Processor),
+    Offline(Box<Processor>),
 }
 
 pub struct Uta {
@@ -457,7 +457,7 @@ impl Uta {
         Self::new(
             session,
             controller,
-            Playback::Offline(processor),
+            Playback::Offline(Box::new(processor)),
             live::DEFAULT_BUFFER_SIZE,
         )
     }
@@ -677,7 +677,7 @@ impl Uta {
         let copy = original.copy(
             id,
             project.next_track_name(original.source().kind()),
-            uta_core::EffectId::random,
+            EffectId::random,
             ClipId::random,
             NoteId::random,
         );
@@ -1020,7 +1020,7 @@ impl Uta {
         self.playback = Some(if live {
             Playback::Live(LiveOutput::start(processor, size).map_err(|e| e.to_string())?)
         } else {
-            Playback::Offline(processor)
+            Playback::Offline(Box::new(processor))
         });
         // A pause isn't kept: the new engine starts from the play start.
         self.controller
@@ -2244,7 +2244,7 @@ mod tests {
         Uta::new(
             session,
             controller,
-            Playback::Offline(processor),
+            Playback::Offline(Box::new(processor)),
             live::DEFAULT_BUFFER_SIZE,
         )
     }
