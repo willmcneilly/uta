@@ -89,10 +89,10 @@ const INPUT_SCALE_HZ: f64 = 48.0;
 /// Tone's range: the low-pass after the resonator, on a log scale.
 const MIN_TONE_HZ: f64 = 200.0;
 const MAX_TONE_HZ: f64 = 8000.0;
-/// The output level that puts a default kick at full accent at the kit's
-/// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
-/// the `the_kick_at_full_accent_peaks_at_the_reference` test.
-const OUTPUT_GAIN: f32 = 0.6695;
+/// The output level that puts a default kick at full accent, with its Level at
+/// 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured,
+/// not derived: see the `the_kick_at_full_accent_peaks_at_the_reference` test.
+const OUTPUT_GAIN: f32 = 1.339 * super::REFERENCE_PEAK;
 /// Below this, summed over its state, the kick has died away and stops
 /// doing work. Far under anything audible (its loudest internal swings are
 /// around 1), and well above the slow "denormal" numbers.
@@ -435,7 +435,10 @@ mod tests {
         let mut kick = Kick::new(KickSettings::default(), RATE);
         kick.hit(1.0);
         let peak = peak(&run(&mut kick, 0.5));
-        assert!((peak - REFERENCE_PEAK).abs() < 0.005, "peak {peak}");
+        assert!(
+            (peak - REFERENCE_PEAK).abs() < 0.01 * REFERENCE_PEAK,
+            "peak {peak}"
+        );
     }
 
     /// Once it has died away far below hearing it stops, and does no work
@@ -461,7 +464,7 @@ mod tests {
         assert!(last < 1e-6, "last 0.1 s peaked at {last}");
         // A new hit starts it again.
         kick.hit(1.0);
-        assert!(peak(&run(&mut kick, 0.1)) > 0.4);
+        assert!(peak(&run(&mut kick, 0.1)) > 0.8 * REFERENCE_PEAK);
     }
 
     /// A second hit adds to the ringing rather than restarting it: the

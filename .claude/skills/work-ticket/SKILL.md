@@ -25,6 +25,7 @@ Use the `notion` skill for Notion mechanics. Keep your own context lean: send br
 2. Update `main` (`git fetch && git switch main && git pull --ff-only`).
 3. Create a branch named `uta-<n>-<short-slug>`, e.g. `uta-2-engine-core`.
    - If another ticket is in progress in this checkout, or it has uncommitted work that isn't yours, use a git worktree instead of switching branches.
+   - In a new worktree, run `scripts/warm`, which gives it a warm Rust build from the main checkout's in a few seconds. It does nothing if the worktree has one already.
 4. Post a ticket comment: `🤖 Claude: Started on branch uta-2-engine-core.`
 
 ## 3. Understand before building
@@ -62,7 +63,11 @@ Will decides each one between projects: adopt it into `DESIGN.md`, revise it in 
 
 Before opening the PR:
 
-1. **Run every check CI runs, locally,** and fix everything they report: fmt, clippy with warnings as errors, all tests, the frontend checks and the app build. The exact commands are in `CLAUDE.md`. Never open a PR you know is red.
+1. **Run `scripts/check`,** and fix everything it reports. It runs the checks this change needs (see `CLAUDE.md`), in parallel, and ends with one line per job and the log of any that failed. Never open a PR you know is red.
+   - When Rust changed it takes minutes, so run it in the background and wait for the notification.
+   - Running it again on code that has passed is instant, so run it whenever you need to know, rather than re-running single commands by hand.
+   - If it says `origin/main` has moved on, bring main in first, then run it again.
+   - `git push` runs it too, through the pre-push hook, and is instant after a pass.
 2. **Go through the acceptance criteria one by one.** For each, record the evidence: the test that proves it, the command you ran and what it showed, or a screenshot for UI.
 3. **Manual checks you can't do yourself.** You can't hear audio or unplug an interface. Do what you can (run it, read the dropout count, check the logs), then list exactly what Will should try and what they should hear or see. **Never claim you verified something you didn't.**
 4. **Self-review the diff:**

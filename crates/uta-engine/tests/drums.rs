@@ -292,8 +292,8 @@ fn fast_repeats_do_not_click() {
     let (step, _) = lone_hit(&params, 100);
     let limit = ringing_limit(step, 49.0, peak(&samples));
     assert_no_click(&samples, limit, "fast repeats");
-    // They pile up, but stay clear of full scale.
-    assert!(peak(&samples) < 0.9, "{}", peak(&samples));
+    // They pile up, but stay under twice the reference.
+    assert!(peak(&samples) < 1.8 * REFERENCE_PEAK, "{}", peak(&samples));
 }
 
 /// Flams: a soft grace hit, then an accent, 40 ms down to 1 ms apart.
@@ -388,7 +388,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render(&project, 5.0, 128);
-    assert!(peak(&reference) > 0.3);
+    assert!(peak(&reference) > 0.6 * REFERENCE_PEAK);
     assert_eq!(render(&project, 5.0, 128), reference, "rendered twice");
     for block_size in [32, 1024, 1000] {
         assert_eq!(
@@ -459,7 +459,12 @@ fn every_row_plays_a_sound() {
     for row in KIT {
         let hits = vec![hit(0, row.pitch, 127, 0)];
         let samples = render(&drum_project(120.0, 1, &[], hits), 1.0, 128);
-        assert!(peak(&samples) > 0.1, "{}: {}", row.name, peak(&samples));
+        assert!(
+            peak(&samples) > 0.2 * REFERENCE_PEAK,
+            "{}: {}",
+            row.name,
+            peak(&samples)
+        );
     }
 }
 
@@ -477,7 +482,7 @@ fn a_live_note_hits_the_kit() {
     renderer.render_seconds(0.5);
     // The note is never released, and it doesn't need to be.
     let samples = renderer.samples();
-    assert!((peak(samples) - REFERENCE_PEAK).abs() < 0.01);
+    assert!((peak(samples) - REFERENCE_PEAK).abs() < 0.02 * REFERENCE_PEAK);
     assert_eq!(samples, &one_kick(&[], 127, 0.5)[..]);
 }
 
@@ -510,7 +515,10 @@ fn every_slot_can_play_a_kit() {
     renderer.render_seconds(0.1);
     let status = renderer.take_status();
     assert!(
-        status.track_peaks.iter().all(|&peak| peak > 0.1),
+        status
+            .track_peaks
+            .iter()
+            .all(|&peak| peak > 0.2 * REFERENCE_PEAK),
         "{:?}",
         status.track_peaks
     );
@@ -598,7 +606,7 @@ fn a_drum_slot_handed_to_a_synth_track_does_not_click() {
     // The kick carried on ringing: a lone kick is still well above
     // silence 0.2 s in.
     let alone = one_kick(&params, 127, 1.1);
-    assert!(peak(&alone[seconds(0.2)..seconds(0.25)]) > 0.1);
+    assert!(peak(&alone[seconds(0.2)..seconds(0.25)]) > 0.2 * REFERENCE_PEAK);
     let (step, _) = lone_hit(&params, 127);
     let sine_step = (sine_max_step(110.0, RATE) + 1.0 / 240.0) * 0.25;
     let limit = ringing_limit(step + sine_step, 49.0, peak(samples));

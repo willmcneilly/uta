@@ -330,9 +330,14 @@ fn fast_repeats_do_not_click() {
         }
         let samples = render_drums(&drum_project(120.0, 3, &params, hits), 6.5, 128);
         assert_no_click(&samples, ringing_limit(lone_step(&params), wires), what);
-        // A roll doesn't pile up: an accent peaks at 0.5, and over a bar of
-        // hits the noise reaches higher runs of itself, measured up to 0.7.
-        assert!(peak(&samples) < 0.85, "{what}: {}", peak(&samples));
+        // A roll doesn't pile up: an accent peaks at the reference, and over
+        // a bar of hits the noise reaches higher runs of itself, measured up
+        // to 1.4 times it.
+        assert!(
+            peak(&samples) < 1.7 * REFERENCE_PEAK,
+            "{what}: {}",
+            peak(&samples)
+        );
     }
 }
 
@@ -491,7 +496,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render_drums(&project, 5.0, 128);
-    assert!(peak(&reference) > 0.3);
+    assert!(peak(&reference) > 0.6 * REFERENCE_PEAK);
     assert_eq!(
         render_drums(&project, 5.0, 128),
         reference,

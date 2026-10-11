@@ -53,10 +53,10 @@ const BRIGHTER_OCTAVES: f64 = 0.4;
 const UNACCENTED: f64 = 0.3;
 /// How fast the band-pass follows a new hit's strength, so it never jumps.
 const BRIGHTNESS_SECONDS: f64 = 0.002;
-/// The output level that puts a default clap at full accent at the kit's
-/// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
-/// the `the_clap_at_full_accent_peaks_at_the_reference` test.
-const OUTPUT_GAIN: f32 = 1.6034;
+/// The output level that puts a default clap at full accent, with its Level at
+/// 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured,
+/// not derived: see the `the_clap_at_full_accent_peaks_at_the_reference` test.
+const OUTPUT_GAIN: f32 = 3.2068 * super::REFERENCE_PEAK;
 /// Below this, summed over its envelopes, the clap has died away and stops
 /// doing work: far under anything audible.
 const SILENT: f64 = 1.0e-6;
@@ -318,10 +318,17 @@ mod tests {
 
     #[test]
     fn the_clap_at_full_accent_peaks_at_the_reference() {
-        let mut clap = Clap::new(ClapSettings::default(), RATE);
+        let settings = ClapSettings {
+            level_db: 0.0,
+            ..ClapSettings::default()
+        };
+        let mut clap = Clap::new(settings, RATE);
         clap.hit(1.0);
         let peak = peak(&run(&mut clap, &mut Noise::new(), 0.5));
-        assert!((peak - REFERENCE_PEAK).abs() < 0.005, "peak {peak}");
+        assert!(
+            (peak - REFERENCE_PEAK).abs() < 0.01 * REFERENCE_PEAK,
+            "peak {peak}"
+        );
     }
 
     /// Once it has died away far below hearing it stops, and does no work

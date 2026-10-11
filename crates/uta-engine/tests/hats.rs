@@ -336,8 +336,13 @@ fn fast_repeats_do_not_click() {
         let limit = ringing_limit(lone_step(pitch, &params));
         assert_no_click(&samples, limit, what);
         // The envelopes charge rather than add, so a roll doesn't pile up:
-        // an accent peaks at about 0.5, and a roll measured up to 0.7.
-        assert!(peak(&samples) < 0.85, "{what}: {}", peak(&samples));
+        // an accent peaks at about the reference, and a roll measured up to
+        // 1.4 times it.
+        assert!(
+            peak(&samples) < 1.7 * REFERENCE_PEAK,
+            "{what}: {}",
+            peak(&samples)
+        );
     }
 }
 
@@ -540,7 +545,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render_drums(&project, 5.0, 128);
-    assert!(peak(&reference) > 0.3);
+    assert!(peak(&reference) > 0.6 * REFERENCE_PEAK);
     assert_eq!(
         render_drums(&project, 5.0, 128),
         reference,
@@ -641,6 +646,6 @@ fn playing_again_while_they_ring_restarts_the_metal() {
             &reference[from..seconds(4.0)],
             "{params:?}"
         );
-        assert!(peak(&again[from..seconds(4.0)]) > 0.3);
+        assert!(peak(&again[from..seconds(4.0)]) > 0.6 * REFERENCE_PEAK);
     }
 }
