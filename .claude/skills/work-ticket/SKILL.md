@@ -24,6 +24,7 @@ A ticket is done when a reviewer and Will can trust it without reading every lin
    - If another ticket is in progress in this checkout, or it has uncommitted work that isn't yours, use a git worktree instead of switching branches.
    - In a new worktree, run `scripts/warm`, which gives it a warm Rust build from the main checkout's in a few seconds. It does nothing if the worktree has one already.
 3. Run `scripts/ticket claim UTA-n --branch <branch>`. It refuses, and says why, unless the ticket is Ready with its dependencies merged. Then it sets the ticket `In Progress`, sets the project `Active` if it was `Planned`, and comments `🤖 Claude: Started on branch <branch>.` on the ticket.
+4. Rename this session to the PR title, `UTA-<n>: <ticket name>`, with the `set_session_title` tool (the `ccd_session_mgmt` one) and `session_id: "self"`, so the sidebar, the PR and the commit on `main` share one name. If that tool isn't available (a terminal session), skip this step.
 
 ## 3. Understand before building
 
