@@ -151,6 +151,21 @@ export function parseWorktrees(output: string): string[] {
     .map((line) => line.slice("worktree ".length));
 }
 
+type TauriConf = { app?: { windows?: { title?: string }[] } };
+
+/**
+ * The `--config` that `tauri dev` merges into tauri.conf.json: Vite's port,
+ * and the branch in each window's title, so apps from different checkouts can
+ * be told apart. The merge replaces arrays whole, so each window is copied.
+ */
+export function devConfig(conf: TauriConf, port: number, branch: string) {
+  const windows = (conf.app?.windows ?? []).map((window) => ({
+    ...window,
+    title: `${window.title ?? "Uta"} · ${branch}`,
+  }));
+  return { build: { devUrl: `http://localhost:${port}` }, app: { windows } };
+}
+
 /**
  * The first port from `from` whose next port is free too: Vite takes the
  * port, and its hot-reload socket the one above when TAURI_DEV_HOST is set.

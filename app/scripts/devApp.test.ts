@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   UNKNOWN,
+  devConfig,
   errorLines,
   findDevApps,
   parsePs,
@@ -155,5 +156,15 @@ describe("pickPort", () => {
 
   it("gives up when nothing in the range is free", async () => {
     expect(await pickPort(taken([1420, 1421, 1422]), 1420, 1423)).toBeUndefined();
+  });
+});
+
+describe("devConfig", () => {
+  it("points Tauri at the port and puts the branch in every window's title", () => {
+    const conf = { app: { windows: [{ title: "Uta", width: 1024, height: 700, visible: false }] } };
+    expect(devConfig(conf, 1421, "uta-60-dev-app")).toEqual({
+      build: { devUrl: "http://localhost:1421" },
+      app: { windows: [{ title: "Uta · uta-60-dev-app", width: 1024, height: 700, visible: false }] },
+    });
   });
 });

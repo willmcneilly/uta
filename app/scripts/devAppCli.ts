@@ -2,7 +2,7 @@
 // (`tauri dev`) for the checkout this file is in. See `--help`.
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import {
   DEBUG_APP,
   type Proc,
   UNKNOWN,
+  devConfig,
   errorLines,
   findDevApps,
   parsePs,
@@ -26,11 +27,12 @@ Runs the Uta app in development mode (tauri dev, with hot reload) for the
 checkout this script is in, from any directory.
 
 Commands:
-  start   Stop every other Uta dev app (any checkout of this repository, never
-          another project's), pick a free port from 1420 up, start tauri dev
-          detached so it outlives this shell, and wait until the app is open.
-          Prints the branch, commit, port and pid. On a failed build it stops
-          what it started and exits 1 with the end of the log.
+  start   Stop this checkout's app if it's running, pick a free port from 1420
+          up, start tauri dev detached so it outlives this shell, and wait
+          until the app is open. Apps from other checkouts keep running on
+          their own ports; each window's title names its branch. Prints the
+          branch, commit, port and pid. On a failed build it stops what it
+          started and exits 1 with the end of the log.
   wait    Wait for an app that start left building (after its time ran out).
   status  Is this checkout's app running, from which commit, on which port,
           and has its log reported errors since it started. Exits 1 if not
@@ -141,22 +143,38 @@ async function start(timeout: number): Promise<number> {
     if (install.status !== 0) return fail("npm ci failed.");
   }
 
-  for (const [where, procs] of devApps()) {
-    const whose = where === checkout ? "this checkout's app" : `the Uta app from ${describe(where)}`;
-    console.log(`Stopping ${whose} (pids ${procs.map((p) => p.pid).join(", ")}).`);
-    const left = await stopAll(procs);
+  const apps = devApps();
+  const mine = apps.get(checkout) ?? [];
+  if (mine.length > 0) {
+    console.log(`Stopping this checkout's app (pids ${mine.map((p) => p.pid).join(", ")}).`);
+    const left = await stopAll(mine);
     if (left.length > 0) return fail(`Couldn't stop pids ${left.map((p) => p.pid).join(", ")}.`);
   }
+  for (const where of apps.keys()) {
+    if (where !== checkout) console.log(`Leaving the Uta app from ${describe(where)} running.`);
+  }
 
+  // Held from choosing a port until Vite is listening on it, so two starts at
+  // once can't choose the same one.
+  const unlock = await lock();
+  try {
+    return await launch(timeout, unlock);
+  } finally {
+    unlock();
+  }
+}
+
+async function launch(timeout: number, unlock: () => void): Promise<number> {
   const port = await pickPort(isFree);
   if (port === undefined) return fail("No free port pair between 1420 and 1499.");
+  const branch = git("branch", "--show-current") || "(detached)";
+  const conf = JSON.parse(readFileSync(join(appDir, "src-tauri", "tauri.conf.json"), "utf8"));
 
   mkdirSync(stateDir, { recursive: true });
   const log = openSync(logPath, "w");
-  const devUrl = `http://localhost:${port}`;
   const child = spawn(
     process.execPath,
-    [join(appDir, "node_modules", ".bin", "tauri"), "dev", "--config", JSON.stringify({ build: { devUrl } })],
+    [join(appDir, "node_modules", ".bin", "tauri"), "dev", "--config", JSON.stringify(devConfig(conf, port, branch))],
     // Detached: its own session, so it outlives the shell that ran this.
     { cwd: appDir, detached: true, stdio: ["ignore", log, log], env: { ...process.env, UTA_DEV_PORT: String(port) } },
   );
@@ -167,13 +185,70 @@ async function start(timeout: number): Promise<number> {
   const state: State = {
     pid: child.pid,
     port,
-    branch: git("branch", "--show-current") || "(detached)",
+    branch,
     commit: git("rev-parse", "--short", "HEAD"),
     startedAt: new Date().toISOString(),
   };
   writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
   console.log(`Starting tauri dev on port ${port} (pid ${child.pid}). Log: ${shortPath(logPath)}`);
+  await viteListening(state);
+  unlock();
   return waitFor(state, timeout);
+}
+
+/** Waits until Vite says it's listening on the state's port, or the start has failed (waitFor reports that), or 30 seconds. */
+async function viteListening(state: State): Promise<void> {
+  const listening = `localhost:${state.port}/`;
+  for (let waited = 0; waited < 30000; waited += 200) {
+    const text = readLogText();
+    if (text.includes(listening) || readLog(text).failure || !alive(state.pid)) return;
+    await sleep(200);
+  }
+}
+
+/**
+ * Takes the lock that only one start can hold at a time, across every checkout
+ * of the repository (it lives in the shared .git folder). Returns its release,
+ * which is safe to call more than once. Breaks a lock whose holder has gone,
+ * or that's over a minute old.
+ */
+async function lock(): Promise<() => void> {
+  const dir = join(git("rev-parse", "--path-format=absolute", "--git-common-dir"), "dev-app.lock");
+  const holder = join(dir, "pid");
+  for (let waited = 0; ; waited += 200) {
+    try {
+      mkdirSync(dir);
+      writeFileSync(holder, String(process.pid));
+      let held = true;
+      const release = () => {
+        if (held) rmSync(dir, { recursive: true, force: true });
+        held = false;
+      };
+      process.once("exit", release);
+      return release;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    let age: number;
+    try {
+      age = Date.now() - statSync(dir).mtimeMs;
+    } catch {
+      continue; // Released just now.
+    }
+    let pid = 0;
+    try {
+      pid = Number(readFileSync(holder, "utf8"));
+    } catch {
+      // Not written yet.
+    }
+    // A missing pid is a lock being written, unless it's stayed that way.
+    if ((pid > 0 && !alive(pid)) || (pid === 0 && age > 2000) || age > 60000) {
+      rmSync(dir, { recursive: true, force: true });
+      continue;
+    }
+    if (waited === 0) console.log("Waiting for another start to choose its port…");
+    await sleep(200);
+  }
 }
 
 async function waitFor(state: State, timeout: number): Promise<number> {
