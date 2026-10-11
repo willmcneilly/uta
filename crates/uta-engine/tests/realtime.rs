@@ -656,12 +656,12 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
 }
 
 /// Every sound's hits, fast repeats and flams, all eight sounds hitting at
-/// once on every 16th from the default kit, closed hats choking open ones, every control of each turned while they ring, the kick's model
-/// switched while it rings, live hits, a jump
-/// and Play again (which restarts the kit's noise and its metal,
-/// crossfading if the hats or the cymbal ring), and more drum events in a
-/// block than the budget: none of it allocates or frees on the audio
-/// thread.
+/// once on every 16th from the default kit, closed hats choking open ones,
+/// every control of each turned while they ring, the kick's model switched
+/// while it rings, live hits, a jump and Play again (which restarts the
+/// kit's noise and its metal, crossfading if the hats or the cymbal ring),
+/// and more drum events in a block than the budget: none of it allocates or
+/// frees on the audio thread.
 #[test]
 fn drum_hits_flams_and_control_turns_do_not_allocate() {
     rtsan_standalone::ensure_initialized();
