@@ -12,9 +12,9 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, Description, DrumParam, DrumSound, EffectId,
-    KIT, KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source,
-    SynthParam, SynthSettings, Track, TrackId,
+    Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description, DrumParam,
+    DrumSound, Effect, EffectId, EffectSettings, KIT, KitSettings, MixerStrip, Note, NoteId,
+    PlacedClip, PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -96,7 +96,8 @@ pub struct Outline<C = ClipOutline> {
     pub tracks: Vec<TrackOutline<C>>,
 }
 
-/// A track as the UI shows it: its name, mixer strip, sound and clips.
+/// A track as the UI shows it: its name, mixer strip, sound, chain and
+/// clips.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackOutline<C = ClipOutline> {
@@ -104,8 +105,72 @@ pub struct TrackOutline<C = ClipOutline> {
     pub name: String,
     pub mixer: MixerView,
     pub source: SourceView,
+    /// Its chain: the effects after the source, in order.
+    pub effects: Vec<EffectView>,
     /// In order of start, then ID.
     pub clips: Vec<C>,
+}
+
+/// One effect in a chain, as the UI shows it: its ID, its name, whether
+/// it's on, its Mix, and its kind with its own settings, each described
+/// from the core, so a panel keeps no range or default itself. See RFC-007,
+/// "Patterns for every effect after this one", point 2.
+///
+/// Serialises as `{"id":"…","name":"Delay","enabled":true,"mix":{"name":
+/// "mix","value":0.3,"label":"Mix",…},"kind":"delay","settings":[…]}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectView {
+    pub id: EffectId,
+    /// What the panel calls it: "Delay".
+    pub name: &'static str,
+    pub enabled: bool,
+    pub mix: SettingView<MixParam>,
+    #[serde(flatten)]
+    pub kind: EffectKindView,
+}
+
+/// An effect's Mix, as a setting: `"name":"mix","value":0.3`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(tag = "name", content = "value", rename_all = "snake_case")]
+pub enum MixParam {
+    Mix(f32),
+}
+
+/// An effect's kind, with its own settings described, in the order its
+/// command carries them: `"kind":"delay","settings":[…]`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectKindView {
+    Delay {
+        settings: Vec<SettingView<DelayParam>>,
+    },
+}
+
+impl From<&Effect> for EffectView {
+    fn from(effect: &Effect) -> Self {
+        Self {
+            id: effect.id(),
+            name: effect.kind().name(),
+            enabled: effect.enabled(),
+            mix: SettingView {
+                param: MixParam::Mix(effect.mix()),
+                description: effect.describe_mix(),
+            },
+            kind: match effect.settings() {
+                EffectSettings::Delay(settings) => EffectKindView::Delay {
+                    settings: settings
+                        .params()
+                        .into_iter()
+                        .map(|param| SettingView {
+                            param,
+                            description: param.describe(),
+                        })
+                        .collect(),
+                },
+            },
+        }
+    }
 }
 
 /// What makes a track's sound, as the UI shows it: the synth's settings, or
@@ -1167,6 +1232,7 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
                 name: track.name().to_owned(),
                 mixer: track.mixer().into(),
                 source: track.source().into(),
+                effects: track.effects().iter().map(EffectView::from).collect(),
                 clips: track.clips().iter().map(&mut clip).collect(),
             })
             .collect(),
@@ -1607,6 +1673,56 @@ mod tests {
         let outline = serde_json::to_value(&outline).unwrap();
         assert!(outline.get("synthLimits").is_none());
         assert!(outline.get("synthDefaults").is_none());
+    }
+
+    #[test]
+    fn the_outline_carries_each_chain_with_its_settings_described() {
+        let mut uta = offline();
+        let outline = uta.update().outline;
+        assert!(outline.tracks.iter().all(|track| track.effects.is_empty()));
+
+        let track = outline.tracks[0].id;
+        let id = EffectId::random();
+        uta.change(
+            Command::AddEffects {
+                effects: vec![uta_core::PlacedEffect {
+                    chain: uta_core::Chain::Track(track),
+                    index: 0,
+                    effect: Effect::default_of(id, uta_core::EffectKind::Delay).with_mix(0.5),
+                }],
+            },
+            None,
+        )
+        .unwrap();
+        let outline = uta.update().outline;
+        let [effect] = outline.tracks[0].effects.as_slice() else {
+            panic!("one effect: {:?}", outline.tracks[0].effects);
+        };
+        assert_eq!(effect.id, id);
+        let json = serde_json::to_value(effect).unwrap();
+        assert_eq!(json["name"], "Delay");
+        assert_eq!(json["kind"], "delay");
+        assert_eq!(json["enabled"], true);
+        assert_eq!(json["mix"]["name"], "mix");
+        assert_eq!(json["mix"]["value"], 0.5);
+        assert_eq!(json["mix"]["label"], "Mix");
+        assert_eq!(json["mix"]["default"], 0.3_f32 as f64);
+        assert_eq!(json["mix"]["limits"], serde_json::json!([0.0, 1.0]));
+        let settings = json["settings"].as_array().unwrap();
+        let names: Vec<_> = settings.iter().map(|s| s["name"].clone()).collect();
+        assert_eq!(names, ["time_seconds", "feedback"]);
+        let time = &settings[0];
+        assert_eq!(time["value"], 0.375);
+        assert_eq!(time["label"], "Time");
+        assert_eq!(time["unit"], "seconds");
+        assert_eq!(time["scale"], "log");
+        assert_eq!(time["limits"], serde_json::json!([0.001_f32 as f64, 5.0]));
+        assert_eq!(time["default"], 0.375);
+        assert!(time["sounds"].as_str().is_some_and(|s| s.ends_with('.')));
+        assert_eq!(settings[1]["label"], "Feedback");
+        assert_eq!(settings[1]["unit"], "fraction");
+        // The other track's chain is still empty.
+        assert!(outline.tracks[1].effects.is_empty());
     }
 
     #[test]

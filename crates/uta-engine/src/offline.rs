@@ -121,13 +121,27 @@ impl Renderer {
     }
 }
 
+/// A song rendered by [`render_song`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderedSong {
+    /// Interleaved samples.
+    pub samples: Vec<f32>,
+    /// Whether a chain was still ringing when [`MAX_TAIL_SECONDS`] cut the
+    /// render off: echoes with feedback that never fade, say.
+    pub cut_off: bool,
+}
+
+/// The longest [`render_song`] goes on after Stop for the chains to ring
+/// out. See RFC-007, "Stopping, switching off, and tails" (Rendering).
+pub const MAX_TAIL_SECONDS: f64 = 30.0;
+
 /// Plays `snapshot` from the top of the song for `seconds`, round the loop
 /// if it's on, then stops and renders the notes' release and the drums'
-/// ring (the longest of any track with notes), so it ends in silence. With
-/// the loop off it stops by itself at
-/// the song's end, and anything after that is silent. What `uta render`
-/// writes.
-pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Vec<f32> {
+/// ring (the longest of any track with notes), and on until every chain
+/// has rung out, up to [`MAX_TAIL_SECONDS`] after Stop, so it ends in
+/// silence. With the loop off it stops by itself at the song's end, and
+/// anything after that is the tail. What `uta render` writes.
+pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> RenderedSong {
     // A track with no notes to play never sounds, so it adds no tail: a new
     // project's empty drum track doesn't lengthen a synth render.
     let release = snapshot
@@ -137,13 +151,33 @@ pub fn render_song(config: EngineConfig, snapshot: Snapshot, seconds: f64) -> Ve
         .map(|track| track.sound.tail_seconds())
         .fold(0.0, f32::max);
     let tail = f64::from(release) + RELEASE_MARGIN_SECONDS;
-    let mut renderer = Renderer::new(config, snapshot, 128);
+    let mut renderer = Renderer::new(config, snapshot, SONG_BLOCK);
     renderer.controller.play().expect("fresh queue has room");
     renderer.render_seconds(seconds);
     renderer.controller.stop().expect("queue was drained");
     renderer.render_seconds(tail);
-    renderer.into_samples()
+    // Each block's status says whether a chain is still ringing. With no
+    // effects, none ever is, so the render ends here as it always has.
+    let limit = renderer.frames_for(MAX_TAIL_SECONDS);
+    let mut tail_frames = renderer.frames_for(tail);
+    let mut cut_off = false;
+    while renderer.take_status().ringing_chains != 0 {
+        if tail_frames >= limit {
+            cut_off = true;
+            break;
+        }
+        let frames = SONG_BLOCK.min(limit - tail_frames);
+        renderer.render(frames);
+        tail_frames += frames;
+    }
+    RenderedSong {
+        samples: renderer.into_samples(),
+        cut_off,
+    }
 }
+
+/// The block size [`render_song`] renders in.
+const SONG_BLOCK: usize = 128;
 
 /// How long [`render_song`] renders after the release time, so the release
 /// has finished.
