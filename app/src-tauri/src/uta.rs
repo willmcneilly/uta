@@ -144,8 +144,8 @@ impl From<&Source> for SourceView {
 
 /// One setting with its value, as its command carries them, and its
 /// description from the core: label, how it sounds, and its unit, limits,
-/// scale and default, or its choices. The panel draws a setting it has never
-/// seen from this alone.
+/// scale and default, or its choices: everything a panel needs to draw the
+/// setting's control, so it keeps none of it itself.
 ///
 /// Serialises flat: `{"name":"cutoff_hz","value":20000.0,"label":"Cutoff",
 /// "sounds":"…","kind":"number","unit":"hz","scale":"log",...}`.
@@ -2660,6 +2660,20 @@ mod tests {
         assert_eq!(number(&row.settings[0]), (Unit::Hz, (45.0, 70.0), 55.0));
         assert_eq!(number(&row.settings[1]).0, Unit::Fraction);
         assert_eq!(number(&row.settings[3]).1, (0.1, 1.5));
+        // Every setting the 909 kick has a unit and says how it sounds, in
+        // what the UI is sent.
+        let json = serde_json::to_value(uta.update().outline).unwrap();
+        let settings = json["tracks"][1]["source"]["kit"]["rows"][0]["settings"]
+            .as_array()
+            .unwrap();
+        assert_eq!(settings.len(), 5);
+        for setting in settings {
+            assert!(setting["unit"].is_string(), "{setting}");
+            assert!(
+                setting["sounds"].as_str().is_some_and(|s| !s.is_empty()),
+                "{setting}"
+            );
+        }
         let engine_model = |uta: &Uta| match uta.controller.snapshot().tracks()[1].sound {
             uta_engine::TrackSound::Drums(kit) => kit.kick_model,
             uta_engine::TrackSound::Synth(_) => panic!("a drum track"),

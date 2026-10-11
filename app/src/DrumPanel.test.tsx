@@ -240,6 +240,31 @@ describe("the drum panel", () => {
     expect(knobAt(slider("Low tom tune"))).toBeCloseTo(Math.log(90 / 80) / Math.log(100 / 80), 2);
   });
 
+  it("moves each knob on the scale Rust describes it with, whatever its unit", async () => {
+    // A fraction on a linear scale, as the snare's Snappy is, and an Hz
+    // setting Rust describes as linear, which a panel working the scale out
+    // from the unit would draw as log.
+    const tom: KitRowView = {
+      sound: "low_tom",
+      name: "Low tom",
+      pitch: 45,
+      settings: [
+        { ...setting("tune_hz", 90, [80, 100], "hz"), scale: "linear" },
+        setting("snappy", 0.3, [0, 1], "fraction"),
+      ],
+      shares: null,
+      model: null,
+    };
+    project = withKit(KIT_ROWS.map((row) => (row.sound === "low_tom" ? tom : row)));
+    await renderSound();
+    expect(knobAt(slider("Low tom tune"))).toBeCloseTo(0.5, 6);
+    expect(knobAt(slider("Low tom snappy"))).toBeCloseTo(0.3, 6);
+    expect(slider("Low tom snappy")).toHaveAttribute("aria-valuetext", "30%");
+    // The kit's own fractions, on their linear scales.
+    expect(knobAt(slider("Snare snappy"))).toBeCloseTo(0.5, 6);
+    expect(knobAt(slider("Kick tone"))).toBeCloseTo(0.2, 6);
+  });
+
   it("draws a sound with no settings as a name and nothing to turn", async () => {
     project = withKit(
       KIT_ROWS.map((row) => (row.sound === "cymbal" ? { ...row, settings: [], shares: null } : row)),

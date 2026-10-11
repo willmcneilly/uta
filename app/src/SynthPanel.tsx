@@ -86,7 +86,7 @@ interface Dragged {
 /**
  * A track's synth: waveform, filter and envelope. Each control is drawn from
  * the setting Rust describes, so the panel holds no label, range or default
- * of its own. The filter and the envelope are drawn above their knobs, from
+ * of its own; it only says which settings go where, around its drawings. The filter and the envelope are drawn above their knobs, from
  * the values the knobs show, so the drawings follow a drag before Rust
  * replies.
  */
@@ -103,7 +103,10 @@ export function SynthPanel({ settings, sampleRate, onChange }: Props) {
   /** The value a setting's knob shows: the drag's, or what Rust last sent. */
   const shown = (name: SettingName) =>
     dragged?.name === name ? dragged.value : number(name).value;
-  const waveform = settings.find((setting) => setting.kind === "choice");
+  const waveform = settings.find(
+    (setting): setting is Extract<SynthSettingView, { name: "waveform" }> =>
+      setting.name === "waveform",
+  );
 
   /**
    * One setting on a knob. It shows the value Rust last sent. An arrow key
@@ -137,7 +140,7 @@ export function SynthPanel({ settings, sampleRate, onChange }: Props) {
             drawing: CYCLES[option.value],
           }))}
           value={waveform.value}
-          onChange={(value) => onChange({ name: "waveform", value })}
+          onChange={(value) => onChange({ name: waveform.name, value })}
         />
       )}
 
