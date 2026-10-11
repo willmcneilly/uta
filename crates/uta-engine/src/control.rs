@@ -6,7 +6,10 @@ use rtrb::{Consumer, Producer};
 use uta_core::TrackId;
 use uta_core::time::{MAX_TICKS, Ticks};
 
-use crate::{Command, NoteKey, Snapshot, Status, SynthSettings, TRACK_SLOTS, TrackSound};
+use crate::effects::chain::Arriving;
+use crate::{
+    Command, EffectState, NoteKey, Snapshot, Status, Swap, SynthSettings, TRACK_SLOTS, TrackSound,
+};
 
 /// The command queue was full, so the command wasn't sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,9 +87,12 @@ impl From<QueueFull> for NoteError {
 pub struct Controller {
     commands: Producer<Command>,
     status: Consumer<Status>,
-    used_snapshots: Consumer<Box<Snapshot>>,
+    used_snapshots: Consumer<Box<Swap>>,
+    used_states: Consumer<Box<EffectState>>,
     /// The last snapshot sent, as the base for the next change.
     snapshot: Snapshot,
+    /// Effect states made for the audio thread that haven't come back yet.
+    states_out: usize,
     /// The rate the engine last reported. Snapshots are sent timed at it.
     sample_rate: u32,
     /// A snapshot retimed for a new rate couldn't be sent yet.
@@ -108,13 +114,23 @@ impl Controller {
         sample_rate: u32,
         commands: Producer<Command>,
         status: Consumer<Status>,
-        used_snapshots: Consumer<Box<Snapshot>>,
+        used_snapshots: Consumer<Box<Swap>>,
+        used_states: Consumer<Box<EffectState>>,
     ) -> Self {
+        // The processor made a state for each of the first snapshot's
+        // effects.
+        let states_out = snapshot
+            .tracks()
+            .iter()
+            .map(|track| track.effects.len())
+            .sum();
         Self {
             commands,
             status,
             used_snapshots,
+            used_states,
             snapshot,
+            states_out,
             sample_rate,
             retime_pending: false,
             latest: Status::default(),
@@ -159,10 +175,21 @@ impl Controller {
     /// Sends a whole new snapshot, which the audio thread swaps in at the
     /// start of its next block. Its notes are retimed to the rate the engine
     /// is running at, so it can be built at any rate.
+    ///
+    /// Each effect it brings to a slot that the last snapshot sent didn't
+    /// have there gets a new state, made here for the engine's rate, sent
+    /// with it. See RFC-007, "Patterns for every effect after this one",
+    /// point 4.
     pub fn set_snapshot(&mut self, snapshot: Snapshot) -> Result<(), QueueFull> {
         self.free_used_snapshots();
         let snapshot = snapshot.at_sample_rate(self.sample_rate);
-        self.send(Command::SetSnapshot(Box::new(snapshot.clone())))?;
+        let states = self.new_effect_states(&snapshot);
+        let made = states.len();
+        self.send(Command::SetSnapshot(Box::new(Swap {
+            snapshot: Box::new(snapshot.clone()),
+            states,
+        })))?;
+        self.states_out += made;
         self.sent += 1;
         for (slot, retiring) in self.retiring.iter_mut().enumerate() {
             if snapshot.track_in(slot).is_some() {
@@ -174,6 +201,28 @@ impl Controller {
         self.snapshot = snapshot;
         self.retime_pending = false;
         Ok(())
+    }
+
+    /// A new state for each effect in `snapshot` whose slot didn't have it in
+    /// the last snapshot sent: the effects the audio thread hasn't got.
+    fn new_effect_states(&self, snapshot: &Snapshot) -> Vec<Arriving> {
+        let sample_rate = f64::from(self.sample_rate);
+        let mut states = Vec::new();
+        for track in snapshot.tracks() {
+            let before = self.snapshot.track_in(track.slot());
+            for effect in &track.effects {
+                let held = before
+                    .is_some_and(|before| before.effects.iter().any(|other| other.id == effect.id));
+                if !held {
+                    states.push(Arriving {
+                        slot: track.slot(),
+                        id: effect.id,
+                        state: Some(EffectState::new(&effect.settings, sample_rate)),
+                    });
+                }
+            }
+        }
+        states
     }
 
     /// Sends a snapshot of `project`, sharing the notes of every clip and
@@ -322,14 +371,29 @@ impl Controller {
         }
     }
 
-    /// Drops the snapshots the audio thread has sent back. Returns how many.
+    /// Drops the snapshots and effect states the audio thread has sent
+    /// back. Returns how many snapshots.
     pub fn free_used_snapshots(&mut self) -> usize {
         let mut freed = 0;
-        while let Ok(snapshot) = self.used_snapshots.pop() {
-            drop(snapshot);
+        while let Ok(swap) = self.used_snapshots.pop() {
+            // A state that didn't find its place comes back with its swap.
+            self.states_out -= swap.states.iter().filter(|a| a.state.is_some()).count();
+            drop(swap);
             freed += 1;
         }
+        while let Ok(state) = self.used_states.pop() {
+            drop(state);
+            self.states_out -= 1;
+        }
         freed
+    }
+
+    /// How many effect states the audio thread holds, or has sent back
+    /// without them being freed yet: every one made for it, less every one
+    /// that has come back. Once every effect is gone and the used ones are
+    /// freed, it's 0, so none was lost or freed on the audio thread.
+    pub fn effect_states_out(&self) -> usize {
+        self.states_out
     }
 
     fn send(&mut self, command: Command) -> Result<(), QueueFull> {

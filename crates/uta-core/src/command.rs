@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::time::Ticks;
 use crate::{
-    Clip, ClipId, DrumParam, DrumSound, MixerStrip, Note, NoteId, SynthParam, Track, TrackId,
+    Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, MixerStrip, Note,
+    NoteId, SynthParam, Track, TrackId,
 };
 
 /// The command format written by this version of Uta. Bump it when a saved
@@ -15,16 +16,19 @@ use crate::{
 /// - Format 2 adds the notes, tempo, loop and synth commands (RFC-002).
 /// - Format 3 adds the track, clip and loop region commands (RFC-003).
 /// - Format 4 adds drum tracks and `set_drum_param` (RFC-006).
-/// - Format 5 adds the synth's second oscillator, sub, noise, mixer levels
+/// - Format 5 adds effect chains: `add_effects`, `remove_effects`,
+///   `set_effect_mix`, `set_delay_param`, and a track's effects in
+///   `add_tracks` (RFC-007).
+/// - Format 6 adds the synth's second oscillator, sub, noise, mixer levels
 ///   and Osc retrigger, and renames `waveform` to `osc1_wave` and `square`
-///   to `pulse` (RFC-008). Format 4's synth settings still read: those it
+///   to `pulse` (RFC-008). Older synth settings still read: those they
 ///   didn't have take their defaults, and the old names read as the new.
-pub const COMMAND_FORMAT: u32 = 5;
+pub const COMMAND_FORMAT: u32 = 6;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":5,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":6,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -77,6 +81,17 @@ pub enum Command {
     SetLoop { start_bar: u32, bars: u32 },
     /// Switch the loop on or off.
     SetLoopEnabled { enabled: bool },
+    /// Add effects to chains, each at its place in its chain. The inverse
+    /// of [`Command::RemoveEffects`]. A chain holds at most
+    /// [`crate::MAX_EFFECTS`].
+    AddEffects { effects: Vec<PlacedEffect> },
+    /// Remove effects from whichever chains they're in, with their
+    /// settings. The inverse of [`Command::AddEffects`].
+    RemoveEffects { effects: Vec<EffectId> },
+    /// Set how much of an effect you hear, from 0 to 1.
+    SetEffectMix { effect: EffectId, mix: f32 },
+    /// Set one of a Delay's settings.
+    SetDelayParam { effect: EffectId, param: DelayParam },
 }
 
 /// A track to add, and where it goes: its index in the order once it's
@@ -85,6 +100,15 @@ pub enum Command {
 pub struct PlacedTrack {
     pub index: usize,
     pub track: Track,
+}
+
+/// An effect to add, the chain it goes in, and its place there: its index
+/// in the chain once it's added, counting from 0.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlacedEffect {
+    pub chain: Chain,
+    pub index: usize,
+    pub effect: Effect,
 }
 
 /// A clip to add, and the track it goes on.
@@ -153,6 +177,20 @@ impl Command {
                     param: other_param,
                 },
             ) => track == other_track && sound == other_sound && param.same_setting(other_param),
+            (
+                Self::SetEffectMix { effect, .. },
+                Self::SetEffectMix {
+                    effect: other_effect,
+                    ..
+                },
+            ) => effect == other_effect,
+            (
+                Self::SetDelayParam { effect, param },
+                Self::SetDelayParam {
+                    effect: other_effect,
+                    param: other_param,
+                },
+            ) => effect == other_effect && param.same_setting(other_param),
             _ => false,
         }
     }
@@ -298,6 +336,24 @@ pub enum CommandError {
         note: NoteId,
         pitch: u8,
     },
+    UnknownEffect(EffectId),
+    /// An effect to add has the same ID as one already in the project, in
+    /// any chain.
+    EffectAlreadyExists(EffectId),
+    /// The same effect appears more than once in one command.
+    EffectListedTwice(EffectId),
+    /// An effects command with no effects in it.
+    NoEffects,
+    /// Adding the effects would take a chain past [`crate::MAX_EFFECTS`].
+    ChainFull(Chain),
+    /// A place in a chain past its end.
+    EffectIndexOutOfRange(usize),
+    /// Two effects to add at the same place in one chain.
+    EffectIndexListedTwice(usize),
+    /// An effect's Mix was outside 0 to 1, or not a number.
+    EffectMixOutOfRange(f32),
+    /// A Delay setting was outside its range, or not a number.
+    DelayParamOutOfRange(DelayParam),
 }
 
 impl std::fmt::Display for CommandError {
@@ -395,6 +451,31 @@ impl std::fmt::Display for CommandError {
                 f,
                 "clip {clip} can't move to track {track}: it's a different kind of track"
             ),
+            Self::UnknownEffect(id) => write!(f, "there's no effect {id}"),
+            Self::EffectAlreadyExists(id) => write!(f, "effect {id} is already in the project"),
+            Self::EffectListedTwice(id) => write!(f, "effect {id} is listed more than once"),
+            Self::NoEffects => write!(f, "the command has no effects"),
+            Self::ChainFull(Chain::Track(id)) => write!(
+                f,
+                "track {id}'s chain can hold at most {} effects",
+                crate::MAX_EFFECTS
+            ),
+            Self::EffectIndexOutOfRange(index) => {
+                write!(f, "effect position {index} is past the end of its chain")
+            }
+            Self::EffectIndexListedTwice(index) => {
+                write!(f, "two effects are added at position {index} in one chain")
+            }
+            Self::EffectMixOutOfRange(mix) => write!(
+                f,
+                "mix {mix} is out of range ({} to {})",
+                Effect::MIN_MIX,
+                Effect::MAX_MIX
+            ),
+            Self::DelayParamOutOfRange(param) => {
+                let (value, min, max) = param.range();
+                write!(f, "{param:?}: {value} is out of range ({min} to {max})")
+            }
             Self::NoteOffKit { note, pitch } => write!(
                 f,
                 "note {note}: pitch {pitch} isn't one of the drum kit's notes ({})",
@@ -414,19 +495,19 @@ impl std::error::Error for CommandError {}
 /// in-memory type can change while older saved formats still load: a new
 /// format gets its own body type here and a conversion to [`Command`].
 ///
-/// Formats 2 to 4 only added commands and a kind of track, so one body type
-/// reads every format, and an envelope may only hold the commands and
-/// tracks its format had.
+/// Formats 2 to 5 only added commands, a kind of track and a track's
+/// effects, so one body type reads every format, and an envelope may only
+/// hold the commands and tracks its format had.
 mod wire {
     use std::collections::HashSet;
 
     use serde::{Deserialize, Serialize};
 
-    use super::{COMMAND_FORMAT, ClipPosition, Command, PlacedClip, PlacedTrack};
+    use super::{COMMAND_FORMAT, ClipPosition, Command, PlacedClip, PlacedEffect, PlacedTrack};
     use crate::time::Ticks;
     use crate::{
-        Clip, ClipId, DrumParam, DrumSound, KitSettings, MixerStrip, Note, NoteId, Source,
-        SynthParam, SynthSettings, Track, TrackId,
+        Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, EffectSettings,
+        KitSettings, MixerStrip, Note, NoteId, Source, SynthParam, SynthSettings, Track, TrackId,
     };
 
     #[derive(Serialize, Deserialize)]
@@ -503,6 +584,21 @@ mod wire {
             sound: DrumSound,
             param: DrumParam,
         },
+        // Format 5.
+        AddEffects {
+            effects: Vec<EffectAt>,
+        },
+        RemoveEffects {
+            effects: Vec<EffectId>,
+        },
+        SetEffectMix {
+            effect: EffectId,
+            mix: f32,
+        },
+        SetDelayParam {
+            effect: EffectId,
+            param: DelayParam,
+        },
     }
 
     impl Body {
@@ -517,6 +613,15 @@ mod wire {
                 | Self::SetTempo { .. }
                 | Self::SetLoopLength { .. } => 2,
                 Self::SetSynthParam { param, .. } => param.since_format(),
+                Self::AddTracks { tracks }
+                    if tracks.iter().any(|at| !at.track.effects.is_empty()) =>
+                {
+                    5
+                }
+                Self::AddEffects { .. }
+                | Self::RemoveEffects { .. }
+                | Self::SetEffectMix { .. }
+                | Self::SetDelayParam { .. } => 5,
                 Self::AddTracks { tracks }
                     if tracks
                         .iter()
@@ -538,16 +643,58 @@ mod wire {
         track: TrackBody,
     }
 
-    /// A track, with its clips and their notes. It has no effects yet, so
-    /// they aren't saved.
+    /// A track, with its chain, its clips and their notes. A track with no
+    /// effects leaves them out, as it was before format 5.
     #[derive(Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     struct TrackBody {
         id: TrackId,
         name: String,
         source: SourceBody,
+        // Format 5.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        effects: Vec<EffectBody>,
         mixer: MixerStrip,
         clips: Vec<ClipBody>,
+    }
+
+    /// An effect with its chain and place, as `add_effects` carries it.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct EffectAt {
+        chain: Chain,
+        index: usize,
+        effect: EffectBody,
+    }
+
+    /// An effect: its ID, its settings (which say its kind), whether it's
+    /// on, and its Mix.
+    #[derive(Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct EffectBody {
+        id: EffectId,
+        settings: EffectSettings,
+        enabled: bool,
+        mix: f32,
+    }
+
+    impl From<Effect> for EffectBody {
+        fn from(effect: Effect) -> Self {
+            Self {
+                id: effect.id,
+                settings: effect.settings,
+                enabled: effect.enabled,
+                mix: effect.mix,
+            }
+        }
+    }
+
+    impl From<EffectBody> for Effect {
+        fn from(body: EffectBody) -> Self {
+            Effect::new(body.id, body.settings)
+                .with_enabled(body.enabled)
+                .with_mix(body.mix)
+        }
     }
 
     /// Serialises as `{"synth":{...}}` or `{"drums":{...}}`.
@@ -603,6 +750,7 @@ mod wire {
                 id: track.id,
                 name: track.name,
                 source: track.source.into(),
+                effects: track.effects.into_iter().map(EffectBody::from).collect(),
                 mixer: track.mixer,
                 clips: track.clips.into_iter().map(ClipBody::from).collect(),
             }
@@ -619,6 +767,7 @@ mod wire {
                 .map(Clip::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Track::new(body.id, body.name, body.source.into())
+                .with_effects(body.effects.into_iter().map(Effect::from))
                 .with_mixer(body.mixer)
                 .with_clips(clips))
         }
@@ -695,6 +844,19 @@ mod wire {
                 Command::SetClips { clips } => Body::SetClips { clips },
                 Command::SetLoop { start_bar, bars } => Body::SetLoop { start_bar, bars },
                 Command::SetLoopEnabled { enabled } => Body::SetLoopEnabled { enabled },
+                Command::AddEffects { effects } => Body::AddEffects {
+                    effects: effects
+                        .into_iter()
+                        .map(|placed| EffectAt {
+                            chain: placed.chain,
+                            index: placed.index,
+                            effect: placed.effect.into(),
+                        })
+                        .collect(),
+                },
+                Command::RemoveEffects { effects } => Body::RemoveEffects { effects },
+                Command::SetEffectMix { effect, mix } => Body::SetEffectMix { effect, mix },
+                Command::SetDelayParam { effect, param } => Body::SetDelayParam { effect, param },
             };
             Self {
                 format: COMMAND_FORMAT,
@@ -766,6 +928,19 @@ mod wire {
                 Body::SetClips { clips } => Command::SetClips { clips },
                 Body::SetLoop { start_bar, bars } => Command::SetLoop { start_bar, bars },
                 Body::SetLoopEnabled { enabled } => Command::SetLoopEnabled { enabled },
+                Body::AddEffects { effects } => Command::AddEffects {
+                    effects: effects
+                        .into_iter()
+                        .map(|at| PlacedEffect {
+                            chain: at.chain,
+                            index: at.index,
+                            effect: at.effect.into(),
+                        })
+                        .collect(),
+                },
+                Body::RemoveEffects { effects } => Command::RemoveEffects { effects },
+                Body::SetEffectMix { effect, mix } => Command::SetEffectMix { effect, mix },
+                Body::SetDelayParam { effect, param } => Command::SetDelayParam { effect, param },
             })
         }
     }
@@ -796,14 +971,27 @@ mod tests {
                 .is_some_and(|(value, _, _)| !value.is_finite())
         };
         let mixer = |mixer: &MixerStrip| !mixer.volume_db.is_finite() || !mixer.pan.is_finite();
+        let effect = |effect: &Effect| {
+            !effect.mix().is_finite()
+                || match effect.settings() {
+                    crate::EffectSettings::Delay(settings) => settings
+                        .params()
+                        .iter()
+                        .any(|param| !param.range().0.is_finite()),
+                }
+        };
         match command {
             Command::SetMasterVolume { volume_db } => !volume_db.is_finite(),
             Command::SetTempo { bpm } => !bpm.is_finite(),
             Command::SetSynthParam { param: p, .. } => param(p),
             Command::SetTrackMixer { mixer: m, .. } => mixer(m),
             Command::SetDrumParam { param, .. } => param.value().is_some_and(|v| !v.is_finite()),
+            Command::SetEffectMix { mix, .. } => !mix.is_finite(),
+            Command::SetDelayParam { param, .. } => !param.range().0.is_finite(),
+            Command::AddEffects { effects } => effects.iter().any(|placed| effect(&placed.effect)),
             Command::AddTracks { tracks } => tracks.iter().any(|placed| {
                 mixer(placed.track.mixer())
+                    || placed.track.effects().iter().any(effect)
                     || match placed.track.source() {
                         Source::Synth(settings) => settings.params().iter().any(param),
                         Source::Drums(kit) => KickModel::ALL.iter().any(|&model| {
@@ -818,12 +1006,21 @@ mod tests {
         }
     }
 
+    /// A new track's synth settings, as `add_tracks` carries them.
+    const DEFAULT_SYNTH_JSON: &str = concat!(
+        r#"{"osc1_wave":"saw","osc1_octave":0,"osc2_wave":"saw","osc2_octave":0,"#,
+        r#""osc2_pitch_semitones":0.0,"sub_octave":-1,"osc1_level":1.0,"osc2_level":0.0,"#,
+        r#""sub_level":0.0,"noise_level":0.0,"cutoff_hz":20000.0,"resonance":0.0,"#,
+        r#""attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2,"#,
+        r#""osc_retrigger":true}"#,
+    );
+
     #[test]
     fn serialises_with_its_format_version() {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":5,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":6,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -889,11 +1086,11 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":5,"command":{body}}}"#);
+            let json = format!(r#"{{"format":6,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 2, 3 and 4 lists still load.
-            for format in [2, 3, 4] {
+            // Format 2 to 5 lists still load.
+            for format in [2, 3, 4, 5] {
                 let json = format!(r#"{{"format":{format},"command":{body}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -920,13 +1117,7 @@ mod tests {
         let mixer_json = r#"{"volume_db":-3.5,"pan":0.25,"mute":false,"solo":true}"#;
         let clip_json =
             format!(r#"{{"id":"{new_clip}","start":7680,"length":3840,"notes":[{note_json}]}}"#);
-        let settings_json = concat!(
-            r#"{"osc1_wave":"saw","osc1_octave":0,"osc2_wave":"saw","osc2_octave":0,"#,
-            r#""osc2_pitch_semitones":0.0,"sub_octave":-1,"osc1_level":1.0,"osc2_level":0.0,"#,
-            r#""sub_level":0.0,"noise_level":0.0,"cutoff_hz":20000.0,"resonance":0.0,"#,
-            r#""attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2,"#,
-            r#""osc_retrigger":true}"#,
-        );
+        let settings_json = DEFAULT_SYNTH_JSON;
         let cases = [
             (
                 Command::AddTracks {
@@ -1000,11 +1191,11 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":5,"command":{body}}}"#);
+            let json = format!(r#"{{"format":6,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 3 and 4 lists still load.
-            for format in [3, 4] {
+            // Format 3 to 5 lists still load.
+            for format in [3, 4, 5] {
                 let json = format!(r#"{{"format":{format},"command":{body}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -1075,11 +1266,14 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":5,"command":{body}}}"#);
+            let json = format!(r#"{{"format":6,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            let json = format!(r#"{{"format":4,"command":{body}}}"#);
-            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Format 4 and 5 lists still load.
+            for format in [4, 5] {
+                let json = format!(r#"{{"format":{format},"command":{body}}}"#);
+                assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            }
             // Drums are new in format 4, even in a format 3 command.
             let json = format!(r#"{{"format":3,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
@@ -1087,53 +1281,142 @@ mod tests {
         }
     }
 
-    /// Format 4's synth commands convert: `waveform` is oscillator 1's wave,
-    /// `square` is a pulse, and a track's settings that format 4 didn't have
-    /// take their defaults, which play today's sound. A setting new in
-    /// format 5 is refused in an older list.
+    /// Format 4's and 5's synth commands convert: `waveform` is oscillator
+    /// 1's wave, `square` is a pulse, and a track's settings that they didn't
+    /// have take their defaults, which play today's sound. A setting new in
+    /// format 6 is refused in an older `set_synth_param`.
     #[test]
-    fn format_4_synth_commands_convert() {
+    fn older_synth_commands_convert() {
         let track = track();
-        let json = format!(
-            r#"{{"format":4,"command":{{"type":"set_synth_param","track":"{track}","param":{{"name":"waveform","value":"square"}}}}}}"#
-        );
-        assert_eq!(
-            serde_json::from_str::<Command>(&json).unwrap(),
-            Command::SetSynthParam {
-                track,
-                param: SynthParam::Osc1Wave(Waveform::Pulse),
-            }
-        );
-
         let new_track = testing::track_id(0);
         let settings_json = r#"{"waveform":"square","cutoff_hz":800.0,"resonance":0.0,"attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2}"#;
-        let json = format!(
-            r#"{{"format":4,"command":{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{settings_json}}},"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[]}}}}]}}}}"#
-        );
-        let Command::AddTracks { tracks } = serde_json::from_str::<Command>(&json).unwrap() else {
-            panic!("an add_tracks command");
-        };
-        assert_eq!(
-            tracks[0].track.source(),
-            &Source::Synth(SynthSettings {
-                osc1_wave: Waveform::Pulse,
-                cutoff_hz: 800.0,
-                ..SynthSettings::default()
-            })
-        );
-
-        for param in [
-            r#"{"name":"osc2_level","value":0.5}"#,
-            r#"{"name":"osc_retrigger","value":false}"#,
-        ] {
+        for format in [4, 5] {
             let json = format!(
-                r#"{{"format":4,"command":{{"type":"set_synth_param","track":"{track}","param":{param}}}}}"#
+                r#"{{"format":{format},"command":{{"type":"set_synth_param","track":"{track}","param":{{"name":"waveform","value":"square"}}}}}}"#
             );
+            assert_eq!(
+                serde_json::from_str::<Command>(&json).unwrap(),
+                Command::SetSynthParam {
+                    track,
+                    param: SynthParam::Osc1Wave(Waveform::Pulse),
+                }
+            );
+
+            let json = format!(
+                r#"{{"format":{format},"command":{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{settings_json}}},"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[]}}}}]}}}}"#
+            );
+            let Command::AddTracks { tracks } = serde_json::from_str::<Command>(&json).unwrap()
+            else {
+                panic!("an add_tracks command");
+            };
+            assert_eq!(
+                tracks[0].track.source(),
+                &Source::Synth(SynthSettings {
+                    osc1_wave: Waveform::Pulse,
+                    cutoff_hz: 800.0,
+                    ..SynthSettings::default()
+                })
+            );
+
+            for param in [
+                r#"{"name":"osc2_level","value":0.5}"#,
+                r#"{"name":"osc_retrigger","value":false}"#,
+            ] {
+                let json = format!(
+                    r#"{{"format":{format},"command":{{"type":"set_synth_param","track":"{track}","param":{param}}}}}"#
+                );
+                let error = serde_json::from_str::<Command>(&json).unwrap_err();
+                assert!(error.to_string().contains("arrived in format 6"), "{error}");
+                let json = json.replace(&format!(r#""format":{format}"#), r#""format":6"#);
+                assert!(serde_json::from_str::<Command>(&json).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn the_format_5_commands_serialise_like_this() {
+        let track = track();
+        let effect = testing::effect_id(0);
+        let delay = Effect::default_of(effect, crate::EffectKind::Delay).with_mix(0.5);
+        let delay_json = format!(
+            r#"{{"id":"{effect}","settings":{{"delay":{{"time_seconds":0.375,"feedback":0.4}}}},"enabled":true,"mix":0.5}}"#
+        );
+        let new_track = testing::track_id(0);
+        let settings_json = DEFAULT_SYNTH_JSON;
+        let cases = [
+            (
+                Command::AddEffects {
+                    effects: vec![PlacedEffect {
+                        chain: Chain::Track(track),
+                        index: 0,
+                        effect: delay,
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_effects","effects":[{{"chain":{{"track":"{track}"}},"index":0,"effect":{delay_json}}}]}}"#
+                ),
+            ),
+            (
+                Command::RemoveEffects {
+                    effects: vec![effect],
+                },
+                format!(r#"{{"type":"remove_effects","effects":["{effect}"]}}"#),
+            ),
+            (
+                Command::SetEffectMix { effect, mix: 0.25 },
+                format!(r#"{{"type":"set_effect_mix","effect":"{effect}","mix":0.25}}"#),
+            ),
+            (
+                Command::SetDelayParam {
+                    effect,
+                    param: DelayParam::TimeSeconds(0.25),
+                },
+                format!(
+                    r#"{{"type":"set_delay_param","effect":"{effect}","param":{{"name":"time_seconds","value":0.25}}}}"#
+                ),
+            ),
+            (
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: 1,
+                        track: Track::new(
+                            new_track,
+                            "Synth 2",
+                            Source::Synth(SynthSettings::default()),
+                        )
+                        .with_effects([delay]),
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{settings_json}}},"effects":[{delay_json}],"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[]}}}}]}}"#
+                ),
+            ),
+        ];
+        for (command, body) in cases {
+            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            let json = format!(r#"{{"format":5,"command":{body}}}"#);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Effects are new in format 5, even in a format 4 command.
+            let json = format!(r#"{{"format":4,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
             assert!(error.to_string().contains("arrived in format 5"), "{error}");
-            let json = json.replace(r#""format":4"#, r#""format":5"#);
-            assert!(serde_json::from_str::<Command>(&json).is_ok());
         }
+    }
+
+    #[test]
+    fn effect_commands_continue_only_with_the_same_effect_and_setting() {
+        let (a, b) = (testing::effect_id(0), testing::effect_id(1));
+        let mix = |effect, mix| Command::SetEffectMix { effect, mix };
+        assert!(mix(a, 0.2).sets_same_as(&mix(a, 0.8)));
+        assert!(!mix(a, 0.2).sets_same_as(&mix(b, 0.8)));
+        let set = |effect, param| Command::SetDelayParam { effect, param };
+        let time = set(a, DelayParam::TimeSeconds(0.25));
+        assert!(time.sets_same_as(&set(a, DelayParam::TimeSeconds(0.5))));
+        assert!(!time.sets_same_as(&set(a, DelayParam::Feedback(0.5))));
+        assert!(!time.sets_same_as(&set(b, DelayParam::TimeSeconds(0.5))));
+        assert!(!time.sets_same_as(&mix(a, 0.25)));
     }
 
     #[test]
@@ -1224,7 +1507,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 6, 99] {
+        for format in [0, 7, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

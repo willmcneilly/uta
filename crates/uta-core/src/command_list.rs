@@ -72,17 +72,17 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":5,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
+        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":6,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
         let list: CommandList = serde_json::from_str(json).unwrap();
         assert_eq!(list.commands, [Command::SetTempo { bpm: 100.0 }]);
         assert_eq!(serde_json::to_string(&list).unwrap(), json);
     }
 
-    /// Lists written in formats 2, 3 and 4 load, and saved again in format 5
-    /// they build exactly the same project. The demo song has synth tracks
-    /// with format 3's settings, which take today's for the rest.
+    /// Lists written in formats 2, 3 and 4 load, and saved again in today's
+    /// format they build exactly the same project. The demo song has synth
+    /// tracks with format 3's settings, which take today's for the rest.
     #[test]
-    fn older_lists_load_and_build_the_same_in_format_5() {
+    fn older_lists_load_and_build_the_same_in_todays_format() {
         for (json, format) in [
             (include_str!("../../../examples/demo-loop.json"), 2),
             (include_str!("../../../examples/demo-song.json"), 3),
@@ -91,7 +91,7 @@ mod tests {
             assert!(json.contains(&format!(r#""format": {format}"#)));
             let list: CommandList = serde_json::from_str(json).unwrap();
             let resaved = serde_json::to_string(&list).unwrap();
-            assert!(resaved.contains(r#""format":5"#));
+            assert!(resaved.contains(&format!(r#""format":{}"#, crate::COMMAND_FORMAT)));
             let again: CommandList = serde_json::from_str(&resaved).unwrap();
             assert_eq!(again, list);
             assert_eq!(again.build().unwrap(), list.build().unwrap());

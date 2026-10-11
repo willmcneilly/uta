@@ -501,6 +501,7 @@ fn every_slot_can_play_a_kit() {
         let track = project.tracks()[0].copy(
             uta_core::TrackId::from_uuid(uuid::Uuid::from_u128(9000 + n as u128)),
             format!("Drums {}", n + 1),
+            uta_core::EffectId::random,
             || uta_core::ClipId::from_uuid(uuid::Uuid::from_u128(10_000 + n as u128)),
             || uta_core::NoteId::from_uuid(uuid::Uuid::from_u128(11_000 + n as u128)),
         );

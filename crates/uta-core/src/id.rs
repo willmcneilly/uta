@@ -57,3 +57,9 @@ id_type!(
     /// always gives the note the same ID.
     NoteId
 );
+
+id_type!(
+    /// An effect's permanent ID, unique across the project's chains, so a
+    /// command finds it wherever it is and the engine finds its state.
+    EffectId
+);

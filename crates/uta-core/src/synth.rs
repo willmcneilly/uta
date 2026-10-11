@@ -17,7 +17,7 @@ pub enum Waveform {
     Triangle,
     Saw,
     /// A pulse wave. Until it has a Width it's a square, which command
-    /// format 4 called it.
+    /// formats before 6 called it.
     #[serde(alias = "square")]
     Pulse,
 }
@@ -63,7 +63,8 @@ const WAVEFORMS: [Choice; 4] = [
 ///
 /// Serialises with the same names as [`SynthParam`], as `AddTracks` carries
 /// it. A setting left out takes its default, so command format 4's seven
-/// settings still read, with `waveform` as oscillator 1's wave.
+/// settings, and format 5's, still read, with `waveform` as oscillator 1's
+/// wave.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SynthSettings {
@@ -240,7 +241,7 @@ impl Default for SynthSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "name", content = "value", rename_all = "snake_case")]
 pub enum SynthParam {
-    /// Command format 4 called it `waveform`.
+    /// Command formats before 6 called it `waveform`.
     #[serde(alias = "waveform")]
     Osc1Wave(Waveform),
     Osc1Octave(i8),
@@ -277,7 +278,7 @@ impl SynthParam {
             | Self::DecaySeconds(_)
             | Self::Sustain(_)
             | Self::ReleaseSeconds(_) => 2,
-            _ => 5,
+            _ => 6,
         }
     }
 

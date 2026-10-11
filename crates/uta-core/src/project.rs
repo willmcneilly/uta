@@ -4,12 +4,13 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
-use crate::command::{ClipPosition, PlacedClip, PlacedTrack};
+use crate::command::{ClipPosition, PlacedClip, PlacedEffect, PlacedTrack};
+use crate::effect::check_mix;
 use crate::time::{MAX_TICKS, TempoMap, Ticks, TimeSignature};
 use crate::track::{Clip, Source, SourceKind, Track, check_span};
 use crate::{
-    ClipId, Command, CommandError, DrumParamError, KitSettings, NoteId, ProjectId, SynthSettings,
-    TrackId,
+    Chain, ClipId, Command, CommandError, DrumParamError, Effect, EffectId, EffectSettings,
+    KitSettings, MAX_EFFECTS, NoteId, ProjectId, SynthSettings, TrackId,
 };
 
 /// The song's tempo, time signature and loop region.
@@ -164,6 +165,18 @@ impl Project {
             .iter()
             .flat_map(|track| &track.clips)
             .find(|clip| clip.id == id)
+    }
+
+    /// The effect with this ID, in whichever chain it's in.
+    pub fn effect(&self, id: EffectId) -> Option<&Effect> {
+        self.tracks.iter().find_map(|track| track.effect(id))
+    }
+
+    /// The effects in `chain`, in order, if it exists.
+    pub fn chain(&self, chain: Chain) -> Option<&[Effect]> {
+        match chain {
+            Chain::Track(id) => self.track(id).map(|track| track.effects()),
+        }
     }
 
     /// Where the song ends, in ticks: one bar after the last clip ends, or
@@ -389,7 +402,121 @@ impl Project {
                 let previous = std::mem::replace(&mut self.transport.loop_enabled, enabled);
                 Ok(Command::SetLoopEnabled { enabled: previous })
             }
+            Command::AddEffects { effects } => self.add_effects(effects),
+            Command::RemoveEffects { effects } => self.remove_effects(effects),
+            &Command::SetEffectMix { effect, mix } => {
+                check_mix(mix)?;
+                let found = self.effect_mut(effect)?;
+                let previous = std::mem::replace(&mut found.mix, mix);
+                Ok(Command::SetEffectMix {
+                    effect,
+                    mix: previous,
+                })
+            }
+            &Command::SetDelayParam { effect, param } => {
+                // The only kind so far, so every effect is a Delay.
+                let EffectSettings::Delay(settings) = &mut self.effect_mut(effect)?.settings;
+                let previous = settings
+                    .set(param)
+                    .map_err(CommandError::DelayParamOutOfRange)?;
+                Ok(Command::SetDelayParam {
+                    effect,
+                    param: previous,
+                })
+            }
         }
+    }
+
+    /// Adds each effect at its place in its chain. Within a chain they're
+    /// added in order of index, so each lands at its own, as tracks do.
+    fn add_effects(&mut self, effects: &[PlacedEffect]) -> Result<Command, CommandError> {
+        if effects.is_empty() {
+            return Err(CommandError::NoEffects);
+        }
+        let mut new = HashSet::new();
+        let mut chains: Vec<Chain> = Vec::new();
+        for placed in effects {
+            let id = placed.effect.id;
+            if self.effect(id).is_some() {
+                return Err(CommandError::EffectAlreadyExists(id));
+            }
+            if !new.insert(id) {
+                return Err(CommandError::EffectListedTwice(id));
+            }
+            placed.effect.validate()?;
+            if !chains.contains(&placed.chain) {
+                chains.push(placed.chain);
+            }
+        }
+        let adding = |chain: Chain| {
+            let mut adding: Vec<&PlacedEffect> = effects
+                .iter()
+                .filter(|placed| placed.chain == chain)
+                .collect();
+            adding.sort_by_key(|placed| placed.index);
+            adding
+        };
+        for &chain in &chains {
+            let len = self.chain_effects(chain)?.len();
+            let adding = adding(chain);
+            if len + adding.len() > MAX_EFFECTS {
+                return Err(CommandError::ChainFull(chain));
+            }
+            for (count, placed) in adding.iter().enumerate() {
+                if count > 0 && adding[count - 1].index == placed.index {
+                    return Err(CommandError::EffectIndexListedTwice(placed.index));
+                }
+                if placed.index > len + count {
+                    return Err(CommandError::EffectIndexOutOfRange(placed.index));
+                }
+            }
+        }
+        for chain in chains {
+            for placed in adding(chain) {
+                self.chain_mut(chain)
+                    .expect("checked above")
+                    .insert(placed.index, placed.effect);
+            }
+        }
+        Ok(Command::RemoveEffects {
+            effects: effects.iter().map(|placed| placed.effect.id).collect(),
+        })
+    }
+
+    /// Removes the effects, and returns them in the command's order, each
+    /// with its chain and the place it had there.
+    fn remove_effects(&mut self, ids: &[EffectId]) -> Result<Command, CommandError> {
+        if ids.is_empty() {
+            return Err(CommandError::NoEffects);
+        }
+        let mut seen = HashSet::new();
+        let mut places = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if !seen.insert(id) {
+                return Err(CommandError::EffectListedTwice(id));
+            }
+            places.push(self.place_of(id).ok_or(CommandError::UnknownEffect(id))?);
+        }
+        // Removed from the back of each chain, so the places before stay
+        // right.
+        let mut order: Vec<usize> = (0..ids.len()).collect();
+        order.sort_by_key(|&n| std::cmp::Reverse(places[n].1));
+        let mut removed: Vec<Option<PlacedEffect>> = vec![None; ids.len()];
+        for n in order {
+            let (chain, index) = places[n];
+            let effect = self.chain_mut(chain).expect("found above").remove(index);
+            removed[n] = Some(PlacedEffect {
+                chain,
+                index,
+                effect,
+            });
+        }
+        Ok(Command::AddEffects {
+            effects: removed
+                .into_iter()
+                .map(|placed| placed.expect("each removed"))
+                .collect(),
+        })
     }
 
     fn add_tracks(&mut self, tracks: &[PlacedTrack]) -> Result<Command, CommandError> {
@@ -546,6 +673,37 @@ impl Project {
         Ok(self)
     }
 
+    /// The chain the effect with this ID is in, and its place there.
+    fn place_of(&self, id: EffectId) -> Option<(Chain, usize)> {
+        self.tracks.iter().find_map(|track| {
+            let index = track.effects.iter().position(|effect| effect.id == id)?;
+            Some((Chain::Track(track.id), index))
+        })
+    }
+
+    fn chain_effects(&self, chain: Chain) -> Result<&[Effect], CommandError> {
+        self.chain(chain).ok_or(match chain {
+            Chain::Track(id) => CommandError::UnknownTrack(id),
+        })
+    }
+
+    fn chain_mut(&mut self, chain: Chain) -> Result<&mut Vec<Effect>, CommandError> {
+        match chain {
+            Chain::Track(id) => {
+                let index = self.track_index(id)?;
+                Ok(&mut self.tracks[index].effects)
+            }
+        }
+    }
+
+    fn effect_mut(&mut self, id: EffectId) -> Result<&mut Effect, CommandError> {
+        self.tracks
+            .iter_mut()
+            .flat_map(|track| &mut track.effects)
+            .find(|effect| effect.id == id)
+            .ok_or(CommandError::UnknownEffect(id))
+    }
+
     /// The track the clip with this ID is on.
     fn track_of(&self, clip: ClipId) -> Result<&Track, CommandError> {
         self.tracks
@@ -618,12 +776,13 @@ fn check_clips_listed_once(ids: impl Iterator<Item = ClipId>) -> Result<(), Comm
     Ok(())
 }
 
-/// Checks the tracks, clips and notes a command adds: that each is valid,
-/// and has an ID that isn't used in the project or listed twice in the
-/// command.
+/// Checks the tracks, effects, clips and notes a command adds: that each is
+/// valid, and has an ID that isn't used in the project or listed twice in
+/// the command.
 struct NewIds<'a> {
     project: &'a Project,
     tracks: HashSet<TrackId>,
+    effects: HashSet<EffectId>,
     clips: HashSet<ClipId>,
     notes: HashSet<NoteId>,
 }
@@ -633,6 +792,7 @@ impl<'a> NewIds<'a> {
         Self {
             project,
             tracks: HashSet::new(),
+            effects: HashSet::new(),
             clips: HashSet::new(),
             notes: HashSet::new(),
         }
@@ -650,6 +810,18 @@ impl<'a> NewIds<'a> {
         }
         track.source.validate()?;
         track.mixer.validate()?;
+        if track.effects.len() > MAX_EFFECTS {
+            return Err(CommandError::ChainFull(Chain::Track(track.id)));
+        }
+        for effect in &track.effects {
+            if self.project.effect(effect.id).is_some() {
+                return Err(CommandError::EffectAlreadyExists(effect.id));
+            }
+            if !self.effects.insert(effect.id) {
+                return Err(CommandError::EffectListedTwice(effect.id));
+            }
+            effect.validate()?;
+        }
         track
             .clips
             .iter()
@@ -2259,6 +2431,7 @@ mod tests {
         let copy = original.copy(
             testing::track_id(10),
             project.next_track_name(SourceKind::Synth),
+            EffectId::random,
             || {
                 clip_index += 1;
                 testing::clip_id(clip_index)
@@ -2685,6 +2858,347 @@ mod tests {
         assert!(after.shares_notes(before));
     }
 
+    fn delay(n: u128) -> Effect {
+        Effect::default_of(testing::effect_id(n), crate::EffectKind::Delay)
+    }
+
+    fn at(chain: TrackId, index: usize, effect: Effect) -> PlacedEffect {
+        PlacedEffect {
+            chain: Chain::Track(chain),
+            index,
+            effect,
+        }
+    }
+
+    fn add_effects(effects: Vec<PlacedEffect>) -> Command {
+        Command::AddEffects { effects }
+    }
+
+    fn ids(project: &Project, track: TrackId) -> Vec<EffectId> {
+        project
+            .track(track)
+            .unwrap()
+            .effects()
+            .iter()
+            .map(Effect::id)
+            .collect()
+    }
+
+    /// The first track with Delays 0, 1 and 2 in its chain, in that order.
+    fn with_three_delays() -> Project {
+        let mut project = testing::project();
+        let track = track_id(&project);
+        project
+            .apply(&add_effects(vec![
+                at(track, 0, delay(0)),
+                at(track, 1, delay(1)),
+                at(track, 2, delay(2)),
+            ]))
+            .unwrap();
+        project
+    }
+
+    #[test]
+    fn add_effects_puts_each_at_its_place_and_undoes_by_removing_them() {
+        let project = testing::project();
+        let track = track_id(&project);
+        let one = apply_and_check_undo(&project, add_effects(vec![at(track, 0, delay(0))]));
+        assert_eq!(ids(&one, track), [testing::effect_id(0)]);
+        assert_eq!(one.effect(testing::effect_id(0)), Some(&delay(0)));
+        assert_eq!(
+            one.chain(Chain::Track(track)).unwrap(),
+            [delay(0)].as_slice()
+        );
+
+        // Each lands at its place, whatever order the command lists them in.
+        let three = with_three_delays();
+        let placed = apply_and_check_undo(
+            &three,
+            add_effects(vec![at(track, 4, delay(4)), at(track, 1, delay(3))]),
+        );
+        let effect = testing::effect_id;
+        assert_eq!(
+            ids(&placed, track),
+            [effect(0), effect(3), effect(1), effect(2), effect(4)]
+        );
+        let mut inverse = three.clone();
+        assert_eq!(
+            inverse.apply(&add_effects(vec![at(track, 0, delay(5))])),
+            Ok(Command::RemoveEffects {
+                effects: vec![effect(5)]
+            })
+        );
+    }
+
+    #[test]
+    fn remove_effects_undoes_by_adding_them_back_with_their_settings_and_places() {
+        let mut project = with_three_delays();
+        let track = track_id(&project);
+        let effect = testing::effect_id;
+        project
+            .apply(&Command::SetDelayParam {
+                effect: effect(2),
+                param: crate::DelayParam::Feedback(0.9),
+            })
+            .unwrap();
+        project
+            .apply(&Command::SetEffectMix {
+                effect: effect(0),
+                mix: 0.75,
+            })
+            .unwrap();
+        let removed = apply_and_check_undo(
+            &project,
+            Command::RemoveEffects {
+                effects: vec![effect(2), effect(0)],
+            },
+        );
+        assert_eq!(ids(&removed, track), [effect(1)]);
+        let mut changed = project.clone();
+        let inverse = changed
+            .apply(&Command::RemoveEffects {
+                effects: vec![effect(2), effect(0)],
+            })
+            .unwrap();
+        assert_eq!(
+            inverse,
+            add_effects(vec![
+                at(track, 2, project.effect(effect(2)).copied().unwrap()),
+                at(track, 0, delay(0).with_mix(0.75)),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_chain_holds_eight_effects_and_refuses_a_ninth() {
+        let project = testing::project();
+        let track = track_id(&project);
+        let eight: Vec<_> = (0..8).map(|n| at(track, n as usize, delay(n))).collect();
+        let full = apply_and_check_undo(&project, add_effects(eight.clone()));
+        assert_eq!(
+            full.track(track).unwrap().effects().len(),
+            crate::MAX_EFFECTS
+        );
+        assert_rejected(
+            &full,
+            add_effects(vec![at(track, 8, delay(8))]),
+            CommandError::ChainFull(Chain::Track(track)),
+        );
+        let mut nine = eight;
+        nine.push(at(track, 8, delay(8)));
+        assert_rejected(
+            &project,
+            add_effects(nine.clone()),
+            CommandError::ChainFull(Chain::Track(track)),
+        );
+        // A track can't arrive with nine either.
+        let crowded = Track::new(
+            testing::track_id(0),
+            "Synth 9",
+            Source::Synth(SynthSettings::default()),
+        )
+        .with_effects(nine.iter().map(|placed| placed.effect));
+        assert_rejected(
+            &project,
+            Command::AddTracks {
+                tracks: vec![placed(0, crowded)],
+            },
+            CommandError::ChainFull(Chain::Track(testing::track_id(0))),
+        );
+        // Other chains aren't affected.
+        let drums = project.tracks()[1].id();
+        let mut other = full.clone();
+        other
+            .apply(&add_effects(vec![at(drums, 0, delay(9))]))
+            .unwrap();
+        let error = CommandError::ChainFull(Chain::Track(track)).to_string();
+        assert!(error.contains("at most 8 effects"), "{error}");
+    }
+
+    #[test]
+    fn set_effect_mix_and_set_delay_param_set_them_and_undo() {
+        let project = with_three_delays();
+        let effect = testing::effect_id(1);
+        let mixed = apply_and_check_undo(&project, Command::SetEffectMix { effect, mix: 1.0 });
+        assert_eq!(mixed.effect(effect).unwrap().mix(), 1.0);
+        for param in [
+            crate::DelayParam::TimeSeconds(0.25),
+            crate::DelayParam::Feedback(0.0),
+        ] {
+            let set = apply_and_check_undo(&project, Command::SetDelayParam { effect, param });
+            let EffectSettings::Delay(settings) = set.effect(effect).unwrap().settings();
+            assert!(settings.params().contains(&param), "{param:?}");
+        }
+        for mix in [-0.01, 1.01, f32::NAN] {
+            let mut attempt = project.clone();
+            assert!(matches!(
+                attempt.apply(&Command::SetEffectMix { effect, mix }),
+                Err(CommandError::EffectMixOutOfRange(_))
+            ));
+            assert_eq!(attempt, project);
+        }
+        assert_rejected(
+            &project,
+            Command::SetDelayParam {
+                effect,
+                param: crate::DelayParam::TimeSeconds(6.0),
+            },
+            CommandError::DelayParamOutOfRange(crate::DelayParam::TimeSeconds(6.0)),
+        );
+    }
+
+    #[test]
+    fn a_knob_drag_on_an_effect_is_one_undo_step() {
+        let mut session = crate::Session::new(with_three_delays());
+        let effect = testing::effect_id(0);
+        let time = |seconds| Command::SetDelayParam {
+            effect,
+            param: crate::DelayParam::TimeSeconds(seconds),
+        };
+        session.apply(time(0.3)).unwrap();
+        for seconds in [0.4, 0.5, 0.6] {
+            session.amend(time(seconds)).unwrap();
+        }
+        let mix = |mix| Command::SetEffectMix { effect, mix };
+        session.apply(mix(0.5)).unwrap();
+        session.amend(mix(0.6)).unwrap();
+        let undone = session.undo();
+        assert_eq!(undone.len(), 1);
+        assert_eq!(undone[0].command, mix(0.3));
+        let undone = session.undo();
+        assert_eq!(undone.len(), 1);
+        assert_eq!(undone[0].command, time(0.375));
+        assert_eq!(session.project(), &with_three_delays());
+    }
+
+    #[test]
+    fn removing_a_track_removes_its_chain_and_undo_restores_both() {
+        let project = with_three_delays();
+        let track = track_id(&project);
+        let removed = apply_and_check_undo(
+            &project,
+            Command::RemoveTracks {
+                tracks: vec![track],
+            },
+        );
+        assert!(removed.effect(testing::effect_id(0)).is_none());
+        assert!(removed.chain(Chain::Track(track)).is_none());
+        // Its effects' IDs are free again once it's gone.
+        let drums = removed.tracks()[0].id();
+        apply_and_check_undo(&removed, add_effects(vec![at(drums, 0, delay(0))]));
+    }
+
+    #[test]
+    fn effects_commands_check_what_they_add_and_name() {
+        let project = with_three_delays();
+        let track = track_id(&project);
+        let drums = project.tracks()[1].id();
+        let unknown_track = testing::track_id(9);
+        let cases = [
+            (add_effects(vec![]), CommandError::NoEffects),
+            (
+                add_effects(vec![at(drums, 0, delay(0))]),
+                CommandError::EffectAlreadyExists(testing::effect_id(0)),
+            ),
+            (
+                add_effects(vec![at(drums, 0, delay(5)), at(track, 0, delay(5))]),
+                CommandError::EffectListedTwice(testing::effect_id(5)),
+            ),
+            (
+                add_effects(vec![at(unknown_track, 0, delay(5))]),
+                CommandError::UnknownTrack(unknown_track),
+            ),
+            (
+                add_effects(vec![at(track, 4, delay(5))]),
+                CommandError::EffectIndexOutOfRange(4),
+            ),
+            (
+                add_effects(vec![at(track, 1, delay(5)), at(track, 1, delay(6))]),
+                CommandError::EffectIndexListedTwice(1),
+            ),
+            (
+                add_effects(vec![at(drums, 0, delay(5).with_mix(2.0))]),
+                CommandError::EffectMixOutOfRange(2.0),
+            ),
+            (
+                Command::RemoveEffects { effects: vec![] },
+                CommandError::NoEffects,
+            ),
+            (
+                Command::RemoveEffects {
+                    effects: vec![testing::effect_id(7)],
+                },
+                CommandError::UnknownEffect(testing::effect_id(7)),
+            ),
+            (
+                Command::RemoveEffects {
+                    effects: vec![testing::effect_id(0), testing::effect_id(0)],
+                },
+                CommandError::EffectListedTwice(testing::effect_id(0)),
+            ),
+            (
+                Command::SetEffectMix {
+                    effect: testing::effect_id(7),
+                    mix: 0.5,
+                },
+                CommandError::UnknownEffect(testing::effect_id(7)),
+            ),
+            (
+                Command::SetDelayParam {
+                    effect: testing::effect_id(7),
+                    param: crate::DelayParam::Feedback(0.5),
+                },
+                CommandError::UnknownEffect(testing::effect_id(7)),
+            ),
+            // A track arriving with an effect already in another chain.
+            (
+                Command::AddTracks {
+                    tracks: vec![placed(
+                        0,
+                        Track::new(
+                            testing::track_id(0),
+                            "Synth 9",
+                            Source::Synth(SynthSettings::default()),
+                        )
+                        .with_effects([delay(1)]),
+                    )],
+                },
+                CommandError::EffectAlreadyExists(testing::effect_id(1)),
+            ),
+        ];
+        for (command, error) in cases {
+            assert_rejected(&project, command, error);
+        }
+    }
+
+    #[test]
+    fn a_duplicated_track_gets_its_effects_with_new_ids() {
+        let project = with_three_delays();
+        let original = project.tracks()[0].clone();
+        let mut next = 10;
+        let copy = original.copy(
+            testing::track_id(0),
+            "Synth 2",
+            || {
+                next += 1;
+                testing::effect_id(next)
+            },
+            ClipId::random,
+            NoteId::random,
+        );
+        assert_eq!(copy.effects().len(), 3);
+        for (copied, was) in copy.effects().iter().zip(original.effects()) {
+            assert_ne!(copied.id(), was.id());
+            assert_eq!(copied.copy(was.id()), *was);
+        }
+        apply_and_check_undo(
+            &project,
+            Command::AddTracks {
+                tracks: vec![placed(2, copy)],
+            },
+        );
+    }
+
     proptest! {
         #[test]
         fn any_command_that_applies_undoes_to_the_exact_previous_state(
@@ -2747,7 +3261,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, track)| PlacedTrack {
                     index,
-                    track: track.copy(TrackId::random(), format!("Synth {index}"), ClipId::random, NoteId::random),
+                    track: track.copy(TrackId::random(), format!("Synth {index}"), EffectId::random, ClipId::random, NoteId::random),
                 })
                 .collect();
             for copy in &copies {

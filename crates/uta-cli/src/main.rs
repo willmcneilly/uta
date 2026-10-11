@@ -28,7 +28,7 @@ struct Cli {
 enum Command {
     /// Render the song to a stereo WAV file, offline (no sound device
     /// needed). It plays from the top, round the loop if it's on, then stops
-    /// and lets the notes ring out.
+    /// and lets the notes and effects ring out, for up to 30 s.
     Render {
         /// Where to write the WAV.
         file: PathBuf,
@@ -163,15 +163,23 @@ fn render(project: &Project, file: &Path, seconds: Option<f64>) -> Result<(), St
         ..EngineConfig::default()
     };
     let seconds = seconds.unwrap_or_else(|| default_seconds(project));
-    let samples = offline::render_song(config, Snapshot::from(project), seconds);
-    offline::write_wav(file, config, &samples)
+    let song = offline::render_song(config, Snapshot::from(project), seconds);
+    offline::write_wav(file, config, &song.samples)
         .map_err(|error| format!("couldn't write {}: {error}", file.display()))?;
+    let frames = song.samples.len() / config.channels;
+    let tail = frames as f64 / f64::from(config.sample_rate) - seconds;
     println!(
-        "Wrote {seconds:.2} s of {} (plus the release) at {} Hz to {}",
+        "Wrote {seconds:.2} s of {} (plus {tail:.2} s ringing out) at {} Hz to {}",
         describe_project(project),
         config.sample_rate,
         file.display()
     );
+    if song.cut_off {
+        println!(
+            "The effects were still ringing {} s after the end, so the render stops there.",
+            offline::MAX_TAIL_SECONDS
+        );
+    }
     Ok(())
 }
 

@@ -4,13 +4,14 @@
 //! [`engine`] returns the two halves, joined by fixed-size lock-free
 //! queues:
 //! - [`Controller`] stays on the control side. It sends commands and new
-//!   snapshots, reads status, and frees the snapshots the processor is done
-//!   with.
+//!   snapshots with the states of the effects they bring, reads status, and
+//!   frees the snapshots and effect states the processor is done with.
 //! - [`Processor`] goes to the audio thread, through [`live::LiveOutput`], or
 //!   to [`offline::Renderer`] for rendering without a device.
 
 mod control;
 mod drums;
+mod effects;
 pub mod live;
 mod mixer;
 mod noise;
@@ -26,6 +27,7 @@ pub use drums::{
     Kick909Settings, KickSettings, KitSettings, LowTomSettings, OpenHatSettings, REFERENCE_PEAK,
     SnareSettings, velocity_to_strength,
 };
+pub use effects::{DELAY_TAPE_SECONDS, DelaySettings, EffectSettings, EffectSnapshot, EffectState};
 pub use mixer::MixerStrip;
 pub use processor::{
     FADE_SECONDS, MAX_NOTE_EVENTS_PER_BLOCK, Processor, TRACK_BUFFER_FRAMES,
@@ -62,6 +64,13 @@ pub const STATUS_CAPACITY: usize = 256;
 /// How many used snapshots can wait to be freed. When it's full the processor
 /// leaves further swaps queued until the control side catches up.
 pub const USED_SNAPSHOT_CAPACITY: usize = 64;
+/// The most effect states the audio thread holds at once: a full chain on
+/// every slot.
+pub const MAX_EFFECT_STATES: usize = TRACK_SLOTS * uta_core::MAX_EFFECTS;
+/// How many effect states can wait to be freed. A swap can send back every
+/// state the audio thread holds, so the processor leaves a swap queued until
+/// there's room for that many.
+pub const USED_STATE_CAPACITY: usize = 2 * MAX_EFFECT_STATES;
 
 /// A message from the control side to the audio thread.
 #[derive(Debug)]
@@ -81,8 +90,9 @@ pub enum Command {
     /// instead, and leave the play start where it was. In ticks from the
     /// start of the song. See RFC-003, "Playing a song".
     Locate(uta_core::time::Ticks),
-    /// Swap in a new "what to play" snapshot at the start of the next block.
-    SetSnapshot(Box<Snapshot>),
+    /// Swap in a new "what to play" snapshot at the start of the next block,
+    /// with the states of the effects it brings.
+    SetSnapshot(Box<Swap>),
     /// Start a note on the track in `slot`, whether or not the transport is
     /// playing: on its synth, or a hit on its kit.
     NoteOn {
@@ -95,6 +105,17 @@ pub enum Command {
     },
     /// Release the note started with this key in `slot`.
     NoteOff { slot: usize, key: NoteKey },
+}
+
+/// A new snapshot on its way to the audio thread, with the states of the
+/// effects it brings that the audio thread hasn't got (see
+/// [`EffectState`]). The audio thread swaps the snapshot in, takes the
+/// states, and sends this back holding the old snapshot, to be freed. It
+/// never allocates or frees: everything here was made on the control side.
+#[derive(Debug)]
+pub struct Swap {
+    snapshot: Box<Snapshot>,
+    states: Vec<effects::chain::Arriving>,
 }
 
 /// What the audio thread reports after each block.
@@ -136,6 +157,9 @@ pub struct Status {
     /// The slots with a voice or a drum still sounding, as a bitmask (bit
     /// `n` is slot `n`).
     pub sounding_slots: u32,
+    /// The slots whose chain is still ringing, such as a delay's echoes, as
+    /// a bitmask. The track keeps sounding until they've died away.
+    pub ringing_chains: u32,
 }
 
 /// Engine setup.
@@ -164,6 +188,7 @@ pub fn engine(config: EngineConfig, snapshot: Snapshot) -> (Controller, Processo
     let (command_tx, command_rx) = rtrb::RingBuffer::new(COMMAND_CAPACITY);
     let (status_tx, status_rx) = rtrb::RingBuffer::new(STATUS_CAPACITY);
     let (used_tx, used_rx) = rtrb::RingBuffer::new(USED_SNAPSHOT_CAPACITY);
+    let (used_states_tx, used_states_rx) = rtrb::RingBuffer::new(USED_STATE_CAPACITY);
     let processor = Processor::new(
         config.sample_rate,
         config.channels,
@@ -171,7 +196,15 @@ pub fn engine(config: EngineConfig, snapshot: Snapshot) -> (Controller, Processo
         command_rx,
         status_tx,
         used_tx,
+        used_states_tx,
     );
-    let controller = Controller::new(snapshot, config.sample_rate, command_tx, status_rx, used_rx);
+    let controller = Controller::new(
+        snapshot,
+        config.sample_rate,
+        command_tx,
+        status_rx,
+        used_rx,
+        used_states_rx,
+    );
     (controller, processor)
 }

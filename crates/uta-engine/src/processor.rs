@@ -12,11 +12,12 @@ use uta_core::TrackId;
 use uta_core::time::Ticks;
 
 use crate::drums::Kit;
+use crate::effects::chain::Chain;
 use crate::ramp::Ramp;
 use crate::synth::{NoteOn, Synth, VOICES};
 use crate::{
-    COMMAND_CAPACITY, Command, KitSettings, NoteEventKind, Snapshot, Status, SynthSettings,
-    TRACK_SLOTS, TrackNotes, TrackSnapshot, TrackSound,
+    COMMAND_CAPACITY, Command, EffectState, KitSettings, MAX_EFFECT_STATES, NoteEventKind,
+    Snapshot, Status, Swap, SynthSettings, TRACK_SLOTS, TrackNotes, TrackSnapshot, TrackSound,
 };
 
 /// How long the output takes to fade out before a stream is replaced, and
@@ -44,7 +45,9 @@ pub const TRACK_BUFFER_FRAMES: usize = 256;
 pub struct Processor {
     commands: Consumer<Command>,
     status: Producer<Status>,
-    used_snapshots: Producer<Box<Snapshot>>,
+    used_snapshots: Producer<Box<Swap>>,
+    /// Where the states of effects that are gone go back to be freed.
+    used_states: Producer<Box<EffectState>>,
 
     snapshot: Box<Snapshot>,
     sample_rate: f64,
@@ -91,9 +94,9 @@ pub struct Processor {
     swaps: u64,
 }
 
-/// One track's place on the audio thread: its voices, its kit, its place in
-/// its events, its gains and its buffer. See RFC-003, "The shared model,
-/// extended", point 4.
+/// One track's place on the audio thread: its voices, its kit, its chain,
+/// its place in its events, its gains and its buffer. See RFC-003, "The
+/// shared model, extended", point 4.
 ///
 /// Every slot has both a synth and a kit, built when the processor is, so it
 /// can play either kind of track. Notes go to whichever its track has. The
@@ -101,13 +104,16 @@ pub struct Processor {
 ///
 /// Like the voices, everything here is a plain value, never a reference into
 /// the snapshot, so nothing on the audio thread shares ownership of snapshot
-/// data. See RFC-002, "The shared model", point 7.
+/// data. See RFC-002, "The shared model", point 7. The chain owns its
+/// effects' states, which were handed to it, and hands them back.
 struct Slot {
     /// The track playing in this slot in the current snapshot, if any. A
     /// slot whose track is gone keeps playing its last notes' releases.
     track: Option<TrackId>,
     synth: Synth,
     kit: Kit,
+    /// The effects between the source and the gains.
+    chain: Chain,
     /// Whether its track is a drum track, so notes are hits on the kit.
     drums: bool,
     /// The next event in its track's events: every event before it is
@@ -140,6 +146,10 @@ impl Slot {
             track: track.map(TrackSnapshot::id),
             synth: Synth::new(synth, sample_rate),
             kit: Kit::new(kit, sample_rate),
+            chain: Chain::new(
+                track.map_or(&[], |track| track.effects.as_slice()),
+                sample_rate,
+            ),
             drums: matches!(sound, Some(TrackSound::Drums(_))),
             bookmark: 0,
             budget: MAX_NOTE_EVENTS_PER_BLOCK,
@@ -354,11 +364,12 @@ impl Slot {
         });
     }
 
-    /// Renders the synth and the kit into the buffer, then adds it to `left`
-    /// and `right` through the track's balance. At most
-    /// [`TRACK_BUFFER_FRAMES`] frames.
+    /// Renders the synth and the kit into the buffer, runs it through the
+    /// chain, then adds it to `left` and `right` through the track's
+    /// balance. At most [`TRACK_BUFFER_FRAMES`] frames.
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.render_source(left.len());
+        self.chain.process(&mut self.buffer, left.len());
         self.balance_into(left, right);
     }
 
@@ -420,7 +431,8 @@ impl Processor {
         snapshot: Box<Snapshot>,
         commands: Consumer<Command>,
         status: Producer<Status>,
-        used_snapshots: Producer<Box<Snapshot>>,
+        used_snapshots: Producer<Box<Swap>>,
+        used_states: Producer<Box<EffectState>>,
     ) -> Self {
         assert!(sample_rate > 0, "sample rate must be positive");
         assert!(channels > 0, "need at least one channel");
@@ -431,6 +443,7 @@ impl Processor {
             commands,
             status,
             used_snapshots,
+            used_states,
             sample_rate,
             channels,
             slots: (0..TRACK_SLOTS)
@@ -492,6 +505,9 @@ impl Processor {
             slot.gains = gain_ramps(track, soloing, sample_rate);
             slot.synth.prepare(sample_rate);
             slot.kit.prepare(sample_rate);
+            // The tapes keep the length they were made with. UTA-69 makes
+            // new states for the new rate here.
+            slot.chain.prepare(sample_rate);
         }
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
@@ -807,10 +823,13 @@ impl Processor {
             let Ok(command) = self.commands.peek() else {
                 break;
             };
-            if matches!(command, Command::SetSnapshot(_)) && self.used_snapshots.is_full() {
-                // Nowhere to send the old snapshot, and it must not be freed
-                // here. Leave the swap queued until the control side has
-                // collected the used ones.
+            if matches!(command, Command::SetSnapshot(_))
+                && (self.used_snapshots.is_full() || self.used_states.slots() < MAX_EFFECT_STATES)
+            {
+                // Nowhere to send the old snapshot, or every effect state
+                // the swap might send back, and they must not be freed here.
+                // Leave the swap queued until the control side has collected
+                // the used ones.
                 break;
             }
             let Ok(command) = self.commands.pop() else {
@@ -844,9 +863,11 @@ impl Processor {
                         self.paused = false;
                     }
                 }
-                Command::SetSnapshot(new) => {
-                    self.volume.set_target(new.gain);
-                    let old = std::mem::replace(&mut self.snapshot, new);
+                Command::SetSnapshot(mut swap) => {
+                    self.volume.set_target(swap.snapshot.gain);
+                    // The swap now holds the old snapshot, to send back.
+                    std::mem::swap(&mut self.snapshot, &mut swap.snapshot);
+                    let old = &swap.snapshot;
                     let sequence = &self.snapshot.sequence;
                     self.playhead = if self.playing || self.paused {
                         sequence.playhead_from(&old.sequence, self.playhead)
@@ -855,7 +876,11 @@ impl Processor {
                     };
                     let soloing = self.snapshot.soloing();
                     for (index, slot) in self.slots.iter_mut().enumerate() {
-                        slot.load(self.snapshot.track_in(index), soloing);
+                        let track = self.snapshot.track_in(index);
+                        slot.load(track, soloing);
+                        let effects = track.map_or(&[][..], |track| track.effects.as_slice());
+                        slot.chain
+                            .load(index, effects, &mut swap.states, &mut self.used_states);
                     }
                     self.find_bookmarks();
                     self.release_changed_notes();
@@ -863,8 +888,9 @@ impl Processor {
                         self.follow_the_loop();
                     }
                     self.swaps += 1;
-                    // Checked above: there is room, so this never drops `old`.
-                    let _ = self.used_snapshots.push(old);
+                    // Checked above: there is room, so this never drops the
+                    // old snapshot, or a state that didn't find its place.
+                    let _ = self.used_snapshots.push(swap);
                 }
                 Command::NoteOn {
                     slot,
@@ -906,10 +932,14 @@ impl Processor {
         };
         let mut track_peaks = [0.0; TRACK_SLOTS];
         let mut sounding_slots = 0u32;
+        let mut ringing_chains = 0u32;
         for (index, slot) in self.slots.iter().enumerate() {
             track_peaks[index] = slot.peak;
             if slot.is_sounding() {
                 sounding_slots |= 1 << index;
+            }
+            if slot.chain.is_ringing() {
+                ringing_chains |= 1 << index;
             }
         }
         let status = Status {
@@ -926,6 +956,7 @@ impl Processor {
             sample_rate: self.sample_rate as u32,
             snapshots: self.swaps,
             sounding_slots,
+            ringing_chains,
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
