@@ -246,6 +246,8 @@ describe("verdict", () => {
     ["🤖 Claude (review):\n\n**Verdict: Ready to merge.** No blocking findings.", "Ready to merge"],
     ["🤖 Claude (re-review of 67d1d6c): **Ready to merge.** 0 blocking.", "Ready to merge"],
     ["🤖 Claude (review):\n\n**Verdict: Changes needed.** It's not ready to merge until …", "Changes needed"],
+    ["🤖 Claude (review): Not ready to merge yet.\n\n**Verdict: Changes needed.**", "Changes needed"],
+    ["🤖 Claude (review): changes needed, then ready to merge", "Changes needed"],
     ["🤖 Claude (review): nothing to say", undefined],
   ])("reads %j", (body, expected) => {
     expect(verdict(body)).toBe(expected);

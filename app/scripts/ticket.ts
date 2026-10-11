@@ -186,11 +186,16 @@ export type Verdict = "Ready to merge" | "Changes needed";
 /** A reviewer's review: the pr-reviewer starts its body "🤖 Claude (review…" or "🤖 Claude (re-review…". */
 export const isReview = (body: string) => /^🤖 Claude \((re-)?review/.test(body.trimStart());
 
-/** The verdict a review gives: whichever of the two phrases comes first in its body. */
+/**
+ * The verdict a review gives. The reviewer puts it in bold ("**Verdict: Ready
+ * to merge.**" or "**Changes needed.**"), so the first bold one counts, and
+ * otherwise whichever phrase comes first.
+ */
 export function verdict(body: string): Verdict | undefined {
-  const match = /ready to merge|changes needed/i.exec(body);
+  const match =
+    /\*\*(?:verdict:\s*)?(ready to merge|changes needed)/i.exec(body) ?? /(ready to merge|changes needed)/i.exec(body);
   if (!match) return undefined;
-  return match[0].toLowerCase() === "ready to merge" ? "Ready to merge" : "Changes needed";
+  return match[1].toLowerCase() === "ready to merge" ? "Ready to merge" : "Changes needed";
 }
 
 const PASSED = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
