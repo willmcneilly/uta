@@ -434,6 +434,19 @@ fn the_909_kick_matches_its_golden_wav() {
     check_golden("kick909", config(), &list.build().unwrap());
 }
 
+/// The whole kit at its default Levels, as `uta render --commands
+/// examples/demo-beat.json` writes it: two bars with the kick, snare and
+/// clap, closed hats, open hats each cut off by the closed hat after it, the
+/// cymbal on the one and a tom fill into the loop. Regenerate with
+/// `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`; a human approves
+/// every change to the file.
+#[test]
+fn the_demo_beat_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/demo-beat.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("demo-beat", config(), &list.build().unwrap());
+}
+
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.

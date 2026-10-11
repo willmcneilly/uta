@@ -68,10 +68,10 @@ const MAX_HOLD_SECONDS: f64 = 0.07;
 /// How far a soft hit tilts the wires down against the shell: at full
 /// accent they're Plaits' level, and at the softest, 40% under it.
 const SOFT_WIRES: f64 = 0.4;
-/// The output level that puts a default snare at full accent at the kit's
-/// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
-/// the `the_snare_at_full_accent_peaks_at_the_reference` test.
-const OUTPUT_GAIN: f32 = 0.6322;
+/// The output level that puts a default snare at full accent, with its Level at
+/// 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured,
+/// not derived: see the `the_snare_at_full_accent_peaks_at_the_reference` test.
+const OUTPUT_GAIN: f32 = 1.2644 * super::REFERENCE_PEAK;
 /// Below this, summed over its envelopes, the snare has died away and stops
 /// doing work: far under anything audible (its envelopes start at up to 1).
 const SILENT: f64 = 1.0e-6;
@@ -420,10 +420,17 @@ mod tests {
 
     #[test]
     fn the_snare_at_full_accent_peaks_at_the_reference() {
-        let mut snare = Snare::new(SnareSettings::default(), RATE);
+        let settings = SnareSettings {
+            level_db: 0.0,
+            ..SnareSettings::default()
+        };
+        let mut snare = Snare::new(settings, RATE);
         snare.hit(1.0);
         let peak = peak(&run(&mut snare, &mut Noise::new(), 0.5));
-        assert!((peak - REFERENCE_PEAK).abs() < 0.005, "peak {peak}");
+        assert!(
+            (peak - REFERENCE_PEAK).abs() < 0.01 * REFERENCE_PEAK,
+            "peak {peak}"
+        );
     }
 
     /// Once it has died away far below hearing it stops, and does no work

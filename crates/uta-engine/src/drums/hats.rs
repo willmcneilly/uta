@@ -71,11 +71,11 @@ const STRENGTH_SECONDS: f64 = 0.002;
 /// How fast a closed hit drains a ringing open hat: its time constant.
 /// 60 ms later the open hat is 260 dB down.
 const CHOKE_SECONDS: f64 = 0.002;
-/// The output level that puts a default closed hat at full accent at the
-/// kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured, not
-/// derived: see the `the_closed_hat_at_full_accent_peaks_at_the_reference`
-/// test.
-const OUTPUT_GAIN: f32 = 2.4431;
+/// The output level that puts a default closed hat at full accent, with its
+/// Level at 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]).
+/// Measured, not derived: see the
+/// `the_closed_hat_at_full_accent_peaks_at_the_reference` test.
+const OUTPUT_GAIN: f32 = 4.8862 * super::REFERENCE_PEAK;
 /// Below this, summed over its envelopes and the high-pass after the
 /// amplifier, the hats have died away and stop doing work: far under
 /// anything audible.
@@ -396,10 +396,17 @@ mod tests {
         samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
     }
 
+    /// The hats at their defaults, with their Levels at 0 dB.
     fn hats() -> Hats {
         Hats::new(
-            ClosedHatSettings::default(),
-            OpenHatSettings::default(),
+            ClosedHatSettings {
+                level_db: 0.0,
+                ..ClosedHatSettings::default()
+            },
+            OpenHatSettings {
+                level_db: 0.0,
+                ..OpenHatSettings::default()
+            },
             RATE,
         )
     }
@@ -459,6 +466,6 @@ mod tests {
         let last = peak(&samples[stopped.saturating_sub(4800)..=stopped]);
         assert!(last < 1e-5, "last 0.1 s peaked at {last}");
         hats.hit_closed(1.0);
-        assert!(peak(&run(&mut hats, &mut metal, 0.1)) > 0.2);
+        assert!(peak(&run(&mut hats, &mut metal, 0.1)) > 0.4 * REFERENCE_PEAK);
     }
 }

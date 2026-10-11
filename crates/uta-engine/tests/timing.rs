@@ -13,8 +13,8 @@ use common::synth_project;
 
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, Command, DrumParam, DrumSound, KIT, Note, NoteId, PlacedClip, PlacedTrack,
-    Project, SynthParam, TrackId,
+    Clip, ClipId, Command, DrumParam, DrumSound, KIT, KickModel, Note, NoteId, PlacedClip,
+    PlacedTrack, Project, SynthParam, TrackId,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -51,6 +51,9 @@ enum Load {
     /// cymbal's Tone gliding. It grows as the sounds arrive. See RFC-006, "Risks &
     /// unknowns" (CPU).
     Drums,
+    /// [`Load::Drums`] with the 909 kick in place of the 808's, at its own
+    /// longest Decay, its Tune gliding too.
+    Drums909,
     /// The same song, timing only the first block after Play from bar
     /// 10.5, where the notes already sounding there are started. Play is
     /// pressed [`PLAYS`] times, each once the last Play's notes are silent.
@@ -66,6 +69,7 @@ impl Load {
             Self::Tracks => "32 tracks × 8 voices",
             Self::Check7 => "Check 7 (588k notes)",
             Self::Drums => "32 drum tracks × every sound",
+            Self::Drums909 => "32 drum tracks × every sound, 909 kick",
             Self::Check7FirstBlock => "Check 7, first block after Play from bar 10.5",
         }
     }
@@ -155,8 +159,8 @@ fn many_tracks() -> Project {
 }
 
 /// 32 drum tracks, each hitting every kit note on every 16th of the loop,
-/// with every sound at its longest Decay.
-fn drum_tracks() -> Project {
+/// with every sound at its longest Decay, and the kick `model`.
+fn drum_tracks(model: KickModel) -> Project {
     let mut project = synth_project();
     let synth = project.tracks()[0].id();
     let loop_length = project.transport().loop_length();
@@ -190,11 +194,13 @@ fn drum_tracks() -> Project {
             tracks: vec![synth],
         })
         .unwrap();
+    let kick_decay = match model {
+        KickModel::Tr808 => uta_core::KickSettings::MAX_DECAY_SECONDS,
+        KickModel::Tr909 => uta_core::Kick909Settings::MAX_DECAY_SECONDS,
+    };
     for (sound, param) in [
-        (
-            DrumSound::Kick,
-            DrumParam::DecaySeconds(uta_core::KickSettings::MAX_DECAY_SECONDS),
-        ),
+        (DrumSound::Kick, DrumParam::Model(model)),
+        (DrumSound::Kick, DrumParam::DecaySeconds(kick_decay)),
         (
             DrumSound::Snare,
             DrumParam::Tone(uta_core::SnareSettings::MAX_TONE_SECONDS),
@@ -266,7 +272,8 @@ fn snapshot(load: Load) -> Snapshot {
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks()),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
-        Load::Drums => Snapshot::from(&drum_tracks()),
+        Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
+        Load::Drums909 => Snapshot::from(&drum_tracks(KickModel::Tr909)),
     }
 }
 
@@ -327,14 +334,15 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
-                // Every kick's, snare's, hats' and toms' Tune, and every
+                // Every kick's (both models'), snare's, hats' and toms' Tune, and every
                 // clap's, hats' and cymbal's Tone, gliding.
-                Load::Drums => {
+                Load::Drums | Load::Drums909 => {
                     let mut snapshot = renderer.controller.snapshot().clone();
                     for track in snapshot.tracks_mut() {
                         if let TrackSound::Drums(kit) = &mut track.sound {
                             let step = ((i / 64) % 40) as f32;
                             kit.kick.tune_hz = 40.0 + step;
+                            kit.kick_909.tune_hz = 45.0 + 0.625 * step;
                             kit.snare.tune_hz = 140.0 + 3.0 * step;
                             kit.clap.tone_hz = 700.0 + 30.0 * step;
                             kit.closed_hat.tune_hz = 102.65 + 7.0 * step;
@@ -410,6 +418,7 @@ fn report_block_timing() {
         Load::Check7,
         Load::Check7FirstBlock,
         Load::Drums,
+        Load::Drums909,
     ];
     for load in loads {
         let snapshot = snapshot(load);

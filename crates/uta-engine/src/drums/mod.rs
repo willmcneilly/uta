@@ -36,10 +36,13 @@ use crate::snapshot::db_to_gain;
 /// the synth's do.
 pub const DRUM_SMOOTHING_SECONDS: f64 = crate::SYNTH_SMOOTHING_SECONDS;
 
-/// The peak a sound reaches at full accent with its default settings,
-/// before the track's and master's volumes: -6 dB. The kit's levels are
-/// balanced against it in the tuning ticket.
-pub const REFERENCE_PEAK: f32 = 0.5;
+/// The peak a sound reaches at full accent with its default settings and
+/// its Level at 0 dB, before the track's and master's volumes: -12 dB, as a
+/// synth voice's at full velocity. Each sound's default Level then balances
+/// it against the others by loudness (see `uta_core::KitSettings`), and this
+/// leaves the headroom for the whole kit hitting at once, at full accent,
+/// to peak under -1 dBFS with every fader at 0 dB.
+pub const REFERENCE_PEAK: f32 = 0.25;
 
 /// A hit's strength, from its velocity: how hard the excitation is, from 0
 /// to 1. Every sound feeds it into its excitation, never only into its
