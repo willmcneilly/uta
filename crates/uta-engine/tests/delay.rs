@@ -152,6 +152,29 @@ fn mix_0_matches_no_effect_bit_for_bit() {
     assert_ne!(play(&heard, stereo(), 3.0), dry);
 }
 
+/// Blocks of 32, 128 and 1024 give the same audio through Delays, one
+/// with its echoes coming round and one a few samples long.
+#[test]
+fn every_block_size_gives_the_same_audio() {
+    let project = with_delay(
+        with_delay(demo_loop(), 0, 0.125, 0.7, 0.5),
+        1,
+        0.0031,
+        0.5,
+        0.3,
+    );
+    let render = |block| {
+        let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), block);
+        renderer.controller.play().unwrap();
+        renderer.render_seconds(3.0);
+        renderer.into_samples()
+    };
+    let reference = render(128);
+    for block in [32, 1024] {
+        assert!(render(block) == reference, "blocks of {block}");
+    }
+}
+
 /// A Mix halfway keeps both the sound and its echo at about −3 dB, so the
 /// blend doesn't dip: equal-power.
 #[test]

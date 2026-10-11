@@ -1237,3 +1237,83 @@ fn adding_and_removing_delays_while_playing_does_not_allocate_and_every_state_co
         assert_eq!(renderer.controller.effect_states_out(), 0, "round {round}");
     }
 }
+
+/// When nobody collects the effect states sent back, the processor must
+/// neither free them nor block: it leaves a swap queued until there's room
+/// for every state it holds. Four swaps fill the queue (every chain filled
+/// and emptied, twice); the fifth fills them again, and waits, and so does
+/// the sixth behind it, which would send back more than there's room for.
+#[test]
+fn full_used_state_queue_defers_swaps_without_freeing() {
+    use uta_core::{
+        Chain, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect, Project, Source,
+        SynthSettings, Track,
+    };
+    use uta_engine::{MAX_EFFECT_STATES, USED_STATE_CAPACITY};
+
+    rtsan_standalone::ensure_initialized();
+    // Every slot with a track and a full chain holds MAX_EFFECT_STATES
+    // states. A low rate keeps each Delay's tape small: 256 of them at a
+    // time.
+    let config = EngineConfig {
+        sample_rate: 1000,
+        channels: 2,
+    };
+    let mut project = Project::new();
+    let tracks = (project.tracks().len()..Project::MAX_TRACKS)
+        .map(|index| PlacedTrack {
+            index,
+            track: Track::new(
+                TrackId::random(),
+                format!("Synth {index}"),
+                Source::Synth(SynthSettings::default()),
+            ),
+        })
+        .collect();
+    project.apply(&Command::AddTracks { tracks }).unwrap();
+    let mut renderer = Renderer::new(config, Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+
+    let fill = |project: &mut Project| {
+        let effects = project
+            .tracks()
+            .iter()
+            .flat_map(|track| {
+                (0..MAX_EFFECTS).map(|index| PlacedEffect {
+                    chain: Chain::Track(track.id()),
+                    index,
+                    effect: Effect::default_of(EffectId::random(), EffectKind::Delay),
+                })
+            })
+            .collect();
+        project.apply(&Command::AddEffects { effects }).unwrap()
+    };
+    // Every state goes in one swap, and comes back in the next.
+    let mut swaps = 0;
+    for _ in 0..3 {
+        let empty = fill(&mut project);
+        renderer.controller.set_project(&project).unwrap();
+        project.apply(&empty).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        swaps += 2;
+    }
+    assert_eq!(USED_STATE_CAPACITY, 2 * MAX_EFFECT_STATES);
+    assert_eq!(
+        renderer.controller.effect_states_out(),
+        3 * MAX_EFFECT_STATES
+    );
+
+    // Swaps 2 and 4 fill the queue with 2 × 256 states, so swap 5 waits for
+    // room for the 256 it might send back, and swap 6 behind it. Nothing is
+    // freed here: without the wait, swap 6's states would be.
+    process_block(renderer.processor(), &mut buffer);
+    process_block(renderer.processor(), &mut buffer);
+    assert_eq!(renderer.controller.free_used_snapshots(), swaps - 2);
+    assert_eq!(renderer.controller.effect_states_out(), MAX_EFFECT_STATES);
+
+    // With the queue emptied, the last two swaps go through and every state
+    // comes back.
+    process_block(renderer.processor(), &mut buffer);
+    assert_eq!(renderer.controller.free_used_snapshots(), 2);
+    assert_eq!(renderer.controller.effect_states_out(), 0);
+}

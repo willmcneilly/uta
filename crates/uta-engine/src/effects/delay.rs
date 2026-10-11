@@ -304,6 +304,32 @@ mod tests {
         assert_eq!(heard, [11_999, 12_000, 12_001, 12_002]);
     }
 
+    /// Between samples, the playback head reads the right way: `time`
+    /// behind the recording head, not a sample's fraction the other way.
+    /// Cubic interpolation is exact on a straight line, so a ramp comes
+    /// back exactly `time` later.
+    #[test]
+    fn a_time_between_samples_reads_the_tape_that_far_back() {
+        let rate = 48_000.0;
+        for quarters in [1.0, 3.0] {
+            let time = 12_000.0 + quarters / 4.0;
+            let mut delay = delay((time / rate) as f32, 0.0, rate);
+            let slope = 1e-4;
+            let mut left: Vec<f32> = (0..13_000).map(|n| n as f32 * slope).collect();
+            let mut right = left.clone();
+            for (left, right) in left.chunks_mut(128).zip(right.chunks_mut(128)) {
+                delay.process(left, right);
+            }
+            for (n, &echo) in left.iter().enumerate().skip(12_010) {
+                let expected = (n as f64 - time) * f64::from(slope);
+                assert!(
+                    (f64::from(echo) - expected).abs() < 1e-5,
+                    "{time} samples back, at {n}: {echo}, not {expected}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn it_rings_until_the_echoes_die_away_then_is_quiet() {
         let mut delay = delay(0.01, 0.5, 48_000.0);
