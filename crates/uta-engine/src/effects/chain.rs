@@ -110,11 +110,14 @@ impl Chain {
                 continue;
             };
             self.effects.swap(index, empty);
-            if let Some(state) = arriving
+            if let Some(mut state) = arriving
                 .iter_mut()
                 .find(|arriving| arriving.slot == slot && arriving.id == effect.id)
                 .and_then(|arriving| arriving.state.take())
             {
+                // Made for the rate the controller last heard of, which a
+                // device switch may have changed since.
+                state.prepare(self.sample_rate);
                 // The place is empty, so nothing is dropped.
                 self.effects[index] = Some(Held::new(effect, state, self.sample_rate));
             }
