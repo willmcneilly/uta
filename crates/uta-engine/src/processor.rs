@@ -55,12 +55,9 @@ pub struct Processor {
     /// One per track slot, [`TRACK_SLOTS`] of them, all created with the
     /// processor, on the control side.
     slots: Box<[Slot]>,
-    /// The left and right of the mix, before the master volume. Boxed, so
-    /// the processor stays small to move between streams.
-    mix: Box<[[f32; TRACK_BUFFER_FRAMES]; 2]>,
-    /// The master's chain, between the mix and the master volume. Boxed for
-    /// the same reason.
-    master: Box<Chain>,
+    /// The mix and the master's chain. Boxed, so the processor stays small
+    /// to move between streams.
+    master: Box<Master>,
 
     playing: bool,
     /// Where it's playing, in samples from the start of the song, timed at
@@ -95,6 +92,15 @@ pub struct Processor {
     slowest_block: f32,
     /// Snapshots swapped in so far.
     swaps: u64,
+}
+
+/// The master on the audio thread, before its volume: the tracks' sum and
+/// the chain it goes through.
+struct Master {
+    /// The left and right of the mix, before the master volume.
+    mix: [[f32; TRACK_BUFFER_FRAMES]; 2],
+    /// The master's chain, between the mix and the master volume.
+    chain: Chain,
 }
 
 /// One track's place on the audio thread: its voices, its kit, its chain,
@@ -464,8 +470,10 @@ impl Processor {
             slots: (0..TRACK_SLOTS)
                 .map(|slot| Slot::new(snapshot.track_in(slot), soloing, sample_rate))
                 .collect(),
-            mix: Box::new([[0.0; TRACK_BUFFER_FRAMES]; 2]),
-            master: Box::new(Chain::new(&snapshot.effects, sample_rate)),
+            master: Box::new(Master {
+                mix: [[0.0; TRACK_BUFFER_FRAMES]; 2],
+                chain: Chain::new(&snapshot.effects, sample_rate),
+            }),
             playing: false,
             paused: false,
             playhead: 0,
@@ -526,7 +534,7 @@ impl Processor {
             slot.kit.prepare(sample_rate);
             slot.chain.prepare(sample_rate);
         }
-        self.master.prepare(sample_rate);
+        self.master.chain.prepare(sample_rate);
         self.volume = Ramp::new(self.snapshot.gain, samples(VOLUME_SMOOTHING_SECONDS));
         self.output_gain = Ramp::new(0.0, samples(FADE_SECONDS));
         self.output_gain.set_target(1.0);
@@ -796,7 +804,7 @@ impl Processor {
     fn render(&mut self, output: &mut [f32]) {
         let frames = output.len() / self.channels;
         {
-            let [left, right] = &mut *self.mix;
+            let [left, right] = &mut self.master.mix;
             let (left, right) = (&mut left[..frames], &mut right[..frames]);
             left.fill(0.0);
             right.fill(0.0);
@@ -806,9 +814,9 @@ impl Processor {
                 }
             }
         }
-        self.master
-            .process(&mut self.mix, frames, &mut self.used_states);
-        let [left, right] = &*self.mix;
+        let Master { mix, chain } = &mut *self.master;
+        chain.process(mix, frames, &mut self.used_states);
+        let [left, right] = &self.master.mix;
         let (left, right) = (&left[..frames], &right[..frames]);
 
         let mut peak = self.peak;
@@ -912,7 +920,7 @@ impl Processor {
                             &mut self.used_states,
                         );
                     }
-                    self.master.load(
+                    self.master.chain.load(
                         ChainAt::Master,
                         &self.snapshot.effects,
                         &mut swap.states,
@@ -993,7 +1001,7 @@ impl Processor {
             snapshots: self.swaps,
             sounding_slots,
             ringing_chains,
-            master_ringing: self.master.is_ringing(),
+            master_ringing: self.master.chain.is_ringing(),
         };
         if self.status.push(status).is_ok() {
             self.peak = 0.0;
@@ -1180,7 +1188,7 @@ mod tests {
         renderer.render(48_000);
         let processor = renderer.processor();
         assert_eq!(processor.slots[0].chain.processed(), 0);
-        assert_eq!(processor.master.processed(), 0);
+        assert_eq!(processor.master.chain.processed(), 0);
 
         renderer
             .controller
@@ -1189,7 +1197,7 @@ mod tests {
         renderer.render(128);
         let processor = renderer.processor();
         assert_eq!(processor.slots[0].chain.processed(), 128);
-        assert_eq!(processor.master.processed(), 128);
+        assert_eq!(processor.master.chain.processed(), 128);
     }
 
     /// A sample within full scale comes out of the hard clip bit for bit
