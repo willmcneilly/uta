@@ -15,7 +15,7 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
-scripts               the repository's own tools (`check`, `warm`, `dev-app`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
+scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
@@ -39,6 +39,7 @@ scripts/warm                                        # give a new worktree a warm
 scripts/dev-app start                               # open this checkout's app on a free port, titled with its branch
 scripts/dev-app status                              # is it up, which commit and port, any errors since it started
 scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
+scripts/ticket ready                                # a ticket's Notion and GitHub steps: show, ready, claim, tick, merge, decision new
 scripts/review-setup <pr>                           # a review round's PR, history, CI and worktree, in one go
 scripts/ci-wait <pr> [--commit <sha>]               # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
 scripts/mutate --named rt-alloc                     # break the code on purpose, run its tests, put it back: CAUGHT or MISSED
@@ -129,7 +130,7 @@ Nobody listens to every change, so the tests are the evidence:
 
 - [`DESIGN.md`](DESIGN.md) is the source of truth for how Uta looks: its principles, tokens and the reasons behind them. `npm run tokens` generates `app/src/design/tokens.css` and `tokens.ts` from it; never edit those by hand. Read it before any UI work.
 - **No colour written directly in the code.** `npm run lint` fails on a `#hex`, `rgb()`/`hsl()` or named colour in CSS (Stylelint) or TypeScript (`uta/no-raw-colour`), outside the generated token files. Use a token. The escape, for one that has to stay, is a disable comment with a reason: `/* stylelint-disable-next-line <rule> -- <reason> */` or `// eslint-disable-next-line uta/no-raw-colour -- <reason>`.
-- When UI work needs something `DESIGN.md` doesn't cover, build it from the principles, mark the code `provisional: D-n`, log it in the **Design decisions** database in Notion, and list it in the PR. Will decides each between projects. The `work-ticket` skill has the steps.
+- When UI work needs something `DESIGN.md` doesn't cover, build it from the principles, log it in the **Design decisions** database with `scripts/ticket decision new`, mark the code `provisional: D-n` with the number it prints, and list it in the PR. Will decides each between projects. The `work-ticket` skill has the steps.
 
 ## Working on tickets
 

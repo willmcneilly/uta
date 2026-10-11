@@ -5,6 +5,21 @@ description: How to read and write Uta's Notion (RFCs, Projects, Tickets, Scratc
 
 # Uta's Notion via `ntn.sh`
 
+## A ticket's steps: `scripts/ticket`
+
+Claiming, ticking criteria, merging and unblocking a ticket, finding what's ready, and logging a design decision are each one command in `scripts/ticket` (`--help` for the details). Use it rather than building those calls by hand:
+
+```bash
+scripts/ticket show UTA-n                        # page ID, status, project, PR, and each dependency
+scripts/ticket ready                             # what can start now, what's waiting, what's running
+scripts/ticket claim UTA-n --branch <branch>     # In Progress, project Active, the Started comment
+scripts/ticket tick UTA-n "<criterion>" …        # tick acceptance criteria by their text
+scripts/ticket merge UTA-n                       # merge the PR, Done, unblock, project Done
+scripts/ticket decision new --ticket UTA-n --name … --needed … --chosen … --principles … --alternatives …
+```
+
+Every command takes `--dry-run`, which prints the `ntn.sh`, `gh` and `git` calls it would make. A ticket's dependencies are the `UTA-n` IDs under its `## Depends on` heading. Everything else goes through the wrapper below.
+
 ## Always use the wrapper
 
 ```bash
@@ -43,7 +58,7 @@ Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49
 - **Research:** `Name` (title), `Date` (date gathered), `RFCs` (relation; the back-link on RFCs is `Research`)
 - **Tickets:** `Name`, `ID` (auto, UTA-n), `Status` (Backlog · Ready · In Progress · Blocked · In Review · Done), `Type` (Feature · Bug · Chore · Spike), `Project` (relation), `PR` (url)
 - **Scratchpad:** see the `scratchpad` skill. RFCs and Projects have a `Scratchpad notes` back-link to it.
-- **Design decisions:** the provisional design decisions log (see the `work-ticket` skill). `Name` (title, the decision in a few words), `ID` (auto, a plain number: Notion wants a prefix of at least two characters, so call number n `D-n` everywhere else), `Status` (Open · Revised · Adopted · Rejected), `Needed` (text: what the ticket needed that `DESIGN.md` doesn't cover), `Chosen and why` (text), `Principles` (text: the `DESIGN.md` principles relied on), `Alternatives` (text), `Screenshot` (files), `Ticket` (relation to Tickets; the back-link on Tickets is `Design decisions`)
+- **Design decisions:** the provisional design decisions log (see the `work-ticket` skill). Create a row with `scripts/ticket decision new`, which prints the `D-n` Notion gave it. `Name` (title, the decision in a few words), `ID` (auto, a plain number: Notion wants a prefix of at least two characters, so call number n `D-n` everywhere else), `Status` (Open · Revised · Adopted · Rejected), `Needed` (text: what the ticket needed that `DESIGN.md` doesn't cover), `Chosen and why` (text), `Principles` (text: the `DESIGN.md` principles relied on), `Alternatives` (text), `Screenshot` (files), `Ticket` (relation to Tickets; the back-link on Tickets is `Design decisions`)
 - **Process log:** `Name` (title, the change in one line), `Date` (date of the change), `Status` (Proposed · Trying · Working · Replaced · Reverted), `Area` (select: Planning · Building · Review · Learning · Tooling · Design), `Lives in` (text: the skills, files or memory that hold it)
 - **Glossary:** `Term` (title), `Area` (select: Digital audio · Real-time · Synthesis · Music and time · Mixing · Project model · Testing · Stack and Rust), `Definition` (text, one plain sentence), `Related` (relation to other terms, one-way, so set it on both terms), `Introduced in` (relation to RFCs; the back-link on RFCs is `Glossary`)
 
