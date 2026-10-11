@@ -2654,7 +2654,7 @@ mod tests {
                 default,
                 ..
             } => (unit, limits, default),
-            SettingKind::Choice { .. } => panic!("{setting:?} is a number"),
+            _ => panic!("{setting:?} is a number"),
         };
         assert_eq!(row.settings[0].param, DrumParam::TuneHz(55.0));
         assert_eq!(number(&row.settings[0]), (Unit::Hz, (45.0, 70.0), 55.0));
