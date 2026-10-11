@@ -34,7 +34,7 @@ For each worktree in `.claude/worktrees/`:
 
 **Before removing a worktree, check its ignored files:** `git status --short --ignored`, leaving out `target/`, `app/node_modules/`, `app/dist/` and `app/src-tauri/gen/`. Anything else (a screenshot harness, notes, images) gets copied to the session scratchpad and mentioned to Will.
 
-Remove with `git worktree remove --force <path>` (forced only because ignored build output is present), then `git worktree prune`.
+If it has `scripts/dev-app`, run `<path>/scripts/dev-app stop` first, so its app doesn't outlive it. Then remove it with `git worktree remove --force <path>` (forced only because ignored build output is present), then `git worktree prune`.
 
 ## 3. Branches
 

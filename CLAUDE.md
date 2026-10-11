@@ -57,7 +57,7 @@ npm run tauri dev                                   # open the app with hot relo
 npm run tauri build -- --ci                         # release build: target/release/bundle/macos/Uta.app
 
 # Scripts (from any directory; each has --help)
-scripts/dev-app start                               # open this checkout's app, stopping any other Uta dev app
+scripts/dev-app start                               # open this checkout's app on a free port, titled with its branch
 scripts/dev-app status                              # is it up, which commit and port, any errors since it started
 scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
 ```

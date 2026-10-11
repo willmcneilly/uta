@@ -132,7 +132,7 @@ Send one message. It's the first Will hears of this ticket since you started. Le
 Leave out benchmark tables, implementation detail and housekeeping.
 
 **Have everything ready before you send it.** Will should be able to start his checks the moment he reads the message:
-- **If any check uses the app,** run `scripts/dev-app start` from the worktree you built in, with a 10-minute Bash timeout. Don't start `tauri dev` by hand. The script stops any other Uta dev app, picks a free port, starts the app so it outlives your shell, waits until the window is open, and prints the branch, commit and port. Exit 1 means it didn't open: the log's tail is in the output, so fix the cause and run it again. Exit 2 means the build is still going: run `scripts/dev-app wait`. Say "The app is open, running this branch" at the top of "What needs you".
+- **If any check uses the app,** run `scripts/dev-app start` from the worktree you built in, with a 10-minute Bash timeout. Don't start `tauri dev` by hand. The script restarts this checkout's app if it's running, picks a free port, starts the app so it outlives your shell, waits until the window is open, and prints the branch, commit and port. Apps from other checkouts keep running, so several sessions can each have one open; each window's title names its branch. Exit 1 means it didn't open: the log's tail is in the output, so fix the cause and run it again. Exit 2 means the build is still going: run `scripts/dev-app wait`. Say "The app is open in the window titled Uta · <branch>" at the top of "What needs you".
 - **If a check starts from a particular state** (a song from the Develop menu, a buffer size), say exactly how to get there in its first step.
 - **If a check needs a terminal command** (`uta play`, say), give it ready to run in its own `bash` block.
 
@@ -147,7 +147,7 @@ Then stop and wait for Will.
 2. Set the ticket to `Done`.
 3. **Unblock:** for each `Backlog` ticket in the project whose **Depends on** tickets are now all `Done`, set it to `Ready`. If every ticket in the project is `Done`, set the project to `Done`.
 4. **Clean up after yourself, without asking:**
-   - run `scripts/dev-app stop` in each checkout you started the app from, stop any other dev servers and previews you started, and close the browser tabs you opened, in the built-in browser or elsewhere;
+   - run `scripts/dev-app stop` in each checkout you started the app from (nothing else stops it), stop any other dev servers and previews you started, and close the browser tabs you opened, in the built-in browser or elsewhere;
    - remove any worktree you created, and its build output. If this session itself runs in a worktree the app made, leave that one: the app removes it;
    - delete scratch branches you pushed, except a branch that holds images the PR links to, which stays so the PR keeps working;
    - leave anything you didn't create alone;
