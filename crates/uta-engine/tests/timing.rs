@@ -2,11 +2,14 @@
 //! CI machines are too noisy to fail on. Ignored by default because debug
 //! timings mean nothing. Run it with
 //! `cargo test -p uta-engine --release --test timing -- --ignored --nocapture`.
-//! In CI it also writes the table to the job summary.
+//! Locally it compares each p99 with the committed baseline (see
+//! [`BASELINE`]). In CI it also writes the table to the job summary.
 
 mod common;
 
+use std::collections::HashMap;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::synth_project;
@@ -394,14 +397,85 @@ fn share(duration: Duration, deadline: Duration) -> String {
     )
 }
 
+/// The committed baseline the report compares against, so a change can be
+/// judged without building `main` for numbers to compare. Regenerate it with
+/// `UTA_TIMING_BASELINE=1` on a quiet machine when a change makes the engine
+/// faster or slower on purpose, or adds a load, and say so in the PR.
+const BASELINE: &str = "tests/timing-baseline.tsv";
+
+/// The baseline's p50 and p99 in µs, by load name and block size, and the
+/// line saying where it was recorded.
+struct Baseline {
+    recorded: String,
+    rows: HashMap<(String, usize), (f64, f64)>,
+}
+
+fn baseline_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(BASELINE)
+}
+
+fn read_baseline() -> Option<Baseline> {
+    let text = std::fs::read_to_string(baseline_path()).ok()?;
+    let mut recorded = String::new();
+    let mut rows = HashMap::new();
+    for line in text.lines() {
+        if let Some(comment) = line.strip_prefix("# ") {
+            if comment.starts_with("Recorded") {
+                recorded = comment.to_string();
+            }
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if let [load, block, p50, p99] = fields[..]
+            && let (Ok(block), Ok(p50), Ok(p99)) = (block.parse(), p50.parse(), p99.parse())
+        {
+            rows.insert((load.to_string(), block), (p50, p99));
+        }
+    }
+    Some(Baseline { recorded, rows })
+}
+
+fn write_baseline(reports: &[Report]) {
+    let output = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string())
+    };
+    // The date as well as the commit: a branch's commit is gone once it's
+    // squashed into main.
+    let date = output("date", &["+%-d %b %Y"]);
+    let commit = output("git", &["rev-parse", "--short", "HEAD"]);
+    let mut text = format!(
+        "# The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.\n\
+         # Recorded on {date} at {commit}, on Will's Mac.\n\
+         load\tblock\tp50_us\tp99_us\n"
+    );
+    for r in reports {
+        text += &format!(
+            "{}\t{}\t{:.2}\t{:.2}\n",
+            r.load.name(),
+            r.block_size,
+            r.p50.as_secs_f64() * 1e6,
+            r.p99.as_secs_f64() * 1e6,
+        );
+    }
+    std::fs::write(baseline_path(), text).unwrap();
+}
+
+/// How this run's time compares with the baseline's, e.g. "+4%".
+fn change(now: Duration, baseline: f64) -> String {
+    format!(
+        "{:+.0}%",
+        (now.as_secs_f64() * 1e6 / baseline - 1.0) * 100.0
+    )
+}
+
 #[test]
 #[ignore = "timing report: run in release with --ignored --nocapture"]
 fn report_block_timing() {
-    let mut table = format!(
-        "### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n\
-         | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
-         |---|---|---|---|---|---|---|\n"
-    );
     let loads = [
         Load::Loop,
         Load::Voices,
@@ -411,24 +485,66 @@ fn report_block_timing() {
         Load::Check7FirstBlock,
         Load::Drums,
     ];
+    let mut reports = Vec::new();
     for load in loads {
         let snapshot = snapshot(load);
         for block_size in [32, 128, 1024] {
-            let r = measure(load, block_size, snapshot.clone());
-            table += &format!(
-                "| {} | {} | {} | {} | {} | {} | {} |\n",
-                r.load.name(),
-                r.block_size,
-                micros(r.deadline),
-                micros(r.p50),
-                micros(r.p99),
-                micros(r.max),
-                share(r.p99, r.deadline),
-            );
+            reports.push(measure(load, block_size, snapshot.clone()));
         }
+    }
+
+    let writing = std::env::var_os("UTA_TIMING_BASELINE").is_some();
+    // CI's machines aren't the one the baseline was recorded on, so it isn't
+    // compared there.
+    let baseline = if writing || std::env::var_os("GITHUB_ACTIONS").is_some() {
+        None
+    } else {
+        read_baseline()
+    };
+    let mut table =
+        format!("### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n");
+    if let Some(baseline) = &baseline {
+        // Measured when the baseline was recorded: two runs of the same code.
+        table += &format!(
+            "Compared with {BASELINE}. {} Two runs of the same code moved p50 \
+             by under 5% and p99 by up to 90%, so read p50 first, and run it \
+             again before trusting a change in p99.\n\n\
+             | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline | p50 change | p99 change |\n\
+             |---|---|---|---|---|---|---|---|---|\n",
+            baseline.recorded,
+        );
+    } else {
+        table += "| Load | Block | Deadline | p50 | p99 | Max | p99 of deadline |\n\
+                  |---|---|---|---|---|---|---|\n";
+    }
+    for r in &reports {
+        table += &format!(
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            r.load.name(),
+            r.block_size,
+            micros(r.deadline),
+            micros(r.p50),
+            micros(r.p99),
+            micros(r.max),
+            share(r.p99, r.deadline),
+        );
+        if let Some(baseline) = &baseline {
+            table += &match baseline
+                .rows
+                .get(&(r.load.name().to_string(), r.block_size))
+            {
+                Some(&(_, p99)) => format!(" {p99:.2} µs | {} |", change(r.p99, p99)),
+                None => " – | new |".to_string(),
+            };
+        }
+        table += "\n";
     }
     if cfg!(debug_assertions) {
         table += "\nDebug build: these numbers are not representative.\n";
+    }
+    if writing {
+        write_baseline(&reports);
+        table += &format!("\nWrote this run to {BASELINE}.\n");
     }
     println!("{table}");
     if let Some(path) = std::env::var_os("GITHUB_STEP_SUMMARY") {
