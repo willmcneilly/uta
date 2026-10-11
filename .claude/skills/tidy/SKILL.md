@@ -26,6 +26,7 @@ For each worktree in `.claude/worktrees/`:
 | It's this session's own | Remove its `target/` and `app/dist`. The app removes the worktree when the session is archived. |
 | Its session is idle but not archived | Remove its `target/` and `app/dist` if its work is on `main`. Don't remove the worktree; suggest Will archives the session, which does it properly. |
 | No unarchived session uses it | Remove the worktree if its work is on `main` (below). Otherwise list it. |
+| A review worktree, `review-pr-<n>` | `scripts/review-setup` made it, and every review round of PR `<n>` reuses it. Remove it once PR `<n>` is merged or closed (`gh pr view <n> --json state`); leave it while the PR is open. Its local changes are only a reviewer's scratch, so its work is never anywhere else. |
 
 **Its work is on `main`** when `git status` is clean, and one of these holds:
 - its tip is an ancestor of `origin/main`;

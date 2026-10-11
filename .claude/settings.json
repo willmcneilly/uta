@@ -4,6 +4,8 @@
       "Bash(scripts/check)",
       "Bash(scripts/check *)",
       "Bash(scripts/warm)",
+      "Bash(scripts/review-setup *)",
+      "Bash(scripts/ci-wait *)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",
       "Bash(cargo test *)",

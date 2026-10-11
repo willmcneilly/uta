@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sets up a PR review in one go. `scripts/review-setup --help` says how. The
+# logic is in app/scripts/reviewSetup.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/reviewSetupCli.ts" "$@"

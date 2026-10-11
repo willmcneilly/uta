@@ -87,7 +87,7 @@ const lockHash = (root: string) =>
 /** Written after `npm ci`, so it only runs again when the lock file changes. */
 const lockMarker = (root: string) => join(root, "app", "node_modules", ".uta-lock-sha256");
 
-function nodeModulesCurrent(root: string): boolean {
+export function nodeModulesCurrent(root: string): boolean {
   try {
     return readFileSync(lockMarker(root), "utf8") === lockHash(root);
   } catch {
