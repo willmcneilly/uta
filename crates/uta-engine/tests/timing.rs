@@ -504,12 +504,12 @@ fn report_block_timing() {
     let mut table =
         format!("### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n");
     if let Some(baseline) = &baseline {
-        // Measured when the baseline was recorded: three runs of the same
-        // code, the last with other sessions building.
+        // Measured over four runs of the same code on 11 Oct, while other
+        // sessions were building.
         table += &format!(
-            "Compared with {BASELINE}. {} Runs of the same code have moved p50 \
-             by up to 6% and p99 by up to 265%, more with other work running, \
-             so read p50 first, and run it again before trusting a change.\n\n\
+            "Compared with {BASELINE}. {} p50 is the steadier number: runs of \
+             the same code have moved it by up to 13%, and p99 by nearly 9 times, \
+             most when other work was running. Run it again before trusting a change.\n\n\
              | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline | p50 change | p99 change |\n\
              |---|---|---|---|---|---|---|---|---|\n",
             baseline.recorded,
