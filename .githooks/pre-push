@@ -1,0 +1,19 @@
+#!/bin/sh
+# Lets a push through only when what it pushes has passed scripts/check: at
+# once if it already has, otherwise by running it. git gives one line per
+# ref: <local ref> <local sha> <remote ref> <remote sha>.
+root=$(git rev-parse --show-toplevel)
+# git sets GIT_DIR for a hook in a linked worktree. Nothing the checks start
+# should inherit it, or a test's git in a temporary folder would act on this
+# repository.
+unset $(git rev-parse --local-env-vars)
+zero=0000000000000000000000000000000000000000
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Deletions, tags, and the branches that only hold PR images.
+  [ "$local_sha" = "$zero" ] && continue
+  case "$remote_ref" in refs/tags/* | refs/heads/assets/*) continue ;; esac
+  echo "pre-push: checking $local_ref"
+  "$root/scripts/check" --push "$local_sha" --no-fetch </dev/null || status=1
+done
+exit $status

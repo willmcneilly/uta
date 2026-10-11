@@ -15,6 +15,8 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
+scripts               the repository's own tools (`check`, `warm`), each with `--help`; their logic is in app/scripts
+.githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
 
@@ -32,6 +34,9 @@ How the pieces talk:
 Run everything from the repository root unless it says `app/`.
 
 ```bash
+scripts/check                                       # the checks this change needs (below)
+scripts/warm                                        # give a new worktree a warm Rust build
+
 # Rust
 cargo fmt --all                                     # format
 cargo fmt --all --check                             # CI check
@@ -41,7 +46,8 @@ cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # th
 cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
 cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
-cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report
+cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report, against the committed baseline
+UTA_TIMING_BASELINE=1 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # re-record that baseline
 cargo test -p uta-core --release --test timing -- --ignored --nocapture     # copy-on-write timing report
 UTA_GOLDEN=1 cargo test -p uta-engine --test sound  # regenerate golden WAVs
 
@@ -58,7 +64,12 @@ npm run tauri build -- --ci                         # release build: target/rele
 
 `cargo build`/`clippy`/`test` compile the app crate in dev mode, so they don't need `app/dist`. Only `tauri build` needs the frontend built, and it does that itself.
 
-**Before opening a PR, run all of the above checks and fix everything they report.** CI runs the same set.
+**Before opening a PR, run `scripts/check` and fix everything it reports.** It runs the checks above that the change needs, against `origin/main`, in parallel:
+- Rust (fmt, clippy, test) when the Rust side or the files its tests read changed; RTSan when the engine, the core or the CLI did;
+- the frontend checks (tokens, `designmd`, typecheck, lint, test) when `app/` outside `app/src-tauri/`, or `DESIGN.md`, changed;
+- the release build (`tauri build`) only when `app/src-tauri/` or `app/package.json` changed. CI builds it on every PR.
+
+Each pass is stamped with the content it checked, so running it again is instant. It warns when `origin/main` has moved on. `git push` runs it through the pre-push hook and blocks a push that hasn't passed; don't skip that with `--no-verify`. The golden WAV comparisons run inside `rust: test`; the timing reports and regenerating goldens (`UTA_GOLDEN=1`) don't, so run those by hand when a change calls for them. CI runs the full set on every PR.
 
 ## The audio thread rules
 

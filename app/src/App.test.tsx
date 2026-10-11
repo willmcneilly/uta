@@ -1518,7 +1518,9 @@ describe("App", () => {
     it("builds each song in turn and works its controls, then shows the report", async () => {
       const dialog = await openBenchmark();
       fireEvent.click(within(dialog).getByRole("button", { name: "Replace and Run" }));
-      const report = await screen.findByLabelText("Benchmark report");
+      // It builds three songs and works their controls first, which has taken
+      // over a second on a busy machine (scripts/check runs other jobs alongside).
+      const report = await screen.findByLabelText("Benchmark report", {}, { timeout: 5000 });
 
       const songs = ["heavy", "wide", "check-7"];
       const sentCalls = benchmarkCalls();
@@ -1576,7 +1578,7 @@ describe("App", () => {
       await screen.findByRole("slider", { name: /Volume/ });
       await act(() => emit("develop-menu", "run-benchmark"));
       fireEvent.click(screen.getByRole("button", { name: "Replace and Run" }));
-      await screen.findByLabelText("Benchmark report");
+      await screen.findByLabelText("Benchmark report", {}, { timeout: 5000 });
       // Each clip holds three notes, so the fourth delete is in the next clip.
       const deletes = calls.filter((c) => c.cmd === "remove_notes").map((c) => c.args);
       expect(deletes).toEqual([
