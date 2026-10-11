@@ -1,0 +1,4 @@
+#!/bin/sh
+# Starts, stops and checks the Uta app in development mode for this checkout.
+# `scripts/dev-app --help` says how. The logic is in app/scripts/devAppCli.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/devAppCli.ts" "$@"

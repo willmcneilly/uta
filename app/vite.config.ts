@@ -4,6 +4,8 @@ import { defineConfig } from "vitest/config";
 import { designTuning } from "./scripts/designServer.ts";
 
 const host = process.env.TAURI_DEV_HOST;
+// scripts/dev-app picks a free port and passes it here; 1420 otherwise.
+const port = Number(process.env.UTA_DEV_PORT ?? 1420);
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,14 +17,14 @@ export default defineConfig({
   clearScreen: false,
   // 2. Tauri expects a fixed port, so fail if it's taken
   server: {
-    port: 1420,
+    port,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: port + 1,
         }
       : undefined,
     watch: {
