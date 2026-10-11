@@ -13,6 +13,7 @@ mod control;
 mod drums;
 pub mod live;
 mod mixer;
+mod noise;
 pub mod offline;
 mod processor;
 mod ramp;

@@ -1383,7 +1383,7 @@ mod tests {
         let source = &outline["tracks"][0]["source"];
         assert_eq!(source["kind"], "synth");
         assert_eq!(source["settings"][0]["value"], "saw");
-        assert_eq!(source["settings"][1]["value"], 20_000.0);
+        assert_eq!(source["settings"][10]["value"], 20_000.0);
         assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
@@ -1557,16 +1557,31 @@ mod tests {
 
         let json = serde_json::to_value(&outline.tracks[0].source).unwrap();
         assert_eq!(json["kind"], "synth");
-        let waveform = &json["settings"][0];
-        assert_eq!(waveform["name"], "waveform");
-        assert_eq!(waveform["value"], "saw");
-        assert_eq!(waveform["kind"], "choice");
-        assert_eq!(waveform["default"], "saw");
+        let wave = &json["settings"][0];
+        assert_eq!(wave["name"], "osc1_wave");
+        assert_eq!(wave["value"], "saw");
+        assert_eq!(wave["kind"], "choice");
+        assert_eq!(wave["default"], "saw");
         assert_eq!(
-            waveform["options"][3],
-            serde_json::json!({"value": "square", "label": "Square"})
+            wave["options"][3],
+            serde_json::json!({"value": "pulse", "label": "Pulse"})
         );
-        let cutoff = &json["settings"][1];
+        let octave = &json["settings"][1];
+        assert_eq!(octave["name"], "osc1_octave");
+        assert_eq!(octave["value"], 0);
+        assert_eq!(octave["unit"], "octaves");
+        assert_eq!(octave["step"], 1.0);
+        let pitch = &json["settings"][4];
+        assert_eq!(pitch["name"], "osc2_pitch_semitones");
+        assert_eq!(pitch["unit"], "semitones");
+        assert_eq!(pitch["scale"], "cubic");
+        assert_eq!(pitch["limits"], serde_json::json!([-12.0, 12.0]));
+        let retrigger = &json["settings"][16];
+        assert_eq!(retrigger["name"], "osc_retrigger");
+        assert_eq!(retrigger["value"], true);
+        assert_eq!(retrigger["kind"], "toggle");
+        assert_eq!(retrigger["default"], true);
+        let cutoff = &json["settings"][10];
         assert_eq!(cutoff["name"], "cutoff_hz");
         assert_eq!(cutoff["value"], 20_000.0);
         assert_eq!(cutoff["label"], "Cutoff");
@@ -1581,6 +1596,7 @@ mod tests {
             match setting["kind"].as_str() {
                 Some("number") => assert!(setting["unit"].is_string(), "{setting}"),
                 Some("choice") => assert!(setting["options"].is_array(), "{setting}"),
+                Some("toggle") => assert!(setting["default"].is_boolean(), "{setting}"),
                 kind => panic!("{kind:?}"),
             }
         }
@@ -1594,12 +1610,22 @@ mod tests {
             units,
             [
                 None,
+                Some("octaves"),
+                None,
+                Some("octaves"),
+                Some("semitones"),
+                Some("octaves"),
+                Some("fraction"),
+                Some("fraction"),
+                Some("fraction"),
+                Some("fraction"),
                 Some("hz"),
                 Some("amount"),
                 Some("seconds"),
                 Some("seconds"),
                 Some("fraction"),
                 Some("seconds"),
+                None,
             ]
         );
         // The synth's limits and defaults travel with each setting now.
@@ -1627,7 +1653,7 @@ mod tests {
                 .unwrap()["default"]
                 .clone()
         };
-        assert_eq!(default("waveform"), "saw");
+        assert_eq!(default("osc1_wave"), "saw");
         assert_eq!(default("cutoff_hz"), 20_000.0);
         assert_eq!(default("resonance"), 0.0);
         assert_eq!(default("sustain"), 0.7_f32 as f64);
@@ -1645,25 +1671,21 @@ mod tests {
     fn synth_settings_go_through_the_project_to_the_engine() {
         let mut uta = offline();
         let track = uta.project().tracks[0].id;
-        uta.set_synth_param(
-            track,
-            SynthParam::Waveform(uta_core::Waveform::Square),
-            None,
-        )
-        .unwrap();
+        uta.set_synth_param(track, SynthParam::Osc1Wave(uta_core::Waveform::Pulse), None)
+            .unwrap();
         uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
             .unwrap();
         let view = synth_of(&uta.project().tracks[0]);
         assert_eq!(
-            (view.waveform, view.cutoff_hz),
-            (uta_core::Waveform::Square, 800.0)
+            (view.osc1_wave, view.cutoff_hz),
+            (uta_core::Waveform::Pulse, 800.0)
         );
         let engine_synth = |uta: &Uta| match uta.controller.snapshot().tracks()[0].sound {
             uta_engine::TrackSound::Synth(synth) => synth,
             uta_engine::TrackSound::Drums(_) => panic!("a synth track"),
         };
         let engine = engine_synth(&uta);
-        assert_eq!(engine.waveform, uta_engine::Waveform::Square);
+        assert_eq!(engine.osc1_wave, uta_engine::Waveform::Pulse);
         assert_eq!(engine.cutoff_hz, 800.0);
 
         uta.undo();
@@ -1716,9 +1738,25 @@ mod tests {
                 .unwrap();
         assert_eq!(param, SynthParam::CutoffHz(440.0));
         let param: SynthParam =
-            serde_json::from_value(serde_json::json!({"name": "waveform", "value": "triangle"}))
+            serde_json::from_value(serde_json::json!({"name": "osc1_wave", "value": "triangle"}))
                 .unwrap();
-        assert_eq!(param, SynthParam::Waveform(uta_core::Waveform::Triangle));
+        assert_eq!(param, SynthParam::Osc1Wave(uta_core::Waveform::Triangle));
+        for (json, param) in [
+            (
+                serde_json::json!({"name": "osc2_octave", "value": -1}),
+                SynthParam::Osc2Octave(-1),
+            ),
+            (
+                serde_json::json!({"name": "osc_retrigger", "value": false}),
+                SynthParam::OscRetrigger(false),
+            ),
+            (
+                serde_json::json!({"name": "noise_level", "value": 0.25}),
+                SynthParam::NoiseLevel(0.25),
+            ),
+        ] {
+            assert_eq!(serde_json::from_value::<SynthParam>(json).unwrap(), param);
+        }
     }
 
     fn shape(view: &ProjectView) -> Vec<(usize, Vec<usize>)> {
@@ -1844,19 +1882,19 @@ mod tests {
         let SourceView::Synth { settings } = &track.source else {
             panic!("{} isn't a synth track", track.name);
         };
-        let mut synth = SynthSettings::default();
-        for setting in settings {
-            match setting.param {
-                SynthParam::Waveform(waveform) => synth.waveform = waveform,
-                SynthParam::CutoffHz(hz) => synth.cutoff_hz = hz,
-                SynthParam::Resonance(value) => synth.resonance = value,
-                SynthParam::AttackSeconds(seconds) => synth.attack_seconds = seconds,
-                SynthParam::DecaySeconds(seconds) => synth.decay_seconds = seconds,
-                SynthParam::Sustain(level) => synth.sustain = level,
-                SynthParam::ReleaseSeconds(seconds) => synth.release_seconds = seconds,
-            }
-        }
-        synth
+        // Each setting's name is its field's, so the values make the
+        // settings as `AddTracks` carries them.
+        let fields = settings
+            .iter()
+            .map(|setting| {
+                let param = serde_json::to_value(setting.param).unwrap();
+                (
+                    param["name"].as_str().unwrap().to_owned(),
+                    param["value"].clone(),
+                )
+            })
+            .collect();
+        serde_json::from_value(serde_json::Value::Object(fields)).unwrap()
     }
 
     fn first_track(uta: &Uta) -> TrackId {

@@ -33,7 +33,7 @@ fn renderer(settings: SynthSettings, block_size: usize) -> Renderer {
 
 fn sine() -> SynthSettings {
     SynthSettings {
-        waveform: Waveform::Sine,
+        osc1_wave: Waveform::Sine,
         ..SynthSettings::default()
     }
 }
@@ -71,11 +71,11 @@ fn notes_play_at_their_pitch() {
         Waveform::Sine,
         Waveform::Triangle,
         Waveform::Saw,
-        Waveform::Square,
+        Waveform::Pulse,
     ] {
         for pitch in [21, 33, 45, 57, 69, 81, 93, 105] {
             let settings = SynthSettings {
-                waveform,
+                osc1_wave: waveform,
                 ..SynthSettings::default()
             };
             let frequency = measure_frequency(&steady(settings, pitch, 100), RATE);
@@ -386,7 +386,7 @@ fn no_clicks_when_settings_change_while_notes_sound() {
                 .set_synth_settings(
                     0,
                     SynthSettings {
-                        waveform,
+                        osc1_wave: waveform,
                         cutoff_hz,
                         resonance,
                         sustain,
@@ -452,7 +452,7 @@ fn session(block_size: usize) -> Vec<f32> {
         }
     }
     for (i, waveform) in [
-        Waveform::Square,
+        Waveform::Pulse,
         Waveform::Triangle,
         Waveform::Sine,
         Waveform::Saw,
@@ -465,7 +465,7 @@ fn session(block_size: usize) -> Vec<f32> {
             .set_synth_settings(
                 0,
                 SynthSettings {
-                    waveform,
+                    osc1_wave: waveform,
                     cutoff_hz: 300.0 * (i + 1) as f32,
                     resonance: 0.25 * i as f32,
                     sustain: 0.2 * (i + 1) as f32,

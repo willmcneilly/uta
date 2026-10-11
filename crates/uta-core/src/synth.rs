@@ -178,11 +178,15 @@ impl SynthSettings {
             SynthParam::Osc2Level(value) => {
                 SynthParam::Osc2Level(replace(&mut self.osc2_level, value))
             }
-            SynthParam::SubLevel(value) => SynthParam::SubLevel(replace(&mut self.sub_level, value)),
+            SynthParam::SubLevel(value) => {
+                SynthParam::SubLevel(replace(&mut self.sub_level, value))
+            }
             SynthParam::NoiseLevel(value) => {
                 SynthParam::NoiseLevel(replace(&mut self.noise_level, value))
             }
-            SynthParam::CutoffHz(value) => SynthParam::CutoffHz(replace(&mut self.cutoff_hz, value)),
+            SynthParam::CutoffHz(value) => {
+                SynthParam::CutoffHz(replace(&mut self.cutoff_hz, value))
+            }
             SynthParam::Resonance(value) => {
                 SynthParam::Resonance(replace(&mut self.resonance, value))
             }
@@ -323,7 +327,8 @@ impl SynthParam {
         let number = |label, sounds, unit, scale| {
             Description::number(label, sounds, unit, scale, (min, max), value)
         };
-        let octave = |label, sounds| Description::whole(label, sounds, Unit::Octaves, (min, max), value);
+        let octave =
+            |label, sounds| Description::whole(label, sounds, Unit::Octaves, (min, max), value);
         let level = |label, sounds| number(label, sounds, Unit::Fraction, Linear);
         match self {
             Self::Osc1Wave(_) => Description::choice(
@@ -517,7 +522,11 @@ mod tests {
             Ok(SynthParam::Osc2PitchSemitones(0.0))
         );
         assert_eq!(
-            (settings.sub_octave, settings.osc_retrigger, settings.osc2_pitch_semitones),
+            (
+                settings.sub_octave,
+                settings.osc_retrigger,
+                settings.osc2_pitch_semitones
+            ),
             (-2, false, 0.07)
         );
     }
@@ -623,7 +632,11 @@ mod tests {
                 (kind, range) => panic!("{param:?} is described as {kind:?} with {range:?}"),
             }
         }
-        let labels: Vec<_> = settings.params().iter().map(|p| p.describe().label).collect();
+        let labels: Vec<_> = settings
+            .params()
+            .iter()
+            .map(|p| p.describe().label)
+            .collect();
         let mut unique = labels.clone();
         unique.sort_unstable();
         unique.dedup();

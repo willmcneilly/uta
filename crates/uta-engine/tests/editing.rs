@@ -31,7 +31,7 @@ const BAR_SAMPLES: usize = 4 * BEAT_SAMPLES;
 const RELEASE_SECONDS: f32 = 0.005;
 const RELEASE_SAMPLES: usize = 240;
 const SETTINGS: [SynthParam; 3] = [
-    SynthParam::Waveform(Waveform::Sine),
+    SynthParam::Osc1Wave(Waveform::Sine),
     SynthParam::Sustain(1.0),
     SynthParam::ReleaseSeconds(RELEASE_SECONDS),
 ];
