@@ -87,10 +87,6 @@ interface ProjectFields {
   ticksPerQuarter: number;
   /** Always 4 for now (4/4). */
   beatsPerBar: number;
-  /** The limits of the synth's settings, the same for every track. */
-  synthLimits: SynthLimits;
-  /** A new track's synth settings, which the synth's controls reset to. */
-  synthDefaults: SynthView;
   /** The limits of a track's volume and pan. */
   mixerLimits: MixerLimits;
   /** A new track's mixer strip, which its controls reset to. */
@@ -114,8 +110,57 @@ interface TrackFields {
   source: SourceView;
 }
 
-/** What makes a track's sound: the synth, or the drum kit. */
-export type SourceView = { kind: "synth"; synth: SynthView } | { kind: "drums"; kit: KitView };
+/** What makes a track's sound: the synth's settings, or the drum kit. */
+export type SourceView =
+  | { kind: "synth"; settings: SynthSettingView[] }
+  | { kind: "drums"; kit: KitView };
+
+/**
+ * What every setting carries from Rust's description of it: what the panel
+ * calls it, and how it sounds. A panel draws a setting it has never seen from
+ * its description alone.
+ */
+interface Described<N extends string> {
+  name: N;
+  /** What the panel calls it: "Cutoff", "Tune". */
+  label: string;
+  /** How it sounds: what turning it does, and what its ends are good for. */
+  sounds: string;
+}
+
+/** A setting that's a number, with the range, scale and unit Rust gives it. */
+export interface NumberSettingView<N extends string = string> extends Described<N> {
+  kind: "number";
+  value: number;
+  /** The unit `value`, `limits` and `default` are in. */
+  unit: Unit;
+  /** How a control moves through `limits`. */
+  scale: Scale;
+  limits: Limits;
+  /** A new track's value, which its control resets to. */
+  default: number;
+}
+
+/** A setting that's one of a few choices, such as the synth's waveform. */
+export interface ChoiceSettingView<N extends string = string, V extends string = string>
+  extends Described<N> {
+  kind: "choice";
+  value: V;
+  /** Every choice, in the panel's order. */
+  options: { value: V; label: string }[];
+  /** A new track's choice, which a reset picks. */
+  default: V;
+}
+
+/**
+ * The unit a setting is in. A fraction runs from 0 to 1 and reads as a
+ * percentage: how much of something, such as Snappy. An amount runs from 0
+ * to 1 too, but reads as itself: the filter's resonance.
+ */
+export type Unit = "hz" | "seconds" | "db" | "fraction" | "amount";
+
+/** How a control moves: in even steps, or in even ratios, the way you hear frequencies and times. */
+export type Scale = "log" | "linear";
 
 /** Which kind of track to add. */
 export type TrackKind = SourceView["kind"];
@@ -142,27 +187,16 @@ export interface KitRowView {
   name: string;
   /** The General MIDI drum note that plays it. */
   pitch: number;
-  /** In the order of its panel. Empty for a sound that has none yet. */
+  /** Its settings that are numbers, in the order of its panel. Empty for a sound that has none yet. */
   settings: DrumSettingView[];
   /** Settings it takes from another sound, which its panel says, or null. */
   shares: SharedSettingsView | null;
   /** Its choice of model, for a sound that has one (the kick), or null. `settings` are the chosen model's. */
-  model: ModelChoiceView | null;
+  model: ChoiceSettingView<"model", KickModel> | null;
 }
 
 /** Which kick plays. */
 export type KickModel = "808" | "909";
-
-/** A sound's choice of model, as its panel's segmented choice shows it. */
-export interface ModelChoiceView {
-  /** What the panel calls it: "Model". */
-  label: string;
-  value: KickModel;
-  /** Every model, in the panel's order. */
-  options: { value: KickModel; label: string }[];
-  /** A new drum track's model. */
-  default: KickModel;
-}
 
 /** Settings one sound takes from another: the open hat's Tune and Tone are the closed hat's. */
 export interface SharedSettingsView {
@@ -172,19 +206,8 @@ export interface SharedSettingsView {
   labels: string[];
 }
 
-/** One setting of one drum sound, in that sound's own unit. */
-export interface DrumSettingView {
-  name: DrumNumber["name"];
-  /** What the panel calls it: "Tune", "Level". */
-  label: string;
-  value: number;
-  /** The limits it has on this sound. */
-  limits: Limits;
-  /** A new drum track's value, which its control resets to. */
-  default: number;
-  /** The unit `value`, `limits` and `default` are in. Tone's differs by sound. */
-  unit: DrumUnit;
-}
+/** One setting of one drum sound, in that sound's own unit. Tone's differs by sound. */
+export type DrumSettingView = NumberSettingView<DrumNumber["name"]>;
 
 /** One drum setting with its value, as `SetDrumParam` carries it: a number, or the kick's model. */
 export type DrumParam = DrumNumber | { name: "model"; value: KickModel };
@@ -194,9 +217,6 @@ export interface DrumNumber {
   name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db" | "sweep" | "attack";
   value: number;
 }
-
-/** A fraction runs from 0 to 1: how much of something, such as Snappy. */
-export type DrumUnit = "hz" | "seconds" | "db" | "fraction";
 
 /** A track's volume, pan, mute and solo. */
 export interface MixerView {
@@ -215,43 +235,22 @@ export interface MixerLimits {
 
 export type Waveform = "sine" | "triangle" | "saw" | "square";
 
-/** The synth's settings. */
-export interface SynthView {
-  waveform: Waveform;
-  cutoffHz: number;
-  resonance: number;
-  attackSeconds: number;
-  decaySeconds: number;
-  /** A linear level, from 0 to 1. */
-  sustain: number;
-  releaseSeconds: number;
-}
-
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
-/** The limits of each synth setting that has a range. */
-export interface SynthLimits {
-  cutoffHz: Limits;
-  resonance: Limits;
-  /** For attack, decay and release. */
-  envelopeSeconds: Limits;
-  sustain: Limits;
-}
+/** One of the synth's settings, described, with its value. */
+export type SynthSettingView =
+  | ChoiceSettingView<"waveform", Waveform>
+  | NumberSettingView<SynthNumber["name"]>;
 
 /** One synth setting and its new value, as `set_synth_param` takes it. */
-export type SynthParam =
-  | { name: "waveform"; value: Waveform }
-  | {
-      name:
-        | "cutoff_hz"
-        | "resonance"
-        | "attack_seconds"
-        | "decay_seconds"
-        | "sustain"
-        | "release_seconds";
-      value: number;
-    };
+export type SynthParam = { name: "waveform"; value: Waveform } | SynthNumber;
+
+/** A synth setting that's a number. */
+export interface SynthNumber {
+  name: "cutoff_hz" | "resonance" | "attack_seconds" | "decay_seconds" | "sustain" | "release_seconds";
+  value: number;
+}
 
 /** A clip and its notes. Positions and lengths are in ticks. */
 export interface ClipView extends ClipFields {

@@ -634,9 +634,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           ) : tab === "sound" ? (
             track.source.kind === "synth" ? (
               <SynthPanel
-                synth={track.source.synth}
-                limits={project.synthLimits}
-                defaults={project.synthDefaults}
+                settings={track.source.settings}
                 sampleRate={status?.output.sampleRate ?? null}
                 onChange={changeSynth}
               />

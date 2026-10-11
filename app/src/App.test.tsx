@@ -23,7 +23,6 @@ import type {
   NoteView,
   ProjectView,
   SynthParam,
-  SynthView,
   TrackView,
 } from "./backend";
 import {
@@ -33,10 +32,14 @@ import {
   announceChange,
   projectView,
   drumTrackView,
+  SYNTH_FIELDS,
   recordingFactory,
+  type SynthValues,
+  synthSettings,
   synthOf,
   trackView,
   withFirstClipNotes,
+  withSynth,
 } from "./pianoRoll/testing";
 import type { RendererFactory } from "./pianoRoll/renderer";
 import { recordingTimelineFactory } from "./timeline/testing";
@@ -48,16 +51,6 @@ interface Call {
   cmd: string;
   args: Record<string, unknown>;
 }
-
-const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthView> = {
-  waveform: "waveform",
-  cutoff_hz: "cutoffHz",
-  resonance: "resonance",
-  attack_seconds: "attackSeconds",
-  decay_seconds: "decaySeconds",
-  sustain: "sustain",
-  release_seconds: "releaseSeconds",
-};
 
 let calls: Call[];
 let project: ProjectView;
@@ -167,13 +160,9 @@ beforeEach(() => {
           const param = args.param as SynthParam;
           // Rust stores f32s, so what comes back isn't quite what was sent.
           const value = param.name === "waveform" ? param.value : Math.fround(param.value);
-          project = changeTrack(args.track as string, (track) => ({
-            ...track,
-            source: {
-              kind: "synth",
-              synth: { ...synthOf(track), [SYNTH_FIELDS[param.name]]: value },
-            },
-          }));
+          project = changeTrack(args.track as string, (track) =>
+            withSynth(track, { [SYNTH_FIELDS[param.name]]: value }),
+          );
           return updates.send(project);
         }
         case "set_track_mixer": {
@@ -624,7 +613,7 @@ describe("App", () => {
         "set_synth_param",
         // The slider's position, from the cutoff it sent.
         (args) =>
-          toPosition((args.param as { value: number }).value, project.synthLimits.cutoffHz, "log"),
+          toPosition((args.param as { value: number }).value, [20, 20_000], "log"),
         [800, 700, 600, 500],
         knobDrag((position) => position / 1000),
       ],
@@ -819,18 +808,15 @@ describe("App", () => {
     it("follows undo and redo, which Rust announces", async () => {
       await renderSound();
       const undone = projectView();
-      undone.tracks[0].source = {
-        kind: "synth",
-        synth: {
-          waveform: "square",
-          cutoffHz: 200,
-          resonance: 0.8,
-          attackSeconds: 1,
-          decaySeconds: 0.01,
-          sustain: 0.25,
-          releaseSeconds: 2.5,
-        },
-      };
+      undone.tracks[0] = withSynth(undone.tracks[0], {
+        waveform: "square",
+        cutoffHz: 200,
+        resonance: 0.8,
+        attackSeconds: 1,
+        decaySeconds: 0.01,
+        sustain: 0.25,
+        releaseSeconds: 2.5,
+      });
       project = undone;
       await announceChange();
       expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
@@ -848,7 +834,7 @@ describe("App", () => {
   it("resets each fader on double-click to its own default, from the outline", async () => {
     // Defaults that differ from each other and from the values, so a fader
     // wired to the wrong one sends the wrong command.
-    const synthDefaults: SynthView = {
+    const synthDefaults: SynthValues = {
       waveform: "saw",
       cutoffHz: 1000,
       resonance: 0.25,
@@ -863,10 +849,10 @@ describe("App", () => {
       defaultVolumeDb: -10,
       bpm: 90,
       defaultBpm: 130,
-      synthDefaults,
       mixerDefaults: { volumeDb: -3, pan: 0.2, mute: false, solo: false },
       tracks: project.tracks.map((track) => ({
         ...track,
+        source: { kind: "synth", settings: synthSettings(synthOf(track), synthDefaults) },
         mixer: { ...track.mixer, volumeDb: -6, pan: -0.5 },
       })),
     };
@@ -1072,7 +1058,7 @@ describe("App", () => {
           },
         ]),
         mixer: { volumeDb: -6, pan: -0.5, mute: true, solo: false },
-        source: { kind: "synth", synth: { ...synthOf(first), waveform: "square" } },
+        source: withSynth(first, { waveform: "square" }).source,
       };
       const third: TrackView = {
         ...trackView("track-3", "Synth 3"),

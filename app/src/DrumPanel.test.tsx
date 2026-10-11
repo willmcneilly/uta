@@ -3,7 +3,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { DrumParam, DrumSettingView, Frame, KitRowView, ProjectView } from "./backend";
+import type { DrumParam, Frame, KitRowView, ProjectView } from "./backend";
 import { pressKnob, knobAt } from "./design/knobTesting";
 import { press as pressFader, thumbX, RAIL_WIDTH } from "./design/faderTesting";
 import {
@@ -13,6 +13,7 @@ import {
   drumTrackView,
   projectView,
   recordingFactory,
+  setting,
   trackView,
 } from "./pianoRoll/testing";
 
@@ -216,22 +217,14 @@ describe("the drum panel", () => {
   });
 
   it("draws a sound it has never seen, from the outline alone", async () => {
-    const hz = (value: number, limits: [number, number]): DrumSettingView => ({
-      name: "tune_hz",
-      label: "Tune",
-      value,
-      limits,
-      default: value,
-      unit: "hz",
-    });
     const tom: KitRowView = {
       sound: "low_tom",
       name: "Low tom",
       pitch: 45,
       settings: [
-        hz(90, [80, 100]),
-        { name: "decay_seconds", label: "Decay", value: 0.2, limits: [0.1, 0.6], default: 0.2, unit: "seconds" },
-        { name: "level_db", label: "Level", value: -6, limits: [-60, 6], default: -6, unit: "db" },
+        setting("tune_hz", 90, [80, 100], "hz"),
+        setting("decay_seconds", 0.2, [0.1, 0.6], "seconds"),
+        setting("level_db", -6, [-60, 6], "db"),
       ],
       shares: null,
       model: null,

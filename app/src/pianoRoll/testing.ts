@@ -6,18 +6,21 @@ import { emit } from "@tauri-apps/api/event";
 import type {
   ClipNotes,
   ClipView,
+  ChoiceSettingView,
   DrumSettingView,
-  DrumUnit,
+  KickModel,
   KitRowView,
   Limits,
-  ModelChoiceView,
   MixerView,
   NoteView,
   Outline,
   ProjectView,
-  SynthView,
+  SynthParam,
+  SynthSettingView,
   TrackView,
+  Unit,
   Update,
+  Waveform,
 } from "../backend";
 import type { PlacedNote } from "./notes";
 import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory, TopMarks } from "./renderer";
@@ -87,8 +90,30 @@ export class Updates {
 /** A new track's mixer strip, as Rust sends it. */
 export const MIXER_DEFAULTS: MixerView = { volumeDb: 0, pan: 0, mute: false, solo: false };
 
-/** A new track's synth settings, as Rust sends them. */
-export const SYNTH_DEFAULTS: SynthView = {
+/** A synth's values, by setting, as tests write them. */
+export interface SynthValues {
+  waveform: Waveform;
+  cutoffHz: number;
+  resonance: number;
+  attackSeconds: number;
+  decaySeconds: number;
+  sustain: number;
+  releaseSeconds: number;
+}
+
+/** Each synth setting's field in {@link SynthValues}. */
+export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
+  waveform: "waveform",
+  cutoff_hz: "cutoffHz",
+  resonance: "resonance",
+  attack_seconds: "attackSeconds",
+  decay_seconds: "decaySeconds",
+  sustain: "sustain",
+  release_seconds: "releaseSeconds",
+};
+
+/** A new track's synth settings, as Rust's defaults have them. */
+export const SYNTH_DEFAULTS: SynthValues = {
   waveform: "saw",
   cutoffHz: 20_000,
   resonance: 0,
@@ -98,24 +123,92 @@ export const SYNTH_DEFAULTS: SynthView = {
   releaseSeconds: 0.2,
 };
 
+/** A stand-in for the sentence Rust sends on how a setting sounds. */
+const SOUNDS = "How it sounds.";
+
+/** Frequencies and times move on a log scale; levels and amounts on a linear one, as Rust has them. */
+const scaleOf = (unit: Unit) => (unit === "hz" || unit === "seconds" ? "log" : "linear");
+
+/**
+ * The synth's settings with `values`, described as Rust describes them, in
+ * its order, each resetting to its value in `defaults`.
+ */
+export function synthSettings(
+  values: SynthValues = SYNTH_DEFAULTS,
+  defaults: SynthValues = SYNTH_DEFAULTS,
+): SynthSettingView[] {
+  const number = (
+    name: Exclude<SynthParam["name"], "waveform">,
+    label: string,
+    unit: Unit,
+    limits: Limits,
+  ): SynthSettingView => {
+    const field = SYNTH_FIELDS[name] as Exclude<keyof SynthValues, "waveform">;
+    const scale = scaleOf(unit);
+    return { kind: "number", name, label, sounds: SOUNDS, value: values[field], unit, scale, limits, default: defaults[field] };
+  };
+  const waveform: ChoiceSettingView<"waveform", Waveform> = {
+    kind: "choice",
+    name: "waveform",
+    label: "Waveform",
+    sounds: SOUNDS,
+    value: values.waveform,
+    options: [
+      { value: "sine", label: "Sine" },
+      { value: "triangle", label: "Triangle" },
+      { value: "saw", label: "Saw" },
+      { value: "square", label: "Square" },
+    ],
+    default: defaults.waveform,
+  };
+  return [
+    waveform,
+    number("cutoff_hz", "Cutoff", "hz", [20, 20_000]),
+    number("resonance", "Resonance", "amount", [0, 1]),
+    number("attack_seconds", "Attack", "seconds", [0.001, 10]),
+    number("decay_seconds", "Decay", "seconds", [0.001, 10]),
+    number("sustain", "Sustain", "fraction", [0, 1]),
+    number("release_seconds", "Release", "seconds", [0.001, 10]),
+  ];
+}
+
 /** A track with the default sound and mixer, and `clips`. */
 export function trackView(id: string, name: string, clips: ClipView[] = []): TrackView {
   return {
     id,
     name,
     mixer: { ...MIXER_DEFAULTS },
-    source: { kind: "synth", synth: { ...SYNTH_DEFAULTS } },
+    source: { kind: "synth", settings: synthSettings() },
     clips,
   };
 }
 
-/** A synth track's settings. */
-export function synthOf(track: TrackView): SynthView {
+/** A synth track's values, read back from the settings Rust sent. */
+export function synthOf(track: TrackView): SynthValues {
   if (track.source.kind !== "synth") throw new Error(`${track.name} isn't a synth track`);
-  return track.source.synth;
+  const values = { ...SYNTH_DEFAULTS };
+  for (const setting of track.source.settings) {
+    if (setting.kind === "choice") values.waveform = setting.value;
+    else values[SYNTH_FIELDS[setting.name] as Exclude<keyof SynthValues, "waveform">] = setting.value;
+  }
+  return values;
 }
 
-/** A setting of a drum sound at its default, as Rust sends it. */
+/** `track`, a synth track, with its values set to `values`, keeping each setting's default. */
+export function withSynth(track: TrackView, values: Partial<SynthValues>): TrackView {
+  if (track.source.kind !== "synth") throw new Error(`${track.name} isn't a synth track`);
+  const defaults = { ...SYNTH_DEFAULTS };
+  for (const setting of track.source.settings) {
+    if (setting.kind === "choice") defaults.waveform = setting.default;
+    else defaults[SYNTH_FIELDS[setting.name] as Exclude<keyof SynthValues, "waveform">] = setting.default;
+  }
+  return {
+    ...track,
+    source: { kind: "synth", settings: synthSettings({ ...synthOf(track), ...values }, defaults) },
+  };
+}
+
+/** What a setting of a drum sound is called, as Rust has it. */
 const LABELS: Record<DrumSettingView["name"], string> = {
   tune_hz: "Tune",
   tone: "Tone",
@@ -126,18 +219,23 @@ const LABELS: Record<DrumSettingView["name"], string> = {
   attack: "Attack",
 };
 
-function setting(
+/** A setting of a drum sound at its default, described as Rust describes it. */
+export function setting(
   name: DrumSettingView["name"],
   value: number,
   limits: Limits,
-  unit: DrumUnit,
+  unit: Unit,
 ): DrumSettingView {
-  return { name, label: LABELS[name], value, limits, default: value, unit };
+  const scale = scaleOf(unit);
+  return { kind: "number", name, label: LABELS[name], sounds: SOUNDS, value, unit, scale, limits, default: value };
 }
 
 /** The kick's choice of model, the 808 chosen, as Rust sends it. */
-export const KICK_MODEL: ModelChoiceView = {
+export const KICK_MODEL: ChoiceSettingView<"model", KickModel> = {
+  kind: "choice",
+  name: "model",
   label: "Model",
+  sounds: SOUNDS,
   value: "808",
   options: [
     { value: "808", label: "808" },
@@ -265,13 +363,6 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
     songEnd: 5 * 3840,
     ticksPerQuarter: 960,
     beatsPerBar: 4,
-    synthLimits: {
-      cutoffHz: [20, 20_000],
-      resonance: [0, 1],
-      envelopeSeconds: [0.001, 10],
-      sustain: [0, 1],
-    },
-    synthDefaults: SYNTH_DEFAULTS,
     mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
     mixerDefaults: MIXER_DEFAULTS,
     maxTracks: 32,

@@ -3,12 +3,13 @@
 // times move on a log scale, so each step is the same ratio, the way you
 // hear them; levels move on a linear scale.
 
-import type { Limits } from "./backend";
+import type { Limits, NumberSettingView, Scale } from "./backend";
+import type { NumberScale } from "./design/numberScale";
 
 /** The number of steps from one end of a control to the other. */
 export const SETTING_STEPS = 1000;
 
-export type Scale = "log" | "linear";
+export type { Scale };
 
 /** The setting at position `position`. The ends give exactly the limits. */
 export function fromPosition(position: number, [min, max]: Limits, scale: Scale): number {
@@ -24,6 +25,17 @@ export function toPosition(value: number, [min, max]: Limits, scale: Scale): num
     scale === "log" ? Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min);
   const position = Math.round(fraction * SETTING_STEPS);
   return Math.min(SETTING_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
+}
+
+/** A setting's positions, on the scale and within the limits Rust describes it with. */
+export function settingScale({ limits, scale }: NumberSettingView): NumberScale {
+  return {
+    min: limits[0],
+    max: limits[1],
+    steps: SETTING_STEPS,
+    toPosition: (value) => toPosition(value, limits, scale),
+    fromPosition: (position) => fromPosition(position, limits, scale),
+  };
 }
 
 export function formatHz(hz: number): string {

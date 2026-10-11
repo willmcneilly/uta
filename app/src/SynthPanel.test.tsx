@@ -1,20 +1,14 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SynthLimits, SynthView } from "./backend";
+import type { SynthSettingView } from "./backend";
 import { SynthPanel } from "./SynthPanel";
-import { pressKnob } from "./design/knobTesting";
+import { knobAt, pressKnob } from "./design/knobTesting";
+import { type SynthValues, synthSettings } from "./pianoRoll/testing";
 import { DRAWING_HEIGHT, DRAWING_WIDTH } from "./synth/Drawings";
 import { envelopeShape } from "./synth/envelopeShape";
 import { type Point, filterCurve, xOfFrequency } from "./synth/filterCurve";
 
-const LIMITS: SynthLimits = {
-  cutoffHz: [20, 20_000],
-  resonance: [0, 1],
-  envelopeSeconds: [0.001, 10],
-  sustain: [0, 1],
-};
-
-const SYNTH: SynthView = {
+const SYNTH: SynthValues = {
   waveform: "saw",
   cutoffHz: 2_000,
   resonance: 0.5,
@@ -25,11 +19,16 @@ const SYNTH: SynthView = {
 };
 
 function renderPanel(synth = SYNTH, sampleRate: number | null = 48_000) {
+  return renderSettings(synthSettings(synth, SYNTH), sampleRate);
+}
+
+function renderSettings(settings: SynthSettingView[], sampleRate: number | null = 48_000) {
   const onChange = vi.fn();
-  const props = { limits: LIMITS, defaults: SYNTH, onChange };
-  const view = render(<SynthPanel {...props} synth={synth} sampleRate={sampleRate} />);
-  const rerender = (next: SynthView, rate = sampleRate) =>
-    view.rerender(<SynthPanel {...props} synth={next} sampleRate={rate} />);
+  const view = render(<SynthPanel settings={settings} sampleRate={sampleRate} onChange={onChange} />);
+  const rerender = (next: SynthValues, rate = sampleRate) =>
+    view.rerender(
+      <SynthPanel settings={synthSettings(next, SYNTH)} sampleRate={rate} onChange={onChange} />,
+    );
   return { onChange, rerender };
 }
 
@@ -53,7 +52,7 @@ function expectCurve(name: "filter" | "envelope", expected: Point[]) {
 
 const filterAt = (cutoffHz: number, resonance: number, rate = 48_000) =>
   filterCurve(cutoffHz, resonance, rate, DRAWING_WIDTH, DRAWING_HEIGHT);
-const envelopeOf = (synth: SynthView) => envelopeShape(synth, DRAWING_WIDTH, DRAWING_HEIGHT).points;
+const envelopeOf = (synth: SynthValues) => envelopeShape(synth, DRAWING_WIDTH, DRAWING_HEIGHT).points;
 const marks = (name: "filter" | "envelope") => drawing(name).querySelectorAll(".dimension");
 
 describe("SynthPanel's drawings", () => {
@@ -177,5 +176,32 @@ describe("SynthPanel's drawings", () => {
       const key = screen.getByRole("radio", { name }).closest("label")!;
       expect(key.querySelector("svg.cycle path")).toHaveAttribute("d", expect.stringMatching(/^M/));
     }
+  });
+});
+
+describe("SynthPanel's controls", () => {
+  it("draws each control from the setting Rust describes: its label, choices, limits, scale and default", async () => {
+    // A description unlike today's, so a panel that kept its own would show it.
+    const settings = synthSettings(SYNTH).map((setting): SynthSettingView => {
+      if (setting.kind === "choice") {
+        return { ...setting, label: "Shape", options: setting.options.slice(0, 2), value: "sine" };
+      }
+      if (setting.name !== "resonance") return setting;
+      return { ...setting, label: "Emphasis", limits: [0, 2], value: 0.5, default: 1.5 };
+    });
+    const { onChange } = renderSettings(settings);
+
+    expect(screen.getByRole("radiogroup", { name: "Shape" })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio").map((radio) => radio.getAttribute("value"))).toEqual([
+      "sine",
+      "triangle",
+    ]);
+    const emphasis = slider("Emphasis");
+    expect(screen.queryByRole("slider", { name: /^Resonance/ })).toBeNull();
+    // A quarter of the way along a linear 0 to 2.
+    expect(knobAt(emphasis)).toBeCloseTo(0.25, 6);
+    expect(emphasis).toHaveAttribute("aria-valuetext", "0.50");
+    fireEvent.doubleClick(emphasis);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ name: "resonance", value: 1.5 }, undefined));
   });
 });
