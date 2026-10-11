@@ -1,0 +1,4 @@
+#!/bin/sh
+# Breaks the code on purpose, runs the tests and puts it back. `scripts/mutate
+# --help` says how. The logic is in app/scripts/mutate.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/mutateCli.ts" "$@"
