@@ -290,7 +290,7 @@ export async function check(
   for (const [name, outcome] of outcomes) print(line(width, name, outcome, root));
   for (const p of passedBefore) {
     const at = readStamp(root, p.key)?.at;
-    const when = at ? `, ${new Date(at).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}` : "";
+    const when = at ? `, ${new Date(at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
     print(line(width, p.job.name, { ok: true, seconds: 0, note: `passed before${when}` }, root));
   }
   if (unchanged.length > 0) {
