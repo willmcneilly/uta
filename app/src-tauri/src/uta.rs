@@ -677,6 +677,7 @@ impl Uta {
         let copy = original.copy(
             id,
             project.next_track_name(original.source().kind()),
+            uta_core::EffectId::random,
             ClipId::random,
             NoteId::random,
         );

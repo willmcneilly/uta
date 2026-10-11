@@ -395,6 +395,7 @@ fn changing_tracks_and_clips_while_several_play_does_not_allocate() {
                 let copy = source.copy(
                     TrackId::random(),
                     project.next_track_name(source.source().kind()),
+                    uta_core::EffectId::random,
                     ClipId::random,
                     NoteId::random,
                 );
@@ -559,6 +560,7 @@ fn a_song_render_that_chases_jumps_and_wraps_while_editing_does_not_allocate() {
                         track: source.copy(
                             TrackId::random(),
                             project.next_track_name(source.source().kind()),
+                            uta_core::EffectId::random,
                             ClipId::random,
                             NoteId::random,
                         ),
