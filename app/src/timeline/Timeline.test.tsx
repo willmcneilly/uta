@@ -111,7 +111,7 @@ beforeEach(() => {
     clip("clip-1", 0, 4 * BAR, [note("n1", 60, 0), note("n2", 67, BAR)]),
   ]);
   const second = withSynth(trackView("track-2", "Synth 2", [clip("clip-2", 8 * BAR, 2 * BAR)]), {
-    waveform: "square",
+    osc1Wave: "pulse",
   });
   project = projectView({ tracks: [first, second], songEnd: 11 * BAR });
   beforeGesture = new Map();
@@ -725,7 +725,7 @@ describe("the timeline", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
       const synth = screen.getByRole("region", { name: "Synth" });
-      expect(within(synth).getByRole("radio", { name: "Square" })).toBeChecked();
+      expect(within(synth).getByRole("radio", { name: "Pulse" })).toBeChecked();
     });
 
     it("opens a clip in the Notes tab on a double-click", async () => {

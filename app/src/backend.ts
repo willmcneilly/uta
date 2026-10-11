@@ -139,6 +139,8 @@ export interface NumberSettingView<N extends string = string> extends Described<
   limits: Limits;
   /** A new track's value, which its control resets to. */
   default: number;
+  /** The step between values, for a setting that takes only some: 1 for an octave. */
+  step?: number;
 }
 
 /** A setting that's one of a few choices, such as the synth's waveform. */
@@ -152,15 +154,28 @@ export interface ChoiceSettingView<N extends string = string, V extends string =
   default: V;
 }
 
+/** A setting that's on or off, such as the synth's Osc retrigger. */
+export interface ToggleSettingView<N extends string = string> extends Described<N> {
+  kind: "toggle";
+  value: boolean;
+  /** Whether it's on for a new track, which a reset sets. */
+  default: boolean;
+}
+
 /**
  * The unit a setting is in. A fraction runs from 0 to 1 and reads as a
  * percentage: how much of something, such as Snappy. An amount runs from 0
- * to 1 too, but reads as itself: the filter's resonance.
+ * to 1 too, but reads as itself: the filter's resonance. Semitones and
+ * octaves are pitch offsets.
  */
-export type Unit = "hz" | "seconds" | "db" | "fraction" | "amount";
+export type Unit = "hz" | "seconds" | "db" | "fraction" | "amount" | "semitones" | "octaves";
 
-/** How a control moves: in even steps, or in even ratios, the way you hear frequencies and times. */
-export type Scale = "log" | "linear";
+/**
+ * How a control moves: in even steps, in even ratios (the way you hear
+ * frequencies and times), or cubed from the centre, so it's fine near zero
+ * and coarse towards the ends (oscillator 2's Pitch).
+ */
+export type Scale = "log" | "linear" | "cubic";
 
 /** Which kind of track to add. */
 export type TrackKind = SourceView["kind"];
@@ -233,22 +248,41 @@ export interface MixerLimits {
   pan: Limits;
 }
 
-export type Waveform = "sine" | "triangle" | "saw" | "square";
+export type Waveform = "sine" | "triangle" | "saw" | "pulse";
 
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
 /** One of the synth's settings, described, with its value. */
 export type SynthSettingView =
-  | ChoiceSettingView<"waveform", Waveform>
-  | NumberSettingView<SynthNumber["name"]>;
+  | ChoiceSettingView<"osc1_wave", Waveform>
+  | ChoiceSettingView<"osc2_wave", Waveform>
+  | NumberSettingView<SynthNumber["name"]>
+  | ToggleSettingView<"osc_retrigger">;
 
 /** One synth setting and its new value, as `set_synth_param` takes it. */
-export type SynthParam = { name: "waveform"; value: Waveform } | SynthNumber;
+export type SynthParam =
+  | { name: "osc1_wave" | "osc2_wave"; value: Waveform }
+  | SynthNumber
+  | { name: "osc_retrigger"; value: boolean };
 
 /** A synth setting that's a number. */
 export interface SynthNumber {
-  name: "cutoff_hz" | "resonance" | "attack_seconds" | "decay_seconds" | "sustain" | "release_seconds";
+  name:
+    | "osc1_octave"
+    | "osc2_octave"
+    | "osc2_pitch_semitones"
+    | "sub_octave"
+    | "osc1_level"
+    | "osc2_level"
+    | "sub_level"
+    | "noise_level"
+    | "cutoff_hz"
+    | "resonance"
+    | "attack_seconds"
+    | "decay_seconds"
+    | "sustain"
+    | "release_seconds";
   value: number;
 }
 

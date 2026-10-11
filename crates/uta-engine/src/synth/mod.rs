@@ -506,7 +506,8 @@ impl Synth {
     ///
     /// Each voice mixes its two oscillators, the sub and its noise at the
     /// mixer's levels, and filters the mix. A source whose level is zero
-    /// isn't worked out, though its oscillator and noise run on.
+    /// isn't worked out, and oscillator 2 and the noise wait where they are
+    /// until it's turned up: they cost nothing while they're off.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         self.advance_settings();
@@ -528,7 +529,7 @@ impl Synth {
         if levels != self.gain_for {
             self.update_gain(levels);
         }
-        let gain = self.gain;
+        let mix_gain = self.gain;
         let [osc1_level, osc2_level, sub_level, noise_level] = levels;
         self.running += 1;
 
@@ -539,28 +540,29 @@ impl Synth {
                 continue;
             }
             voice.osc1.set_increment(voice.increment * osc1_ratio);
-            voice.osc2.set_increment(voice.increment * osc2_ratio);
             let mut mix = 0.0;
             if osc1_level != 0.0 {
                 mix = osc1_level * osc1_wave.of(|wave| voice.osc1.value(wave));
             }
             if osc2_level != 0.0 {
+                voice.osc2.set_increment(voice.increment * osc2_ratio);
                 mix += osc2_level * osc2_wave.of(|wave| voice.osc2.value(wave));
+                voice.osc2.advance();
             }
             if sub_level != 0.0 {
                 let cycle = voice.osc1_cycle;
                 mix += sub_level
                     * sub_octave.of(|octave| voice.osc1.sub_value(cycle, sub_divide(octave)));
             }
-            let noise = voice.noise.next_sample();
             if noise_level != 0.0 {
-                mix += noise_level * noise;
+                mix += noise_level * voice.noise.next_sample();
             }
+            // Oscillator 1 always runs, as the sub and its place in the
+            // cycle come from it.
             if voice.osc1.advance() {
                 voice.osc1_cycle = (voice.osc1_cycle + 1) % 4;
             }
-            voice.osc2.advance();
-            let filtered = voice.filter.process(mix * gain, &self.coefficients);
+            let filtered = voice.filter.process(mix * mix_gain, &self.coefficients);
             let mut gain = voice.envelope.next_level(sustain, &self.times) as f32;
             let mut faded_out = false;
             if voice.take_over_remaining > 0 {
