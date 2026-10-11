@@ -2,8 +2,10 @@
 // uta-notion skill's ntn.sh (Will's personal workspace), GitHub through gh.
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanEnv } from "./git.ts";
+import type { Tree } from "./evidence.ts";
+import { cleanEnv, git, tryGit } from "./git.ts";
 import {
   type Action,
   type Check,
@@ -22,6 +24,32 @@ type Paged<T> = { results: T[]; has_more: boolean; next_cursor: string | null };
 type PageJson = { id: string; properties: Record<string, Record<string, unknown>> };
 
 const plain = (text: RichText | undefined) => (text ?? []).map((t) => t.plain_text).join("");
+
+/**
+ * The checkout as a `Tree`: its working tree, counting files not yet added
+ * (but not ignored ones), or with `ref`, that commit.
+ */
+export function gitTree(checkout: string, ref?: string): Tree {
+  let files: string[] | undefined;
+  return {
+    files() {
+      files ??= (ref ? git(checkout, ["ls-tree", "-r", "--name-only", ref]) : git(checkout, ["ls-files", "--cached", "--others", "--exclude-standard"]))
+        .split("\n")
+        .filter(Boolean);
+      return files;
+    },
+    wordsFound(words) {
+      const patterns = words.flatMap((w) => ["-e", w]);
+      const where = ref ? [ref] : ["--untracked"];
+      // git grep exits 1 when nothing matches.
+      const out = tryGit(checkout, ["grep", "-I", "-o", "-h", "-w", "-F", ...patterns, ...where, "--", "."]) ?? "";
+      return new Set(out.split("\n").filter(Boolean));
+    },
+    read: (path) => (ref ? git(checkout, ["show", `${ref}:${path}`]) : readFileSync(join(checkout, path), "utf8")),
+    // By the working tree's ignore rules, whatever the ref: they say what's local state.
+    ignored: (path) => tryGit(checkout, ["check-ignore", "--no-index", "-q", path]) !== undefined,
+  };
+}
 
 export function realServices(checkout: string): Services & { run(dryRun: boolean): Run } {
   const ntnPath = join(checkout, ".claude", "skills", "uta-notion", "ntn.sh");
@@ -130,7 +158,8 @@ export function realServices(checkout: string): Services & { run(dryRun: boolean
         headRefOid: string;
         statusCheckRollup: { name?: string; context?: string; status?: string; conclusion?: string; state?: string }[];
         reviews: { body: string; submittedAt: string }[];
-      }>("pr", "view", String(number), "--json", "number,url,state,headRefName,headRefOid,statusCheckRollup,reviews");
+        body: string;
+      }>("pr", "view", String(number), "--json", "number,url,state,headRefName,headRefOid,statusCheckRollup,reviews,body");
       const checks: Check[] = pr.statusCheckRollup.map((c) => ({
         name: c.name ?? c.context ?? "a check",
         status: c.status ?? undefined,
@@ -138,7 +167,21 @@ export function realServices(checkout: string): Services & { run(dryRun: boolean
         state: c.state ?? undefined,
       }));
       const reviews = [...pr.reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)).map((r) => r.body);
-      return { number: pr.number, url: pr.url, state: pr.state, branch: pr.headRefName, headSha: pr.headRefOid, checks, reviews };
+      return {
+        number: pr.number,
+        url: pr.url,
+        state: pr.state,
+        branch: pr.headRefName,
+        headSha: pr.headRefOid,
+        checks,
+        reviews,
+        body: pr.body,
+      };
+    },
+
+    markdown(pageId) {
+      const page = ntnJson<{ markdown: string; truncated: boolean }>("api", `v1/pages/${pageId}/markdown`);
+      return { markdown: page.markdown, truncated: page.truncated };
     },
 
     run: (dryRun) => (action: Action) => {

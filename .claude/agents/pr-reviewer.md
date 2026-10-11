@@ -78,6 +78,8 @@ Each finding gets a severity:
 7. **Test quality.** Behaviour rather than implementation details? Would they catch a regression? Deterministic, with no timing flakiness?
 8. **Code quality.** Readable to the next agent, consistent with the surrounding code, no dead code or debug leftovers, no clear simplification missed.
 9. **Honesty of the record.** Do the PR's evidence and the ticket's verification notes match what you found? An overstated claim is blocking until it's corrected.
+   - **Start with `evidence-check`.** `review-setup` saves the PR body it printed (as it was at the commit, when you were given one), and under "PR body" prints the command that checks it against the commit under review. Run that command as printed. It lists every test name, path and command the body quotes that isn't in the branch, and any total of tests. Each reference it lists is **blocking**, quoted exactly as it printed it. A total ("509 tests") is **should fix**: the evidence names the tests, it doesn't count them. Then check the claims themselves, which it can't.
+   - The ticket's ticks and Verification notes are made from the PR body by `scripts/ticket sync`, so the PR body is the record. If the ticks or notes don't match it, the implementer didn't sync after a change: **should fix**.
 10. **Golden WAVs.** Did any file under a `golden` directory change? CLAUDE.md says a human approves every change to one, so it always goes to Will.
 
 ### On a re-review

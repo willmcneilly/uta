@@ -3,6 +3,10 @@
 // fake Notion and GitHub. ticketServices.ts has the real ones, and
 // ticketCli.ts the command line.
 
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { type Problem, type Tree, evidenceProblems } from "./evidence.ts";
+
 export type Ticket = {
   pageId: string;
   id: number;
@@ -30,6 +34,8 @@ export type Pr = {
   checks: Check[];
   /** Every review's body, oldest first. */
   reviews: string[];
+  /** The PR's description. */
+  body: string;
 };
 
 /** What the commands read. Reads happen in a dry run too: they decide what it would do. */
@@ -39,6 +45,8 @@ export type Services = {
   body(pageId: string): string;
   project(pageId: string): Project;
   todos(pageId: string): Todo[];
+  /** A page's body in Notion's own Markdown, as its markdown endpoint gives it: what an update_content edit matches against. */
+  markdown(pageId: string): { markdown: string; truncated: boolean };
   /** Every PR's state, by number. */
   prStates(): Map<number, PrState>;
   pr(number: number): Pr;
@@ -463,4 +471,202 @@ export function newDecision(services: Services, run: Run, decision: NewDecision)
   if (response === undefined) return ["Notion gives it its D-n when it's created."];
   const { id, url } = decisionNumber(response);
   return [`${id}  ${url}`, `Mark the code with: provisional: ${id}`];
+}
+
+// ---------------------------------------------------------------- sync
+
+/** A PR body's evidence problems, one per line, for a refusal. */
+export function describeProblems(file: string, problems: Problem[]): string {
+  return [`${file} has evidence to fix:`, ...problems.map((p) => `  ${p.ref}  ${p.why}`)].join("\n");
+}
+
+/** A Markdown body's level-2 sections, by heading, each with the lines under it. */
+function sections(markdown: string): { heading: string; lines: string[] }[] {
+  const out: { heading: string; lines: string[] }[] = [];
+  let fenced = false;
+  for (const line of markdown.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) fenced = !fenced;
+    const heading = !fenced && /^##\s+(.*?)\s*#*\s*$/.exec(line);
+    if (heading) out.push({ heading: heading[1], lines: [] });
+    else out.at(-1)?.lines.push(line);
+  }
+  return out;
+}
+
+const section = (markdown: string, heading: RegExp) => sections(markdown).find((s) => heading.test(s.heading));
+
+const CRITERIA = /^acceptance criteria\b/i;
+const FOR_WILL = /^for will to try\b/i;
+const FOLLOW_UPS = /^follow-?ups\b/i;
+
+export type Criterion = { text: string; checked: boolean };
+
+/** The top-level "- [x]" and "- [ ]" lines under a PR body's "## Acceptance criteria". */
+export function prCriteria(markdown: string): Criterion[] {
+  const lines = section(markdown, CRITERIA)?.lines ?? [];
+  return lines.flatMap((line) => {
+    const match = /^[-*] \[([ xX])\] (.*)$/.exec(line);
+    return match ? [{ text: match[2], checked: match[1] !== " " }] : [];
+  });
+}
+
+/**
+ * Each ticket checkbox with the PR criterion for it: the PR's line starts
+ * with the checkbox's text (ignoring case, Markdown marks and a final full
+ * stop), and the longest such text wins. Throws a Refusal unless every PR
+ * criterion names one checkbox and every checkbox is named once.
+ */
+export function pairCriteria(todos: Todo[], criteria: Criterion[]): { todo: Todo; criterion: Criterion }[] {
+  const stem = (todo: Todo) => normalise(todo.text).replace(/[.:;,!?]+$/, "");
+  const problems: string[] = [];
+  const pairs: { todo: Todo; criterion: Criterion }[] = [];
+  for (const criterion of criteria) {
+    const line = normalise(criterion.text);
+    const todo = todos
+      .filter((t) => stem(t) && line.startsWith(stem(t)))
+      .sort((a, b) => stem(b).length - stem(a).length)[0];
+    if (!todo) {
+      const start = criterion.text.length > 80 ? `${criterion.text.slice(0, 80)}…` : criterion.text;
+      problems.push(`No ticket criterion starts the PR's "${start}".`);
+    }
+    else if (pairs.some((p) => p.todo === todo)) problems.push(`Two of the PR's criteria start with "${todo.text}".`);
+    else pairs.push({ todo, criterion });
+  }
+  for (const todo of todos.filter((t) => !pairs.some((p) => p.todo === t))) {
+    problems.push(`The PR's acceptance criteria leave out "${todo.text}".`);
+  }
+  if (criteria.length === 0) problems.push(`The PR body has no "- [x]" or "- [ ]" lines under "## Acceptance criteria".`);
+  if (problems.length > 0) {
+    const list = todos.map((t) => `    ${t.text}`).join("\n");
+    throw new Refusal(
+      `${problems.join("\n")}\n  Start each of the PR's criteria with the ticket's text for it, then the evidence. The ticket's criteria:\n${list || "    (none)"}`,
+    );
+  }
+  return pairs;
+}
+
+/**
+ * The ticket's Verification notes, made from the PR body: its acceptance
+ * criteria (as ✓ and ✗, so they aren't checkboxes the ticket would count),
+ * "For Will to try" and follow-ups. The last line carries a hash of the rest,
+ * which is how a second sync knows the notes are already up to date.
+ */
+export function verificationNotes(markdown: string, pr: { number: number; url: string }): { notes: string; hash: string } {
+  const parts: string[] = [`From [PR #${pr.number}](${pr.url}).`];
+  for (const [heading, name, required] of [
+    [CRITERIA, "Acceptance criteria", true],
+    [FOR_WILL, "For Will to try", true],
+    [FOLLOW_UPS, "Follow-ups", false],
+  ] as const) {
+    const found = section(markdown, heading);
+    if (!found) {
+      if (required) throw new Refusal(`The PR body has no "## ${name}" section.`);
+      continue;
+    }
+    // The PR's attribution line ends its last section, and isn't evidence.
+    const lines = found.lines.filter((line) => !/^🤖 Generated with/.test(line)).map((line) =>
+      line
+        .replace(/^(\s*)[-*] \[[xX]\] /, "$1- ✓ ")
+        .replace(/^(\s*)[-*] \[ \] /, "$1- ✗ ")
+        // The notes are under a level-2 heading, so the PR's sections go one level down and theirs become bold.
+        .replace(/^#{3,6}\s+(.*?)\s*#*\s*$/, "**$1**"),
+    );
+    parts.push(`### ${found.heading}\n\n${lines.join("\n").trim()}`);
+  }
+  const body = parts.join("\n\n");
+  const hash = createHash("sha256").update(body).digest("hex").slice(0, 12);
+  return { notes: `${body}\n\nSynced by scripts/ticket sync · ${hash}`, hash };
+}
+
+const NOTES_HEADING = /^##\s+Verification notes\s*$/i;
+
+/**
+ * The Verification notes section of a page's Notion Markdown, from its
+ * heading to the next heading of level 1 or 2 outside a code block (a shell
+ * comment in one is a `#` line too).
+ */
+export function notesSection(markdown: string): string | undefined {
+  const lines = markdown.split("\n");
+  const start = lines.findIndex((line) => NOTES_HEADING.test(line.trim()));
+  if (start === -1) return undefined;
+  let fenced = false;
+  const after = lines.slice(start + 1).findIndex((line) => {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) fenced = !fenced;
+    return !fenced && /^#{1,2}\s/.test(line);
+  });
+  return lines.slice(start, after === -1 ? undefined : start + 1 + after).join("\n");
+}
+
+/** A PR body as GitHub may hand it back: CRLF line ends, trailing space. */
+const sameBody = (a: string, b: string) => a.replace(/\r\n/g, "\n").trimEnd() === b.replace(/\r\n/g, "\n").trimEnd();
+
+/**
+ * Makes the ticket and its PR match the PR body in `file` (whose text is
+ * `prBody`), changing only what differs. Everything is checked before
+ * anything changes.
+ */
+export function sync(services: Services, run: Run, tree: Tree, id: number, number: number, file: string, prBody: string): string[] {
+  const { ticket } = find(services, id);
+  if (ticket.status === "Backlog" || ticket.status === "Ready") {
+    throw new Refusal(`Not syncing: ${label(id)} is ${ticket.status}. Claim it first.`);
+  }
+  const linked = prNumber(ticket.pr);
+  if (linked !== undefined && linked !== number) throw new Refusal(`Not syncing: ${label(id)} links PR #${linked}, not #${number}.`);
+  const problems = evidenceProblems(prBody, tree);
+  if (problems.length > 0) throw new Refusal(`Not syncing: ${describeProblems(file, problems)}`);
+
+  const pairs = pairCriteria(services.todos(ticket.pageId), prCriteria(prBody));
+  const pr = services.pr(number);
+  const { notes, hash } = verificationNotes(prBody, pr);
+  const page = services.markdown(ticket.pageId);
+  if (page.truncated) throw new Refusal(`Not syncing: Notion cut ${label(id)}'s page short, so its Verification notes can't be matched.`);
+  const current = notesSection(page.markdown);
+  if (current === undefined) throw new Refusal(`Not syncing: ${label(id)} has no "## Verification notes" heading.`);
+
+  const actions: Action[] = [];
+  if (!sameBody(pr.body, prBody)) {
+    actions.push({
+      summary: `Update PR #${number}'s description from ${file}.`,
+      // Not gh pr edit: it fails on this repo, asking for the retired classic Projects field.
+      call: { tool: "gh", args: ["api", `repos/{owner}/{repo}/pulls/${number}`, "-X", "PATCH", "-F", `body=@${resolve(file)}`] },
+    });
+  }
+  for (const { todo, criterion } of pairs) {
+    if (todo.checked === criterion.checked) continue;
+    actions.push({
+      summary: `${criterion.checked ? "Tick" : "Untick"}: ${todo.text}`,
+      call: { tool: "ntn.sh", args: ["api", `v1/blocks/${todo.blockId}`, "-X", "PATCH", "-d", json({ to_do: { checked: criterion.checked } })] },
+    });
+  }
+  const replacesNotes = !current.includes(hash);
+  if (replacesNotes) {
+    const heading = current.split("\n")[0];
+    actions.push({
+      summary: `Replace ${label(id)}'s Verification notes with PR #${number}'s criteria, "For Will to try" and follow-ups.`,
+      call: {
+        tool: "ntn.sh",
+        args: [
+          "api",
+          `v1/pages/${ticket.pageId}/markdown`,
+          "-X",
+          "PATCH",
+          "-d",
+          json({ type: "update_content", update_content: { content_updates: [{ old_str: current, new_str: `${heading}\n\n${notes}` }] } }),
+        ],
+      },
+    });
+  }
+  const properties: Record<string, unknown> = {};
+  if (ticket.pr !== pr.url) properties.PR = { url: pr.url };
+  if (ticket.status !== "In Review" && ticket.status !== "Done") properties.Status = { status: { name: "In Review" } };
+  if (Object.keys(properties).length > 0) {
+    const what = [properties.PR && `PR to ${pr.url}`, properties.Status && "status to In Review"].filter(Boolean).join(" and ");
+    actions.push({ summary: `Set ${label(id)}'s ${what}.`, call: { tool: "ntn.sh", args: ["api", `v1/pages/${ticket.pageId}`, "-X", "PATCH", "-d", json({ properties })] } });
+  }
+
+  const ran = actions.map(run);
+  if (actions.length === 0) return [`Nothing to change: PR #${number} and ${label(id)} already match ${file}.`];
+  // A dry run prints the new notes, which its JSON call hides.
+  if (replacesNotes && ran.every((r) => r === undefined)) return ["", "The Verification notes would be:", ...notes.split("\n").map((l) => `  ${l}`)];
+  return [];
 }

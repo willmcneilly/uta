@@ -2,7 +2,7 @@
 // reviewSetupCli.ts has the command line and its help. The functions above
 // `reviewSetup` are pure, so the tests can drive them without GitHub or git.
 
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { nodeModulesCurrent } from "./check.ts";
 import { JOBS } from "./checkJobs.ts";
@@ -245,6 +245,9 @@ export function reviewSetup(cwd: string, args: Args): string {
   fetch(root, args.pr, commit);
   const path = worktreePath(main, args.pr);
   const worktree = prepareWorktree(root, path, commit);
+  // In the worktree's git folder, not the worktree: evidence-check reads untracked files there as code.
+  const bodyFile = join(git(path, ["rev-parse", "--absolute-git-dir"]), "pr-body.md");
+  writeFileSync(bodyFile, `${body.trim()}\n`);
   // Here rather than by the post-checkout hook, which an older commit doesn't have.
   const warmed: string[] = [];
   warm(path, (text) => warmed.push(text));
@@ -308,6 +311,8 @@ export function reviewSetup(cwd: string, args: Args): string {
     ci,
     "",
     "==== PR body ====",
+    "",
+    `Saved to ${bodyFile}. Check its references against the commit: ${join(SCRIPTS, "ticket")} evidence-check ${bodyFile} --ref ${commit}`,
     "",
     body.trim(),
     "",

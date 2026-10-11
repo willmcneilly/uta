@@ -1,5 +1,7 @@
 // @vitest-environment node
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { Tree } from "./evidence.ts";
 import {
   type Action,
   type Check,
@@ -12,6 +14,10 @@ import {
   type Todo,
   ciState,
   claim,
+  notesSection,
+  pairCriteria,
+  sync,
+  verificationNotes,
   commandLine,
   dependencies,
   matchTodos,
@@ -30,7 +36,7 @@ const PROJECT = "project-page";
 /** A fake Notion and GitHub: tickets are [id, status, depends on, PR state] with PR n = 10000 + id. */
 function fake(
   rows: [number, string, number[], PrState | "none"][],
-  extra: { project?: Partial<Project>; todos?: Todo[]; pr?: Partial<Pr> } = {},
+  extra: { project?: Partial<Project>; todos?: Todo[]; pr?: Partial<Pr>; markdown?: string; tickets?: Partial<Ticket>[] } = {},
 ): Services {
   const tickets: Ticket[] = rows.map(([id, status, , pr]) => ({
     pageId: `page-${id}`,
@@ -40,6 +46,7 @@ function fake(
     type: "Chore",
     pr: pr === "none" ? undefined : `https://github.com/willmcneilly/uta/pull/${10000 + id}`,
     projectId: PROJECT,
+    ...extra.tickets?.find((t) => t.id === id),
   }));
   const bodies = new Map(
     rows.map(([id, , deps]) => [
@@ -55,6 +62,7 @@ function fake(
     body: (pageId) => bodies.get(pageId) ?? "",
     project: (pageId) => ({ pageId, name: "Tooling", status: "Active", ...extra.project }),
     todos: () => extra.todos ?? [],
+    markdown: () => ({ markdown: extra.markdown ?? "## Goal\nSomething.\n## Verification notes", truncated: false }),
     prStates: () => states,
     pr: (number) => ({
       number,
@@ -64,6 +72,7 @@ function fake(
       headSha: "abcdef1234567",
       checks: [{ name: "Rust", status: "COMPLETED", conclusion: "SUCCESS" }],
       reviews: ["🤖 Claude (review):\n\n**Verdict: Ready to merge.**"],
+      body: "",
       ...extra.pr,
     }),
   };
@@ -407,5 +416,156 @@ describe("commandLine", () => {
     expect(commandLine({ tool: "ntn.sh", args: ["api", "v1/comments", "-d", `{"a":"it's"}`] })).toBe(
       `.claude/skills/uta-notion/ntn.sh api v1/comments -d '{"a":"it'\\''s"}'`,
     );
+  });
+});
+
+describe("pairCriteria", () => {
+  const todos: Todo[] = [
+    { blockId: "b1", text: "`evidence-check` passes on a recent PR.", checked: false },
+    { blockId: "b2", text: "Process log entry added", checked: true },
+  ];
+
+  it("pairs each PR line with the checkbox whose text starts it, ignoring bold, backticks and the full stop", () => {
+    const pairs = pairCriteria(todos, [
+      { text: "**Process log entry added:** [link](https://x.y).", checked: true },
+      { text: "**`evidence-check` passes on a recent PR.** I ran it on #58.", checked: false },
+    ]);
+    expect(pairs.map((p) => p.todo.blockId)).toEqual(["b2", "b1"]);
+  });
+
+  it("refuses a PR line no checkbox starts, and a checkbox the PR leaves out, listing the ticket's criteria", () => {
+    expect(() => pairCriteria(todos, [{ text: "**Evidence checking works.**", checked: true }])).toThrow(
+      /No ticket criterion starts the PR's "\*\*Evidence checking works\.\*\*"[\s\S]*leave out "`evidence-check` passes[\s\S]*Process log entry added/,
+    );
+  });
+});
+
+describe("verificationNotes", () => {
+  const body = [
+    "Intro, not copied.",
+    "## Acceptance criteria",
+    "- [x] **Done thing.** `a_test`.",
+    "- [ ] **Not done.** Because.",
+    "### A subsection",
+    "## For Will to try",
+    "1. Open it.",
+    "## Design decisions",
+    "None.",
+    "## Follow-ups",
+    "- Later.",
+  ].join("\n");
+
+  it("copies the criteria as ✓ and ✗, For Will to try and follow-ups, one level down, ending with a hash", () => {
+    const { notes, hash } = verificationNotes(body, { number: 63, url: "https://github.com/willmcneilly/uta/pull/63" });
+    expect(notes).toBe(
+      [
+        "From [PR #63](https://github.com/willmcneilly/uta/pull/63).",
+        "",
+        "### Acceptance criteria",
+        "",
+        "- ✓ **Done thing.** `a_test`.",
+        "- ✗ **Not done.** Because.",
+        "**A subsection**",
+        "",
+        "### For Will to try",
+        "",
+        "1. Open it.",
+        "",
+        "### Follow-ups",
+        "",
+        "- Later.",
+        "",
+        `Synced by scripts/ticket sync · ${hash}`,
+      ].join("\n"),
+    );
+    expect(verificationNotes(body.replace("Because", "Since"), { number: 63, url: "u" }).hash).not.toBe(hash);
+  });
+
+  it("refuses a body without For Will to try", () => {
+    expect(() => verificationNotes("## Acceptance criteria\n- [x] A", { number: 1, url: "u" })).toThrow(/For Will to try/);
+  });
+});
+
+describe("notesSection", () => {
+  it("runs from the heading to the next level-1 or level-2 heading, or the end", () => {
+    expect(notesSection("## Goal\nG\n## Verification notes\n- a\n### Sub\n- b")).toBe("## Verification notes\n- a\n### Sub\n- b");
+    expect(notesSection("## Verification notes\n- a\n## After\nx")).toBe("## Verification notes\n- a");
+    expect(notesSection("## Goal")).toBeUndefined();
+  });
+
+  it("doesn't end at a # line inside a code block", () => {
+    const notes = "## Verification notes\n### For Will to try\n```bash\n# build it first\ncargo build\n```\n- after";
+    expect(notesSection(`## Goal\nG\n${notes}`)).toBe(notes);
+  });
+});
+
+describe("sync", () => {
+  const everything: Tree = { files: () => [], wordsFound: (words) => new Set(words), read: () => "", ignored: () => false };
+  const todos: Todo[] = [
+    { blockId: "b1", text: "First criterion", checked: false },
+    { blockId: "b2", text: "Second criterion", checked: true },
+  ];
+  const body = [
+    "Changed things.",
+    "## Acceptance criteria",
+    "- [x] **First criterion.** `first_test` proves it.",
+    "- [ ] **Second criterion.** Not yet.",
+    "## For Will to try",
+    "Nothing.",
+  ].join("\n");
+  const url = "https://github.com/willmcneilly/uta/pull/10007";
+
+  it("updates the PR body, ticks to match, replaces the notes, and sets the PR link and In Review", () => {
+    const { run, actions } = recorder();
+    const out = sync(fake([[7, "In Progress", [], "none"]], { todos }), run, everything, 7, 10007, "pr.md", body);
+    expect(out.slice(0, 3)).toEqual(["", "The Verification notes would be:", "  From [PR #10007](https://github.com/willmcneilly/uta/pull/10007)."]);
+    expect(summaries(actions)).toEqual([
+      "Update PR #10007's description from pr.md.",
+      "Tick: First criterion",
+      "Untick: Second criterion",
+      `Replace UTA-7's Verification notes with PR #10007's criteria, "For Will to try" and follow-ups.`,
+      `Set UTA-7's PR to ${url} and status to In Review.`,
+    ]);
+    expect(actions[0].call.args).toEqual(["api", "repos/{owner}/{repo}/pulls/10007", "-X", "PATCH", "-F", `body=@${resolve("pr.md")}`]);
+    const notes = JSON.parse(actions[3].call.args[5]) as { update_content: { content_updates: { old_str: string; new_str: string }[] } };
+    expect(notes.update_content.content_updates[0].old_str).toBe("## Verification notes");
+    expect(notes.update_content.content_updates[0].new_str).toMatch(/^## Verification notes\n\nFrom \[PR #10007\][\s\S]*- ✗ \*\*Second criterion/);
+  });
+
+  it("changes nothing when everything already matches", () => {
+    const { hash, notes } = verificationNotes(body, { number: 10007, url });
+    const services = fake([[7, "In Review", [], "OPEN"]], {
+      todos: [
+        { ...todos[0], checked: true },
+        { ...todos[1], checked: false },
+      ],
+      pr: { body: `${body.replace(/\n/g, "\r\n")}\n` },
+      markdown: `## Goal\nG\n## Verification notes\n${notes}`,
+    });
+    expect(hash).toHaveLength(12);
+    const { run, actions } = recorder();
+    expect(sync(services, run, everything, 7, 10007, "pr.md", body)).toEqual(["Nothing to change: PR #10007 and UTA-7 already match pr.md."]);
+    expect(actions).toEqual([]);
+  });
+
+  it("refuses, changing nothing, when the body quotes what isn't in the branch", () => {
+    const nothing: Tree = { ...everything, wordsFound: () => new Set() };
+    const { run, actions } = recorder();
+    expect(() => sync(fake([[7, "In Progress", [], "none"]], { todos }), run, nothing, 7, 10007, "pr.md", body)).toThrow(
+      /pr\.md has evidence to fix:\n {2}first_test {2}isn't in the code/,
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it("refuses a ticket that isn't claimed, or links another PR", () => {
+    const { run } = recorder();
+    expect(() => sync(fake([[7, "Ready", [], "none"]], { todos }), run, everything, 7, 10007, "pr.md", body)).toThrow(/Ready\. Claim it first/);
+    expect(() => sync(fake([[7, "In Review", [], "OPEN"]], { todos }), run, everything, 7, 99, "pr.md", body)).toThrow(/links PR #10007, not #99/);
+  });
+
+  it("leaves a Done ticket's status alone", () => {
+    const { run, actions } = recorder();
+    sync(fake([[7, "Done", [], "MERGED"]], { todos }), run, everything, 7, 10007, "pr.md", body);
+    expect(summaries(actions).some((s) => s.includes("status"))).toBe(false);
   });
 });
