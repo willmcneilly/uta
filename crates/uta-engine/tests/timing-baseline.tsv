@@ -1,33 +1,33 @@
 # The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.
-# Recorded on 11 Oct 2026 at c0064ae, on MacBook-Pro.
+# Recorded on 11 Oct 2026 at 9e113b8, on MacBook-Pro.
 load	block	p50_us	p99_us
-Demo loop	32	1.83	21.62
-Demo loop	128	6.62	57.75
-Demo loop	1024	58.42	341.62
-16 voices	32	3.54	44.08
-16 voices	128	13.92	105.58
-16 voices	1024	111.00	594.50
-16 full voices	32	6.54	66.88
-16 full voices	128	27.46	179.17
-16 full voices	1024	222.08	1134.83
-Demo song	32	3.04	40.25
-Demo song	128	12.88	75.62
-Demo song	1024	102.04	455.71
-32 tracks × 8 voices	32	49.50	235.67
-32 tracks × 8 voices	128	197.67	869.50
-32 tracks × 8 voices	1024	1610.62	6327.75
-32 tracks × 8 full voices	32	115.04	449.50
-32 tracks × 8 full voices	128	445.12	1854.33
-32 tracks × 8 full voices	1024	3606.04	13734.71
-Check 7 (588k notes)	32	23.21	164.00
-Check 7 (588k notes)	128	89.62	321.04
-Check 7 (588k notes)	1024	729.38	3459.62
-Check 7, first block after Play from bar 10.5	32	168.92	1454.08
-Check 7, first block after Play from bar 10.5	128	241.79	876.12
-Check 7, first block after Play from bar 10.5	1024	912.75	4564.75
-32 drum tracks × every sound	32	120.17	407.75
-32 drum tracks × every sound	128	334.75	1322.12
-32 drum tracks × every sound	1024	2682.38	11684.67
-32 drum tracks × every sound, 909 kick	32	138.38	603.62
-32 drum tracks × every sound, 909 kick	128	375.04	1568.79
-32 drum tracks × every sound, 909 kick	1024	3018.75	12677.67
+Demo loop	32	2.46	4.25
+Demo loop	128	6.08	7.79
+Demo loop	1024	46.42	57.33
+16 voices	32	3.42	4.21
+16 voices	128	11.62	14.71
+16 voices	1024	90.79	114.38
+16 full voices	32	6.12	7.79
+16 full voices	128	22.50	28.58
+16 full voices	1024	177.04	214.75
+Demo song	32	2.92	3.79
+Demo song	128	10.38	14.38
+Demo song	1024	80.71	104.62
+32 tracks × 8 voices	32	40.67	76.79
+32 tracks × 8 voices	128	161.88	308.96
+32 tracks × 8 voices	1024	1303.12	2486.17
+32 tracks × 8 full voices	32	93.79	187.25
+32 tracks × 8 full voices	128	364.79	729.04
+32 tracks × 8 full voices	1024	2908.71	5849.88
+Check 7 (588k notes)	32	18.46	39.21
+Check 7 (588k notes)	128	73.17	125.75
+Check 7 (588k notes)	1024	584.75	767.67
+Check 7, first block after Play from bar 10.5	32	134.04	291.08
+Check 7, first block after Play from bar 10.5	128	188.42	233.29
+Check 7, first block after Play from bar 10.5	1024	702.50	929.17
+32 drum tracks × every sound	32	76.21	150.38
+32 drum tracks × every sound	128	281.96	535.96
+32 drum tracks × every sound	1024	2241.79	4045.62
+32 drum tracks × every sound, 909 kick	32	83.17	157.21
+32 drum tracks × every sound, 909 kick	128	308.58	570.50
+32 drum tracks × every sound, 909 kick	1024	2469.38	4314.33
