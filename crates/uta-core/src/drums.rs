@@ -823,7 +823,9 @@ impl KitSettings {
         // amounts in even steps.
         let scale = match unit {
             Unit::Hz | Unit::Seconds => Scale::Log,
-            Unit::Db | Unit::Fraction | Unit::Amount => Scale::Linear,
+            Unit::Db | Unit::Fraction | Unit::Amount | Unit::Semitones | Unit::Octaves => {
+                Scale::Linear
+            }
         };
         Some(Description::number(
             label,
@@ -1409,7 +1411,7 @@ mod tests {
         let kit = KitSettings::default();
         let tone_unit = |sound| match kit.describe(sound, &DrumParam::Tone(0.0)).unwrap().kind {
             Kind::Number { unit, .. } => unit,
-            Kind::Choice { .. } => panic!("Tone is a number"),
+            kind => panic!("Tone is a number, not {kind:?}"),
         };
         assert_eq!(
             [

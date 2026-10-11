@@ -17,7 +17,7 @@ use common::synth_project;
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
     Clip, ClipId, Command, DrumParam, DrumSound, KIT, KickModel, Note, NoteId, PlacedClip,
-    PlacedTrack, Project, SynthParam, TrackId,
+    PlacedTrack, Project, SynthParam, TrackId, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -38,12 +38,18 @@ enum Load {
     /// All 16 synth voices sounding saws, with the filter cutoff gliding, on
     /// top of an empty loop.
     Voices,
+    /// [`Load::Voices`] with every synth feature on ([`FULL_VOICE`]), and
+    /// oscillator 2's Pitch and level gliding with the cutoff.
+    FullVoices,
     /// The demo song's three tracks playing, with the volume gliding.
     Song,
     /// 32 tracks each holding an 8-note saw chord: 256 voices, with the
     /// volume gliding. Far more than a realistic song, to see where the
     /// limit is. See RFC-003, "Risks & unknowns" (CPU with many tracks).
     Tracks,
+    /// [`Load::Tracks`] with every synth feature on ([`FULL_VOICE`]). See
+    /// RFC-008, "Risks & unknowns" (CPU per voice goes up).
+    FullTracks,
     /// Make a song's manual check 7, the stress ceiling: 7 tracks × 28
     /// one-bar clips × 3,000 stress notes, 588,000 notes in all, with the
     /// volume gliding. See RFC-004, "What we measured".
@@ -68,8 +74,10 @@ impl Load {
         match self {
             Self::Loop => "Demo loop",
             Self::Voices => "16 voices",
+            Self::FullVoices => "16 full voices",
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
+            Self::FullTracks => "32 tracks × 8 full voices",
             Self::Check7 => "Check 7 (588k notes)",
             Self::Drums => "32 drum tracks × every sound",
             Self::Drums909 => "32 drum tracks × every sound, 909 kick",
@@ -121,9 +129,26 @@ fn check_7() -> Project {
     project
 }
 
+/// Every synth feature so far, on: oscillator 2 detuned against oscillator
+/// 1, the sub and noise in the mix, the oscillators running free, and some
+/// resonance, at full sustain. The full-voice loads play it, so they measure
+/// the most a voice costs. Each Synth features ticket adds its features
+/// here (RFC-008, "How we'll verify it", Timing report).
+const FULL_VOICE: [SynthParam; 9] = [
+    SynthParam::Osc2Wave(Waveform::Pulse),
+    SynthParam::Osc2PitchSemitones(0.07),
+    SynthParam::Osc2Level(0.8),
+    SynthParam::SubLevel(0.5),
+    SynthParam::NoiseLevel(0.2),
+    SynthParam::OscRetrigger(false),
+    SynthParam::CutoffHz(4000.0),
+    SynthParam::Resonance(0.5),
+    SynthParam::Sustain(1.0),
+];
+
 /// 32 tracks, each holding the same 8-note saw chord through the whole
-/// loop at full sustain, centred.
-fn many_tracks() -> Project {
+/// loop at full sustain, centred, with these synth settings.
+fn many_tracks(params: &[SynthParam]) -> Project {
     let mut project = synth_project();
     let track = project.tracks()[0].id();
     let clip = project.tracks()[0].clips()[0].id();
@@ -137,12 +162,11 @@ fn many_tracks() -> Project {
             length: loop_length,
         })
         .collect();
-    project
-        .apply(&Command::SetSynthParam {
-            track,
-            param: SynthParam::Sustain(1.0),
-        })
-        .unwrap();
+    for &param in [SynthParam::Sustain(1.0)].iter().chain(params) {
+        project
+            .apply(&Command::SetSynthParam { track, param })
+            .unwrap();
+    }
     project.apply(&Command::AddNotes { clip, notes }).unwrap();
     let first = project.tracks()[0].clone();
     let copies = (1..Project::MAX_TRACKS)
@@ -275,8 +299,10 @@ fn snapshot(load: Load) -> Snapshot {
     match load {
         Load::Loop => Snapshot::from(&common::demo_loop()),
         Load::Voices => Snapshot::default(),
+        Load::FullVoices => Snapshot::from(&common::project(120.0, 4, &FULL_VOICE, Vec::new())),
         Load::Song => Snapshot::from(&common::demo_song()),
-        Load::Tracks => Snapshot::from(&many_tracks()),
+        Load::Tracks => Snapshot::from(&many_tracks(&[])),
+        Load::FullTracks => Snapshot::from(&many_tracks(&FULL_VOICE)),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
         Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
         Load::Drums909 => Snapshot::from(&drum_tracks(KickModel::Tr909)),
@@ -311,7 +337,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let mut times = Vec::with_capacity(BLOCKS);
     renderer.controller.play().unwrap();
-    if let Load::Voices = load {
+    if let Load::Voices | Load::FullVoices = load {
         for i in 0..VOICES as u8 {
             renderer
                 .controller
@@ -323,10 +349,12 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
             match load {
-                Load::Loop | Load::Song | Load::Tracks | Load::Check7 => renderer
-                    .controller
-                    .set_volume_db(-(((i / 64) % 24) as f32))
-                    .unwrap(),
+                Load::Loop | Load::Song | Load::Tracks | Load::FullTracks | Load::Check7 => {
+                    renderer
+                        .controller
+                        .set_volume_db(-(((i / 64) % 24) as f32))
+                        .unwrap()
+                }
                 // Sustain 1, so the voices never fade to silence.
                 Load::Voices => renderer
                     .controller
@@ -340,6 +368,27 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
+                // The cutoff, oscillator 2's Pitch and its level, on every
+                // full voice.
+                Load::FullVoices => {
+                    let TrackSound::Synth(full) = renderer.controller.snapshot().tracks()[0].sound
+                    else {
+                        unreachable!("the full voices are a synth track's")
+                    };
+                    let step = ((i / 64) % 50) as f32;
+                    renderer
+                        .controller
+                        .set_synth_settings(
+                            0,
+                            SynthSettings {
+                                cutoff_hz: 200.0 * (1.0 + step),
+                                osc2_pitch_semitones: 0.07 + step / 50.0,
+                                osc2_level: 0.5 + step / 100.0,
+                                ..full
+                            },
+                        )
+                        .unwrap()
+                }
                 // Every kick's (both models'), snare's, hats' and toms' Tune, and every
                 // clap's, hats' and cymbal's Tone, gliding.
                 Load::Drums | Load::Drums909 => {
@@ -491,8 +540,10 @@ fn report_block_timing() {
     let loads = [
         Load::Loop,
         Load::Voices,
+        Load::FullVoices,
         Load::Song,
         Load::Tracks,
+        Load::FullTracks,
         Load::Check7,
         Load::Check7FirstBlock,
         Load::Drums,

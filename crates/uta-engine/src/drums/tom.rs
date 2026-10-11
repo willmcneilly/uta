@@ -373,8 +373,8 @@ impl Tom {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drums::noise::Noise;
     use crate::drums::{HighTomSettings, LowTomSettings, REFERENCE_PEAK};
+    use crate::noise::Noise;
 
     const RATE: f64 = 48_000.0;
 

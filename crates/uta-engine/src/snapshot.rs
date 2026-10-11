@@ -748,19 +748,30 @@ pub(crate) fn busy_loop() -> Snapshot {
 /// The core's synth settings as the engine plays them: the same fields,
 /// units and ranges.
 fn synth_settings(settings: &uta_core::SynthSettings) -> SynthSettings {
+    let wave = |wave| match wave {
+        uta_core::Waveform::Sine => Waveform::Sine,
+        uta_core::Waveform::Triangle => Waveform::Triangle,
+        uta_core::Waveform::Saw => Waveform::Saw,
+        uta_core::Waveform::Pulse => Waveform::Pulse,
+    };
     SynthSettings {
-        waveform: match settings.waveform {
-            uta_core::Waveform::Sine => Waveform::Sine,
-            uta_core::Waveform::Triangle => Waveform::Triangle,
-            uta_core::Waveform::Saw => Waveform::Saw,
-            uta_core::Waveform::Square => Waveform::Square,
-        },
+        osc1_wave: wave(settings.osc1_wave),
+        osc1_octave: settings.osc1_octave,
+        osc2_wave: wave(settings.osc2_wave),
+        osc2_octave: settings.osc2_octave,
+        osc2_pitch_semitones: settings.osc2_pitch_semitones,
+        sub_octave: settings.sub_octave,
+        osc1_level: settings.osc1_level,
+        osc2_level: settings.osc2_level,
+        sub_level: settings.sub_level,
+        noise_level: settings.noise_level,
         cutoff_hz: settings.cutoff_hz,
         resonance: settings.resonance,
         attack_seconds: settings.attack_seconds,
         decay_seconds: settings.decay_seconds,
         sustain: settings.sustain,
         release_seconds: settings.release_seconds,
+        osc_retrigger: settings.osc_retrigger,
     }
 }
 
@@ -898,22 +909,49 @@ mod tests {
         project
             .apply(&Command::SetSynthParam {
                 track,
-                param: SynthParam::Waveform(uta_core::Waveform::Square),
+                param: SynthParam::Osc1Wave(uta_core::Waveform::Pulse),
             })
             .unwrap();
-        project
-            .apply(&Command::SetSynthParam {
-                track,
-                param: SynthParam::CutoffHz(800.0),
-            })
-            .unwrap();
+        for param in [
+            SynthParam::CutoffHz(800.0),
+            SynthParam::Osc2Wave(uta_core::Waveform::Triangle),
+            SynthParam::Osc1Octave(-1),
+            SynthParam::Osc2Octave(1),
+            SynthParam::Osc2PitchSemitones(0.1),
+            SynthParam::SubOctave(-2),
+            SynthParam::Osc1Level(0.8),
+            SynthParam::Osc2Level(0.6),
+            SynthParam::SubLevel(0.4),
+            SynthParam::NoiseLevel(0.2),
+            SynthParam::OscRetrigger(false),
+        ] {
+            project
+                .apply(&Command::SetSynthParam { track, param })
+                .unwrap();
+        }
         let snapshot = Snapshot::from(&project);
         assert_eq!(snapshot.gain, db_to_gain(-6.0));
         let TrackSound::Synth(synth) = snapshot.tracks()[0].sound else {
             panic!("a synth track")
         };
-        assert_eq!(synth.waveform, Waveform::Square);
-        assert_eq!(synth.cutoff_hz, 800.0);
+        assert_eq!(
+            synth,
+            SynthSettings {
+                osc1_wave: Waveform::Pulse,
+                osc1_octave: -1,
+                osc2_wave: Waveform::Triangle,
+                osc2_octave: 1,
+                osc2_pitch_semitones: 0.1,
+                sub_octave: -2,
+                osc1_level: 0.8,
+                osc2_level: 0.6,
+                sub_level: 0.4,
+                noise_level: 0.2,
+                cutoff_hz: 800.0,
+                osc_retrigger: false,
+                ..SynthSettings::default()
+            }
+        );
     }
 
     #[test]

@@ -47,7 +47,7 @@ fn clip_id(n: u128, clip: u128) -> ClipId {
 /// sustain and a 50 ms release.
 fn sine() -> SynthSettings {
     SynthSettings {
-        waveform: Waveform::Sine,
+        osc1_wave: Waveform::Sine,
         attack_seconds: 0.005,
         sustain: 1.0,
         release_seconds: 0.05,
@@ -217,7 +217,7 @@ fn tracks_add_up_in_the_mix() {
 #[test]
 fn each_track_plays_its_own_sound() {
     let square = SynthSettings {
-        waveform: Waveform::Square,
+        osc1_wave: Waveform::Pulse,
         ..sine()
     };
     let project = song(vec![

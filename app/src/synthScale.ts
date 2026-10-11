@@ -1,7 +1,8 @@
 // How the synth panel's controls map to settings, and how settings read.
 // A control runs over whole positions from 0 to SETTING_STEPS. Frequencies and
 // times move on a log scale, so each step is the same ratio, the way you
-// hear them; levels move on a linear scale.
+// hear them; levels move on a linear scale; an offset either side of zero,
+// such as oscillator 2's Pitch, on a cubic one, fine near zero.
 
 import type { Limits, NumberSettingView, Scale } from "./backend";
 import type { NumberScale } from "./design/numberScale";
@@ -16,13 +17,34 @@ export function fromPosition(position: number, [min, max]: Limits, scale: Scale)
   if (position <= 0) return min;
   if (position >= SETTING_STEPS) return max;
   const fraction = position / SETTING_STEPS;
-  return scale === "log" ? min * (max / min) ** fraction : min + (max - min) * fraction;
+  switch (scale) {
+    case "log":
+      return min * (max / min) ** fraction;
+    case "linear":
+      return min + (max - min) * fraction;
+    case "cubic": {
+      // From -1 to 1 across the control, cubed: the centre is exactly the middle.
+      const centred = 2 * fraction - 1;
+      return (min + max) / 2 + ((max - min) / 2) * centred ** 3;
+    }
+  }
+}
+
+/** How far through the limits `value` is on `scale`, from 0 to 1. */
+function fractionOf(value: number, [min, max]: Limits, scale: Scale): number {
+  switch (scale) {
+    case "log":
+      return Math.log(value / min) / Math.log(max / min);
+    case "linear":
+      return (value - min) / (max - min);
+    case "cubic":
+      return (Math.cbrt((value - (min + max) / 2) / ((max - min) / 2)) + 1) / 2;
+  }
 }
 
 /** The nearest position to `value`, clamped to the control. */
-export function toPosition(value: number, [min, max]: Limits, scale: Scale): number {
-  const fraction =
-    scale === "log" ? Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min);
+export function toPosition(value: number, limits: Limits, scale: Scale): number {
+  const fraction = fractionOf(value, limits, scale);
   const position = Math.round(fraction * SETTING_STEPS);
   return Math.min(SETTING_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
 }
@@ -55,4 +77,21 @@ export function formatAmount(amount: number): string {
 
 export function formatLevel(level: number): string {
   return `${Math.round(level * 100)}%`;
+}
+
+/** An offset to `digits` places, signed unless it rounds to zero: "+7", "−12" (a true minus), "0". */
+function signed(value: number, digits: number): string {
+  const text = Math.abs(value).toFixed(digits);
+  if (Number(text) === 0) return text;
+  return `${value > 0 ? "+" : "\u2212"}${text}`;
+}
+
+/** Semitones to two places, so a few cents of detune shows: "+0.07 st". */
+export function formatSemitones(semitones: number): string {
+  return `${signed(semitones, 2)} st`;
+}
+
+/** Whole octaves: "+1 oct", "−2 oct". */
+export function formatOctaves(octaves: number): string {
+  return `${signed(octaves, 0)} oct`;
 }

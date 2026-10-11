@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SynthSettingView } from "./backend";
 import { SynthPanel } from "./SynthPanel";
 import { knobAt, pressKnob } from "./design/knobTesting";
-import { type SynthValues, synthSettings } from "./pianoRoll/testing";
+import { SYNTH_DEFAULTS, type SynthValues, synthSettings } from "./pianoRoll/testing";
 import { DRAWING_HEIGHT, DRAWING_WIDTH } from "./synth/Drawings";
 import { envelopeShape } from "./synth/envelopeShape";
 import { type Point, filterCurve, xOfFrequency } from "./synth/filterCurve";
 
 const SYNTH: SynthValues = {
-  waveform: "saw",
+  ...SYNTH_DEFAULTS,
   cutoffHz: 2_000,
   resonance: 0.5,
   attackSeconds: 0.01,
@@ -172,7 +172,7 @@ describe("SynthPanel's drawings", () => {
 
   it("draws a cycle of each waveform on its key", () => {
     renderPanel();
-    for (const name of ["Sine", "Triangle", "Saw", "Square"]) {
+    for (const name of ["Sine", "Triangle", "Saw", "Pulse"]) {
       const key = screen.getByRole("radio", { name }).closest("label")!;
       expect(key.querySelector("svg.cycle path")).toHaveAttribute("d", expect.stringMatching(/^M/));
     }

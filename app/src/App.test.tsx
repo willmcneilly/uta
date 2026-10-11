@@ -32,6 +32,7 @@ import {
   announceChange,
   projectView,
   drumTrackView,
+  SYNTH_DEFAULTS,
   SYNTH_FIELDS,
   recordingFactory,
   type SynthValues,
@@ -159,7 +160,7 @@ beforeEach(() => {
         case "set_synth_param": {
           const param = args.param as SynthParam;
           // Rust stores f32s, so what comes back isn't quite what was sent.
-          const value = param.name === "waveform" ? param.value : Math.fround(param.value);
+          const value = typeof param.value === "number" ? Math.fround(param.value) : param.value;
           project = changeTrack(args.track as string, (track) =>
             withSynth(track, { [SYNTH_FIELDS[param.name]]: value }),
           );
@@ -701,14 +702,14 @@ describe("App", () => {
       for (const [label, value] of [
         ["Sine", "sine"],
         ["Triangle", "triangle"],
-        ["Square", "square"],
+        ["Pulse", "pulse"],
         ["Saw", "saw"],
       ]) {
         fireEvent.click(synth().getByRole("radio", { name: label }));
         await waitFor(() => expect(synth().getByRole("radio", { name: label })).toBeChecked());
         expect(synthCalls().at(-1)).toEqual({
           track: "track-1",
-          param: { name: "waveform", value },
+          param: { name: "osc1_wave", value },
           gesture: null,
         });
       }
@@ -729,17 +730,17 @@ describe("App", () => {
       await waitFor(() => expect(radio("Saw")).toBeChecked());
       expect(radio("Saw")).toHaveFocus();
       fireEvent.keyDown(radio("Saw"), { key: "ArrowDown" });
-      await waitFor(() => expect(radio("Square")).toBeChecked());
+      await waitFor(() => expect(radio("Pulse")).toBeChecked());
       // The ends wrap round.
-      fireEvent.keyDown(radio("Square"), { key: "ArrowRight" });
+      fireEvent.keyDown(radio("Pulse"), { key: "ArrowRight" });
       await waitFor(() => expect(radio("Sine")).toBeChecked());
       fireEvent.keyDown(radio("Sine"), { key: "ArrowUp" });
-      await waitFor(() => expect(radio("Square")).toBeChecked());
-      expect(radio("Square")).toHaveFocus();
-      expect(radio("Square")).toHaveAttribute("tabindex", "0");
+      await waitFor(() => expect(radio("Pulse")).toBeChecked());
+      expect(radio("Pulse")).toHaveFocus();
+      expect(radio("Pulse")).toHaveAttribute("tabindex", "0");
 
       const waveforms = synthCalls().map((args) => (args.param as SynthParam).value);
-      expect(waveforms).toEqual(["triangle", "saw", "square", "sine", "square"]);
+      expect(waveforms).toEqual(["triangle", "saw", "pulse", "sine", "pulse"]);
     });
 
     it("sends each slider's setting to Rust and shows what comes back", async () => {
@@ -809,7 +810,7 @@ describe("App", () => {
       await renderSound();
       const undone = projectView();
       undone.tracks[0] = withSynth(undone.tracks[0], {
-        waveform: "square",
+        osc1Wave: "pulse",
         cutoffHz: 200,
         resonance: 0.8,
         attackSeconds: 1,
@@ -819,7 +820,7 @@ describe("App", () => {
       });
       project = undone;
       await announceChange();
-      expect(synth().getByRole("radio", { name: "Square" })).toBeChecked();
+      expect(synth().getByRole("radio", { name: "Pulse" })).toBeChecked();
       expect(knobAt(slider("Cutoff"))).toBeCloseTo(0.333, 6);
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
       expect(knobAt(slider("Resonance"))).toBeCloseTo(0.8, 6);
@@ -835,7 +836,7 @@ describe("App", () => {
     // Defaults that differ from each other and from the values, so a fader
     // wired to the wrong one sends the wrong command.
     const synthDefaults: SynthValues = {
-      waveform: "saw",
+      ...SYNTH_DEFAULTS,
       cutoffHz: 1000,
       resonance: 0.25,
       attackSeconds: 0.05,
@@ -1058,7 +1059,7 @@ describe("App", () => {
           },
         ]),
         mixer: { volumeDb: -6, pan: -0.5, mute: true, solo: false },
-        source: withSynth(first, { waveform: "square" }).source,
+        source: withSynth(first, { osc1Wave: "pulse" }).source,
       };
       const third: TrackView = {
         ...trackView("track-3", "Synth 3"),
@@ -1381,7 +1382,7 @@ describe("App", () => {
       act(() => screen.getByRole("slider", { name: "Synth 2 volume" }).focus());
       expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
       openTab("Sound");
-      expect(synthWaveform()).toBe("Square");
+      expect(synthWaveform()).toBe("Pulse");
     });
 
     it("doesn't select a track again when it comes back after an undo", async () => {
@@ -1417,7 +1418,7 @@ describe("App", () => {
       expect(header("Synth 2")).toHaveAttribute("aria-current", "true");
       await waitFor(() => expect(drawnNotes()).toEqual([["bass", 60, 0, 100]]));
       openTab("Sound");
-      expect(synthWaveform()).toBe("Square");
+      expect(synthWaveform()).toBe("Pulse");
       fireEvent.click(
         within(screen.getByRole("region", { name: "Synth" })).getByRole("radio", { name: "Sine" }),
       );

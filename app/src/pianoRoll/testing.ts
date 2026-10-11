@@ -13,8 +13,10 @@ import type {
   Limits,
   MixerView,
   NoteView,
+  NumberSettingView,
   Outline,
   ProjectView,
+  SynthNumber,
   SynthParam,
   SynthSettingView,
   TrackView,
@@ -92,42 +94,90 @@ export const MIXER_DEFAULTS: MixerView = { volumeDb: 0, pan: 0, mute: false, sol
 
 /** A synth's values, by setting, as tests write them. */
 export interface SynthValues {
-  waveform: Waveform;
+  osc1Wave: Waveform;
+  osc1Octave: number;
+  osc2Wave: Waveform;
+  osc2Octave: number;
+  osc2PitchSemitones: number;
+  subOctave: number;
+  osc1Level: number;
+  osc2Level: number;
+  subLevel: number;
+  noiseLevel: number;
   cutoffHz: number;
   resonance: number;
   attackSeconds: number;
   decaySeconds: number;
   sustain: number;
   releaseSeconds: number;
+  oscRetrigger: boolean;
 }
 
 /** Each synth setting's field in {@link SynthValues}. */
 export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
-  waveform: "waveform",
+  osc1_wave: "osc1Wave",
+  osc1_octave: "osc1Octave",
+  osc2_wave: "osc2Wave",
+  osc2_octave: "osc2Octave",
+  osc2_pitch_semitones: "osc2PitchSemitones",
+  sub_octave: "subOctave",
+  osc1_level: "osc1Level",
+  osc2_level: "osc2Level",
+  sub_level: "subLevel",
+  noise_level: "noiseLevel",
   cutoff_hz: "cutoffHz",
   resonance: "resonance",
   attack_seconds: "attackSeconds",
   decay_seconds: "decaySeconds",
   sustain: "sustain",
   release_seconds: "releaseSeconds",
+  osc_retrigger: "oscRetrigger",
 };
 
 /** A new track's synth settings, as Rust's defaults have them. */
 export const SYNTH_DEFAULTS: SynthValues = {
-  waveform: "saw",
+  osc1Wave: "saw",
+  osc1Octave: 0,
+  osc2Wave: "saw",
+  osc2Octave: 0,
+  osc2PitchSemitones: 0,
+  subOctave: -1,
+  osc1Level: 1,
+  osc2Level: 0,
+  subLevel: 0,
+  noiseLevel: 0,
   cutoffHz: 20_000,
   resonance: 0,
   attackSeconds: 0.005,
   decaySeconds: 0.2,
   sustain: 0.7,
   releaseSeconds: 0.2,
+  oscRetrigger: true,
 };
 
 /** A stand-in for the sentence Rust sends on how a setting sounds. */
 const SOUNDS = "How it sounds.";
 
-/** Frequencies and times move on a log scale; levels and amounts on a linear one, as Rust has them. */
-const scaleOf = (unit: Unit) => (unit === "hz" || unit === "seconds" ? "log" : "linear");
+/** Every wave, as Rust offers them. */
+const WAVES: ChoiceSettingView<string, Waveform>["options"] = [
+  { value: "sine", label: "Sine" },
+  { value: "triangle", label: "Triangle" },
+  { value: "saw", label: "Saw" },
+  { value: "pulse", label: "Pulse" },
+];
+
+/**
+ * How a control moves through each unit, as Rust has it: frequencies and
+ * times on a log scale, a pitch offset fine near zero, and levels, amounts
+ * and octaves on a linear one.
+ */
+const scaleOf = (unit: Unit) =>
+  unit === "hz" || unit === "seconds" ? "log" : unit === "semitones" ? "cubic" : "linear";
+
+/** The values in `values` that are numbers, by field. */
+type NumberField = {
+  [K in keyof SynthValues]: SynthValues[K] extends number ? K : never;
+}[keyof SynthValues];
 
 /**
  * The synth's settings with `values`, described as Rust describes them, in
@@ -138,37 +188,65 @@ export function synthSettings(
   defaults: SynthValues = SYNTH_DEFAULTS,
 ): SynthSettingView[] {
   const number = (
-    name: Exclude<SynthParam["name"], "waveform">,
+    name: SynthNumber["name"],
     label: string,
     unit: Unit,
     limits: Limits,
   ): SynthSettingView => {
-    const field = SYNTH_FIELDS[name] as Exclude<keyof SynthValues, "waveform">;
-    const scale = scaleOf(unit);
-    return { kind: "number", name, label, sounds: SOUNDS, value: values[field], unit, scale, limits, default: defaults[field] };
+    const field = SYNTH_FIELDS[name] as NumberField;
+    const setting: NumberSettingView<SynthNumber["name"]> = {
+      kind: "number",
+      name,
+      label,
+      sounds: SOUNDS,
+      value: values[field],
+      unit,
+      scale: scaleOf(unit),
+      limits,
+      default: defaults[field],
+    };
+    return unit === "octaves" ? { ...setting, step: 1 } : setting;
   };
-  const waveform: ChoiceSettingView<"waveform", Waveform> = {
-    kind: "choice",
-    name: "waveform",
-    label: "Waveform",
-    sounds: SOUNDS,
-    value: values.waveform,
-    options: [
-      { value: "sine", label: "Sine" },
-      { value: "triangle", label: "Triangle" },
-      { value: "saw", label: "Saw" },
-      { value: "square", label: "Square" },
-    ],
-    default: defaults.waveform,
+  const wave = <N extends "osc1_wave" | "osc2_wave">(
+    name: N,
+    label: string,
+  ): ChoiceSettingView<N, Waveform> => {
+    const field = name === "osc1_wave" ? "osc1Wave" : "osc2Wave";
+    return {
+      kind: "choice",
+      name,
+      label,
+      sounds: SOUNDS,
+      value: values[field],
+      options: WAVES,
+      default: defaults[field],
+    };
   };
   return [
-    waveform,
+    wave("osc1_wave", "Osc 1 wave"),
+    number("osc1_octave", "Osc 1 octave", "octaves", [-2, 2]),
+    wave("osc2_wave", "Osc 2 wave"),
+    number("osc2_octave", "Osc 2 octave", "octaves", [-2, 2]),
+    number("osc2_pitch_semitones", "Osc 2 pitch", "semitones", [-12, 12]),
+    number("sub_octave", "Sub octave", "octaves", [-2, -1]),
+    number("osc1_level", "Osc 1 level", "fraction", [0, 1]),
+    number("osc2_level", "Osc 2 level", "fraction", [0, 1]),
+    number("sub_level", "Sub level", "fraction", [0, 1]),
+    number("noise_level", "Noise level", "fraction", [0, 1]),
     number("cutoff_hz", "Cutoff", "hz", [20, 20_000]),
     number("resonance", "Resonance", "amount", [0, 1]),
     number("attack_seconds", "Attack", "seconds", [0.001, 10]),
     number("decay_seconds", "Decay", "seconds", [0.001, 10]),
     number("sustain", "Sustain", "fraction", [0, 1]),
     number("release_seconds", "Release", "seconds", [0.001, 10]),
+    {
+      kind: "toggle",
+      name: "osc_retrigger",
+      label: "Osc retrigger",
+      sounds: SOUNDS,
+      value: values.oscRetrigger,
+      default: defaults.oscRetrigger,
+    },
   ];
 }
 
@@ -183,25 +261,23 @@ export function trackView(id: string, name: string, clips: ClipView[] = []): Tra
   };
 }
 
+/** The synth's values in `settings`: each one's value, or each one's default. */
+function valuesOf(settings: SynthSettingView[], which: "value" | "default"): SynthValues {
+  const values = { ...SYNTH_DEFAULTS };
+  for (const setting of settings) Object.assign(values, { [SYNTH_FIELDS[setting.name]]: setting[which] });
+  return values;
+}
+
 /** A synth track's values, read back from the settings Rust sent. */
 export function synthOf(track: TrackView): SynthValues {
   if (track.source.kind !== "synth") throw new Error(`${track.name} isn't a synth track`);
-  const values = { ...SYNTH_DEFAULTS };
-  for (const setting of track.source.settings) {
-    if (setting.kind === "choice") values.waveform = setting.value;
-    else values[SYNTH_FIELDS[setting.name] as Exclude<keyof SynthValues, "waveform">] = setting.value;
-  }
-  return values;
+  return valuesOf(track.source.settings, "value");
 }
 
 /** `track`, a synth track, with its values set to `values`, keeping each setting's default. */
 export function withSynth(track: TrackView, values: Partial<SynthValues>): TrackView {
   if (track.source.kind !== "synth") throw new Error(`${track.name} isn't a synth track`);
-  const defaults = { ...SYNTH_DEFAULTS };
-  for (const setting of track.source.settings) {
-    if (setting.kind === "choice") defaults.waveform = setting.default;
-    else defaults[SYNTH_FIELDS[setting.name] as Exclude<keyof SynthValues, "waveform">] = setting.default;
-  }
+  const defaults = valuesOf(track.source.settings, "default");
   return {
     ...track,
     source: { kind: "synth", settings: synthSettings({ ...synthOf(track), ...values }, defaults) },

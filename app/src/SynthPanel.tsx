@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from "react";
 import type {
+  ChoiceSettingView,
   NumberSettingView,
   SynthNumber,
   SynthParam,
@@ -15,7 +16,9 @@ import {
   formatAmount,
   formatHz,
   formatLevel,
+  formatOctaves,
   formatSeconds,
+  formatSemitones,
   settingScale,
 } from "./synthScale";
 import { EnvelopeDrawing, FilterDrawing } from "./synth/Drawings";
@@ -52,7 +55,7 @@ const CYCLES: Record<Waveform, ReactNode> = {
   sine: cycle("M0,6 C4.5,-2 9.5,-2 14,6 S23.5,14 28,6"),
   triangle: cycle("M0,6 L7,0 L21,12 L28,6"),
   saw: cycle("M0,12 L14,0 L14,12 L28,0 L28,12"),
-  square: cycle("M0,12 L0,0 L14,0 L14,12 L28,12 L28,0"),
+  pulse: cycle("M0,12 L0,0 L14,0 L14,12 L28,12 L28,0"),
 };
 
 /** How each unit reads on the synth's knobs. */
@@ -62,6 +65,8 @@ const FORMATS: Record<Unit, (value: number) => string> = {
   db: (db) => `${db.toFixed(1)} dB`,
   fraction: formatLevel,
   amount: formatAmount,
+  semitones: formatSemitones,
+  octaves: formatOctaves,
 };
 
 type SettingName = SynthNumber["name"];
@@ -84,11 +89,13 @@ interface Dragged {
 }
 
 /**
- * A track's synth: waveform, filter and envelope. Each control is drawn from
- * the setting Rust describes, so the panel holds no label, range or default
- * of its own; it only says which settings go where, around its drawings. The filter and the envelope are drawn above their knobs, from
- * the values the knobs show, so the drawings follow a drag before Rust
- * replies.
+ * A track's synth: oscillator 1's wave, the filter and the envelope. Each
+ * control is drawn from the setting Rust describes, so the panel holds no
+ * label, range or default of its own; it only says which settings go where,
+ * around its drawings. The filter and the envelope are drawn above their
+ * knobs, from the values the knobs show, so the drawings follow a drag before
+ * Rust replies. The settings it doesn't show yet (oscillator 2, the sub, the
+ * mixer and Osc retrigger) wait for the new panel (UTA-81).
  */
 export function SynthPanel({ settings, sampleRate, onChange }: Props) {
   // The knob being dragged: gesture state, gone when the drag ends.
@@ -104,8 +111,7 @@ export function SynthPanel({ settings, sampleRate, onChange }: Props) {
   const shown = (name: SettingName) =>
     dragged?.name === name ? dragged.value : number(name).value;
   const waveform = settings.find(
-    (setting): setting is Extract<SynthSettingView, { name: "waveform" }> =>
-      setting.name === "waveform",
+    (setting): setting is ChoiceSettingView<"osc1_wave", Waveform> => setting.name === "osc1_wave",
   );
 
   /**

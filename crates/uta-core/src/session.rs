@@ -754,7 +754,7 @@ mod tests {
             second,
             session.project().next_track_name(SourceKind::Synth),
             Source::Synth(SynthSettings {
-                waveform: Waveform::Sine,
+                osc1_wave: Waveform::Sine,
                 ..SynthSettings::default()
             }),
         )

@@ -1,14 +1,19 @@
-//! The kit's noise source: one per kit, shared by the snare and the clap,
-//! as on the 909, where the two "produce a phasing effect when played
-//! together", and by the toms' skin. See RFC-006, "What makes it sound good", point 6.
+//! White noise: the kit's, and each synth voice's.
 //!
-//! It's free-running: it runs whether or not anything is sounding, so each
-//! hit catches it at a different point and comes out a little different, as
-//! on the hardware. But it's deterministic: it restarts from the same seed
-//! when playback starts, so playing from the top always sounds the same as a
-//! render.
+//! The kit has one, shared by the snare and the clap, as on the 909, where
+//! the two "produce a phasing effect when played together", and by the toms'
+//! skin. See RFC-006, "What makes it sound good", point 6. It's
+//! free-running: it runs whether or not anything is sounding, so each hit
+//! catches it at a different point and comes out a little different, as on
+//! the hardware.
+//!
+//! Each synth voice has its own, from its own seed, so two notes' noise
+//! never adds up as one. See RFC-008, "In the engine".
+//!
+//! Either way it's deterministic: it restarts from its seed when playback
+//! starts, so playing from the top always sounds the same as a render.
 
-/// Where the noise starts. Any number but zero.
+/// Where the kit's noise starts. Any number but zero.
 const SEED: u32 = 0x9E37_79B9;
 
 /// White noise from a 32-bit xorshift generator (George Marsaglia's
@@ -17,16 +22,25 @@ const SEED: u32 = 0x9E37_79B9;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Noise {
     state: u32,
+    seed: u32,
 }
 
 impl Noise {
+    /// The kit's noise.
     pub(crate) fn new() -> Self {
-        Self { state: SEED }
+        Self::seeded(SEED)
+    }
+
+    /// Noise starting from `seed`, which isn't zero: from zero it would
+    /// never leave zero.
+    pub(crate) const fn seeded(seed: u32) -> Self {
+        assert!(seed != 0, "noise can't start from zero");
+        Self { state: seed, seed }
     }
 
     /// Starts again from the seed.
     pub(crate) fn restart(&mut self) {
-        self.state = SEED;
+        self.state = self.seed;
     }
 
     /// The next sample, evenly spread over -1 to 1.

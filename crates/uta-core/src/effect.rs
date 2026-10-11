@@ -346,6 +346,7 @@ mod tests {
                     scale,
                     limits,
                     default,
+                    step: None,
                 } = description.kind
                 else {
                     panic!("{param:?} is a number");
@@ -372,6 +373,7 @@ mod tests {
                 scale: Scale::Linear,
                 limits: (0.0, 1.0),
                 default: 0.3,
+                step: None,
             }
         );
     }

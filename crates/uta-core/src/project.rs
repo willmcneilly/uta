@@ -1432,7 +1432,17 @@ mod tests {
         assert_eq!(settings.cutoff_hz, 800.0);
 
         for param in [
-            SynthParam::Waveform(Waveform::Sine),
+            SynthParam::Osc1Wave(Waveform::Sine),
+            SynthParam::Osc1Octave(-1),
+            SynthParam::Osc2Wave(Waveform::Pulse),
+            SynthParam::Osc2Octave(1),
+            SynthParam::Osc2PitchSemitones(-0.1),
+            SynthParam::SubOctave(-2),
+            SynthParam::Osc1Level(0.5),
+            SynthParam::Osc2Level(0.5),
+            SynthParam::SubLevel(0.3),
+            SynthParam::NoiseLevel(0.1),
+            SynthParam::OscRetrigger(false),
             SynthParam::Resonance(0.5),
             SynthParam::AttackSeconds(1.0),
             SynthParam::DecaySeconds(0.001),
@@ -1807,7 +1817,7 @@ mod tests {
                             testing::track_id(1),
                             "Synth 3",
                             Source::Synth(SynthSettings {
-                                waveform: Waveform::Square,
+                                osc1_wave: Waveform::Pulse,
                                 ..SynthSettings::default()
                             }),
                         )

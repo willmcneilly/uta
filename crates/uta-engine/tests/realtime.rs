@@ -100,8 +100,9 @@ fn many_swaps_in_one_block_do_not_allocate() {
 
 /// Notes starting and stopping, more notes than voices so voices are taken
 /// over (including while already being taken over), and snapshot swaps that
-/// change every synth setting while they sound: none of it allocates or
-/// frees on the audio thread.
+/// change every synth setting while they sound, with Play pressed now and
+/// then to restart the free-running parts: none of it allocates or frees on
+/// the audio thread.
 #[test]
 fn notes_take_overs_and_synth_changes_do_not_allocate() {
     let mut renderer = renderer();
@@ -110,10 +111,15 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
         Waveform::Sine,
         Waveform::Triangle,
         Waveform::Saw,
-        Waveform::Square,
+        Waveform::Pulse,
     ];
     let mut swaps = 0;
     for round in 0..8u8 {
+        if round % 3 == 0 {
+            renderer.controller.play().unwrap();
+        } else if round % 3 == 2 {
+            renderer.controller.stop().unwrap();
+        }
         // Twice as many notes as voices, all in one block, then more.
         for i in 0..2 * VOICES as u8 {
             let key = NoteKey(u128::from(round) * 100 + u128::from(i));
@@ -123,18 +129,29 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                 .unwrap();
         }
         process_block(renderer.processor(), &mut buffer);
+        let step = f32::from(round) / 8.0;
         renderer
             .controller
             .set_synth_settings(
                 0,
                 SynthSettings {
-                    waveform: waveforms[usize::from(round) % 4],
+                    osc1_wave: waveforms[usize::from(round) % 4],
+                    osc1_octave: (round % 5) as i8 - 2,
+                    osc2_wave: waveforms[usize::from(round + 1) % 4],
+                    osc2_octave: 2 - (round % 5) as i8,
+                    osc2_pitch_semitones: 24.0 * step - 12.0,
+                    sub_octave: -1 - (round % 2) as i8,
+                    osc1_level: 1.0 - step,
+                    osc2_level: step,
+                    sub_level: 0.5 * step,
+                    noise_level: 1.0 - 0.5 * step,
                     cutoff_hz: 20_000.0 / f32::from(round + 1).powi(3),
                     resonance: f32::from(round % 3) / 2.0,
                     attack_seconds: 0.001 * f32::from(round + 1),
                     decay_seconds: 0.05,
-                    sustain: f32::from(round) / 8.0,
+                    sustain: step,
                     release_seconds: 0.01,
+                    osc_retrigger: round % 2 == 0,
                 },
             )
             .unwrap();
@@ -235,7 +252,7 @@ fn mixer_changes_and_clipping_do_not_allocate() {
     let project = project(
         120.0,
         1,
-        &[SynthParam::Waveform(uta_core::Waveform::Square)],
+        &[SynthParam::Osc1Wave(uta_core::Waveform::Pulse)],
         notes,
     );
     let strips = [
