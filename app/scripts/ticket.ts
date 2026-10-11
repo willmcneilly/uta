@@ -189,13 +189,14 @@ export const isReview = (body: string) => /^🤖 Claude \((re-)?review/.test(bod
 /**
  * The verdict a review gives. The reviewer puts it in bold ("**Verdict: Ready
  * to merge.**" or "**Changes needed.**"), so the first bold one counts, and
- * otherwise whichever phrase comes first.
+ * otherwise whichever phrase comes first. "Not ready to merge" is Changes needed.
  */
 export function verdict(body: string): Verdict | undefined {
   const match =
-    /\*\*(?:verdict:\s*)?(ready to merge|changes needed)/i.exec(body) ?? /(ready to merge|changes needed)/i.exec(body);
+    /\*\*(?:verdict:\s*)?(not\s+)?(ready to merge|changes needed)/i.exec(body) ??
+    /(not\s+)?(ready to merge|changes needed)/i.exec(body);
   if (!match) return undefined;
-  return match[1].toLowerCase() === "ready to merge" ? "Ready to merge" : "Changes needed";
+  return !match[1] && match[2].toLowerCase() === "ready to merge" ? "Ready to merge" : "Changes needed";
 }
 
 const PASSED = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
@@ -390,7 +391,11 @@ export function merge(services: Services, run: Run, id: number): string[] {
   const out: string[] = [];
   if (pr.state === "MERGED") out.push(`PR #${number} is already merged.`);
   else {
-    run({ summary: `Squash merge PR #${number}.`, call: { tool: "gh", args: ["pr", "merge", String(number), "--squash"] } });
+    // Only the commit whose CI was checked: gh refuses if a push has landed since.
+    run({
+      summary: `Squash merge PR #${number} at ${pr.headSha.slice(0, 7)}.`,
+      call: { tool: "gh", args: ["pr", "merge", String(number), "--squash", "--match-head-commit", pr.headSha] },
+    });
     // Not gh's --delete-branch: from a worktree it tries to switch to main, which another checkout has.
     run({ summary: `Delete the remote branch ${pr.branch}.`, call: { tool: "git", args: ["push", "origin", "--delete", pr.branch] } });
   }

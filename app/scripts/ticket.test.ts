@@ -190,7 +190,7 @@ describe("claim", () => {
 describe("matchTodos", () => {
   const todos: Todo[] = [
     { blockId: "a", text: "`show` and `ready` give the right answers", checked: false },
-    { blockId: "b", text: "Process log entry added.", checked: false },
+    { blockId: "b", text: "Process log entry added", checked: false },
     { blockId: "c", text: "Process log entry added, with evidence.", checked: false },
     { blockId: "d", text: "Unit tests cover dependency checking", checked: true },
   ];
@@ -201,11 +201,12 @@ describe("matchTodos", () => {
   });
 
   it("takes the exact match when several contain it", () => {
-    expect(matchTodos(todos, ["process log entry added."]).map((t) => t.blockId)).toEqual(["b"]);
+    expect(todos.filter((t) => t.text.toLowerCase().includes("process log entry added"))).toHaveLength(2);
+    expect(matchTodos(todos, ["process log entry added"]).map((t) => t.blockId)).toEqual(["b"]);
   });
 
   it("refuses an ambiguous criterion, naming the candidates", () => {
-    expect(() => matchTodos(todos, ["Process log"])).toThrow(/"Process log" matches 2 criteria:\n {4}- Process log entry added\.\n/);
+    expect(() => matchTodos(todos, ["Process log"])).toThrow(/"Process log" matches 2 criteria:\n {4}- Process log entry added\n/);
   });
 
   it("refuses a criterion that matches nothing, listing the criteria", () => {
@@ -248,6 +249,8 @@ describe("verdict", () => {
     ["🤖 Claude (review):\n\n**Verdict: Changes needed.** It's not ready to merge until …", "Changes needed"],
     ["🤖 Claude (review): Not ready to merge yet.\n\n**Verdict: Changes needed.**", "Changes needed"],
     ["🤖 Claude (review): changes needed, then ready to merge", "Changes needed"],
+    ["🤖 Claude (review):\n\n**Verdict: Not ready to merge.**", "Changes needed"],
+    ["🤖 Claude (review): not ready to merge, two blocking.", "Changes needed"],
     ["🤖 Claude (review): nothing to say", undefined],
   ])("reads %j", (body, expected) => {
     expect(verdict(body)).toBe(expected);
@@ -308,13 +311,13 @@ describe("merge", () => {
     const { run, actions } = recorder();
     const out = merge(fake(rows), run, 7);
     expect(summaries(actions)).toEqual([
-      "Squash merge PR #10007.",
+      "Squash merge PR #10007 at abcdef1.",
       "Delete the remote branch uta-1-thing.",
       "Set UTA-7 to Done.",
       "Set UTA-8 to Ready (Ticket 8).",
     ]);
     expect(actions.slice(0, 2).map((a) => commandLine(a.call))).toEqual([
-      "gh pr merge 10007 --squash",
+      "gh pr merge 10007 --squash --match-head-commit abcdef1234567",
       "git push origin --delete uta-1-thing",
     ]);
     // What's ready afterwards counts 7 as merged and 8 as Ready.
