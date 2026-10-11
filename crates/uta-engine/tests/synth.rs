@@ -559,7 +559,7 @@ fn the_oscillators_play_at_their_octave_and_pitch() {
         ] {
             let measured = measure_frequency(&steady(settings, note, 100), RATE);
             let expected =
-                pitch_to_hz(note) * (f64::from(octave) + f64::from(semitones) / 12.0).exp2();
+                pitch_to_hz(note) * (f64::from(octave) + semitones / 12.0).exp2();
             assert!(
                 (measured / expected - 1.0).abs() < 1e-4,
                 "{which} at octave {octave}, {semitones} semitones: {measured} Hz, expected {expected} Hz"
