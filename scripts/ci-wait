@@ -1,0 +1,4 @@
+#!/bin/sh
+# Waits for a PR's CI and says how it went. `scripts/ci-wait --help` says how.
+# The logic is in app/scripts/ciWait.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/ciWaitCli.ts" "$@"
