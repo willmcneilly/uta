@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -28,8 +28,12 @@ describe("relocate", () => {
     write(debug, `cargo:rustc-link-search=native=${from}/debug/build/objc2-1/out\n`);
     write(rtsan, `${from}/rtsan/debug/build/tauri-2/out`);
     write(unrelated, "cargo:rerun-if-changed=build.rs\n");
+    utimesSync(debug, new Date(2026, 0, 1), new Date(2026, 0, 1));
 
+    const before = statSync(debug).mtimeMs;
     expect(relocate(dir, from, to)).toBe(2);
+    // Cargo would rebuild everything built on the output if this changed.
+    expect(statSync(debug).mtimeMs).toBe(before);
     expect(readFileSync(debug, "utf8")).toBe(`cargo:rustc-link-search=native=${to}/debug/build/objc2-1/out\n`);
     expect(readFileSync(rtsan, "utf8")).toBe(`${to}/rtsan/debug/build/tauri-2/out`);
     expect(readFileSync(unrelated, "utf8")).toBe("cargo:rerun-if-changed=build.rs\n");

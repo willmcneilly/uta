@@ -10,6 +10,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -42,7 +43,11 @@ export function relocate(dir: string, from: string, to: string, depth = 0): numb
           const text = readFileSync(file, "utf8");
           const moved = text.replaceAll(`${from}/`, `${to}/`);
           if (moved !== text) {
+            // Cargo judges a build script's output by its modified time, so
+            // keep it, or everything built on the output rebuilds.
+            const { atime, mtime } = statSync(file);
             writeFileSync(file, moved);
+            utimesSync(file, atime, mtime);
             changed++;
           }
         }
