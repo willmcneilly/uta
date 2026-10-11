@@ -1144,6 +1144,53 @@ mod tests {
         );
     }
 
+    /// A track with no notes and a Delay costs nothing for its chain: the
+    /// Delay is asleep, as is one on the master, and neither does any work
+    /// however long it plays. Once the track plays a note, both wake.
+    #[test]
+    fn a_track_with_no_notes_and_a_sleeping_chain_costs_nothing() {
+        use uta_core::{Chain, Effect, EffectId, EffectKind, PlacedEffect};
+        let mut project = Project::with_id(ProjectId::from_uuid(Uuid::from_u128(1)));
+        let track = project.tracks()[0].id();
+        let delay =
+            |n| Effect::default_of(EffectId::from_uuid(Uuid::from_u128(n)), EffectKind::Delay);
+        project
+            .apply(&Command::AddEffects {
+                effects: vec![
+                    PlacedEffect {
+                        chain: Chain::Track(track),
+                        index: 0,
+                        effect: delay(1),
+                    },
+                    PlacedEffect {
+                        chain: Chain::Master,
+                        index: 0,
+                        effect: delay(2),
+                    },
+                ],
+            })
+            .unwrap();
+        let config = EngineConfig {
+            sample_rate: 48_000,
+            channels: 2,
+        };
+        let mut renderer = Renderer::new(config, Snapshot::from(&project), 128);
+        renderer.controller.play().unwrap();
+        renderer.render(48_000);
+        let processor = renderer.processor();
+        assert_eq!(processor.slots[0].chain.processed(), 0);
+        assert_eq!(processor.master.processed(), 0);
+
+        renderer
+            .controller
+            .note_on(0, crate::NoteKey(1), 60, 100)
+            .unwrap();
+        renderer.render(128);
+        let processor = renderer.processor();
+        assert_eq!(processor.slots[0].chain.processed(), 128);
+        assert_eq!(processor.master.processed(), 128);
+    }
+
     /// A sample within full scale comes out of the hard clip bit for bit
     /// and isn't counted; one past it is cut off at full scale and counted,
     /// and NaN is silenced and counted.

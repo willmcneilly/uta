@@ -193,6 +193,9 @@ impl Chain {
         frames: usize,
         used: &mut Producer<Box<EffectState>>,
     ) {
+        if self.count == 0 {
+            return;
+        }
         self.settle(used);
         let mut start = 0;
         // Each run ends at least one fade, or the block.
@@ -219,8 +222,9 @@ impl Chain {
         let (left, right) = (&mut left[run.clone()], &mut right[run.clone()]);
         let [dry_left, dry_right] = &mut self.dry;
         let (dry_left, dry_right) = (&mut dry_left[run.clone()], &mut dry_right[run]);
-        // Whether what goes into the next effect is silence.
-        let mut silent = is_silent(left) && is_silent(right);
+        // Whether what goes into the next effect is silence: checked only
+        // when an effect might be asleep, and false once one has worked.
+        let mut silent = None;
         // Bounded by CHAIN_CAPACITY.
         for held in self.held[..self.count].iter_mut().flatten() {
             let fading = held.presence.is_moving();
@@ -228,7 +232,11 @@ impl Chain {
                 // Off, or faded out: the sound passes it by.
                 continue;
             }
-            if silent && !fading && !held.mix.is_moving() && !held.state.is_ringing() {
+            if !fading
+                && !held.mix.is_moving()
+                && !held.state.is_ringing()
+                && *silent.get_or_insert_with(|| is_silent(left) && is_silent(right))
+            {
                 // Asleep: given silence, it would give silence.
                 continue;
             }
@@ -246,7 +254,7 @@ impl Chain {
             held.state.process(left, right);
             held.mix
                 .blend([dry_left, dry_right], [left, right], &mut held.presence);
-            silent = false;
+            silent = Some(false);
         }
     }
 
