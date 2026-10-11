@@ -1,10 +1,12 @@
 // The command line for `scripts/ticket`, which runs it with Node. The commands
 // are in ticket.ts, and the Notion and GitHub behind them in ticketServices.ts.
 
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Refusal, claim, merge, newDecision, parseId, ready, show, tick } from "./ticket.ts";
-import { realServices } from "./ticketServices.ts";
+import { evidenceProblems } from "./evidence.ts";
+import { Refusal, claim, describeProblems, merge, newDecision, parseId, ready, show, sync, tick } from "./ticket.ts";
+import { gitTree, realServices } from "./ticketServices.ts";
 
 const HELP = `Usage: scripts/ticket <command> [args] [--dry-run]
 
@@ -42,6 +44,27 @@ Commands:
       the ticket Done, sets each Backlog ticket it unblocks to Ready, sets the
       project Done if every ticket in it is, and prints what's ready now.
       Already merged: skips to the Notion steps.
+
+  evidence-check <file> [--ref <commit>]
+      Checks that everything a PR body (in <file>) quotes in backticks is in
+      the branch: a name (snake_case or camelCase, such as a test's) is a
+      whole word in a tracked file; a path is a tracked file or folder; a
+      command's script, npm script, cargo package (-p) and test target
+      (--test), and any path in it, exist. Shell lines in bash blocks are
+      commands too. Placeholders (<n>, …), globs and target/ are skipped. It
+      also refuses totals ("509 tests"): name the tests, don't count them.
+      Checks the working tree, or the commit --ref names.
+
+  sync UTA-n --pr <n> <file>
+      Makes the ticket and the PR match <file>, the PR body: runs
+      evidence-check on it, then updates the PR's description, ticks and
+      unticks the ticket's criteria to match the PR's "- [x]" and "- [ ]"
+      lines under "## Acceptance criteria" (each line starts with the
+      ticket's text for that criterion), replaces the ticket's Verification
+      notes with the PR's acceptance criteria, "For Will to try" and
+      follow-ups, and sets the ticket's PR link and In Review. Changes only
+      what differs, so running it again after a fix updates everything in
+      one go, and once more changes nothing.
 
   decision new --name <text> --needed <text> --chosen <text>
                --principles <text> --alternatives <text> --ticket UTA-n
@@ -125,6 +148,26 @@ function main(argv: string[]): number {
         const id = ticketArg();
         noMore();
         out = merge(services, run, id);
+        break;
+      }
+      case "evidence-check": {
+        const ref = option(rest, "--ref");
+        const file = rest.shift();
+        if (file === undefined) throw new Usage("evidence-check needs a file: the PR body.");
+        noMore();
+        const problems = evidenceProblems(readFileSync(file, "utf8"), gitTree(checkout, ref));
+        if (problems.length > 0) throw new Refusal(describeProblems(file, problems));
+        out = [`Every reference in ${file} is in ${ref ?? "the working tree"}.`];
+        break;
+      }
+      case "sync": {
+        const pr = Number(required(rest, "--pr"));
+        if (!Number.isInteger(pr) || pr <= 0) throw new Usage("--pr needs a PR number.");
+        const id = ticketArg();
+        const file = rest.shift();
+        if (file === undefined) throw new Usage("sync needs a file: the PR body.");
+        noMore();
+        out = sync(services, run, gitTree(checkout), id, pr, resolve(file), readFileSync(file, "utf8"));
         break;
       }
       case "decision": {
