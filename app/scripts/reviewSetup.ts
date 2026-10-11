@@ -54,6 +54,18 @@ export function cutoff(commit: string, commits: readonly PullCommit[], reviews: 
   return times.sort()[0];
 }
 
+export type History = { reviews: Review[]; comments: ReviewComment[]; conversation: IssueComment[] };
+
+/**
+ * What was recorded strictly before `at`. The first review of the commit is
+ * recorded at `at` itself, so it's left out: it's the round being redone.
+ */
+export const recordedBefore = (history: History, at: string): History => ({
+  reviews: history.reviews.filter((review) => review.submitted_at < at),
+  comments: history.comments.filter((comment) => comment.created_at < at),
+  conversation: history.conversation.filter((comment) => comment.created_at < at),
+});
+
 /**
  * The PR's body as it was at `cutoff`. GitHub keeps every version; the first
  * is the body the PR was opened with, used even when it was opened later.
@@ -215,19 +227,18 @@ export function reviewSetup(cwd: string, args: Args): string {
   const commit = args.commit ? pull.commits.find((c) => c.oid.startsWith(args.commit ?? ""))?.oid : head;
   if (!commit) throw new Error(`${args.commit} isn't one of PR #${args.pr}'s commits.`);
 
-  let reviews = github.reviews(args.pr);
-  let comments = github.reviewComments(args.pr);
-  let conversation = github.issueComments(args.pr);
-  let body = pull.body;
+  const all: History = {
+    reviews: github.reviews(args.pr),
+    comments: github.reviewComments(args.pr),
+    conversation: github.issueComments(args.pr),
+  };
+  const at = args.commit ? cutoff(commit, pull.commits, all.reviews) : undefined;
+  const { reviews, comments, conversation } = at ? recordedBefore(all, at) : all;
+  const body = at ? bodyAt(pull.body, github.bodyEdits(args.pr), at) : pull.body;
   let leftOut = "";
-  const at = args.commit ? cutoff(commit, pull.commits, reviews) : undefined;
   if (at) {
-    const count = reviews.length + comments.length + conversation.length;
-    reviews = reviews.filter((review) => review.submitted_at < at);
-    comments = comments.filter((comment) => comment.created_at < at);
-    conversation = conversation.filter((comment) => comment.created_at < at);
-    body = bodyAt(body, github.bodyEdits(args.pr), at);
-    const dropped = count - reviews.length - comments.length - conversation.length;
+    const count = (h: History) => h.reviews.length + h.comments.length + h.conversation.length;
+    const dropped = count(all) - reviews.length - comments.length - conversation.length;
     leftOut = `Left out everything recorded from ${when(at)} on (${dropped} of its reviews and comments), and the PR body is as it was then.`;
   }
 
@@ -263,7 +274,7 @@ export function reviewSetup(cwd: string, args: Args): string {
     `Ticket: ${ticket ? `${ticket} (.claude/skills/uta-notion/ntn.sh pages get ${ticket})` : "no Notion link found in the PR body"}`,
     `Worktree: ${path}, ${worktree}. cd there and work there; keep it at the end of the round.`,
     ...warmed.map((line) => `  ${line}`),
-    `  Run from it (they work at any commit): ${CI_WAIT} ${args.pr}, ${join(SCRIPTS, "mutate")}`,
+    `  Run from it (they work at any commit): ${CI_WAIT} ${args.pr} --commit ${commit}, ${join(SCRIPTS, "mutate")}`,
     `  app/node_modules: ${nodeModulesCurrent(path) ? "current" : "missing or out of date: run npm ci in app/ before any frontend test"}`,
   ];
   if (leftOut) out.push("", leftOut);

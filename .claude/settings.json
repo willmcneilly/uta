@@ -6,7 +6,6 @@
       "Bash(scripts/warm)",
       "Bash(scripts/review-setup *)",
       "Bash(scripts/ci-wait *)",
-      "Bash(scripts/mutate *)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",
       "Bash(cargo test *)",

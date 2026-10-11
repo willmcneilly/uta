@@ -40,7 +40,7 @@ scripts/dev-app start                               # open this checkout's app o
 scripts/dev-app status                              # is it up, which commit and port, any errors since it started
 scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
 scripts/review-setup <pr>                           # a review round's PR, history, CI and worktree, in one go
-scripts/ci-wait <pr>                                # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
+scripts/ci-wait <pr> [--commit <sha>]               # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
 scripts/mutate --named rt-alloc                     # break the code on purpose, run its tests, put it back: CAUGHT or MISSED
 
 # Rust

@@ -10,6 +10,7 @@ import {
   goldens,
   parseArgs,
   parseNameStatus,
+  recordedBefore,
   threads,
   ticketId,
   worktreePath,
@@ -77,6 +78,24 @@ describe("cutoff", () => {
 
   it("is undefined for an unreviewed head, so nothing is left out", () => {
     expect(cutoff("c2", commits, [review(1, "c1", "2026-10-10T19:16:00Z")])).toBeUndefined();
+  });
+});
+
+describe("recordedBefore", () => {
+  it("keeps only what came strictly before the cutoff, so the commit's own first review is left out", () => {
+    const at = "2026-10-10T19:16:59Z";
+    const history = {
+      reviews: [review(1, "c0", "2026-10-10T18:00:00Z"), review(2, "c1", at), review(3, "c2", "2026-10-10T19:30:00Z")],
+      comments: [comment(1, "2026-10-10T18:00:00Z"), comment(2, at)],
+      conversation: [
+        { id: 1, created_at: "2026-10-10T18:30:00Z", body: "fixes", user: { login: "will" } },
+        { id: 2, created_at: "2026-10-10T19:20:00Z", body: "later fixes", user: { login: "will" } },
+      ],
+    };
+    const kept = recordedBefore(history, at);
+    expect(kept.reviews.map((r) => r.id)).toEqual([1]);
+    expect(kept.comments.map((c) => c.id)).toEqual([1]);
+    expect(kept.conversation.map((c) => c.id)).toEqual([1]);
   });
 });
 

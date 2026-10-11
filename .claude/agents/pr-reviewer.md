@@ -58,12 +58,12 @@ Each finding gets a severity:
    scripts/mutate --named rt-alloc                     # an allocation in the process path; --list shows the standard ones
    scripts/mutate <file> <find> <replace> -- <test command>
    ```
-   It prints CAUGHT when the tests failed, MISSED when they passed, and DIDN'T BUILD when the mutation didn't compile (which proves nothing: try another). Use `--named` where one fits, rather than inventing it. A criterion whose test can't fail isn't met.
+   It prints CAUGHT when the tests failed, MISSED when they passed, and DIDN'T BUILD when the mutated code didn't compile or parse (which proves nothing: try another). Use `--named` where one fits, rather than inventing it. A criterion whose test can't fail isn't met.
 3. **Checks.** CI runs the full suite on every push, so don't run it again locally. `review-setup` shows CI on the commit you're reviewing. If it's still running (or hasn't started), wait for it:
    ```bash
-   scripts/ci-wait <n>                                 # given a commit: scripts/ci-wait <n> --commit <sha>
+   scripts/ci-wait <n> --commit <sha>                  # the commit you're reviewing, as review-setup prints it
    ```
-   It exits 0 when every check passed on that commit, 1 when one failed, 2 when the checks aren't for that commit (none started, or the head moved), and 3 when it timed out with CI still running (run it again).
+   Always pass the commit, so a push during the review can't pass off another commit's CI as this one's. It exits 0 when every check passed on that commit, 1 when one failed, 2 when no checks started for it, and 3 when it timed out with CI still running (run it again).
    - **Green on the commit you're reviewing:** that covers fmt, clippy, the tests, RTSan, the frontend checks and the release build. Run locally only the tests behind each criterion, your mutations, and what CI can't do: listening renders, and looking at changed golden WAVs.
    - **Red, missing, or for another commit:** run the checks locally, as CI would: `scripts/check --all --rerun` in your worktree runs every job and ignores passes recorded before, the implementer's included. Run it in the background; it ends with one line per job and the log of any that failed. Say in the review which checks you ran and why.
    - **Never run the timing reports locally.** CI runs them, and they aren't gated.

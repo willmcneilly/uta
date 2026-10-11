@@ -22,8 +22,14 @@ export function occurrences(text: string, find: string): number {
   return count;
 }
 
-/** cargo's line when the mutated code didn't compile, so no test ran. */
-export const didNotBuild = (output: string) => /^error: could not compile/m.test(output);
+/**
+ * The mutated code didn't compile or parse, so no test judged it: cargo's
+ * compile failure, Vite's when vitest couldn't load a file, or tsc's errors.
+ */
+export const didNotBuild = (output: string) =>
+  // Anchored at the start of a line, where only the tools print them: a
+  // failing test's source, which vitest quotes, can mention them too.
+  /^(error: could not compile|Error: Transform failed with \d+ error|\S+\(\d+,\d+\): error TS\d+:)/m.test(output);
 
 /**
  * A mutation in progress is written down before the file changes, so a run
@@ -75,7 +81,11 @@ export type Run = {
   replace: string;
   command: readonly string[];
   cwd: string;
+  /** Where the command's output goes: this process's own by default. */
+  echo?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
 };
+
+const echoHere = (chunk: Buffer, stream: "stdout" | "stderr") => process[stream].write(chunk);
 
 export type Outcome = { code: number; verdict: string };
 
@@ -106,15 +116,14 @@ export async function mutate(run: Run, print: (text: string) => void = console.l
     rmSync(record, { force: true });
   };
   process.once("exit", restore);
-  writeFileSync(run.file, mutated);
-  print(`Mutated ${shown}. Running: ${run.command.join(" ")}`);
 
   let interrupted = false;
   let tail = "";
   let child: ReturnType<typeof spawn> | undefined;
   // Ctrl-C reaches the whole process group, the command included; a signal
   // sent to this process alone is passed on. Either way the file is restored
-  // once the command has stopped, or at once on a second signal.
+  // once the command has stopped, or at once on a second signal. Set up
+  // before the file changes, so no signal finds it mutated and unguarded.
   const onSignal = (signal: NodeJS.Signals) => {
     if (interrupted) restore();
     interrupted = true;
@@ -123,14 +132,18 @@ export async function mutate(run: Run, print: (text: string) => void = console.l
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
   for (const signal of signals) process.on(signal, onSignal);
   try {
+    writeFileSync(run.file, mutated);
+    print(`Mutated ${shown}. Running: ${run.command.join(" ")}`);
     const code = await new Promise<number | null>((resolve, reject) => {
+      if (interrupted) return resolve(null);
       child = spawn(run.command[0], run.command.slice(1), { cwd: run.cwd, stdio: ["ignore", "pipe", "pipe"] });
-      const keep = (chunk: Buffer, to: NodeJS.WriteStream) => {
-        to.write(chunk);
+      const echo = run.echo ?? echoHere;
+      const keep = (chunk: Buffer, stream: "stdout" | "stderr") => {
+        echo(chunk, stream);
         tail = (tail + chunk.toString("utf8")).slice(-TAIL);
       };
-      child.stdout?.on("data", (chunk: Buffer) => keep(chunk, process.stdout));
-      child.stderr?.on("data", (chunk: Buffer) => keep(chunk, process.stderr));
+      child.stdout?.on("data", (chunk: Buffer) => keep(chunk, "stdout"));
+      child.stderr?.on("data", (chunk: Buffer) => keep(chunk, "stderr"));
       child.on("error", reject);
       child.on("close", resolve);
     });
@@ -138,7 +151,7 @@ export async function mutate(run: Run, print: (text: string) => void = console.l
     if (interrupted) return { code: INTERRUPTED, verdict: `INTERRUPTED. ${shown} is restored.` };
     if (code === 0) return { code: MISSED, verdict: `MISSED: the command passed with ${shown} broken.` };
     if (didNotBuild(tail)) {
-      return { code: NOT_BUILT, verdict: `DIDN'T BUILD: the mutated code didn't compile, so no test judged it.` };
+      return { code: NOT_BUILT, verdict: `DIDN'T BUILD: the mutated code didn't compile or parse, so no test judged it.` };
     }
     return { code: CAUGHT, verdict: `CAUGHT: the command failed with ${shown} broken.` };
   } finally {

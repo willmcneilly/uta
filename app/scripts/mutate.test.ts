@@ -27,8 +27,13 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 /** A command that fails when the file has the mutation in it, as a test would. */
 const testFor = (text: string) => ["sh", "-c", `! grep -q '${text}' processor.rs`];
 
+// The command's output is kept out of the test run's own: a test failing
+// with cargo's build error in the log would read as DIDN'T BUILD to a
+// reviewer's mutate.
+const quiet = () => {};
+
 const run = (find: string, replace: string, command: readonly string[]) =>
-  mutate({ root: dir, cwd: dir, file, find, replace, command }, () => {});
+  mutate({ root: dir, cwd: dir, file, find, replace, command, echo: quiet }, quiet);
 
 describe("occurrences", () => {
   it("counts non-overlapping matches", () => {
@@ -39,9 +44,14 @@ describe("occurrences", () => {
 });
 
 describe("didNotBuild", () => {
-  it("spots cargo's compile failure, not a test failure", () => {
+  it("spots a compile or parse failure, not a test failure", () => {
     expect(didNotBuild("error[E0425]: cannot find value\nerror: could not compile `uta-engine`\n")).toBe(true);
+    expect(didNotBuild("FAIL  scripts/warm.test.ts\nError: Transform failed with 1 error:\n[PARSE_ERROR]")).toBe(true);
+    expect(didNotBuild("scripts/git.ts(107,56): error TS1005: ')' expected.")).toBe(true);
     expect(didNotBuild("test result: FAILED. 3 passed; 1 failed\nerror: test failed")).toBe(false);
+    expect(didNotBuild("FAIL  DrumPanel.test.tsx > shows the knobs\nAssertionError: expected 2 to be 3")).toBe(false);
+    // vitest quoting a failing test's source, which mentions the patterns.
+    expect(didNotBuild('  42|     expect(didNotBuild("Error: Transform failed with 1 error")).toBe(true);')).toBe(false);
   });
 });
 
@@ -131,7 +141,7 @@ describe("the command line", () => {
 
     const lines: string[] = [];
     const outcome = await mutate(
-      { root: dir, cwd: dir, file, find: "now()", replace: "later()", command: ["true"] },
+      { root: dir, cwd: dir, file, find: "now()", replace: "later()", command: ["true"], echo: quiet },
       (text) => lines.push(text),
     );
     expect(lines[0]).toBe("Restored processor.rs, left mutated by a run that was killed.");
