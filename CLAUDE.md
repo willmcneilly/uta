@@ -60,6 +60,14 @@ npm run tauri build -- --ci                         # release build: target/rele
 
 **Before opening a PR, run all of the above checks and fix everything they report.** CI runs the same set.
 
+## Shell and tools
+
+- The shell is zsh: quote globs (`--include='*.rs'`) or use `rg`, don't start an `echo` with `=` (`echo ====` fails), and brace a variable before a colon (`"${c}:refs/heads/…"`, since `$c:r` is a modifier).
+- Never `sleep` to wait for something: run the command in the background and wait for its notification, or use Monitor.
+- There's no Prettier. `npm run lint` is the only formatting check for the frontend.
+- Python has only the standard library (no numpy or PIL), and its `wave` module can't read Uta's float WAVs.
+- `gh pr view <n>` and `--comments` fail on this repo (the retired classic Projects field): pass `--json <fields>`, or use `gh api`.
+
 ## The audio thread rules
 
 These aren't negotiable. The audio thread is called hundreds of times a second, and anything slow or unpredictable is an audible click. Code that runs on it (the process path, and the cpal error callback, which cpal can call from the audio thread) must never:
@@ -108,14 +116,14 @@ Nobody listens to every change, so the tests are the evidence:
 
 ## Working on tickets
 
-Work is planned in Notion (Will's personal workspace, never Stora): RFCs → Projects → Tickets. Use the `notion` skill and its `ntn.sh` wrapper for all Notion access. The `work-ticket` skill has the full process.
+Work is planned in Notion (Will's personal workspace, never Stora): RFCs → Projects → Tickets. Use the `uta-notion` skill and its `ntn.sh` wrapper for all Notion access. The `work-ticket` skill has the full process.
 
 - Tickets have IDs `UTA-n` and a status: Backlog · Ready · In Progress · Blocked · In Review · Done. Only start a `Ready` ticket whose dependencies are `Done` and merged.
 - Branch: `uta-<n>-<short-slug>`, e.g. `uta-2-engine-core`, from an up-to-date `main`.
 - PR title: `UTA-<n>: <ticket name>`. The body has what changed and why, the acceptance criteria with evidence, "For Will to try" steps, and follow-ups.
 - Stay in scope. Anything else worth doing goes under follow-ups in the PR, not in the diff.
 - Ideas Will has along the way that aren't about the current PR go in the scratchpad (`/note`, the `scratchpad` skill), and they're reviewed between projects.
-- New concepts go in the Notion **Glossary** so Will can follow how Uta is built: an RFC lists its new terms for review, and a ticket adds any that came up during the work (see the `rfc`, `work-ticket` and `notion` skills).
+- New concepts go in the Notion **Glossary** so Will can follow how Uta is built: an RFC lists its new terms for review, and a ticket adds any that came up during the work (see the `rfc`, `work-ticket` and `uta-notion` skills).
 - When the way we work changes (a skill, a rule, a new tool or step), add an entry to the Notion **Process log**: what wasn't working, with evidence, and what changed. Status starts at `Trying`. It's the record of how the process that builds Uta has evolved.
 - Before In Review: tick the met criteria on the ticket and fill in its Verification notes.
 - Comments you post to Notion start with `🤖 Claude:`, because the CLI posts as Will.

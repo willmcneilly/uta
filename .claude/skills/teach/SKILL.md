@@ -54,7 +54,7 @@ If the question is really several questions, say so and ask which one to answer 
 
 Send the research to subagents so your own context stays lean. Give them the question, the scope, and these instructions:
 
-- Read the code at `HEAD`, the RFCs (`docs/rfcs/`), the project plans (`docs/plans/`) and `CLAUDE.md`. Use the `notion` skill for tickets, and `git log` and `gh pr view` for history.
+- Read the code at `HEAD`, the RFCs (`docs/rfcs/`), the project plans (`docs/plans/`) and `CLAUDE.md`. Use the `uta-notion` skill for tickets, and `git log` and `gh pr view <n> --json title,body,url` for history (plain `gh pr view` fails on this repo).
 - For every step or claim, return the source (`file:line`) and the label (Decided / Emerged / Drift).
 - Report what's missing: the parts of the intended design that aren't built yet, and which ticket builds them.
 - Report how it's proven: the tests that cover it, by name and `file:line`.

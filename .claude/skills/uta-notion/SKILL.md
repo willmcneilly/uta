@@ -1,36 +1,39 @@
 ---
-name: notion
-description: How to read and write the Uta project's Notion (RFCs, Projects, Tickets) with the ntn CLI. Use whenever you need to create or update an RFC, project or ticket, change a ticket's status, add a PR link, read or post comments, or query what work is ready.
+name: uta-notion
+description: How to read and write Uta's Notion (RFCs, Projects, Tickets, Scratchpad, Glossary, Design decisions, Process log) in Will's personal workspace, with the project's ntn.sh wrapper. Use for anything in Notion while working on Uta: reading or updating a ticket, RFC or project, changing a status, adding a PR link, reading or posting comments, or querying what work is ready. Not the global `notion` skill, which defaults to Stora.
 ---
 
-# Notion via `ntn`
+# Uta's Notion via `ntn.sh`
 
 ## Always use the wrapper
 
 ```bash
-.claude/skills/notion/ntn.sh <args>
+.claude/skills/uta-notion/ntn.sh <args>
 ```
 
-It pins `NOTION_WORKSPACE_ID` to Will's **personal** workspace ("Will"). Bare `ntn` defaults to the **Stora** work workspace. Never use it for this project. Check with `.claude/skills/notion/ntn.sh whoami` (the workspace should be "Will", not Stora).
+Below, `N` means `.claude/skills/uta-notion/ntn.sh`.
 
-Below, `N` means `.claude/skills/notion/ntn.sh`.
-
-**Always redirect stdin: `N ... </dev/null`.** Run from a non-interactive shell, `ntn` waits on stdin and hangs forever, even with `-d`. For large bodies, build the JSON in the scratchpad with python and pass it as `-d "$(cat file.json)"`.
+- **Workspace.** It pins `NOTION_WORKSPACE_ID` to Will's **personal** workspace ("Will"). Bare `ntn` defaults to the **Stora** work workspace: never use it for this project. `N whoami` should say "Will".
+- **Stdin.** Run without a terminal, `ntn api` waits on an open stdin forever, so the wrapper closes stdin for you. Don't add `</dev/null`. To pipe a body in, put `--stdin` first: `N --stdin pages update <id> < body.md`, or `N --stdin api v1/pages < body.json` for a large JSON body.
+- **Named data sources.** `N <source> query [args]`, `N <source> create -d '<json>'` (sets `parent` for you) and `N <source> id`. The sources are in the table below.
+- **Output.** `query` prints TSV (page id, then the properties); add `--json` before piping it to `jq` or `json.load`. Sort with `--sort "Prop desc"` (or `-s`), not `--sorts`.
 
 ## Uta IDs
 
 Uta page: `3e83af96-9b6f-8190-b519-dc8cf3aeab6f` (https://app.notion.com/p/Uta-3e83af969b6f8190b519dc8cf3aeab6f)
 
-| Database | Database ID | Data source ID (use for rows and queries) |
+| Database | Source name in `N` | Database ID |
 |---|---|---|
-| RFCs | `5c6fe131-a98d-4ea9-8119-44e8e10af9c6` | `ab1b763c-b9f2-48c5-ade6-a1ba218330f0` |
-| Projects | `f11524a3-50c2-4951-895d-ac946a5dbcd2` | `e0dc7875-8865-4bbe-bcff-785efb0cda42` |
-| Tickets | `ad66cdaf-cd4a-4914-b236-2cbc2f66291b` | `444117ac-b9f1-4686-b828-1919e9ba098f` |
-| Research | `aac52824-9d59-4441-bcb6-33e622295ba5` | `b88b291e-91e7-43f8-896f-68e7084eaa6b` |
-| Scratchpad | `057ed2bc-7159-4f9d-ba6d-b034fed1eacc` | `847d5e5a-0916-4048-b2a0-38722bb92e22` |
-| Glossary | `8390e24d-2f94-4ad8-b596-7f8bb96f33f4` | `c0000cba-8a67-441c-a229-8bdc19e5efb3` |
-| Design decisions | `5ffe6cc3-e708-432a-9012-6365764d9c2f` | `795ede6b-3d43-45f7-b39f-dd76bd8ab69c` |
-| Process log | `1493a924-3535-4547-a39e-5be2c2f344b2` | `558259e3-1a50-449b-8e99-4a7b66f25f33` |
+| RFCs | `rfcs` | `5c6fe131-a98d-4ea9-8119-44e8e10af9c6` |
+| Projects | `projects` | `f11524a3-50c2-4951-895d-ac946a5dbcd2` |
+| Tickets | `tickets` | `ad66cdaf-cd4a-4914-b236-2cbc2f66291b` |
+| Research | `research` | `aac52824-9d59-4441-bcb6-33e622295ba5` |
+| Scratchpad | `scratchpad` | `057ed2bc-7159-4f9d-ba6d-b034fed1eacc` |
+| Glossary | `glossary` | `8390e24d-2f94-4ad8-b596-7f8bb96f33f4` |
+| Design decisions | `decisions` | `5ffe6cc3-e708-432a-9012-6365764d9c2f` |
+| Process log | `process-log` | `1493a924-3535-4547-a39e-5be2c2f344b2` |
+
+A new database gets a line in `ntn.sh`'s `source_id` and a row here.
 
 Will's Notion user ID (for `people` properties such as RFC Author): `eafd9c84-49ac-412c-91f2-650a1edfa069`
 
@@ -74,15 +77,15 @@ Branches and PR titles use the ticket ID: branch `uta-12-short-name`, PR title `
 
 - `N pages get <id>` returns the page as Markdown with properties as YAML frontmatter. Best way to read a ticket/RFC.
 - `N pages create --content '# Title\n\nBody'` creates a page. A leading `# H1` becomes the title and is removed from the body. With no `--parent` it lands at the workspace root.
-- `N pages update <id> --content '...'` (or via stdin) **replaces the whole body**. Read it first, edit, write back. Never blind-overwrite an RFC someone has edited.
+- `N pages update <id> --content '...'` (or `N --stdin pages update <id> < body.md`) **replaces the whole body**. Read it first, edit, write back. Never blind-overwrite an RFC someone has edited.
 - `N pages trash <id> --yes` (`--yes` is required when non-interactive).
 - `N api <path> [-X METHOD] -d '<json>'` is the raw API, needed for properties, databases and comments. `N api ls` lists endpoints; `N api <path> -X POST --spec` shows the schema.
 
 ## Recipes
 
-**Create a row with properties and body in one call.** `markdown` is a top-level field:
+**Create a row with properties and body in one call.** `markdown` is a top-level field, and `create` adds the `parent`:
 ```bash
-N api v1/pages -d '{"parent":{"data_source_id":"<DS>"},
+N tickets create -d '{
   "properties":{"Name":{"title":[{"text":{"content":"Ticket title"}}]},
                 "Status":{"status":{"name":"Backlog"}},
                 "Project":{"relation":[{"id":"<project page id>"}]}},
@@ -98,10 +101,11 @@ N api v1/pages/<id> -X PATCH -d '{"properties":{"Status":{"status":{"name":"In R
 
 **Query a data source.** Default output is TSV (id, ID, title, props…), and `--json` gives full objects:
 ```bash
-N datasources query <DS> --filter '{"property":"Status","status":{"equals":"Ready"}}'
-N datasources query <DS> --filter '{"property":"ID","unique_id":{"equals":12}}'   # find UTA-12
+N tickets query --filter '{"property":"Status","status":{"equals":"Ready"}}'
+N tickets query --filter '{"property":"ID","unique_id":{"equals":12}}'   # find UTA-12
+N tickets query --json --filter '{"property":"Status","status":{"equals":"Ready"}}' | jq -r '.results[].id'
 ```
-`N datasources resolve <database-id>` turns a database ID into its data source ID.
+`N datasources resolve <database-id>` turns any other database ID into its data source ID.
 
 **Comments:**
 ```bash
@@ -119,7 +123,7 @@ N api v1/databases -d '{"parent":{"type":"page_id","page_id":"<page>"},
   "title":[{"text":{"content":"Tickets"}}],
   "initial_data_source":{"properties":{"Name":{"title":{}}, "ID":{"unique_id":{"prefix":"UTA"}}}}}'
 ```
-The response's `data_sources[0].id` is the data source ID. Record it above.
+The response's `data_sources[0].id` is the data source ID. Add it to `source_id` in `ntn.sh`, and the database to the table above.
 
 ## Rules
 

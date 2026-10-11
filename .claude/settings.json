@@ -27,7 +27,7 @@
       "Bash(git merge-base *)",
       "Bash(git stash *)",
       "Bash(git checkout -- *)",
-      "Bash(.claude/skills/notion/ntn.sh *)"
+      "Bash(.claude/skills/uta-notion/ntn.sh *)"
     ]
   }
 }
