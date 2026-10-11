@@ -22,7 +22,7 @@ import {
   projectView,
   recordingFactory,
   drumTrackView,
-  synthOf,
+  withSynth,
   trackView,
 } from "../pianoRoll/testing";
 import { pitchToY, tickToX as rollTickToX } from "../pianoRoll/viewport";
@@ -110,13 +110,9 @@ beforeEach(() => {
   const first = trackView("track-1", "Synth 1", [
     clip("clip-1", 0, 4 * BAR, [note("n1", 60, 0), note("n2", 67, BAR)]),
   ]);
-  const second = {
-    ...trackView("track-2", "Synth 2", [clip("clip-2", 8 * BAR, 2 * BAR)]),
-    source: {
-      kind: "synth" as const,
-      synth: { ...synthOf(trackView("", "")), waveform: "square" as const },
-    },
-  };
+  const second = withSynth(trackView("track-2", "Synth 2", [clip("clip-2", 8 * BAR, 2 * BAR)]), {
+    waveform: "square",
+  });
   project = projectView({ tracks: [first, second], songEnd: 11 * BAR });
   beforeGesture = new Map();
   frames = null;

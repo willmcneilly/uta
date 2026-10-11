@@ -1,18 +1,22 @@
-import { useState } from "react";
-import type { Limits, SynthLimits, SynthParam, SynthView, Waveform } from "./backend";
+import { type ReactNode, useState } from "react";
+import type {
+  NumberSettingView,
+  SynthNumber,
+  SynthParam,
+  SynthSettingView,
+  Unit,
+  Waveform,
+} from "./backend";
 import { Group } from "./design/Group";
 import { Knob } from "./design/Knob";
-import type { NumberScale } from "./design/numberScale";
-import { type Option, SegmentedChoice } from "./design/SegmentedChoice";
+import { SegmentedChoice } from "./design/SegmentedChoice";
 import {
   SETTING_STEPS,
-  type Scale,
   formatAmount,
   formatHz,
   formatLevel,
   formatSeconds,
-  fromPosition,
-  toPosition,
+  settingScale,
 } from "./synthScale";
 import { EnvelopeDrawing, FilterDrawing } from "./synth/Drawings";
 import type { StageName } from "./synth/envelopeShape";
@@ -20,10 +24,11 @@ import { DEFAULT_SAMPLE_RATE } from "./synth/filterCurve";
 import "./SynthPanel.css";
 
 interface Props {
-  synth: SynthView;
-  limits: SynthLimits;
-  /** A new track's settings, which a reset sets each knob to. */
-  defaults: SynthView;
+  /**
+   * Each of the synth's settings, as Rust describes them: its value, label,
+   * unit, limits, scale and default, or its choices.
+   */
+  settings: SynthSettingView[];
   /**
    * The engine's sample rate, which the filter's curve depends on, or null
    * before a device is open.
@@ -42,24 +47,28 @@ function cycle(path: string) {
   );
 }
 
-/** Each waveform, with one cycle of it drawn. */
-const WAVEFORMS: Option<Waveform>[] = [
-  { value: "sine", label: "Sine", drawing: cycle("M0,6 C4.5,-2 9.5,-2 14,6 S23.5,14 28,6") },
-  { value: "triangle", label: "Triangle", drawing: cycle("M0,6 L7,0 L21,12 L28,6") },
-  { value: "saw", label: "Saw", drawing: cycle("M0,12 L14,0 L14,12 L28,0 L28,12") },
-  { value: "square", label: "Square", drawing: cycle("M0,12 L0,0 L14,0 L14,12 L28,12 L28,0") },
-];
-
-type SettingName = Exclude<SynthParam["name"], "waveform">;
-
-const FIELDS: Record<SettingName, Exclude<keyof SynthView, "waveform">> = {
-  cutoff_hz: "cutoffHz",
-  resonance: "resonance",
-  attack_seconds: "attackSeconds",
-  decay_seconds: "decaySeconds",
-  sustain: "sustain",
-  release_seconds: "releaseSeconds",
+/** One cycle of each waveform, drawn above its name. */
+const CYCLES: Record<Waveform, ReactNode> = {
+  sine: cycle("M0,6 C4.5,-2 9.5,-2 14,6 S23.5,14 28,6"),
+  triangle: cycle("M0,6 L7,0 L21,12 L28,6"),
+  saw: cycle("M0,12 L14,0 L14,12 L28,0 L28,12"),
+  square: cycle("M0,12 L0,0 L14,0 L14,12 L28,12 L28,0"),
 };
+
+/** How each unit reads on the synth's knobs. */
+const FORMATS: Record<Unit, (value: number) => string> = {
+  hz: formatHz,
+  seconds: formatSeconds,
+  db: (db) => `${db.toFixed(1)} dB`,
+  fraction: formatLevel,
+  amount: formatAmount,
+};
+
+type SettingName = SynthNumber["name"];
+
+/** The settings each drawing shows, in the order of their knobs. */
+const FILTER: SettingName[] = ["cutoff_hz", "resonance"];
+const ENVELOPE: SettingName[] = ["attack_seconds", "decay_seconds", "sustain", "release_seconds"];
 
 const STAGES: Partial<Record<SettingName, StageName>> = {
   attack_seconds: "attack",
@@ -74,118 +83,88 @@ interface Dragged {
   value: number;
 }
 
-interface SettingProps {
-  label: string;
-  name: SettingName;
-  value: number;
-  defaultValue: number;
-  limits: Limits;
-  scale: Scale;
-  format: (value: number) => string;
-  onChange: Props["onChange"];
-  onDrag: (dragged: Dragged | null) => void;
-}
-
-/** A synth knob's positions, on its log or linear scale. */
-function synthScale(limits: Limits, scale: Scale): NumberScale {
-  return {
-    min: limits[0],
-    max: limits[1],
-    steps: SETTING_STEPS,
-    toPosition: (value) => toPosition(value, limits, scale),
-    fromPosition: (position) => fromPosition(position, limits, scale),
-  };
-}
-
 /**
- * One setting on a knob. It shows the value Rust last sent. An arrow key
- * moves it a hundredth of the way, and Shift+arrow a tenth.
+ * A track's synth: waveform, filter and envelope. Each control is drawn from
+ * the setting Rust describes, so the panel holds no label, range or default
+ * of its own; it only says which settings go where, around its drawings. The filter and the envelope are drawn above their knobs, from
+ * the values the knobs show, so the drawings follow a drag before Rust
+ * replies.
  */
-function Setting({
-  label,
-  name,
-  value,
-  defaultValue,
-  limits,
-  scale,
-  format,
-  onChange,
-  onDrag,
-}: SettingProps) {
-  return (
-    <Knob
-      label={label}
-      value={value}
-      defaultValue={defaultValue}
-      scale={synthScale(limits, scale)}
-      keyStep={SETTING_STEPS / 100}
-      format={format}
-      onChange={(setting, gesture) => onChange({ name, value: setting }, gesture)}
-      onDrag={(shown) => onDrag(shown === null ? null : { name, value: shown })}
-    />
-  );
-}
-
-/**
- * A track's synth: waveform, filter and envelope. The filter and the envelope
- * are drawn above their knobs, from the values the knobs show, so the
- * drawings follow a drag before Rust replies.
- */
-export function SynthPanel({ synth, limits, defaults, sampleRate, onChange }: Props) {
+export function SynthPanel({ settings, sampleRate, onChange }: Props) {
   // The knob being dragged: gesture state, gone when the drag ends.
   const [dragged, setDragged] = useState<Dragged | null>(null);
-  const shown: SynthView = dragged ? { ...synth, [FIELDS[dragged.name]]: dragged.value } : synth;
-  const setting = (
-    label: string,
-    name: SettingName,
-    limit: Limits,
-    scale: Scale,
-    format: (value: number) => string,
-  ) => (
-    <Setting
-      label={label}
-      name={name}
-      value={synth[FIELDS[name]]}
-      defaultValue={defaults[FIELDS[name]]}
-      limits={limit}
-      scale={scale}
-      format={format}
-      onChange={onChange}
-      onDrag={setDragged}
-    />
+  const numbers = new Map<string, NumberSettingView<SettingName>>();
+  for (const setting of settings) if (setting.kind === "number") numbers.set(setting.name, setting);
+  const number = (name: SettingName) => {
+    const setting = numbers.get(name);
+    if (!setting) throw new Error(`Rust sent no ${name} setting`);
+    return setting;
+  };
+  /** The value a setting's knob shows: the drag's, or what Rust last sent. */
+  const shown = (name: SettingName) =>
+    dragged?.name === name ? dragged.value : number(name).value;
+  const waveform = settings.find(
+    (setting): setting is Extract<SynthSettingView, { name: "waveform" }> =>
+      setting.name === "waveform",
   );
+
+  /**
+   * One setting on a knob. It shows the value Rust last sent. An arrow key
+   * moves it a hundredth of the way, and Shift+arrow a tenth.
+   */
+  const knob = (name: SettingName) => {
+    const setting = number(name);
+    return (
+      <Knob
+        key={name}
+        label={setting.label}
+        value={setting.value}
+        defaultValue={setting.default}
+        scale={settingScale(setting)}
+        keyStep={SETTING_STEPS / 100}
+        format={FORMATS[setting.unit]}
+        onChange={(value, gesture) => onChange({ name, value }, gesture)}
+        onDrag={(value) => setDragged(value === null ? null : { name, value })}
+      />
+    );
+  };
 
   return (
     <section className="synth" aria-label="Synth">
-      <SegmentedChoice
-        legend="Waveform"
-        name="waveform"
-        options={WAVEFORMS}
-        value={synth.waveform}
-        onChange={(value) => onChange({ name: "waveform", value })}
-      />
+      {waveform && (
+        <SegmentedChoice
+          legend={waveform.label}
+          name={waveform.name}
+          options={waveform.options.map((option) => ({
+            ...option,
+            drawing: CYCLES[option.value],
+          }))}
+          value={waveform.value}
+          onChange={(value) => onChange({ name: waveform.name, value })}
+        />
+      )}
 
       <Group title="Filter" className="filter">
         <FilterDrawing
-          cutoffHz={shown.cutoffHz}
-          resonance={shown.resonance}
+          cutoffHz={shown("cutoff_hz")}
+          resonance={shown("resonance")}
           sampleRate={sampleRate ?? DEFAULT_SAMPLE_RATE}
-          marked={dragged?.name === "cutoff_hz" || dragged?.name === "resonance"}
+          marked={dragged !== null && FILTER.includes(dragged.name)}
         />
-        <div className="knobs">
-          {setting("Cutoff", "cutoff_hz", limits.cutoffHz, "log", formatHz)}
-          {setting("Resonance", "resonance", limits.resonance, "linear", formatAmount)}
-        </div>
+        <div className="knobs">{FILTER.map(knob)}</div>
       </Group>
 
       <Group title="Envelope" className="envelope">
-        <EnvelopeDrawing times={shown} marked={dragged ? (STAGES[dragged.name] ?? null) : null} />
-        <div className="knobs">
-          {setting("Attack", "attack_seconds", limits.envelopeSeconds, "log", formatSeconds)}
-          {setting("Decay", "decay_seconds", limits.envelopeSeconds, "log", formatSeconds)}
-          {setting("Sustain", "sustain", limits.sustain, "linear", formatLevel)}
-          {setting("Release", "release_seconds", limits.envelopeSeconds, "log", formatSeconds)}
-        </div>
+        <EnvelopeDrawing
+          times={{
+            attackSeconds: shown("attack_seconds"),
+            decaySeconds: shown("decay_seconds"),
+            sustain: shown("sustain"),
+            releaseSeconds: shown("release_seconds"),
+          }}
+          marked={dragged ? (STAGES[dragged.name] ?? null) : null}
+        />
+        <div className="knobs">{ENVELOPE.map(knob)}</div>
       </Group>
     </section>
   );

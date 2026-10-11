@@ -12,6 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::setting::{Choice, Description, Scale, Unit};
+
 /// One sound of the kit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -136,7 +138,27 @@ pub enum KickModel {
 
 impl KickModel {
     pub const ALL: [KickModel; 2] = [KickModel::Tr808, KickModel::Tr909];
+
+    /// The model as `SetDrumParam` carries it: `"808"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::Tr808 => "808",
+            Self::Tr909 => "909",
+        }
+    }
 }
+
+/// Every kick model, as the panel offers them.
+const KICK_MODELS: [Choice; 2] = [
+    Choice {
+        value: "808",
+        label: "808",
+    },
+    Choice {
+        value: "909",
+        label: "909",
+    },
+];
 
 /// The kick's settings: which model plays, and each model's own settings, so
 /// switching back and forth loses nothing. The 808's are the ones at the top
@@ -495,6 +517,20 @@ impl Default for CymbalSettings {
     }
 }
 
+/// How `sound`'s Level sounds.
+fn level_sounds(sound: DrumSound) -> &'static str {
+    match sound {
+        DrumSound::Kick => {
+            "How loud it is in the kit. The kick is the kit's reference: every \
+             other sound's starting level is set against it."
+        }
+        _ => {
+            "How loud it is in the kit. It starts balanced against the kick by \
+             measured loudness, so move it to bring the sound forward or back."
+        }
+    }
+}
+
 /// The quietest and loudest any sound's Level goes, in dB, as a track's
 /// volume does.
 pub const MIN_LEVEL_DB: f32 = -60.0;
@@ -632,6 +668,171 @@ impl KitSettings {
             (_, P::LevelDb(_)) => Some((MIN_LEVEL_DB, MAX_LEVEL_DB)),
             _ => None,
         }
+    }
+
+    /// `param` on `sound` described: its label, how it sounds, and its unit,
+    /// limits, scale and default, or the kick's choice of model. The kick's
+    /// are its chosen model's. `None` if the sound doesn't have the setting.
+    /// The value `param` carries doesn't matter.
+    pub fn describe(&self, sound: DrumSound, param: &DrumParam) -> Option<Description> {
+        use DrumParam as P;
+        use DrumSound as D;
+        if let P::Model(_) = param {
+            return (sound == D::Kick).then(|| {
+                Description::choice(
+                    "Model",
+                    "Which kick plays. The 808's is a round, booming sine that rings; \
+                     the 909's is punchier, with a pitch drop and a click at the front.",
+                    &KICK_MODELS,
+                    KickSettings::default().model.value(),
+                )
+            });
+        }
+        let (min, max) = self.range(sound, param)?;
+        let default = KitSettings::default()
+            .with_kick_model(self.kick.model)
+            .params()
+            .into_iter()
+            .find(|(other, default)| *other == sound && default.same_setting(param))
+            .and_then(|(_, default)| default.value())
+            .expect("every setting a sound has has a default");
+        let model = self.kick.model;
+        let (unit, label, sounds) = match (sound, param) {
+            (_, P::LevelDb(_)) => (Unit::Db, "Level", level_sounds(sound)),
+            (D::Kick, P::TuneHz(_)) => (
+                Unit::Hz,
+                "Tune",
+                match model {
+                    KickModel::Tr808 => {
+                        "The note it settles on. Low is a deep sub you feel more than \
+                         hear; high is tighter and more of a note, easier to hear on \
+                         small speakers. Tune it to the song's key for a long Decay."
+                    }
+                    KickModel::Tr909 => {
+                        "The note it settles on once the drop is over. Low is deep and \
+                         round; high is a tighter, harder knock."
+                    }
+                },
+            ),
+            (D::Kick, P::Tone(_)) => (
+                Unit::Fraction,
+                "Tone",
+                "How bright it is. Low is round and deep with a soft click; high lets \
+                 more of the click through, so it cuts through a busy mix.",
+            ),
+            (D::Kick, P::Sweep(_)) => (
+                Unit::Fraction,
+                "Sweep",
+                "How far the pitch drops at the start, and how fast. None is a flat \
+                 thud; the middle is the classic 909 punch; the top half slows the \
+                 drop into a zap.",
+            ),
+            (D::Kick, P::Attack(_)) => (
+                Unit::Fraction,
+                "Attack",
+                "How much click there is at the front. Low is soft and round; high is \
+                 a hard beater that cuts through a dense mix.",
+            ),
+            (D::Kick, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long it rings. Short is a tight thump for busy patterns; long is \
+                 a booming tail that fills the bottom end of a sparse one.",
+            ),
+            (D::Snare, P::TuneHz(_)) => (
+                Unit::Hz,
+                "Tune",
+                "The shell's pitch. Low is fat and deep; high is a tight, ringing \
+                 crack.",
+            ),
+            (D::Snare, P::Tone(_)) => (
+                Unit::Seconds,
+                "Tone",
+                "How long the wires ring. Short is a tight, dry snap; long is a loose \
+                 rattle that hangs on after the hit.",
+            ),
+            (D::Snare, P::Snappy(_)) => (
+                Unit::Fraction,
+                "Snappy",
+                "How much the wires rattle against the shell. Low is a tonal knock, \
+                 like a tom; high is noisy and crisp.",
+            ),
+            (D::Clap, P::Tone(_)) => (
+                Unit::Hz,
+                "Tone",
+                "Where the clap's noise sits. Low is thick and warm; high is thin and \
+                 papery.",
+            ),
+            (D::Clap, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long its tail rings: the room the hands clap in. Short is dry and \
+                 close; long is a wide, roomy clap.",
+            ),
+            (D::ClosedHat, P::TuneHz(_)) => (
+                Unit::Hz,
+                "Tune",
+                "The metal's pitch, which the open hat and the cymbal share. Low is \
+                 clangy and trashy; high is a finer, glassier tick.",
+            ),
+            (D::ClosedHat, P::Tone(_)) => (
+                Unit::Hz,
+                "Tone",
+                "Where the hats' top end sits, which the open hat shares. Low is darker \
+                 and more metallic; high is airy and sizzling.",
+            ),
+            (D::ClosedHat, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long it rings. Short is a tight tick for fast patterns; long \
+                 loosens it towards a half-open hat.",
+            ),
+            (D::OpenHat, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long it rings. Short is a quick hiss on the off-beat; long is a \
+                 wash that rides over the bar. A closed hat always cuts it off.",
+            ),
+            (D::LowTom | D::HighTom, P::TuneHz(_)) => (
+                Unit::Hz,
+                "Tune",
+                "The note it settles on. Low is deep and booming; high is a tighter \
+                 knock. Tune the toms to the song's key for fills that sit in it.",
+            ),
+            (D::LowTom | D::HighTom, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long it rings. Short is a dry, tight knock; long is a tom that \
+                 sings and slides down.",
+            ),
+            (D::Cymbal, P::Tone(_)) => (
+                Unit::Fraction,
+                "Tone",
+                "How bright it is: how much sizzle there is over its body. Low is a \
+                 dark, gong-like wash; high is a bright, splashy crash.",
+            ),
+            (D::Cymbal, P::DecaySeconds(_)) => (
+                Unit::Seconds,
+                "Decay",
+                "How long it rings. Short is a choked crash; long is a wash that \
+                 carries over the bar.",
+            ),
+            _ => unreachable!("range found the setting"),
+        };
+        // Frequencies and times move the way you hear them; levels and
+        // amounts in even steps.
+        let scale = match unit {
+            Unit::Hz | Unit::Seconds => Scale::Log,
+            Unit::Db | Unit::Fraction | Unit::Amount => Scale::Linear,
+        };
+        Some(Description::number(
+            label,
+            sounds,
+            unit,
+            scale,
+            (min, max),
+            default,
+        ))
     }
 
     /// Every numeric setting of every sound, as `SetDrumParam` carries them:
@@ -1172,6 +1373,85 @@ mod tests {
         assert!(kit.set(DrumSound::Clap, DrumParam::Tone(0.5)).is_err());
         assert!(kit.set(DrumSound::Cymbal, DrumParam::Tone(7100.0)).is_err());
         assert_eq!(kit, KitSettings::default());
+    }
+
+    /// Every setting of every sound, with either kick model, is described:
+    /// a label, how it sounds, a unit, and the range and default the kit
+    /// has for it.
+    #[test]
+    fn every_setting_is_described_with_its_unit_range_and_default() {
+        use crate::setting::{Kind, Unit};
+        for model in KickModel::ALL {
+            let kit = KitSettings::default().with_kick_model(model);
+            for (sound, param) in kit.params() {
+                let description = kit
+                    .describe(sound, &param)
+                    .unwrap_or_else(|| panic!("{sound:?} {param:?} isn't described"));
+                assert!(!description.label.is_empty());
+                assert!(description.sounds.ends_with('.'), "{sound:?} {param:?}");
+                let Kind::Number {
+                    unit,
+                    limits,
+                    default,
+                    ..
+                } = description.kind
+                else {
+                    panic!("{sound:?} {param:?} is a number");
+                };
+                assert_eq!(Some(limits), kit.range(sound, &param));
+                assert_eq!(Some(default), param.value(), "{sound:?} {param:?}");
+                if let DrumParam::LevelDb(_) = param {
+                    assert_eq!(unit, Unit::Db);
+                }
+            }
+        }
+        // Tone is in each sound's own unit.
+        let kit = KitSettings::default();
+        let tone_unit = |sound| match kit.describe(sound, &DrumParam::Tone(0.0)).unwrap().kind {
+            Kind::Number { unit, .. } => unit,
+            Kind::Choice { .. } => panic!("Tone is a number"),
+        };
+        assert_eq!(
+            [
+                DrumSound::Kick,
+                DrumSound::Snare,
+                DrumSound::Clap,
+                DrumSound::Cymbal
+            ]
+            .map(tone_unit),
+            [Unit::Fraction, Unit::Seconds, Unit::Hz, Unit::Fraction]
+        );
+        // A setting a sound doesn't have isn't described.
+        assert_eq!(kit.describe(DrumSound::LowTom, &DrumParam::Tone(0.0)), None);
+        assert_eq!(kit.describe(DrumSound::Kick, &DrumParam::Sweep(0.0)), None);
+    }
+
+    #[test]
+    fn only_the_kick_has_a_model_and_its_choices_are_its_values() {
+        use crate::setting::Kind;
+        let kit = KitSettings::default();
+        let model = DrumParam::Model(KickModel::Tr909);
+        assert_eq!(kit.describe(DrumSound::Snare, &model), None);
+        let Some(Description {
+            label: "Model",
+            kind: Kind::Choice { options, default },
+            ..
+        }) = kit.describe(DrumSound::Kick, &model)
+        else {
+            panic!("the kick's model is a choice");
+        };
+        assert_eq!(default, "808");
+        let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = KickModel::ALL
+            .iter()
+            .map(|model| serde_json::to_value(model).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = KickModel::ALL.iter().map(|model| model.value()).collect();
+        assert_eq!(values, names);
     }
 
     #[test]

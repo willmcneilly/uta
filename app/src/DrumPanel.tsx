@@ -1,15 +1,15 @@
-import type { DrumParam, DrumSettingView, DrumSound, DrumUnit, KitRowView } from "./backend";
+import type { DrumParam, DrumSettingView, DrumSound, KitRowView, Unit } from "./backend";
 import { Fader } from "./design/Fader";
 import { Knob } from "./design/Knob";
 import { SegmentedChoice } from "./design/SegmentedChoice";
 import { type NumberScale, linearScale } from "./design/numberScale";
-import { SETTING_STEPS, formatSeconds, fromPosition, toPosition } from "./synthScale";
+import { SETTING_STEPS, formatAmount, formatSeconds, settingScale } from "./synthScale";
 import "./DrumPanel.css";
 
 // A drum track's Sound tab: a strip per sound, as on the 808's front panel
 // (RFC-006, "In the window"). Everything in a strip comes from the outline:
-// its name, which settings it has, and each one's label, limits, default
-// and unit, so a sound that arrives later needs nothing here. Each sound's
+// its name, which settings it has, and each one's label, limits, scale,
+// default and unit, so a sound that arrives later needs nothing here. Each sound's
 // Level is a fader stood on end, so the Levels line up like a mixer, and
 // its other settings are knobs (RFC-005, part 7).
 
@@ -23,31 +23,24 @@ interface Props {
 }
 
 /** How each unit reads. Hz stay whole below 10 kHz, so "1000 Hz" fits a small knob. */
-const FORMATS: Record<DrumUnit, (value: number) => string> = {
+const FORMATS: Record<Unit, (value: number) => string> = {
   hz: (hz) => (hz < 10_000 ? `${Math.round(hz)} Hz` : `${(hz / 1000).toFixed(1)} kHz`),
   seconds: formatSeconds,
   db: (db) => `${db.toFixed(1)} dB`,
   fraction: (fraction) => `${Math.round(fraction * 100)}%`,
+  amount: formatAmount,
 };
 
 /** How far one step of a Level goes, in dB, as on a track's volume. */
 const LEVEL_STEP = 0.5;
 
 /**
- * A setting's positions. Frequencies and times move on a log scale, the way
- * you hear them, as the synth's do; a fraction moves on a linear one, and a
- * level in half-dB steps, as a track's volume does.
+ * A setting's positions, on the scale Rust describes it with: a log one for
+ * frequencies and times, the way you hear them, and a linear one for a
+ * fraction. A level moves in half-dB steps, as a track's volume does.
  */
-function scaleOf({ unit, limits }: DrumSettingView): NumberScale {
-  if (unit === "db") return linearScale(...limits, LEVEL_STEP);
-  const scale = unit === "fraction" ? "linear" : "log";
-  return {
-    min: limits[0],
-    max: limits[1],
-    steps: SETTING_STEPS,
-    toPosition: (value) => toPosition(value, limits, scale),
-    fromPosition: (position) => fromPosition(position, limits, scale),
-  };
+function scaleOf(setting: DrumSettingView): NumberScale {
+  return setting.unit === "db" ? linearScale(...setting.limits, LEVEL_STEP) : settingScale(setting);
 }
 
 /** Each sound's Level is its fader; the rest are knobs. */
