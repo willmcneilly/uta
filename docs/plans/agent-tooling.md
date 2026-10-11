@@ -137,7 +137,7 @@ The 9–10 Oct process audit already fixed the review relay, the handover order 
 
 **What to build:**
 - **`scripts/dev-app start`** works from any directory, against the checkout the script lives in. It:
-  - stops any other Uta dev app (matched by its checkout path, never another project's process);
+  - restarts this checkout's app if it's running, and leaves other checkouts' apps running, each window titled with its branch (changed during UTA-60, decision 3);
   - picks a free port from 1420 upward, plus the HMR port above it, and passes it to Vite and Tauri. That needs `vite.config.ts` to read the port from an environment variable, with 1420 as the default;
   - starts `tauri dev` fully detached, so it outlives the shell that started it, writing its log and pid to a known place in the checkout;
   - waits for the ready line with the colour stripped, printing progress, with a cap long enough for a cold build;
@@ -148,7 +148,7 @@ The 9–10 Oct process audit already fixed the review relay, the handover order 
 **Acceptance criteria:**
 - [ ] `scripts/dev-app start` opens the app from a worktree, prints branch, commit and port, and returns. The app stays up after the calling shell exits.
 - [ ] With port 1420 held by an unrelated process, it picks the next free port and the app works on it. The unrelated process is untouched.
-- [ ] With another worktree's Uta app running, it stops that one first.
+- [ ] With another worktree's Uta app running, it leaves that one running, and the two windows can be told apart (changed during UTA-60, decision 3).
 - [ ] A failed build (simulate one) returns non-zero within a few seconds of the failure, with the log tail, not after the cap.
 - [ ] `status` and `stop` work, and `stop` leaves no Vite or `uta-app` processes behind.
 - [ ] `work-ticket` uses the script in steps 9 and 10.
@@ -353,3 +353,4 @@ From the same audit, deliberately left for later:
 
 1. **The release build runs locally only when it could break (UTA-59).** That means when `app/src-tauri/`, the Tauri config or `app/package.json` changed. CI builds it on every PR and covers the rest. UTA-59 updates CLAUDE.md's "run all of the above" rule to match. (Will, 11 Oct.)
 2. **A new project, "Agent tooling", with no RFC.** It's process work with its evidence above, not a product decision. (Will, 11 Oct.)
+3. **Dev apps run side by side (UTA-60).** `scripts/dev-app start` was planned to stop every other Uta dev app. With tickets running in parallel, each handover then closed the previous one's app (it closed UTA-57's). So `start` restarts only its own checkout's app, each window's title names its branch, and a lock stops two starts choosing the same port. (Will, 11 Oct.)

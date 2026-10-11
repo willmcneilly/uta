@@ -1,6 +1,9 @@
 {
   "permissions": {
     "allow": [
+      "Bash(scripts/check)",
+      "Bash(scripts/check *)",
+      "Bash(scripts/warm)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",
       "Bash(cargo test *)",

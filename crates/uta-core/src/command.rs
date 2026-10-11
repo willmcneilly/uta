@@ -1014,14 +1014,14 @@ mod tests {
         };
         let kit_json = concat!(
             r#"{"kick":{"model":"808","tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0,"#,
-            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":0.0}},"#,
-            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
-            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
-            r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
-            r#""open_hat":{"decay_seconds":0.35,"level_db":0.0},"#,
-            r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":0.0},"#,
-            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":0.0},"#,
-            r#""cymbal":{"tone":0.5,"decay_seconds":0.8,"level_db":0.0}}"#,
+            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":-2.0}},"#,
+            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":-2.0},"#,
+            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":2.5},"#,
+            r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":-1.0},"#,
+            r#""open_hat":{"decay_seconds":0.35,"level_db":-9.5},"#,
+            r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":-4.5},"#,
+            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":-3.0},"#,
+            r#""cymbal":{"tone":0.5,"decay_seconds":0.8,"level_db":-12.0}}"#,
         );
         let cases = [
             (

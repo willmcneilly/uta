@@ -1,0 +1,27 @@
+# The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.
+# Recorded on 11 Oct 2026 at 70ce7b3, on MacBook-Pro.
+load	block	p50_us	p99_us
+Demo loop	32	1.58	5.38
+Demo loop	128	5.17	23.54
+Demo loop	1024	38.33	48.96
+16 voices	32	2.71	3.71
+16 voices	128	9.46	12.79
+16 voices	1024	73.96	89.00
+Demo song	32	2.33	3.00
+Demo song	128	8.33	12.17
+Demo song	1024	64.79	88.29
+32 tracks × 8 voices	32	30.79	56.54
+32 tracks × 8 voices	128	124.12	268.38
+32 tracks × 8 voices	1024	1001.50	1955.83
+Check 7 (588k notes)	32	14.54	29.83
+Check 7 (588k notes)	128	57.50	104.38
+Check 7 (588k notes)	1024	462.71	650.58
+Check 7, first block after Play from bar 10.5	32	128.96	152.38
+Check 7, first block after Play from bar 10.5	128	170.04	199.96
+Check 7, first block after Play from bar 10.5	1024	584.62	729.38
+32 drum tracks × every sound	32	75.67	144.08
+32 drum tracks × every sound	128	282.54	533.71
+32 drum tracks × every sound	1024	2258.21	4007.79
+32 drum tracks × every sound, 909 kick	32	85.29	152.29
+32 drum tracks × every sound, 909 kick	128	312.79	565.42
+32 drum tracks × every sound, 909 kick	1024	2522.29	4294.50

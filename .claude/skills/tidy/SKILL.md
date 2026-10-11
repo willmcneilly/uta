@@ -5,7 +5,7 @@ description: Tidy Uta's worktrees, build output and local branches to free disk 
 
 # Tidying worktrees, build output and branches
 
-Every ticket runs in its own worktree, and each one builds its own Rust `target/` of about 5.5 GB. Sessions end, PRs merge with `--squash`, and the worktrees, build output and branches stay behind. This finds what's safe to remove, removes it, and lists anything it isn't sure of rather than guessing.
+Every ticket runs in its own worktree, and each one has its own Rust `target/` of about 5.5 GB (cloned from the main checkout's by `scripts/warm`, so mostly shared until cargo rewrites it). Sessions end, PRs merge with `--squash`, and the worktrees, build output and branches stay behind. This finds what's safe to remove, removes it, and lists anything it isn't sure of rather than guessing.
 
 The rule throughout: **remove something only when its work is on `main` or in a merged PR, and nothing is using it.** If you can't show both, leave it and list it.
 
@@ -14,7 +14,7 @@ The rule throughout: **remove something only when its work is on `main` or in a 
 From the main checkout (`/Users/willmcneilly/Sites/uta`), after `git fetch --prune`:
 - `git worktree list --porcelain`, and `du -sh` each worktree, its `target/`, `app/node_modules` and `app/dist`.
 - The sessions, with `list_sessions` (the `ccd_session_mgmt` tool), to match each worktree to its session by `cwd`, and whether that session is running.
-- Free disk space (`df -h .`), to report before and after.
+- Free disk space (`df -h .`), to report before and after. A `target/` that `scripts/warm` cloned shares its blocks with the main checkout's until cargo changes them, so `du` overstates it, and removing one frees less than `du` shows. Report what `df` says.
 
 ## 2. Worktrees
 
@@ -34,7 +34,7 @@ For each worktree in `.claude/worktrees/`:
 
 **Before removing a worktree, check its ignored files:** `git status --short --ignored`, leaving out `target/`, `app/node_modules/`, `app/dist/` and `app/src-tauri/gen/`. Anything else (a screenshot harness, notes, images) gets copied to the session scratchpad and mentioned to Will.
 
-Remove with `git worktree remove --force <path>` (forced only because ignored build output is present), then `git worktree prune`.
+If it has `scripts/dev-app`, run `<path>/scripts/dev-app stop` first, so its app doesn't outlive it. Then remove it with `git worktree remove --force <path>` (forced only because ignored build output is present), then `git worktree prune`.
 
 ## 3. Branches
 
@@ -51,7 +51,7 @@ List any other branch with commits you can't find on `main` or in a merged PR, w
 
 Files sitting directly in `.claude/worktrees/` (backups, scratch files) aren't worktrees. Remove one if it's identical to a file on `main`; otherwise list it.
 
-Leave the main checkout's `target/` alone unless Will asks: it's the build cache for running the app from `main`.
+Leave the main checkout's `target/` alone unless Will asks: it's the build cache for running the app from `main`, and the one `scripts/warm` clones into each new worktree.
 
 ## 5. Permissions
 

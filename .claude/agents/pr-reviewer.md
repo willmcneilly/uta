@@ -27,7 +27,7 @@ Use the `uta-notion` skill for Notion (`.claude/skills/uta-notion/ntn.sh`).
   git fetch origin
   git worktree add ../uta-review-<n> origin/<branch>   # or, with a commit: git fetch origin <commit> && git worktree add --detach ../uta-review-<n> <commit>
   ```
-  The diff to review is `git diff $(git merge-base origin/main HEAD)...HEAD` inside the worktree. Work there for the rest of the review, and remove the worktree at the end (`git worktree remove --force ../uta-review-<n>`).
+  The post-checkout hook gives the worktree a warm build; if it has no `target/`, run `scripts/warm` there. The diff to review is `git diff $(git merge-base origin/main HEAD)...HEAD` inside the worktree. Work there for the rest of the review, and remove the worktree at the end. If you opened the app there, stop it first, because nothing else will: `../uta-review-<n>/scripts/dev-app stop`, then `git worktree remove --force ../uta-review-<n>`.
 - For a large diff, hand parts of it to subagents and keep only their findings.
 - **When you were given a commit,** the PR and ticket may record what happened after it: later reviews, replies, fixes and verification notes. Don't read the PR's reviews or comments, and from the ticket read only the goal, acceptance criteria, out of scope and context. Review the code as if that commit were the PR's head.
 
@@ -41,7 +41,7 @@ Each finding gets a severity:
 1. **Scope.** Does the diff do what the ticket says, and only that? Is anything missing? Out-of-scope work is blocking unless it's trivial.
 2. **Acceptance criteria, verified independently.** For each criterion, find the evidence yourself, run the tests and commands, and confirm the test actually tests the claim. A pitch test must fail on the wrong pitch; a no-click test must fail on a click.
    **For the key claims, break the code on purpose:** change the frequency, remove a fade, add an allocation in the process path. Confirm a test or check fails, then revert. A criterion whose test can't fail isn't met.
-3. **Checks.** Run everything CI runs, locally (the commands are in `CLAUDE.md`). Unless you were given a commit, also check the PR's CI with `gh pr checks <n>`.
+3. **Checks.** Run everything CI runs, locally: `scripts/check --all --rerun` in your worktree runs every job and ignores passes recorded before, the implementer's included. Run it in the background; it ends with one line per job and the log of any that failed. Unless you were given a commit, also check the PR's CI with `gh pr checks <n>`.
 4. **Real-time rules**, on any code the audio thread can reach, including callbacks cpal calls: allocating or freeing (including `Vec` growth, `String`, `Box`/`Arc` drops, `format!`, collecting iterators), locks and blocking channels, I/O and logging, loops with no fixed bound, anything that could panic. Check that the real-time tests actually drive the code path. Any violation is blocking.
 5. **Fit with the RFC and the architecture:** project state changes only through commands in the core; the UI holds no project state; snapshots are swapped, not mutated in place. A departure is blocking unless the PR explains it and Will has agreed.
 6. **Design**, on any UI change. Read `DESIGN.md` first.
