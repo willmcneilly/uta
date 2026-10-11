@@ -19,7 +19,7 @@ import { join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { JOBS } from "./checkJobs.ts";
 import { type Job, type Planned, plan } from "./checkPlan.ts";
-import { commonDir, git, shortSha, treeFiles, tryGit, workingTree } from "./git.ts";
+import { cleanEnv, commonDir, git, shortSha, treeFiles, tryGit, workingTree } from "./git.ts";
 import { warm } from "./warm.ts";
 
 
@@ -70,7 +70,12 @@ function pruneStamps(root: string) {
   const cutoff = Date.now() - STAMP_DAYS * 24 * 3600 * 1000;
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
-    if (statSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+    // Another run may have pruned it first.
+    try {
+      if (statSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+    } catch {
+      continue;
+    }
   }
 }
 
@@ -106,7 +111,7 @@ function runOne(root: string, job: Job, logDir: string): Promise<Outcome> {
     };
     const child = spawn(job.command[0], job.command.slice(1), {
       cwd: resolve(root, job.cwd ?? "."),
-      env: { ...process.env, ...job.env },
+      env: cleanEnv(job.env),
       stdio: ["ignore", fd, fd],
     });
     child.on("error", (error) => {
@@ -300,7 +305,7 @@ export async function check(
 
   print(
     failed.length === 0
-      ? `\nAll ${toRun.length} checks this change needed passed.`
+      ? "\nEverything this change needs has passed."
       : `\n${failed.length} failed: ${failed.join(", ")}. The summary gives each one's log.`,
   );
   return failed.length === 0 ? 0 : 1;

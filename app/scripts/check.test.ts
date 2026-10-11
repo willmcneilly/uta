@@ -125,6 +125,26 @@ describe("scripts/check", () => {
     expect(out).toMatch(/origin\/main has 1 commit this branch doesn't:\n {4}[0-9a-f]{7} UTA-2: Something that merged meanwhile/);
   });
 
+  it("keeps git's repository variables from its git and its jobs, as a hook in a worktree has them", async () => {
+    const elsewhere = join(dir, "elsewhere");
+    git(dir, ["init", "--quiet", elsewhere]);
+    const saved = process.env.GIT_DIR;
+    process.env.GIT_DIR = join(elsewhere, ".git");
+    try {
+      const jobs: Job[] = [
+        { name: "rust", inputs: ["crates/"], command: ["sh", "-c", 'test -z "$GIT_DIR"'] },
+      ];
+      write(repo, "crates/a.rs", "fn b() {}\n");
+      const lines: string[] = [];
+      const code = await check(repo, { fetch: false }, jobs, (text) => lines.push(text));
+      expect(lines.join("\n")).toMatch(/✓ rust/);
+      expect(code).toBe(0);
+    } finally {
+      if (saved === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved;
+    }
+  });
+
   it("with --all, runs every job", async () => {
     const { out } = await run({ fetch: false, all: true });
     expect(out).toMatch(/✓ rust/);

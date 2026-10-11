@@ -5,11 +5,43 @@ import { copyFileSync, existsSync, statSync, utimesSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type { TreeFile } from "./checkPlan.ts";
 
-export function git(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv = {}): string {
+/**
+ * The variables that tell git which repository to use (`git rev-parse
+ * --local-env-vars`). git sets GIT_DIR for a hook run in a linked worktree,
+ * and anything started from the hook would inherit it: a test's `git commit`
+ * in a temporary folder would land in this repository instead.
+ */
+const REPOSITORY_ENV = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_GRAFT_FILE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_PREFIX",
+  "GIT_INTERNAL_SUPER_PREFIX",
+  "GIT_SHALLOW_FILE",
+  "GIT_COMMON_DIR",
+];
+
+/** This process's environment without them, plus `extra`, so a command's folder decides its repository. */
+export function cleanEnv(extra: Readonly<Record<string, string>> = {}): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of REPOSITORY_ENV) delete env[name];
+  return { ...env, ...extra };
+}
+
+export function git(cwd: string, args: readonly string[], env: Readonly<Record<string, string>> = {}): string {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: cleanEnv(env),
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 64 * 1024 * 1024,
   }).trimEnd();
