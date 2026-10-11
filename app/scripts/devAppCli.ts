@@ -97,7 +97,7 @@ async function stopAll(procs: Proc[]): Promise<Proc[]> {
 }
 
 function describe(where: string): string {
-  return where === UNKNOWN ? "an unknown checkout" : shortPath(where);
+  return where === UNKNOWN ? "an unknown checkout" : where;
 }
 
 /** Relative to the current folder when that's shorter, absolute otherwise. */
