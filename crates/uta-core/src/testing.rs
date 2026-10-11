@@ -163,6 +163,11 @@ fn any_mix() -> impl Strategy<Value = f32> {
     prop_oneof![10 => 0.0f32..=1.0, 1 => prop_oneof![Just(f32::NAN), 1.01f32..2.0, -1.0f32..-0.01]]
 }
 
+/// The first track's chain, one from the pool's, or the master's.
+fn any_chain() -> impl Strategy<Value = Chain> {
+    prop_oneof![4 => any_track_id().prop_map(Chain::Track), 1 => Just(Chain::Master)]
+}
+
 /// An effect from the pool: a Delay with a few settings changed, on or off,
 /// at any Mix.
 fn any_effect() -> impl Strategy<Value = Effect> {
@@ -337,9 +342,11 @@ pub fn any_command() -> impl Strategy<Value = Command> {
         1 => (0u32..10, 0u32..20).prop_map(|(start_bar, bars)| Command::SetLoop { start_bar, bars }),
         1 => any::<bool>().prop_map(|enabled| Command::SetLoopEnabled { enabled }),
         // Mostly at the front of a chain, which is always in range.
-        2 => one_or_two((any_track_id(), prop_oneof![3 => Just(0usize), 1 => 0usize..10], any_effect()).prop_map(|(track, index, effect)| PlacedEffect { chain: Chain::Track(track), index, effect }))
+        2 => one_or_two((any_chain(), prop_oneof![3 => Just(0usize), 1 => 0usize..10], any_effect()).prop_map(|(chain, index, effect)| PlacedEffect { chain, index, effect }))
             .prop_map(|effects| Command::AddEffects { effects }),
         1 => one_or_two((0u128..8).prop_map(effect_id)).prop_map(|effects| Command::RemoveEffects { effects }),
+        1 => ((0u128..8).prop_map(effect_id), 0usize..10).prop_map(|(effect, index)| Command::MoveEffect { effect, index }),
+        1 => ((0u128..8).prop_map(effect_id), any::<bool>()).prop_map(|(effect, enabled)| Command::SetEffectEnabled { effect, enabled }),
         1 => ((0u128..8).prop_map(effect_id), any_mix()).prop_map(|(effect, mix)| Command::SetEffectMix { effect, mix }),
         1 => ((0u128..8).prop_map(effect_id), any_delay_param()).prop_map(|(effect, param)| Command::SetDelayParam { effect, param }),
     ]
@@ -392,7 +399,7 @@ mod tests {
                 .map(|clip| clip.notes().len())
                 .sum::<usize>();
         }
-        assert_eq!(applied.len(), 21, "every kind of command applies");
+        assert_eq!(applied.len(), 23, "every kind of command applies");
         assert!(most_tracks >= 5, "at most {most_tracks} tracks");
         assert!(most_clips >= 5, "at most {most_clips} clips");
         assert!(notes_elsewhere > 0);
