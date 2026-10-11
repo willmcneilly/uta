@@ -46,7 +46,7 @@ Each finding gets a severity:
 5. **Fit with the RFC and the architecture:** project state changes only through commands in the core; the UI holds no project state; snapshots are swapped, not mutated in place. A departure is blocking unless the PR explains it and Will has agreed.
 6. **Design**, on any UI change. Read `DESIGN.md` first.
    - It uses tokens only. `npm run lint` catches colours; check sizes, spacing and type by eye, since nothing checks them yet.
-   - Anything `DESIGN.md` doesn't cover is a provisional decision: marked `provisional: D-n` in the code, logged in the Design decisions database (see the `uta-notion` skill) with every field filled in except `Screenshot`, and listed in the PR with a screenshot. Something new that isn't logged is **should fix**.
+   - Anything `DESIGN.md` doesn't cover is a provisional decision: marked `provisional: D-n` in the code, logged in the Design decisions database (`scripts/ticket decision new`, see the `uta-notion` skill) with every field filled in except `Screenshot`, and listed in the PR with a screenshot. Something new that isn't logged is **should fix**.
    - An escape comment that lets a colour through (`eslint-disable` or `stylelint-disable`) needs a reason that holds up. One without is **blocking**.
    - **Style never harms function.** Decoration on a working surface (a texture, an extra grid, an ornament) that competes with the marks that mean something (beat lines, pitch rows, notes, levels) is **should fix**, even when the ticket, the RFC or `DESIGN.md` asks for it. Say what it competes with, so Will can decide.
    - New provisional decisions go in "What only Will can check" as decisions for him, since he decides each one between projects.

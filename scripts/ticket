@@ -1,0 +1,5 @@
+#!/bin/sh
+# A Uta ticket's Notion and GitHub steps: show, ready, claim, tick, merge and
+# decision new. `scripts/ticket --help` says how. The logic is in
+# app/scripts/ticket.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/ticketCli.ts" "$@"
