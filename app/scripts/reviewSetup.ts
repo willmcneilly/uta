@@ -244,7 +244,9 @@ export function reviewSetup(cwd: string, args: Args): string {
 
   const reviewed = reviews.filter((review) => review.body.trim()).at(-1)?.commit_id;
   const runs = latestPerName(github.checkRuns(commit));
-  let ci = runs.length ? `${table(runs)}\n\nState: ${judge(runs)}.` : `No checks have run on ${shortSha(commit)}.`;
+  const state = judge(runs);
+  const waiting = state === "running" ? " Wait for it with ci-wait." : "";
+  let ci = runs.length ? `${table(runs)}\n\nState: ${state}.${waiting}` : `No checks have run on ${shortSha(commit)}. Wait for them with ci-wait.`;
   if (!runs.length) {
     const older = [...pull.commits].reverse().find((c) => c.oid !== commit && github.checkRuns(c.oid).length);
     if (older) ci += ` The newest are for ${shortSha(older.oid)}:\n\n${table(latestPerName(github.checkRuns(older.oid)))}`;

@@ -59,7 +59,7 @@ Each finding gets a severity:
    scripts/mutate <file> <find> <replace> -- <test command>
    ```
    It prints CAUGHT when the tests failed, MISSED when they passed, and DIDN'T BUILD when the mutation didn't compile (which proves nothing: try another). Use `--named` where one fits, rather than inventing it. A criterion whose test can't fail isn't met.
-3. **Checks.** CI runs the full suite on every push, so don't run it again locally. Wait for CI on the commit you're reviewing:
+3. **Checks.** CI runs the full suite on every push, so don't run it again locally. `review-setup` shows CI on the commit you're reviewing. If it's still running (or hasn't started), wait for it:
    ```bash
    scripts/ci-wait <n>                                 # given a commit: scripts/ci-wait <n> --commit <sha>
    ```
