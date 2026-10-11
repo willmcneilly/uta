@@ -95,7 +95,13 @@ async function stopAll(procs: Proc[]): Promise<Proc[]> {
 }
 
 function describe(where: string): string {
-  return where === UNKNOWN ? "an unknown checkout" : relative(process.cwd(), where) || ".";
+  return where === UNKNOWN ? "an unknown checkout" : shortPath(where);
+}
+
+/** Relative to the current folder when that's shorter, absolute otherwise. */
+function shortPath(path: string): string {
+  const rel = relative(process.cwd(), path);
+  return rel.startsWith("..") ? path : rel || ".";
 }
 
 /** True when nothing listens on `port` on either loopback address. */
@@ -166,7 +172,7 @@ async function start(timeout: number): Promise<number> {
     startedAt: new Date().toISOString(),
   };
   writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
-  console.log(`Starting tauri dev on port ${port} (pid ${child.pid}). Log: ${relative(process.cwd(), logPath)}`);
+  console.log(`Starting tauri dev on port ${port} (pid ${child.pid}). Log: ${shortPath(logPath)}`);
   return waitFor(state, timeout);
 }
 
@@ -174,18 +180,27 @@ async function waitFor(state: State, timeout: number): Promise<number> {
   const began = Date.now();
   const seconds = () => Math.round((Date.now() - began) / 1000);
   let lastReport = 0;
+  let settled = false;
   for (;;) {
     const text = readLogText();
     const { ready, failure, progress } = readLog(text);
-    if (failure || !alive(state.pid)) {
-      console.error(`\n${failure ?? "tauri dev exited."} The last 30 lines of the log:\n`);
+    const up = ready && appRunning();
+    const quit = settled && !up ? "The app quit as it started." : undefined;
+    if (failure || quit || !alive(state.pid)) {
+      console.error(`\n${failure ?? quit ?? "tauri dev exited."} The last 30 lines of the log:\n`);
       console.error(tail(text, 30));
       await stopAll(devApps().get(checkout) ?? []);
       rmSync(statePath, { force: true });
       console.error("\nStopped what it started.");
       return 1;
     }
-    if (ready && appRunning()) {
+    if (up && !settled) {
+      // Once more after a moment, so an app that quits on launch isn't reported as open.
+      settled = true;
+      await sleep(2000);
+      continue;
+    }
+    if (up) {
       console.log(`The app is open: ${state.branch} at ${state.commit}, port ${state.port}, pid ${state.pid} (${seconds()}s).`);
       return 0;
     }

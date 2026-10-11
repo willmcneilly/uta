@@ -70,8 +70,8 @@ describe("errorLines", () => {
 });
 
 describe("tail", () => {
-  it("keeps the last lines that aren't blank", () => {
-    expect(tail("a\n\nb\nc\n\n", 2)).toBe("b\nc");
+  it("keeps the last lines that aren't blank or cargo's progress bar", () => {
+    expect(tail("a\n\nb\n    Building [==> ] 369/370: uta-app(bin)\nc\n\n", 2)).toBe("b\nc");
   });
 });
 

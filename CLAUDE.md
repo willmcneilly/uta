@@ -14,6 +14,7 @@ app/src-tauri         the app's Rust side (crate `uta-app`)
 DESIGN.md             design tokens and the reasons for them (generates app/src/design/tokens.*)
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
+scripts               scripts agents run instead of building the steps by hand (each has --help)
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
 .github/workflows     CI
 ```
@@ -52,8 +53,13 @@ npm run lint                                        # eslint, then stylelint
 npm test                                            # vitest, jsdom
 npm run tokens                                      # regenerate src/design/tokens.{css,ts} from DESIGN.md
 npx designmd lint ../DESIGN.md                      # check DESIGN.md against its format
-npm run tauri dev                                   # open the app with hot reload
+npm run tauri dev                                   # open the app with hot reload (agents: scripts/dev-app, below)
 npm run tauri build -- --ci                         # release build: target/release/bundle/macos/Uta.app
+
+# Scripts (from any directory; each has --help)
+scripts/dev-app start                               # open this checkout's app, stopping any other Uta dev app
+scripts/dev-app status                              # is it up, which commit and port, any errors since it started
+scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
 ```
 
 `cargo build`/`clippy`/`test` compile the app crate in dev mode, so they don't need `app/dist`. Only `tauri build` needs the frontend built, and it does that itself.

@@ -51,11 +51,11 @@ export function errorLines(text: string): string[] {
     .filter((line) => /^error(\[E\d+\])?:|^\s*Error |\[vite\].*error/i.test(line));
 }
 
-/** The last `count` lines of the log, without blank ones. */
+/** The last `count` lines of the log, without blank ones or cargo's progress bar. */
 export function tail(text: string, count: number): string {
   return text
     .split("\n")
-    .filter((line) => line.trim() !== "")
+    .filter((line) => line.trim() !== "" && !/^\s*Building \[/.test(line))
     .slice(-count)
     .join("\n");
 }
