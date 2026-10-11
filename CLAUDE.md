@@ -15,7 +15,7 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
-scripts               the repository's own tools (`check`, `warm`), each with `--help`; their logic is in app/scripts
+scripts               the repository's own tools (`check`, `warm`, `dev-app`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
@@ -36,6 +36,9 @@ Run everything from the repository root unless it says `app/`.
 ```bash
 scripts/check                                       # the checks this change needs (below)
 scripts/warm                                        # give a new worktree a warm Rust build
+scripts/dev-app start                               # open this checkout's app on a free port, titled with its branch
+scripts/dev-app status                              # is it up, which commit and port, any errors since it started
+scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
 
 # Rust
 cargo fmt --all                                     # format
@@ -58,7 +61,7 @@ npm run lint                                        # eslint, then stylelint
 npm test                                            # vitest, jsdom
 npm run tokens                                      # regenerate src/design/tokens.{css,ts} from DESIGN.md
 npx designmd lint ../DESIGN.md                      # check DESIGN.md against its format
-npm run tauri dev                                   # open the app with hot reload
+npm run tauri dev                                   # open the app with hot reload (agents: scripts/dev-app, above)
 npm run tauri build -- --ci                         # release build: target/release/bundle/macos/Uta.app
 ```
 
