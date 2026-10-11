@@ -145,6 +145,22 @@ describe("scripts/check", () => {
     }
   });
 
+  it("warns when origin/main moves while the checks run", async () => {
+    const other = join(dir, "other");
+    git(dir, ["clone", "--quiet", origin, other]);
+    write(other, "docs/new.md", "New\n");
+    git(other, ["add", "--all"]);
+    git(other, ["-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "--quiet", "-m", "UTA-3: Merged during the run"]);
+    // The job pushes it, as another session merging would.
+    const jobs: Job[] = [
+      { name: "rust", inputs: ["crates/"], command: ["git", "-C", other, "push", "--quiet", "origin", "HEAD:main"] },
+    ];
+    write(repo, "crates/a.rs", "fn b() {}\n");
+    const lines: string[] = [];
+    await check(repo, { fetch: true }, jobs, (text) => lines.push(text));
+    expect(lines.join("\n")).toMatch(/origin\/main moved while the checks ran:\n {4}[0-9a-f]{7} UTA-3: Merged during the run/);
+  });
+
   it("with --all, runs every job", async () => {
     const { out } = await run({ fetch: false, all: true });
     expect(out).toMatch(/✓ rust/);

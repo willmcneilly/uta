@@ -250,6 +250,7 @@ export async function check(
   }
 
   if (options.plan) {
+    print("");
     for (const p of planned) print(`  ${p.status.padEnd(9)} ${p.job.name}`);
     return 0;
   }
