@@ -27,7 +27,7 @@ Use the `notion` skill for Notion (`.claude/skills/notion/ntn.sh`, every call wi
   git fetch origin
   git worktree add ../uta-review-<n> origin/<branch>   # or, with a commit: git fetch origin <commit> && git worktree add --detach ../uta-review-<n> <commit>
   ```
-  The diff to review is `git diff $(git merge-base origin/main HEAD)...HEAD` inside the worktree. Work there for the rest of the review, and remove the worktree at the end (`git worktree remove --force ../uta-review-<n>`).
+  The diff to review is `git diff $(git merge-base origin/main HEAD)...HEAD` inside the worktree. Work there for the rest of the review, and remove the worktree at the end. If you opened the app there, stop it first, because nothing else will: `../uta-review-<n>/scripts/dev-app stop`, then `git worktree remove --force ../uta-review-<n>`.
 - For a large diff, hand parts of it to subagents and keep only their findings.
 - **When you were given a commit,** the PR and ticket may record what happened after it: later reviews, replies, fixes and verification notes. Don't read the PR's reviews or comments, and from the ticket read only the goal, acceptance criteria, out of scope and context. Review the code as if that commit were the PR's head.
 

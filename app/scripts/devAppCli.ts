@@ -167,7 +167,8 @@ async function start(timeout: number): Promise<number> {
 async function launch(timeout: number, unlock: () => void): Promise<number> {
   const port = await pickPort(isFree);
   if (port === undefined) return fail("No free port pair between 1420 and 1499.");
-  const branch = git("branch", "--show-current") || "(detached)";
+  // A detached checkout (a reviewer's, say) is named by its commit, so two don't look alike.
+  const branch = git("branch", "--show-current") || git("rev-parse", "--short", "HEAD");
   const conf = JSON.parse(readFileSync(join(appDir, "src-tauri", "tauri.conf.json"), "utf8"));
 
   mkdirSync(stateDir, { recursive: true });
