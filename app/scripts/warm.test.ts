@@ -1,8 +1,7 @@
-import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { git } from "./git.ts";
 import { relocate, warm } from "./warm.ts";
 
@@ -30,10 +29,10 @@ describe("relocate", () => {
     write(rtsan, `${from}/rtsan/debug/build/tauri-2/out`);
     write(unrelated, "cargo:rerun-if-changed=build.rs\n");
 
-    assert.equal(relocate(dir, from, to), 2);
-    assert.equal(readFileSync(debug, "utf8"), `cargo:rustc-link-search=native=${to}/debug/build/objc2-1/out\n`);
-    assert.equal(readFileSync(rtsan, "utf8"), `${to}/rtsan/debug/build/tauri-2/out`);
-    assert.equal(readFileSync(unrelated, "utf8"), "cargo:rerun-if-changed=build.rs\n");
+    expect(relocate(dir, from, to)).toBe(2);
+    expect(readFileSync(debug, "utf8")).toBe(`cargo:rustc-link-search=native=${to}/debug/build/objc2-1/out\n`);
+    expect(readFileSync(rtsan, "utf8")).toBe(`${to}/rtsan/debug/build/tauri-2/out`);
+    expect(readFileSync(unrelated, "utf8")).toBe("cargo:rerun-if-changed=build.rs\n");
   });
 });
 
@@ -55,30 +54,24 @@ describe("warm", () => {
   it("clones the main checkout's build into a worktree that has none", () => {
     const lines: string[] = [];
     warm(worktree, (text) => lines.push(text));
-    assert.equal(readFileSync(join(worktree, "target", "debug", "deps", "libfoo.rlib"), "utf8"), "foo");
-    assert.equal(readFileSync(join(worktree, "target", "release", "deps", "libfoo.rlib"), "utf8"), "foo release");
-    assert.equal(
-      readFileSync(join(worktree, "target", "debug", "build", "foo-1", "output"), "utf8"),
-      `${worktree}/target/debug/build/foo-1/out`,
-    );
+    expect(readFileSync(join(worktree, "target", "debug", "deps", "libfoo.rlib"), "utf8")).toBe("foo");
+    expect(readFileSync(join(worktree, "target", "release", "deps", "libfoo.rlib"), "utf8")).toBe("foo release");
+    expect(readFileSync(join(worktree, "target", "debug", "build", "foo-1", "output"), "utf8")).toBe(`${worktree}/target/debug/build/foo-1/out`);
     // The main checkout's own copy is untouched.
-    assert.equal(
-      readFileSync(join(main, "target", "debug", "build", "foo-1", "output"), "utf8"),
-      `${main}/target/debug/build/foo-1/out`,
-    );
-    assert.match(lines.join("\n"), /cloned target\/debug, target\/release/);
+    expect(readFileSync(join(main, "target", "debug", "build", "foo-1", "output"), "utf8")).toBe(`${main}/target/debug/build/foo-1/out`);
+    expect(lines.join("\n")).toMatch(/cloned target\/debug, target\/release/);
   });
 
   it("leaves a build that's already there alone", () => {
     write(join(worktree, "target", "debug", "deps", "libfoo.rlib"), "mine");
     warm(worktree, () => {});
-    assert.equal(readFileSync(join(worktree, "target", "debug", "deps", "libfoo.rlib"), "utf8"), "mine");
-    assert.equal(readFileSync(join(worktree, "target", "release", "deps", "libfoo.rlib"), "utf8"), "foo release");
+    expect(readFileSync(join(worktree, "target", "debug", "deps", "libfoo.rlib"), "utf8")).toBe("mine");
+    expect(readFileSync(join(worktree, "target", "release", "deps", "libfoo.rlib"), "utf8")).toBe("foo release");
   });
 
   it("does nothing in the main checkout itself", () => {
     const lines: string[] = [];
     warm(main, (text) => lines.push(text));
-    assert.deepEqual(lines, []);
+    expect(lines).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
 #!/bin/sh
-# Gives this worktree a warm Rust build. See scripts/src/warm.ts, or --help.
-exec node "$(dirname "$0")/src/warm.ts" "$@"
+# Gives this worktree a warm Rust build. `scripts/warm --help` says how. The
+# logic is in app/scripts/warm.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/warmCli.ts" "$@"

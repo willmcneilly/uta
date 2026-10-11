@@ -1,3 +1,4 @@
 #!/bin/sh
-# Runs the checks this change needs. See scripts/src/check.ts, or --help.
-exec node "$(dirname "$0")/src/check.ts" "$@"
+# Runs the checks this change needs. `scripts/check --help` says how. The
+# logic is in app/scripts/check.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/checkCli.ts" "$@"

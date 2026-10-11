@@ -1,5 +1,5 @@
-// `scripts/check`: runs the checks this change needs. See HELP below, and
-// checkJobs.ts for the jobs.
+// `scripts/check`: runs the checks this change needs. checkCli.ts has the
+// command line and its help, and checkJobs.ts the jobs.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -19,36 +19,9 @@ import { join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { JOBS } from "./checkJobs.ts";
 import { type Job, type Planned, plan } from "./checkPlan.ts";
-import { commonDir, git, shortSha, topLevel, treeFiles, tryGit, workingTree } from "./git.ts";
+import { commonDir, git, shortSha, treeFiles, tryGit, workingTree } from "./git.ts";
 import { warm } from "./warm.ts";
 
-const HELP = `Usage: scripts/check [--all] [--rerun] [--plan] [--no-fetch]
-       scripts/check --push <commit>
-
-Runs the checks from CLAUDE.md that this change needs, in parallel where they
-don't share a build, and prints one line per job with its time and, if it
-failed, its log.
-
-A job runs only when the files it reads differ from origin/main's (fetched
-first), so a frontend change runs no Rust jobs and a Rust change no frontend
-jobs. The release build runs only when app/src-tauri/ or app/package.json
-changed; CI builds it on every PR. Each pass is stamped with the content it
-checked, so running again on the same files is instant.
-
-It checks the working copy as it is, uncommitted and untracked files
-included. If origin/main has moved on since the branch's merge base, it says
-so and lists the commits.
-
-  --all        run every job, whether or not its files changed
-  --rerun      run again even what has already passed
-  --plan       say what would run, and run nothing
-  --no-fetch   compare against the origin/main already fetched
-  --push <c>   for the pre-push hook: pass if commit <c> has already passed
-               what it needs, otherwise check it if it's the working copy
-  --help       show this
-
-Exits 0 when everything it needed passed, 1 when anything failed.
-`;
 
 export type Options = {
   all?: boolean;
@@ -332,29 +305,3 @@ export async function check(
   );
   return failed.length === 0 ? 0 : 1;
 }
-
-/** Points git at the committed hooks, once per repository. */
-function useCommittedHooks(root: string) {
-  if (!existsSync(join(root, ".githooks"))) return;
-  if (tryGit(root, ["config", "--get", "core.hooksPath"]) !== undefined) return;
-  git(root, ["config", "core.hooksPath", ".githooks"]);
-  console.log("Set core.hooksPath to .githooks, so git push runs scripts/check (once per repository).");
-}
-
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (options === "help") {
-    console.log(HELP);
-    return;
-  }
-  if (typeof options === "string") {
-    console.error(`${options}\n\n${HELP}`);
-    process.exitCode = 2;
-    return;
-  }
-  const root = topLevel(process.cwd());
-  useCommittedHooks(root);
-  process.exitCode = await check(root, options);
-}
-
-if (import.meta.main) await main();

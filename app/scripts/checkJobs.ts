@@ -32,7 +32,10 @@ const RTSAN = [
   "app/src/synth/filter-response.json",
 ];
 
-/** The frontend: the app without its Rust side, and the design tokens' source. */
+/**
+ * The frontend: the app without its Rust side, and the design tokens'
+ * source. app/scripts/ is in it, so these jobs check scripts/check itself.
+ */
 const FRONTEND = ["app/", "!app/src-tauri/", "DESIGN.md"];
 
 /**
@@ -41,8 +44,6 @@ const FRONTEND = ["app/", "!app/src-tauri/", "DESIGN.md"];
  * it on every PR (Will, 11 Oct).
  */
 const RELEASE = ["app/src-tauri/", "app/package.json"];
-
-const SCRIPTS = ["scripts/", ".githooks/"];
 
 const TOKENS = "src/design/tokens.css src/design/tokens.ts";
 
@@ -124,17 +125,5 @@ export const JOBS: readonly Job[] = [
     after: ["frontend: typecheck"],
     nodeModules: true,
     cargo: true,
-  },
-  // The scripts' TypeScript is checked with the app's compiler and types.
-  {
-    name: "scripts: typecheck",
-    inputs: SCRIPTS,
-    command: ["app/node_modules/.bin/tsc", "-p", "scripts"],
-    nodeModules: true,
-  },
-  {
-    name: "scripts: test",
-    inputs: SCRIPTS,
-    command: ["node", "--test", "scripts/src/*.test.ts"],
   },
 ];

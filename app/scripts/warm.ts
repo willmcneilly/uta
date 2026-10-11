@@ -1,4 +1,5 @@
-// `scripts/warm`: gives a new worktree a warm Rust build. See HELP below.
+// `scripts/warm`: gives a new worktree a warm Rust build. warmCli.ts has the
+// command line and its help.
 
 import { execFileSync } from "node:child_process";
 import {
@@ -13,20 +14,8 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import { mainCheckout, topLevel } from "./git.ts";
+import { mainCheckout } from "./git.ts";
 
-const HELP = `Usage: scripts/warm
-
-Gives this worktree a warm Rust build by cloning the main checkout's target/
-with APFS copy-on-write (cp -c -R). The clone takes no extra disk until cargo
-changes a file, and cargo then rebuilds only what differs: usually just the
-workspace's own crates.
-
-It clones only the parts of target/ this worktree doesn't have yet (debug,
-release, and so on), so it never touches a build that's already here. The
-post-checkout hook runs it for every new worktree, and scripts/check runs it
-before the Rust jobs.
-`;
 
 /** Folders in target/ that aren't builds. */
 const SKIP = new Set(["check", "tmp"]);
@@ -97,9 +86,4 @@ export function warm(root: string, print: (text: string) => void = console.log):
     const took = ((performance.now() - started) / 1000).toFixed(1);
     print(`Warmed the build: cloned ${cloned.map((c) => `target/${c}`).join(", ")} from ${main} (${took} s).`);
   }
-}
-
-if (import.meta.main) {
-  if (process.argv.includes("--help") || process.argv.includes("-h")) console.log(HELP);
-  else warm(topLevel(process.cwd()));
 }
