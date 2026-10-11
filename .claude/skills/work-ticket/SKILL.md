@@ -8,7 +8,7 @@ effort: medium
 
 A ticket is done when a reviewer and Will can trust it without reading every line, because the evidence is in the ticket and the PR. The job isn't just writing the code: it's showing, criterion by criterion, that it works.
 
-Use the `notion` skill for Notion mechanics. Keep your own context lean: send broad exploration, library research and large log reading to subagents, and keep the conclusions.
+Use the `uta-notion` skill for Notion mechanics. Keep your own context lean: send broad exploration, library research and large log reading to subagents, and keep the conclusions.
 
 ## 1. Pick the ticket
 
@@ -53,7 +53,7 @@ Read:
 
 When the UI work needs something `DESIGN.md` doesn't cover (a new component, a layout pattern, a new token, or bending one of its rules), don't block the ticket and don't invent a rule quietly. Build the best version you can from the principles, then:
 
-1. **Log it** in the Design decisions database (see the `notion` skill), with `Status: Open`: what was needed, what you chose and why, the principles you relied on, the alternatives, and the ticket. Its ID is `D-n`. Leave `Screenshot` empty: the PR body has the screenshots, and that's enough.
+1. **Log it** in the Design decisions database (see the `uta-notion` skill), with `Status: Open`: what was needed, what you chose and why, the principles you relied on, the alternatives, and the ticket. Its ID is `D-n`. Leave `Screenshot` empty: the PR body has the screenshots, and that's enough.
 2. **Mark the code** with a comment where the decision lives: `provisional: D-n`.
 3. **List it in the PR** under "Design decisions", with its link and a screenshot.
 
@@ -75,7 +75,7 @@ Before opening the PR:
    - check nothing out of scope slipped in;
    - check that names and comments match the surrounding code.
 
-5. **New concepts.** Did this work bring in a concept that isn't in the Glossary, something you had to reach for that the RFC didn't name? Usually the answer is no. If yes, add an entry (see the `notion` skill), with `Introduced in` set to the ticket's RFC, and list the new terms in the PR.
+5. **New concepts.** Did this work bring in a concept that isn't in the Glossary, something you had to reach for that the RFC didn't name? Usually the answer is no. If yes, add an entry (see the `uta-notion` skill), with `Introduced in` set to the ticket's RFC, and list the new terms in the PR.
 
 ## 6. Record it on the ticket
 

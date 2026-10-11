@@ -271,7 +271,7 @@ The 9–10 Oct process audit already fixed the review relay, the handover order 
 
 **Depends on:** UTA-58.
 
-**Context:** the audit above. `work-ticket` steps 1, 2, 6 and 10, the `notion` skill's ticket and design-decision sections.
+**Context:** the audit above. `work-ticket` steps 1, 2, 6 and 10, the `uta-notion` skill's ticket and design-decision sections.
 
 ### 6. Keep a ticket's evidence in one place (Chore) · UTA-63
 

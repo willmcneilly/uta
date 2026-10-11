@@ -6,7 +6,7 @@ Prints each commented block's id, type and text, the discussion_id to reply to, 
 """
 import json, subprocess, sys
 
-N = ".claude/skills/notion/ntn.sh"
+N = ".claude/skills/uta-notion/ntn.sh"
 
 def api(*args):
     r = subprocess.run([N, "api", *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)

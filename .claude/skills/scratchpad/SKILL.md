@@ -9,11 +9,11 @@ Will notices things to change while other work is going on. The scratchpad lets 
 
 It isn't a backlog. Notes never become Backlog tickets directly. They get promoted into an RFC or a project, folded into work that's about to start, or dropped. A PR's own loose ends ("this PR left X undone") stay in the PR's follow-ups, not here.
 
-For Notion mechanics, use the `notion` skill. Below, `N` means `.claude/skills/notion/ntn.sh`, and every call needs `</dev/null`.
+For Notion mechanics, use the `uta-notion` skill. Below, `N` means `.claude/skills/uta-notion/ntn.sh`.
 
 ## The database
 
-Scratchpad: database `057ed2bc-7159-4f9d-ba6d-b034fed1eacc`, data source `847d5e5a-0916-4048-b2a0-38722bb92e22` (https://app.notion.com/p/057ed2bc71594f9dba6db034fed1eacc)
+Scratchpad: `N scratchpad …` (https://app.notion.com/p/057ed2bc71594f9dba6db034fed1eacc)
 
 Properties (names are exact):
 - `Name` (title): the note, in one line
@@ -34,12 +34,12 @@ Make it cheap and don't break the flow of the current work.
 5. Always set `Status` to `Raw`.
 
 ```bash
-N api v1/pages -d '{"parent":{"data_source_id":"847d5e5a-0916-4048-b2a0-38722bb92e22"},
+N scratchpad create -d '{
   "properties":{"Name":{"title":[{"text":{"content":"Mute button on track headers is too small to hit"}}]},
                 "Area":{"select":{"name":"UI"}},
                 "Status":{"status":{"name":"Raw"}},
                 "Noticed during":{"rich_text":[{"text":{"content":"UTA-21"}}]}},
-  "markdown":"> the mute buttons on the track headers are tiny, I keep missing them and hitting solo"}' </dev/null
+  "markdown":"> the mute buttons on the track headers are tiny, I keep missing them and hitting solo"}'
 ```
 
 Confirm in one line ("Noted: …") and go back to what you were doing. Don't discuss the idea, design it, or act on it, unless Will asks. If one message has several notes, make a row for each.
@@ -50,7 +50,7 @@ This runs between projects: at the start of the `rfc` and `plan-project` skills,
 
 1. Query the Raw notes:
    ```bash
-   N datasources query 847d5e5a-0916-4048-b2a0-38722bb92e22 --filter '{"property":"Status","status":{"equals":"Raw"}}' </dev/null
+   N scratchpad query --filter '{"property":"Status","status":{"equals":"Raw"}}'
    ```
    If there are none, say so in a line and carry on.
 2. Group them by theme, not just by `Area`. Notes about the same thing go together, and duplicates are merged into one.
@@ -63,11 +63,11 @@ This runs between projects: at the start of the `rfc` and `plan-project` skills,
 4. Wait for Will's decisions. They are Will's call; don't change any statuses before then.
 5. Apply them: set `Status`, and add the `Projects` or `RFCs` relation for Promoted and Folded-in notes once that page exists. Notes folded into an RFC or plan you're drafting get their relation when it's pushed to Notion. Until then, list them in the draft's open questions, or in the plan's notes, so they aren't lost.
    ```bash
-   N api v1/pages/<id> -X PATCH -d '{"properties":{"Status":{"status":{"name":"Folded in"}},"Projects":{"relation":[{"id":"<project page id>"}]}}}' </dev/null
+   N api v1/pages/<id> -X PATCH -d '{"properties":{"Status":{"status":{"name":"Folded in"}},"Projects":{"relation":[{"id":"<project page id>"}]}}}'
    ```
 6. Then go through the open design decisions the same way:
    ```bash
-   N datasources query 795ede6b-3d43-45f7-b39f-dd76bd8ab69c --filter '{"property":"Status","status":{"equals":"Open"}}' </dev/null
+   N decisions query --filter '{"property":"Status","status":{"equals":"Open"}}'
    ```
    For each, show what was needed, what was chosen and its screenshot, and propose an outcome with a one-line reason:
    - **Adopt:** it works and fits the principles. It goes into `DESIGN.md` (its tokens, components or Do's and Don'ts) in a PR, and the `provisional: D-n` marks come out of the code.

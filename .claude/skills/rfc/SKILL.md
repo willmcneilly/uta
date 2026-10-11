@@ -8,7 +8,7 @@ effort: high
 
 An RFC is how every big initiative in Uta starts. Its job is to let Will make a good decision about something they may not understand at the code level. Write for Will: a product person who knows DAWs deeply and audio programming not at all.
 
-Workflow: draft locally → review in Crit → publish to Notion on sign-off. For Notion mechanics (wrapper, IDs, property names), use the `notion` skill.
+Workflow: draft locally → review in Crit → publish to Notion on sign-off. For Notion mechanics (wrapper, IDs, property names), use the `uta-notion` skill.
 
 ## Does this need an RFC?
 
@@ -22,7 +22,7 @@ Workflow: draft locally → review in Crit → publish to Notion on sign-off. Fo
 
 First run the scratchpad review (the `scratchpad` skill), starting with the notes that touch this initiative. Notes Will folds in become part of what you clarify below.
 
-Then run a **process check-in.** Query the Process log (see the `notion` skill) for entries that are `Trying` or `Proposed`. For each `Trying` entry, gather evidence from the project just finished: PR timings, how often Will had to step in, what went wrong. Propose a new status (Working, Reverted, or keep Trying) with a one-line reason. Also ask Will whether anything about the process got in his way. Then add a dated bullet under `## How it's going` on each entry he agrees with, and change its status. Keep it to a few minutes. Will can also ask for a check-in at any time.
+Then run a **process check-in.** Query the Process log (see the `uta-notion` skill) for entries that are `Trying` or `Proposed`. For each `Trying` entry, gather evidence from the project just finished: PR timings, how often Will had to step in, what went wrong. Propose a new status (Working, Reverted, or keep Trying) with a one-line reason. Also ask Will whether anything about the process got in his way. Then add a dated bullet under `## How it's going` on each entry he agrees with, and change its status. Keep it to a few minutes. Will can also ask for a check-in at any time.
 
 Ask Will questions until you can state, in Will's words:
 - what they want to be able to do, hear or see when this is done
@@ -40,7 +40,7 @@ Ask a few focused questions at a time, not a questionnaire. Stop when you could 
 
 If the research changes the scope from step 1, tell Will before drafting.
 
-Research worth keeping goes in Notion's **Research** database (see the `notion` skill), related to the RFC it served. Examples: findings the RFC only summarises, or work for a later RFC that this one only outlines. Research doesn't go in the repo. Save it when the RFC is first pushed, or sooner if scope moves part of it to another RFC.
+Research worth keeping goes in Notion's **Research** database (see the `uta-notion` skill), related to the RFC it served. Examples: findings the RFC only summarises, or work for a later RFC that this one only outlines. Research doesn't go in the repo. Save it when the RFC is first pushed, or sooner if scope moves part of it to another RFC.
 
 ### 3. Draft locally
 
@@ -64,7 +64,7 @@ Write `docs/rfcs/rfc-NNN-short-name.md`. For `NNN`, take the highest RFC number 
 - **Risks & unknowns.** What could go wrong or turn out harder than expected, and what we'd do about it. Mark anything that is a guess as a guess.
 - **How we'll verify it.** Concrete checks, both automated (what is tested, how) and manual (what Will should try). "Add tests" isn't enough.
 - **Open questions.** Only real decisions for Will, each with your recommendation. Once one is settled, mark it `**Resolved: ...**` with the answer. Don't delete it, so the record stays.
-- **New terms.** The concepts this RFC brings into Uta that aren't in the Glossary yet (query it first; see the `notion` skill). One line each: the term and a plain one-sentence definition. Will reads these alongside the proposal, so they're part of the review. Leave the section out if there are none.
+- **New terms.** The concepts this RFC brings into Uta that aren't in the Glossary yet (query it first; see the `uta-notion` skill). One line each: the term and a plain one-sentence definition. Will reads these alongside the proposal, so they're part of the review. Leave the section out if there are none.
 
 Quality bar before sharing:
 - The scope fits one project. If it doesn't, propose splitting it into several RFCs.
@@ -91,7 +91,7 @@ Also:
 
 When the open questions are resolved, ask Will whether they want to accept it. Only Will accepts an RFC.
 - **Accepted:** set `**Status:** Accepted (YYYY-MM-DD)` in the file, then push to Notion with `Status: Accepted` and `Date accepted` set to today.
-  Then add a Glossary entry for each item under **New terms**, with `Introduced in` set to this RFC and the full body the `notion` skill describes, and link it to related terms already in the Glossary.
+  Then add a Glossary entry for each item under **New terms**, with `Introduced in` set to this RFC and the full body the `uta-notion` skill describes, and link it to related terms already in the Glossary.
 - **Rejected:** set it to `Rejected`, add a line at the top saying why, and push.
 
 **Don't** break an accepted RFC into projects or tickets as part of this skill. That's a separate step, and Will starts it.
@@ -101,11 +101,11 @@ When the open questions are resolved, ask Will whether they want to accept it. O
 Push only on acceptance or rejection, or when Will asks. Never push on your own initiative mid-discussion.
 
 - **Body:** everything below the local header. The title and status are Notion properties, not body text.
-- **First push:** create the row in the RFCs data source with `Name`, `Status` and `Author: Will`, plus the body as `markdown` (see the `notion` skill). Then put the Notion link and the real `RFC-n` number in the local header, and rename the file if the number changed.
+- **First push:** create the row in the RFCs data source with `Name`, `Status` and `Author: Will`, plus the body as `markdown` (see the `uta-notion` skill). Then put the Notion link and the real `RFC-n` number in the local header, and rename the file if the number changed.
 - **Later pushes:**
   1. First run `python3 .claude/skills/rfc/comments.py <page id>`. If Will has commented in Notion, bring those comments into the local file or the discussion, because the push deletes them.
   2. Then `N pages update <id>`, which replaces the whole body, and PATCH the properties.
-- **After every push:** set any code blocks to `plain text` (see the `notion` skill), and tell Will it's published.
+- **After every push:** set any code blocks to `plain text` (see the `uta-notion` skill), and tell Will it's published.
 
 ## Changing an accepted RFC
 
