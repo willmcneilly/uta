@@ -7,13 +7,15 @@ description: How to read and write Uta's Notion (RFCs, Projects, Tickets, Scratc
 
 ## A ticket's steps: `scripts/ticket`
 
-Claiming, ticking criteria, merging and unblocking a ticket, finding what's ready, and logging a design decision are each one command in `scripts/ticket` (`--help` for the details). Use it rather than building those calls by hand:
+Claiming, ticking criteria, syncing the ticket with its PR, merging and unblocking a ticket, finding what's ready, and logging a design decision are each one command in `scripts/ticket` (`--help` for the details). Use it rather than building those calls by hand:
 
 ```bash
 scripts/ticket show UTA-n                        # page ID, status, project, PR, and each dependency
 scripts/ticket ready                             # what can start now, what's waiting, what's running
 scripts/ticket claim UTA-n --branch <branch>     # In Progress, project Active, the Started comment
 scripts/ticket tick UTA-n "<criterion>" …        # tick acceptance criteria by their text
+scripts/ticket evidence-check <file>             # every test, path and command a PR body quotes is in the branch
+scripts/ticket sync UTA-n --pr <n> <file>        # PR description, ticks, Verification notes, PR link, In Review, from the PR body
 scripts/ticket merge UTA-n                       # merge the PR, Done, unblock, project Done
 scripts/ticket decision new --ticket UTA-n --name … --needed … --chosen … --principles … --alternatives …
 ```
@@ -84,7 +86,7 @@ Before adding a term, query the Glossary for it so you don't add a duplicate. If
 - `## Out of scope`
 - `## Depends on` (UTA-n IDs, or "Nothing")
 - `## Context` (RFC link and the sections this implements)
-- `## Verification notes`: left empty at creation. The implementer fills it in before moving the ticket to In Review, saying what was checked and how.
+- `## Verification notes`: left empty at creation, and kept as the last section. `scripts/ticket sync` fills it from the PR body (its acceptance criteria, "For Will to try" and follow-ups) when the ticket goes to In Review, and replaces it on each sync after.
 
 Branches and PR titles use the ticket ID: branch `uta-12-short-name`, PR title `UTA-12: …`.
 

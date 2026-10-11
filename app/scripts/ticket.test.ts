@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Tree } from "./evidence.ts";
 import {
@@ -512,7 +513,7 @@ describe("sync", () => {
   it("updates the PR body, ticks to match, replaces the notes, and sets the PR link and In Review", () => {
     const { run, actions } = recorder();
     const out = sync(fake([[7, "In Progress", [], "none"]], { todos }), run, everything, 7, 10007, "pr.md", body);
-    expect(out).toEqual([]);
+    expect(out.slice(0, 3)).toEqual(["", "The Verification notes would be:", "  From [PR #10007](https://github.com/willmcneilly/uta/pull/10007)."]);
     expect(summaries(actions)).toEqual([
       "Update PR #10007's description from pr.md.",
       "Tick: First criterion",
@@ -520,7 +521,7 @@ describe("sync", () => {
       `Replace UTA-7's Verification notes with PR #10007's criteria, "For Will to try" and follow-ups.`,
       `Set UTA-7's PR to ${url} and status to In Review.`,
     ]);
-    expect(actions[0].call.args).toEqual(["api", "repos/{owner}/{repo}/pulls/10007", "-X", "PATCH", "-F", "body=@pr.md"]);
+    expect(actions[0].call.args).toEqual(["api", "repos/{owner}/{repo}/pulls/10007", "-X", "PATCH", "-F", `body=@${resolve("pr.md")}`]);
     const notes = JSON.parse(actions[3].call.args[5]) as { update_content: { content_updates: { old_str: string; new_str: string }[] } };
     expect(notes.update_content.content_updates[0].old_str).toBe("## Verification notes");
     expect(notes.update_content.content_updates[0].new_str).toMatch(/^## Verification notes\n\nFrom \[PR #10007\][\s\S]*- ✗ \*\*Second criterion/);
@@ -546,7 +547,7 @@ describe("sync", () => {
     const nothing: Tree = { ...everything, wordsFound: () => new Set() };
     const { run, actions } = recorder();
     expect(() => sync(fake([[7, "In Progress", [], "none"]], { todos }), run, nothing, 7, 10007, "pr.md", body)).toThrow(
-      /pr\.md quotes what isn't in the branch:\n {2}first_test {2}isn't in the code/,
+      /pr\.md has evidence to fix:\n {2}first_test {2}isn't in the code/,
     );
     expect(actions).toEqual([]);
   });

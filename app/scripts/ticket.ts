@@ -4,6 +4,7 @@
 // ticketCli.ts the command line.
 
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 import { type Problem, type Tree, evidenceProblems } from "./evidence.ts";
 
 export type Ticket = {
@@ -476,7 +477,7 @@ export function newDecision(services: Services, run: Run, decision: NewDecision)
 
 /** A PR body's evidence problems, one per line, for a refusal. */
 export function describeProblems(file: string, problems: Problem[]): string {
-  return [`${file} quotes what isn't in the branch:`, ...problems.map((p) => `  ${p.ref}  ${p.why}`)].join("\n");
+  return [`${file} has evidence to fix:`, ...problems.map((p) => `  ${p.ref}  ${p.why}`)].join("\n");
 }
 
 /** A Markdown body's level-2 sections, by heading, each with the lines under it. */
@@ -524,7 +525,10 @@ export function pairCriteria(todos: Todo[], criteria: Criterion[]): { todo: Todo
     const todo = todos
       .filter((t) => stem(t) && line.startsWith(stem(t)))
       .sort((a, b) => stem(b).length - stem(a).length)[0];
-    if (!todo) problems.push(`No ticket criterion starts the PR's "${criterion.text.slice(0, 80)}".`);
+    if (!todo) {
+      const start = criterion.text.length > 80 ? `${criterion.text.slice(0, 80)}…` : criterion.text;
+      problems.push(`No ticket criterion starts the PR's "${start}".`);
+    }
     else if (pairs.some((p) => p.todo === todo)) problems.push(`Two of the PR's criteria start with "${todo.text}".`);
     else pairs.push({ todo, criterion });
   }
@@ -559,7 +563,8 @@ export function verificationNotes(markdown: string, pr: { number: number; url: s
       if (required) throw new Refusal(`The PR body has no "## ${name}" section.`);
       continue;
     }
-    const lines = found.lines.map((line) =>
+    // The PR's attribution line ends its last section, and isn't evidence.
+    const lines = found.lines.filter((line) => !/^🤖 Generated with/.test(line)).map((line) =>
       line
         .replace(/^(\s*)[-*] \[[xX]\] /, "$1- ✓ ")
         .replace(/^(\s*)[-*] \[ \] /, "$1- ✗ ")
@@ -615,7 +620,7 @@ export function sync(services: Services, run: Run, tree: Tree, id: number, numbe
     actions.push({
       summary: `Update PR #${number}'s description from ${file}.`,
       // Not gh pr edit: it fails on this repo, asking for the retired classic Projects field.
-      call: { tool: "gh", args: ["api", `repos/{owner}/{repo}/pulls/${number}`, "-X", "PATCH", "-F", `body=@${file}`] },
+      call: { tool: "gh", args: ["api", `repos/{owner}/{repo}/pulls/${number}`, "-X", "PATCH", "-F", `body=@${resolve(file)}`] },
     });
   }
   for (const { todo, criterion } of pairs) {
@@ -625,7 +630,8 @@ export function sync(services: Services, run: Run, tree: Tree, id: number, numbe
       call: { tool: "ntn.sh", args: ["api", `v1/blocks/${todo.blockId}`, "-X", "PATCH", "-d", json({ to_do: { checked: criterion.checked } })] },
     });
   }
-  if (!current.includes(hash)) {
+  const replacesNotes = !current.includes(hash);
+  if (replacesNotes) {
     const heading = current.split("\n")[0];
     actions.push({
       summary: `Replace ${label(id)}'s Verification notes with PR #${number}'s criteria, "For Will to try" and follow-ups.`,
@@ -650,6 +656,9 @@ export function sync(services: Services, run: Run, tree: Tree, id: number, numbe
     actions.push({ summary: `Set ${label(id)}'s ${what}.`, call: { tool: "ntn.sh", args: ["api", `v1/pages/${ticket.pageId}`, "-X", "PATCH", "-d", json({ properties })] } });
   }
 
-  for (const action of actions) run(action);
-  return actions.length === 0 ? [`Nothing to change: PR #${number} and ${label(id)} already match ${file}.`] : [];
+  const ran = actions.map(run);
+  if (actions.length === 0) return [`Nothing to change: PR #${number} and ${label(id)} already match ${file}.`];
+  // A dry run prints the new notes, which its JSON call hides.
+  if (replacesNotes && ran.every((r) => r === undefined)) return ["", "The Verification notes would be:", ...notes.split("\n").map((l) => `  ${l}`)];
+  return [];
 }

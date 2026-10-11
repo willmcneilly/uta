@@ -51,9 +51,11 @@ Commands:
       whole word in a tracked file; a path is a tracked file or folder; a
       command's script, npm script, cargo package (-p) and test target
       (--test), and any path in it, exist. Shell lines in bash blocks are
-      commands too. Placeholders (<n>, …), globs and target/ are skipped. It
-      also refuses totals ("509 tests"): name the tests, don't count them.
-      Checks the working tree, or the commit --ref names.
+      commands too. Placeholders (<n>, …), globs and paths git ignores are
+      skipped, and so is a name that's gone: struck through (~~`lastDrag`~~)
+      or renamed (`sliderScale` → `numberScale`). It also refuses totals
+      ("509 tests"): name the tests, don't count them. Checks the working
+      tree, or the commit --ref names.
 
   sync UTA-n --pr <n> <file>
       Makes the ticket and the PR match <file>, the PR body: runs
@@ -167,7 +169,7 @@ function main(argv: string[]): number {
         const file = rest.shift();
         if (file === undefined) throw new Usage("sync needs a file: the PR body.");
         noMore();
-        out = sync(services, run, gitTree(checkout), id, pr, resolve(file), readFileSync(file, "utf8"));
+        out = sync(services, run, gitTree(checkout), id, pr, file, readFileSync(file, "utf8"));
         break;
       }
       case "decision": {
