@@ -273,10 +273,10 @@ fn fast_repeats_do_not_click() {
     let samples = render_drums(&drum_project(120.0, 3, &params, hits), 6.5, 128);
     assert_no_click(&samples, ringing_limit(lone_step(&params)), "fast repeats");
     // The envelopes charge rather than add, so a roll can't pile up without
-    // end. It does peak above a lone accent (0.5): the tail is held at full
-    // charge under every burst, where a lone hit's first burst has none.
-    // Measured 0.83, so it stays clear of full scale.
-    assert!(peak(&samples) < 0.95, "{}", peak(&samples));
+    // end. It does peak above a lone accent, at the reference: the tail is
+    // held at full charge under every burst, where a lone hit's first burst
+    // has none. Measured 1.66 times the reference.
+    assert!(peak(&samples) < 1.9 * REFERENCE_PEAK, "{}", peak(&samples));
 }
 
 /// Flams: a soft grace hit, then an accent, 40 ms down to 1 ms apart.
@@ -378,7 +378,7 @@ fn the_snare_and_clap_together_are_each_alone_added() {
     };
     let (snare, clap, both) = (render(&[SNARE]), render(&[CLAP]), render(&[SNARE, CLAP]));
     let added: Vec<f32> = snare.iter().zip(&clap).map(|(a, b)| a + b).collect();
-    assert!(peak(&both) > 0.5);
+    assert!(peak(&both) > REFERENCE_PEAK);
     assert!(max_difference(&both, &added) < 1e-6);
 }
 

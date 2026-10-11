@@ -102,6 +102,14 @@ impl DrumSound {
 /// "closed_hat":{...},"open_hat":{...},"low_tom":{...},"high_tom":{...},
 /// "cymbal":{...}}`. Every sound may be left out, and takes its defaults, so
 /// a sound added later doesn't stop older command lists loading.
+///
+/// The default Levels balance the kit by measured loudness, so it sounds
+/// like a drum machine before anyone touches a fader (RFC-006, "What makes
+/// it sound good", point 7). Each sound's loudness is its K-weighted level
+/// (the weighting loudness meters use, ITU-R BS.1770: the ear hears less of
+/// the lowest bass and more above 2 kHz) over the 150 ms from a hit at full
+/// accent. Against the kick: snare and clap 3 dB under it, toms 6 dB, hats
+/// and cymbal 11 dB. The engine's `balance` test measures them.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct KitSettings {
@@ -176,6 +184,7 @@ impl Default for KickSettings {
             // Round and deep, with a soft click: about a 420 Hz low-pass.
             tone: 0.2,
             decay_seconds: 0.3,
+            // The kit's reference: every other default Level is set against it.
             level_db: 0.0,
             tr909: Kick909Settings::default(),
         }
@@ -225,7 +234,8 @@ impl Default for Kick909Settings {
             attack: 0.5,
             // A punchy kick you hear for about half a second.
             decay_seconds: 0.5,
-            level_db: 0.0,
+            // As loud as the 808 kick.
+            level_db: -2.0,
         }
     }
 }
@@ -264,7 +274,8 @@ impl Default for SnareSettings {
             // over a fifth of a second.
             tone_seconds: 0.16,
             snappy: 0.5,
-            level_db: 0.0,
+            // 3 dB under the kick.
+            level_db: -2.0,
         }
     }
 }
@@ -297,7 +308,8 @@ impl Default for ClapSettings {
             tone_hz: 1000.0,
             // A tail you hear for about 100 ms, as on the 808.
             decay_seconds: 0.2,
-            level_db: 0.0,
+            // 3 dB under the kick: its bursts leave gaps, so it needs lifting.
+            level_db: 2.5,
         }
     }
 }
@@ -339,7 +351,8 @@ impl Default for ClosedHatSettings {
             tone_hz: 7100.0,
             // The 808's fixed closed hat.
             decay_seconds: 0.05,
-            level_db: 0.0,
+            // 11 dB under the kick.
+            level_db: -1.0,
         }
     }
 }
@@ -367,7 +380,8 @@ impl Default for OpenHatSettings {
             // A little past the knob's middle: a hat you hear ring for about
             // half a second.
             decay_seconds: 0.35,
-            level_db: 0.0,
+            // 11 dB under the kick: it rings, so it measures louder than the closed hat.
+            level_db: -9.5,
         }
     }
 }
@@ -400,7 +414,8 @@ impl Default for LowTomSettings {
             // The 808's low tom, from the research's recipe.
             tune_hz: 90.0,
             decay_seconds: 0.2,
-            level_db: 0.0,
+            // 6 dB under the kick.
+            level_db: -4.5,
         }
     }
 }
@@ -432,7 +447,8 @@ impl Default for HighTomSettings {
             // The 808's high tom, from the research's recipe.
             tune_hz: 185.0,
             decay_seconds: 0.1,
-            level_db: 0.0,
+            // 6 dB under the kick.
+            level_db: -3.0,
         }
     }
 }
@@ -473,7 +489,8 @@ impl Default for CymbalSettings {
             // A little past the knob's middle: a wash you hear for about a
             // second.
             decay_seconds: 0.8,
-            level_db: 0.0,
+            // 11 dB under the kick.
+            level_db: -12.0,
         }
     }
 }
@@ -830,7 +847,7 @@ mod tests {
         assert_eq!(kit.kick.model, KickModel::Tr808, "808 by default");
         let tr909 = kit.kick.tr909;
         assert_eq!((tr909.tune_hz, tr909.decay_seconds), (55.0, 0.5));
-        assert_eq!(tr909.level_db, 0.0);
+        assert_eq!(tr909.level_db, -2.0);
         let kit = kit.with_kick_model(KickModel::Tr909);
         let range = |param| kit.range(DrumSound::Kick, &param);
         assert_eq!(range(DrumParam::TuneHz(0.0)), Some((45.0, 70.0)));
@@ -962,9 +979,9 @@ mod tests {
     #[test]
     fn the_snare_and_claps_defaults_and_limits_are_the_rfcs() {
         let snare = SnareSettings::default();
-        assert_eq!((snare.tune_hz, snare.level_db), (180.0, 0.0));
+        assert_eq!((snare.tune_hz, snare.level_db), (180.0, -2.0));
         let clap = ClapSettings::default();
-        assert_eq!((clap.tone_hz, clap.level_db), (1000.0, 0.0));
+        assert_eq!((clap.tone_hz, clap.level_db), (1000.0, 2.5));
         let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
         use DrumSound as D;
@@ -982,7 +999,8 @@ mod tests {
     fn the_hats_defaults_and_limits_are_the_rfcs() {
         let closed = ClosedHatSettings::default();
         assert_eq!((closed.tune_hz, closed.decay_seconds), (205.3, 0.05));
-        assert_eq!(closed.level_db, 0.0);
+        assert_eq!(closed.level_db, -1.0);
+        assert_eq!(OpenHatSettings::default().level_db, -9.5);
         let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
         use DrumSound as D;
@@ -1006,11 +1024,11 @@ mod tests {
         let (low, high) = (LowTomSettings::default(), HighTomSettings::default());
         assert_eq!(
             (low.tune_hz, low.decay_seconds, low.level_db),
-            (90.0, 0.2, 0.0)
+            (90.0, 0.2, -4.5)
         );
         assert_eq!(
             (high.tune_hz, high.decay_seconds, high.level_db),
-            (185.0, 0.1, 0.0)
+            (185.0, 0.1, -3.0)
         );
         let range = |sound, param| KitSettings::default().range(sound, &param);
         use DrumParam as P;
@@ -1030,7 +1048,7 @@ mod tests {
         let cymbal = CymbalSettings::default();
         assert_eq!(
             (cymbal.tone, cymbal.decay_seconds, cymbal.level_db),
-            (0.5, 0.8, 0.0)
+            (0.5, 0.8, -12.0)
         );
         let range = |param| KitSettings::default().range(DrumSound::Cymbal, &param);
         assert_eq!(range(DrumParam::Tone(0.0)), Some((0.0, 1.0)));
@@ -1160,14 +1178,14 @@ mod tests {
     fn settings_serialise_and_leave_out_nothing_they_need() {
         let json = concat!(
             r#"{"kick":{"model":"808","tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0,"#,
-            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":0.0}},"#,
-            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
-            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
-            r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
-            r#""open_hat":{"decay_seconds":0.35,"level_db":0.0},"#,
-            r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":0.0},"#,
-            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":0.0},"#,
-            r#""cymbal":{"tone":0.5,"decay_seconds":0.8,"level_db":0.0}}"#,
+            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":-2.0}},"#,
+            r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":-2.0},"#,
+            r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":2.5},"#,
+            r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":-1.0},"#,
+            r#""open_hat":{"decay_seconds":0.35,"level_db":-9.5},"#,
+            r#""low_tom":{"tune_hz":90.0,"decay_seconds":0.2,"level_db":-4.5},"#,
+            r#""high_tom":{"tune_hz":185.0,"decay_seconds":0.1,"level_db":-3.0},"#,
+            r#""cymbal":{"tone":0.5,"decay_seconds":0.8,"level_db":-12.0}}"#,
         );
         assert_eq!(
             serde_json::to_string(&KitSettings::default()).unwrap(),

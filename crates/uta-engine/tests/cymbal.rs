@@ -237,8 +237,9 @@ fn fast_repeats_do_not_click() {
     let samples = render_drums(&drum_project(120.0, 3, &params, hits), 7.5, 128);
     assert_no_click(&samples, ringing_limit(lone_step(&params)), "repeats");
     // The envelopes charge rather than add, so repeats don't pile up: an
-    // accent peaks at 0.5, and the repeats measured up to 0.67.
-    assert!(peak(&samples) < 0.85, "{}", peak(&samples));
+    // accent peaks at the reference, and the repeats measured up to 1.34
+    // times it.
+    assert!(peak(&samples) < 1.7 * REFERENCE_PEAK, "{}", peak(&samples));
 }
 
 /// Flams: a soft grace hit, then an accent, 40 ms down to 1 ms apart.
@@ -388,7 +389,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render_drums(&project, 5.0, 128);
-    assert!(peak(&reference) > 0.3);
+    assert!(peak(&reference) > 0.6 * REFERENCE_PEAK);
     assert_eq!(
         render_drums(&project, 5.0, 128),
         reference,
@@ -470,5 +471,5 @@ fn playing_again_while_it_rings_restarts_the_metal() {
     // From the second cymbal on, 4 s in, the first has long gone.
     let from = seconds(4.0);
     assert_eq!(&again[from..seconds(6.0)], &reference[from..seconds(6.0)]);
-    assert!(peak(&again[from..seconds(6.0)]) > 0.3);
+    assert!(peak(&again[from..seconds(6.0)]) > 0.6 * REFERENCE_PEAK);
 }

@@ -198,7 +198,10 @@ fn velocity_127_is_brighter_than_64() {
 #[test]
 fn a_full_accent_peaks_at_the_reference() {
     let peak = peak(&one_909(&[], 127, 0.5));
-    assert!((peak - REFERENCE_PEAK).abs() < 0.01, "{peak}");
+    assert!(
+        (peak - REFERENCE_PEAK).abs() < 0.02 * REFERENCE_PEAK,
+        "{peak}"
+    );
 }
 
 /// Decay follows the control: doubling it roughly doubles how long the
@@ -308,8 +311,8 @@ fn fast_repeats_do_not_click() {
     let limit = ringing_limit(lone_step(&params, 100), 55.0, peak(&samples));
     assert_no_click(&samples, limit, "fast repeats");
     // The envelopes add up to a ceiling rather than without end, so a roll
-    // stays clear of full scale.
-    assert!(peak(&samples) < 0.9, "{}", peak(&samples));
+    // stays under twice the reference.
+    assert!(peak(&samples) < 1.8 * REFERENCE_PEAK, "{}", peak(&samples));
 }
 
 /// Flams: a soft grace hit, then an accent, 40 ms down to 1 ms apart.
@@ -474,7 +477,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render_drums(&project, 4.5, 128);
-    assert!(peak(&reference) > 0.1);
+    assert!(peak(&reference) > 0.2 * REFERENCE_PEAK);
     assert_eq!(
         render_drums(&project, 4.5, 128),
         reference,

@@ -94,10 +94,11 @@ const COUPLING_HZ: f64 = 10.0;
 /// What's ringing has to be this far under the new hit, as a share of it,
 /// for the oscillator to go back to its zero crossing: 40 dB.
 const RESTART_SHARE: f64 = 0.01;
-/// The output level that puts a default kick at full accent at the kit's
-/// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived: see
-/// the `the_909_kick_at_full_accent_peaks_at_the_reference` test.
-const OUTPUT_GAIN: f32 = 0.5128;
+/// The output level that puts a default kick at full accent, with its Level at
+/// 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured,
+/// not derived: see the `the_909_kick_at_full_accent_peaks_at_the_reference`
+/// test.
+const OUTPUT_GAIN: f32 = 1.0256 * super::REFERENCE_PEAK;
 /// Below this, summed over its state, the kick has died away and stops
 /// doing work. Far under anything audible.
 const SILENT: f64 = 1.0e-7;
@@ -475,10 +476,17 @@ mod tests {
 
     #[test]
     fn the_909_kick_at_full_accent_peaks_at_the_reference() {
-        let mut kick = Kick909::new(Kick909Settings::default(), RATE);
+        let settings = Kick909Settings {
+            level_db: 0.0,
+            ..Kick909Settings::default()
+        };
+        let mut kick = Kick909::new(settings, RATE);
         kick.hit(1.0);
         let peak = peak(&run(&mut kick, 0.5));
-        assert!((peak - REFERENCE_PEAK).abs() < 0.005, "peak {peak}");
+        assert!(
+            (peak - REFERENCE_PEAK).abs() < 0.01 * REFERENCE_PEAK,
+            "peak {peak}"
+        );
     }
 
     /// From silence, the oscillator starts at its zero crossing and waits
@@ -571,7 +579,7 @@ mod tests {
         let last = peak(&samples[stopped - 4800..=stopped]);
         assert!(last < 1e-6, "last 0.1 s peaked at {last}");
         kick.hit(1.0);
-        assert!(peak(&run(&mut kick, 0.1)) > 0.3);
+        assert!(peak(&run(&mut kick, 0.1)) > 0.6 * REFERENCE_PEAK);
         assert_eq!(kick.state.phase_hold_remaining, 0);
     }
 

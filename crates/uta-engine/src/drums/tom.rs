@@ -85,13 +85,13 @@ pub(crate) enum TomKind {
 
 impl TomKind {
     /// The output level that puts this tom at its defaults, at full accent,
-    /// at the kit's reference peak (see [`super::REFERENCE_PEAK`]). Measured,
-    /// not derived: see the `each_tom_at_full_accent_peaks_at_the_reference`
-    /// test.
+    /// with its Level at 0 dB, at the kit's reference peak (see
+    /// [`super::REFERENCE_PEAK`]). Measured, not derived: see the
+    /// `each_tom_at_full_accent_peaks_at_the_reference` test.
     fn output_gain(self) -> f32 {
         match self {
-            Self::Low => 1.2495,
-            Self::High => 1.0907,
+            Self::Low => 2.499 * super::REFERENCE_PEAK,
+            Self::High => 2.1814 * super::REFERENCE_PEAK,
         }
     }
 }
@@ -378,12 +378,22 @@ mod tests {
 
     const RATE: f64 = 48_000.0;
 
+    /// The low tom at its defaults, with its Level at 0 dB.
     fn low() -> Tom {
-        Tom::new(TomKind::Low, LowTomSettings::default().tom(), RATE)
+        let settings = LowTomSettings {
+            level_db: 0.0,
+            ..LowTomSettings::default()
+        };
+        Tom::new(TomKind::Low, settings.tom(), RATE)
     }
 
+    /// The high tom at its defaults, with its Level at 0 dB.
     fn high() -> Tom {
-        Tom::new(TomKind::High, HighTomSettings::default().tom(), RATE)
+        let settings = HighTomSettings {
+            level_db: 0.0,
+            ..HighTomSettings::default()
+        };
+        Tom::new(TomKind::High, settings.tom(), RATE)
     }
 
     /// Runs `tom` for `seconds` on the kit's noise, or on silence for the
@@ -415,7 +425,10 @@ mod tests {
         for mut tom in [low(), high()] {
             tom.hit(1.0);
             let peak = peak(&run(&mut tom, Some(&mut Noise::new()), 0.5));
-            assert!((peak - REFERENCE_PEAK).abs() < 0.005, "peak {peak}");
+            assert!(
+                (peak - REFERENCE_PEAK).abs() < 0.01 * REFERENCE_PEAK,
+                "peak {peak}"
+            );
         }
     }
 
@@ -481,7 +494,7 @@ mod tests {
         run(&mut tom, Some(&mut Noise::new()), 3.0);
         assert!(!tom.is_sounding(), "still ringing after 3 s");
         tom.hit(1.0);
-        assert!(peak(&run(&mut tom, Some(&mut Noise::new()), 0.1)) > 0.4);
+        assert!(peak(&run(&mut tom, Some(&mut Noise::new()), 0.1)) > 0.8 * REFERENCE_PEAK);
     }
 
     /// A second hit adds to the ringing rather than restarting it: the
@@ -496,7 +509,7 @@ mod tests {
         tom.hit(0.3);
         let second = run(&mut tom, None, 0.03);
         assert!(
-            (second[0] - before).abs() < 0.01,
+            (second[0] - before).abs() < 0.02 * REFERENCE_PEAK,
             "{before} then {}",
             second[0]
         );
@@ -504,7 +517,10 @@ mod tests {
             .iter()
             .zip(&second)
             .fold(0.0f32, |max, (a, b)| max.max((a - b).abs()));
-        assert!(difference > 0.02, "the second hit copied the first");
+        assert!(
+            difference > 0.04 * REFERENCE_PEAK,
+            "the second hit copied the first"
+        );
     }
 
     /// Every control glides to a new setting over the kit's smoothing time,
