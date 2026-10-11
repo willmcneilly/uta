@@ -36,7 +36,7 @@ pub struct SynthSettings {
     pub sub_octave: i8,
     /// How much of each goes into the filter, as linear levels,
     /// [`Self::LEVEL`]. Together they're balanced so that the mix is never
-    /// louder than one oscillator at full level (see `Mixer` in the synth).
+    /// louder than one oscillator at full level, in power (see `mix_gain`).
     pub osc1_level: f32,
     pub osc2_level: f32,
     pub sub_level: f32,
