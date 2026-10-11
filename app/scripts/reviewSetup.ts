@@ -175,7 +175,7 @@ export function formatConversation(comments: readonly IssueComment[]): string {
 
 /** This checkout's scripts, which the worktree may be too old to have. */
 const SCRIPTS = join(import.meta.dirname, "..", "..", "scripts");
-const TOOLS = join(SCRIPTS, "ci-wait");
+const CI_WAIT = join(SCRIPTS, "ci-wait");
 
 /** The fixed place a PR's review worktree lives, whichever checkout the reviewer starts in. */
 export const worktreePath = (main: string, pr: number) => join(main, ".claude", "worktrees", `review-pr-${pr}`);
@@ -261,7 +261,7 @@ export function reviewSetup(cwd: string, args: Args): string {
     `Ticket: ${ticket ? `${ticket} (.claude/skills/uta-notion/ntn.sh pages get ${ticket})` : "no Notion link found in the PR body"}`,
     `Worktree: ${path}, ${worktree}. cd there and work there; keep it at the end of the round.`,
     ...warmed.map((line) => `  ${line}`),
-    `  Run from it (they work at any commit): ${TOOLS} ${args.pr}, ${join(SCRIPTS, "mutate")}`,
+    `  Run from it (they work at any commit): ${CI_WAIT} ${args.pr}, ${join(SCRIPTS, "mutate")}`,
     `  app/node_modules: ${nodeModulesCurrent(path) ? "current" : "missing or out of date: run npm ci in app/ before any frontend test"}`,
   ];
   if (leftOut) out.push("", leftOut);
