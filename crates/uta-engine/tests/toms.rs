@@ -363,7 +363,12 @@ fn fast_repeats_do_not_click() {
             peak(&samples),
         );
         assert_no_click(&samples, limit, &format!("{:?} fast repeats", tom.sound));
-        assert!(peak(&samples) < 0.9, "{:?}: {}", tom.sound, peak(&samples));
+        assert!(
+            peak(&samples) < 1.8 * REFERENCE_PEAK,
+            "{:?}: {}",
+            tom.sound,
+            peak(&samples)
+        );
     }
 }
 
@@ -489,7 +494,7 @@ fn beat() -> Project {
 fn renders_are_identical_twice_and_at_any_block_size() {
     let project = beat();
     let reference = render_drums(&project, 4.0, 128);
-    assert!(peak(&reference) > 0.3);
+    assert!(peak(&reference) > 0.6 * REFERENCE_PEAK);
     assert_eq!(
         render_drums(&project, 4.0, 128),
         reference,

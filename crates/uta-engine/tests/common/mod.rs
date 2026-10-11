@@ -110,11 +110,39 @@ pub const HIGH_TOM: u8 = 50;
 /// The cymbal's note.
 pub const CYMBAL: u8 = 49;
 
+/// The kit at its defaults, but with every sound's Level at 0 dB, so a
+/// sound's own tests hear it at the kit's reference peak, whatever its
+/// default Level does to balance the kit.
+pub fn unity_kit() -> KitSettings {
+    let mut kit = KitSettings::default();
+    kit.kick.level_db = 0.0;
+    kit.kick.tr909.level_db = 0.0;
+    kit.snare.level_db = 0.0;
+    kit.clap.level_db = 0.0;
+    kit.closed_hat.level_db = 0.0;
+    kit.open_hat.level_db = 0.0;
+    kit.low_tom.level_db = 0.0;
+    kit.high_tom.level_db = 0.0;
+    kit.cymbal.level_db = 0.0;
+    kit
+}
+
 /// A project at `bpm` with a loop of `bars`, the master at 0 dB, and a drum
 /// track, "Drums 1", under the empty synth track: its clip fills the loop
-/// and holds `hits`, and its kit has the settings in `params`. Built
-/// through commands, as the app would.
+/// and holds `hits`, and its kit is [`unity_kit`] with the settings in
+/// `params`. Built through commands, as the app would.
 pub fn drum_project(
+    bpm: f32,
+    bars: u32,
+    params: &[(DrumSound, DrumParam)],
+    hits: Vec<Note>,
+) -> Project {
+    drum_project_with_kit(unity_kit(), bpm, bars, params, hits)
+}
+
+/// [`drum_project`], with the kit starting from `kit`.
+pub fn drum_project_with_kit(
+    kit: KitSettings,
     bpm: f32,
     bars: u32,
     params: &[(DrumSound, DrumParam)],
@@ -136,8 +164,7 @@ pub fn drum_project(
         Command::AddTracks {
             tracks: vec![PlacedTrack {
                 index: 1,
-                track: Track::new(track, "Drums 1", Source::Drums(KitSettings::default()))
-                    .with_clips([clip]),
+                track: Track::new(track, "Drums 1", Source::Drums(kit)).with_clips([clip]),
             }],
         },
     ];
@@ -535,6 +562,50 @@ pub fn share_above(samples: &[f32], sample_rate: u32, hz: f64) -> f64 {
     let first = (hz * n as f64 / f64::from(sample_rate)).ceil() as usize;
     let energy = |bins: &[f64]| bins.iter().map(|m| m * m).sum::<f64>();
     energy(&bins[first.min(bins.len())..]) / energy(&bins)
+}
+
+/// How loud a hit sounds, in dB: its K-weighted RMS over the `seconds` from
+/// its first sound, at 48 kHz. K-weighting is the filter loudness meters
+/// put before measuring (ITU-R BS.1770-4): a high shelf of about +4 dB
+/// above 2 kHz, where the ear is most sensitive, and a high-pass that hears
+/// less of the lowest bass. Plain RMS would rank a kick's 50 Hz far louder
+/// than it sounds next to a hat.
+pub fn hit_loudness_db(samples: &[f32], seconds: f64) -> f64 {
+    let start = first_sound(samples).expect("the hit sounds");
+    let end = (start + (seconds * 48_000.0) as usize).min(samples.len());
+    let weighted = k_weighted(&samples[start..end]);
+    20.0 * rms(&weighted).max(1e-12).log10()
+}
+
+/// `samples` through the K-weighting filter, with BS.1770-4's own
+/// coefficients for 48 kHz: the shelf, then the high-pass.
+fn k_weighted(samples: &[f32]) -> Vec<f32> {
+    let biquad = |input: &[f32], b: [f64; 3], a: [f64; 3]| {
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+        input
+            .iter()
+            .map(|&x| {
+                let x = f64::from(x);
+                let y = b[0] * x + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
+                (x2, x1, y2, y1) = (x1, x, y1, y);
+                y as f32
+            })
+            .collect::<Vec<f32>>()
+    };
+    let shelf = biquad(
+        samples,
+        [
+            1.535_124_859_586_97,
+            -2.691_696_189_406_38,
+            1.198_392_810_852_85,
+        ],
+        [1.0, -1.690_659_293_182_41, 0.732_480_774_215_85],
+    );
+    biquad(
+        &shelf,
+        [1.0, -2.0, 1.0],
+        [1.0, -1.990_047_454_833_98, 0.990_072_250_366_21],
+    )
 }
 
 /// The frequency of the strongest partial between `low` and `high` Hz,

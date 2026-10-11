@@ -10,7 +10,7 @@ cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/
 
 The other sounds are the same with their folder's name in place of `kick`.
 
-Each list sets the master to 0 dB, so a full accent peaks at -6 dBFS and an ordinary hit (velocity 100) about 8 dB under it. A sweep is one drum track per setting, each playing its own bar, so you hear the steps in order.
+Each list sets the master to 0 dB, so a full accent with its Level at 0 dB peaks at -12 dBFS, and an ordinary hit (velocity 100) about 8 dB under it. Each sound's default Level then balances it against the kick (see [The kit](#the-kit)), so a sound at its defaults may be louder or quieter than that. A sweep is one drum track per setting, each playing its own bar, so you hear the steps in order.
 
 ## Kick (808)
 
@@ -151,7 +151,7 @@ What to listen for, against how you remember an 808:
 | `08-repeats` | 8ths, 16ths, then 32nds at the longest Decay, on the high tom, then the low tom. |
 | `09-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart, on the high tom, then the low tom. |
 | `10-groove` | A 1-bar tom pattern at 100 BPM, looped, with the low tom's Decay at 0.3 s. Also the toms' golden WAV. |
-| `11-beat` | Kick, clap and closed hats for a bar, then a bar ending in a tom fill, at 110 BPM, looped. Every sound is still at 0 dB here; the kit's balance (toms about 6 dB under the kick) is set in UTA-57. |
+| `11-beat` | Kick, clap and closed hats for a bar, then a bar ending in a tom fill, at 110 BPM, looped. Every sound is at its default Level, with the toms 6 dB under the kick. |
 
 What to listen for, against how you remember an 808:
 
@@ -160,7 +160,7 @@ What to listen for, against how you remember an 808:
 - **Decay:** from a short, dead "tok" at 0.1 s to a long ring at 0.6 s, longer than the 808's toms, which have no Decay knob.
 - **Velocity:** softer hits should be duller and bend less, as well as quieter; accents knock harder and have a little more of the hiss.
 - **Repeats and flams:** no clicks. The 32nds should roll, each hit blending into the last ring, not stutter like a machine gun. A flam at 10 ms should sound like one fat hit.
-- **The beat:** the fill should sit under the kick and clap like an 808's toms, not poke out as a different machine. It will be loud: balancing the kit is a later ticket.
+- **The beat:** the fill should sit under the kick and clap like an 808's toms, not poke out as a different machine.
 
 ## Cymbal (808)
 
@@ -175,7 +175,7 @@ What to listen for, against how you remember an 808:
 | `07-repeats` | 8ths, 16ths, then 32nds, at the longest Decay so they pile up. |
 | `08-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart. |
 | `09-groove` | A 1-bar cymbal pattern at 100 BPM, looped: a crash, quarter notes, a soft off-beat and a ghost. Also the cymbal's golden WAV. |
-| `10-beat` | Kick, clap, closed hats and an open hat, with the cymbal on the one of each bar and a last 8th, at 110 BPM, looped. The cymbal is at -6 dB here so the beat doesn't clip; the kit's balance (cymbal 10 to 12 dB under the kick) is set in UTA-57. |
+| `10-beat` | Kick, clap, closed hats and an open hat, with the cymbal on the one of each bar and a last 8th, at 110 BPM, looped. Every sound is at its default Level, with the cymbal 11 dB under the kick. |
 
 What to listen for, against how you remember an 808 cymbal:
 
@@ -186,3 +186,25 @@ What to listen for, against how you remember an 808 cymbal:
 - **Velocity:** softer hits should be darker and smoother as well as quieter; accents brighter and a little rougher.
 - **Repeats and flams:** no clicks. The 32nds should wash together into one roar, not buzz like a machine gun. A flam at 10 ms should sound like one thick hit.
 - **The beat:** it should sit with the hats as one machine.
+
+## The kit
+
+The whole kit at its defaults, in `kit/`, for judging its balance (RFC-006, manual check 5). Each sound's default Level comes from measuring its loudness: the K-weighted level, as a loudness meter measures it, over the 150 ms after a full-accent hit. Against the kick, the snare and clap sit 3 dB under it, the toms 6 dB, and the hats and cymbal 11 dB. Everything hitting at once at full accent peaks at -2.4 dBFS with every fader at 0 dB (-3.5 dBFS with the 909 kick).
+
+The demo beat itself is `examples/demo-beat.json`, and it's also the kit's golden WAV:
+
+```bash
+cargo run --release -p uta-cli -- render target/listen/demo-beat.wav --commands examples/demo-beat.json
+```
+
+| Render | What it plays |
+|---|---|
+| `01-each-sound` | Each sound in turn, a beat apart, at 100 BPM: kick, snare, clap, closed hat, open hat, low tom, high tom, cymbal. Twice at velocity 100, then twice at 127. |
+| `02-each-sound-909` | The same with the 909 kick. |
+| `03-demo-beat-909` | The demo beat with the 909 kick. |
+
+What to listen for:
+
+- **Each sound:** nothing should jump out or disappear. The kick leads, the snare and clap sit just under it, the toms a step further back, and the hats and cymbal well back but clear. At velocity 100 the kick sits about 3 dB further forward than at 127, as an accent changes it less than the others.
+- **The demo beat:** it should sound like a drum machine playing a beat, not a test. Listen for the hats against the cymbal: on UTA-51 they sounded much brighter when the cymbal played with them, when the cymbal was 12 dB louder against the kick than it is now.
+- **The 909 kick:** about as loud as the 808's, so switching model doesn't change the balance.

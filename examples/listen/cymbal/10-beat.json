@@ -34,11 +34,7 @@
               "id": "41d969ff-a691-5218-88b3-6c033805d79b",
               "name": "Drums",
               "source": {
-                "drums": {
-                  "cymbal": {
-                    "level_db": -6.0
-                  }
-                }
+                "drums": {}
               },
               "mixer": {
                 "volume_db": 0.0,

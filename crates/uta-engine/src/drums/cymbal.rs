@@ -112,10 +112,11 @@ const UNACCENTED: f64 = 0.3;
 /// How fast the drive and band-passes follow a new hit's strength, so they
 /// never jump.
 const STRENGTH_SECONDS: f64 = 0.002;
-/// The output level that puts a default cymbal at full accent at the kit's
-/// reference peak (see [`super::REFERENCE_PEAK`]). Measured, not derived:
-/// see the `the_cymbal_at_full_accent_peaks_at_the_reference` test.
-const OUTPUT_GAIN: f32 = 1.2168;
+/// The output level that puts a default cymbal at full accent, with its Level
+/// at 0 dB, at the kit's reference peak (see [`super::REFERENCE_PEAK`]).
+/// Measured, not derived: see the
+/// `the_cymbal_at_full_accent_peaks_at_the_reference` test.
+const OUTPUT_GAIN: f32 = 2.4336 * super::REFERENCE_PEAK;
 /// Below this, summed over its envelopes and the high-passes after the
 /// amplifiers, the cymbal has died away and stops doing work: far under
 /// anything audible.
@@ -472,8 +473,13 @@ mod tests {
         super::super::metal(crate::drums::ClosedHatSettings::default().tune_hz, RATE)
     }
 
+    /// The cymbal at its defaults, with its Level at 0 dB.
     fn cymbal() -> Cymbal {
-        Cymbal::new(CymbalSettings::default(), RATE)
+        let settings = CymbalSettings {
+            level_db: 0.0,
+            ..CymbalSettings::default()
+        };
+        Cymbal::new(settings, RATE)
     }
 
     /// Runs `cymbal` for `seconds` on `metal`, as the kit does.
@@ -597,6 +603,7 @@ mod tests {
         let mut cymbal = Cymbal::new(
             CymbalSettings {
                 decay_seconds: 1.2,
+                level_db: 0.0,
                 ..CymbalSettings::default()
             },
             RATE,
@@ -610,7 +617,7 @@ mod tests {
         let last = peak(&samples[stopped.saturating_sub(4800)..=stopped]);
         assert!(last < 1e-5, "last 0.1 s peaked at {last}");
         cymbal.hit(1.0);
-        assert!(peak(&run(&mut cymbal, &mut metal, 0.1)) > 0.2);
+        assert!(peak(&run(&mut cymbal, &mut metal, 0.1)) > 0.4 * REFERENCE_PEAK);
     }
 
     /// A hit while it rings charges its envelopes rather than restarting
