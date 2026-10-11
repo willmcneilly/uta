@@ -72,7 +72,7 @@ export function parsePs(output: string): Proc[] {
   return procs;
 }
 
-/** The checkout's processes, or `UNKNOWN` for a Uta dev app whose checkout can't be told. */
+/** Where findDevApps puts a debug `uta-app` whose checkout it can't tell. */
 export const UNKNOWN = "(unknown checkout)";
 
 /**
