@@ -1,6 +1,6 @@
 # Listening renders
 
-Short command lists for judging each drum sound by ear, one folder per sound. Tests can show a sound has the right pitch and decay, but not that it's satisfying, so every sound ticket ends with these (RFC-006, "How we'll verify it", manual check 1).
+Short command lists for judging each drum sound and the synth by ear, one folder per sound. Tests can show a sound has the right pitch and decay, but not that it's satisfying, so every sound ticket ends with these (RFC-006, "How we'll verify it", manual check 1, and RFC-008's manual check 1).
 
 Render a folder to WAVs with one command, from the repository root (`target/` is ignored by git):
 
@@ -208,3 +208,31 @@ What to listen for:
 - **Each sound:** nothing should jump out or disappear. The kick leads, the snare and clap sit just under it, the toms a step further back, and the hats and cymbal well back but clear. At velocity 100 the kick sits about 3 dB further forward than at 127, as an accent changes it less than the others.
 - **The demo beat:** it should sound like a drum machine playing a beat, not a test. Listen for the hats against the cymbal: on UTA-51 they sounded much brighter when the cymbal played with them, when the cymbal was 12 dB louder against the kick than it is now.
 - **The 909 kick:** about as loud as the 808's, so switching model doesn't change the balance.
+
+## Synth
+
+The synth's oscillators, sub, noise and mixer (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | The phrase twice at the defaults: today's saw, as before this ticket. Everything else is compared with it. |
+| `02-detune` | Oscillator 2, a second saw at full level, Pitch 0, 0.05, 0.1, 0.2 and 0.35 semitones (5 to 35 cents). |
+| `03-intervals` | Oscillator 2 at 0.7: Pitch +7 (a fifth), +12 and -12, then Octave +1 and -1, each 10 cents sharp. |
+| `04-osc2-wave` | Oscillator 2 at full level, 10 cents sharp, as a sine, triangle, saw and pulse, under oscillator 1's saw. |
+| `05-octaves` | Oscillator 1 alone at Octave -2, -1, 0, 1 and 2. |
+| `06-sub` | A bassline in eighths (cutoff 1.5 kHz): no sub, the sub an octave down at 0.5 and 1, two octaves down at 0.5 and 1, then the sub alone. |
+| `07-noise` | The chord held for a bar as a soft pad (attack 0.2 s, cutoff 3 kHz), with Noise at 0, 0.05, 0.15, 0.3 and 0.6, then the noise alone. |
+| `08-retrigger` | A pluck in sixteenths on one note, with oscillator 2 detuned and the sub: Osc retrigger on, off, on, off. |
+| `09-mix` | Oscillator 1 alone, then with oscillator 2 detuned, the sub and some noise brought in one at a time, then alone again. |
+
+What to listen for:
+
+- **Defaults:** the same bright saw as before. If anything sounds different from the synth you know, say so: it shouldn't.
+- **Detune:** 0 sounds like one saw, about 3 dB louder, as the two are in step and add up. From 0.05 a slow beat or swirl, getting faster and thicker; around 0.1 to 0.2 should be the classic fat, chorused saw, and 0.35 starts to sound out of tune.
+- **Intervals:** +7 an organ-like fifth; ±12 an octave above or below, adding shimmer or weight. The octave ones should also beat slowly, from their 10 cents.
+- **Oscillator 2's wave:** the sine and triangle add body under the saw without much brightness; the saw thickens it; the pulse adds a hollow, reedy colour.
+- **Octaves:** each a whole octave apart, the same sound otherwise.
+- **Sub:** an octave down adds weight you can feel without changing the bass's tone; two octaves down is a deeper rumble, which small speakers may barely play. The sub alone is a pure, round square.
+- **Noise:** 0.05 is a breath of air on the pad, 0.15 to 0.3 a clear hiss, 0.6 more noise than tone. The hiss should be smooth and even, not crackly, and should fade in and out with each note.
+- **Retrigger:** on, every pluck starts the same, tight and identical, like a machine; off, each pluck is a little different, livelier, while staying in time and in tune.
+- **Mix:** bringing each source in changes the colour, not much the loudness: the mixer keeps it about as loud as one oscillator (within about 2 dB, as measured). Nothing should jump out.

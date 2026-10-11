@@ -181,7 +181,8 @@ impl Effect for Delay {
     /// Once nothing above −120 dB has gone in or come out for a little
     /// longer than the time, every echo on its way has passed the playback
     /// head, and it goes to sleep on that sample, clearing what's left on
-    /// the tape. Anything but exact silence going in wakes it.
+    /// the tape. Anything that reaches the tape wakes it: any input but
+    /// silence, or a value so small it's flushed to zero on the way.
     fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let mask = self.mask;
         let length = mask + 1;

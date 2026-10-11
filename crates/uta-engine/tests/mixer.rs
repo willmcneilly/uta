@@ -298,7 +298,7 @@ fn loud_notes_never_pass_full_scale_and_are_counted() {
     let loud = project(
         120.0,
         1,
-        &[SynthParam::Waveform(uta_core::Waveform::Square)],
+        &[SynthParam::Osc1Wave(uta_core::Waveform::Pulse)],
         chord,
     );
     let snapshot = with_mixer(Snapshot::from(&loud).with_volume_db(0.0), strip(6.0, 0.5));

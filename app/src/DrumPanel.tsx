@@ -3,7 +3,14 @@ import { Fader } from "./design/Fader";
 import { Knob } from "./design/Knob";
 import { SegmentedChoice } from "./design/SegmentedChoice";
 import { type NumberScale, linearScale } from "./design/numberScale";
-import { SETTING_STEPS, formatAmount, formatSeconds, settingScale } from "./synthScale";
+import {
+  SETTING_STEPS,
+  formatAmount,
+  formatOctaves,
+  formatSeconds,
+  formatSemitones,
+  settingScale,
+} from "./synthScale";
 import "./DrumPanel.css";
 
 // A drum track's Sound tab: a strip per sound, as on the 808's front panel
@@ -29,6 +36,8 @@ const FORMATS: Record<Unit, (value: number) => string> = {
   db: (db) => `${db.toFixed(1)} dB`,
   fraction: (fraction) => `${Math.round(fraction * 100)}%`,
   amount: formatAmount,
+  semitones: formatSemitones,
+  octaves: formatOctaves,
 };
 
 /** How far one step of a Level goes, in dB, as on a track's volume. */

@@ -27,7 +27,8 @@ pub struct Description {
     pub kind: Kind,
 }
 
-/// A setting's values: a number in a range, or one of a few choices.
+/// A setting's values: a number in a range, one of a few choices, or on or
+/// off.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Kind {
@@ -40,12 +41,22 @@ pub enum Kind {
         limits: (f32, f32),
         /// A new track's value, which a reset sets it to.
         default: f32,
+        /// The step between values, for a setting that only takes some:
+        /// 1 for an octave. Left out for one that takes any value in
+        /// `limits`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step: Option<f32>,
     },
     Choice {
         /// Every choice, in the panel's order.
         options: &'static [Choice],
         /// A new track's choice, as its command carries it: `"saw"`.
         default: &'static str,
+    },
+    /// A switch: on or off.
+    Toggle {
+        /// Whether it's on for a new track.
+        default: bool,
     },
 }
 
@@ -71,6 +82,10 @@ pub enum Unit {
     /// From 0 to 1, but not a share of anything: the filter's resonance. It
     /// reads as the number itself.
     Amount,
+    /// A pitch offset: 12 to the octave.
+    Semitones,
+    /// A pitch offset in whole octaves.
+    Octaves,
 }
 
 /// How a control moves through a setting's range.
@@ -81,6 +96,13 @@ pub enum Scale {
     Linear,
     /// Each step is the same ratio, the way you hear frequencies and times.
     Log,
+    /// Fine near the middle of the range and coarse towards its ends, for an
+    /// offset either side of zero, such as oscillator 2's Pitch: a few cents
+    /// is a slow beat, and a few semitones is another note. A control's
+    /// distance from its centre is cubed, so half way out is an eighth of
+    /// the way to the end. The limits are either side of zero by the same
+    /// amount.
+    Cubic,
 }
 
 impl Description {
@@ -101,6 +123,28 @@ impl Description {
                 scale,
                 limits,
                 default,
+                step: None,
+            },
+        }
+    }
+
+    /// A whole number in `limits`, in `unit`, such as an octave.
+    pub(crate) const fn whole(
+        label: &'static str,
+        sounds: &'static str,
+        unit: Unit,
+        limits: (f32, f32),
+        default: f32,
+    ) -> Self {
+        Self {
+            label,
+            sounds,
+            kind: Kind::Number {
+                unit,
+                scale: Scale::Linear,
+                limits,
+                default,
+                step: Some(1.0),
             },
         }
     }
@@ -116,6 +160,15 @@ impl Description {
             label,
             sounds,
             kind: Kind::Choice { options, default },
+        }
+    }
+
+    /// On or off.
+    pub(crate) const fn toggle(label: &'static str, sounds: &'static str, default: bool) -> Self {
+        Self {
+            label,
+            sounds,
+            kind: Kind::Toggle { default },
         }
     }
 }
@@ -159,6 +212,30 @@ mod tests {
                 "kind": "choice",
                 "options": [{"value": "saw", "label": "Saw"}],
                 "default": "saw",
+            })
+        );
+        let whole = Description::whole("Octave", "How high.", Unit::Octaves, (-2.0, 2.0), 0.0);
+        assert_eq!(
+            serde_json::to_value(whole).unwrap(),
+            serde_json::json!({
+                "label": "Octave",
+                "sounds": "How high.",
+                "kind": "number",
+                "unit": "octaves",
+                "scale": "linear",
+                "limits": [-2.0, 2.0],
+                "default": 0.0,
+                "step": 1.0,
+            })
+        );
+        let toggle = Description::toggle("Retrigger", "Whether it restarts.", true);
+        assert_eq!(
+            serde_json::to_value(toggle).unwrap(),
+            serde_json::json!({
+                "label": "Retrigger",
+                "sounds": "Whether it restarts.",
+                "kind": "toggle",
+                "default": true,
             })
         );
     }

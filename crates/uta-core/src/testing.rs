@@ -223,11 +223,21 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
         Just(Waveform::Sine),
         Just(Waveform::Triangle),
         Just(Waveform::Saw),
-        Just(Waveform::Square),
+        Just(Waveform::Pulse),
     ];
     // Ranges a bit wider than the limits, so some are rejected.
     prop_oneof![
-        waveform.prop_map(SynthParam::Waveform),
+        waveform.clone().prop_map(SynthParam::Osc1Wave),
+        waveform.prop_map(SynthParam::Osc2Wave),
+        (-3i8..=3).prop_map(SynthParam::Osc1Octave),
+        (-3i8..=3).prop_map(SynthParam::Osc2Octave),
+        (-13.0f32..13.0).prop_map(SynthParam::Osc2PitchSemitones),
+        (-3i8..=0).prop_map(SynthParam::SubOctave),
+        (-0.1f32..1.1).prop_map(SynthParam::Osc1Level),
+        (-0.1f32..1.1).prop_map(SynthParam::Osc2Level),
+        (-0.1f32..1.1).prop_map(SynthParam::SubLevel),
+        (-0.1f32..1.1).prop_map(SynthParam::NoiseLevel),
+        any::<bool>().prop_map(SynthParam::OscRetrigger),
         (0.0f32..22_000.0).prop_map(SynthParam::CutoffHz),
         (-0.1f32..1.1).prop_map(SynthParam::Resonance),
         (0.0f32..11.0).prop_map(SynthParam::AttackSeconds),
@@ -322,7 +332,7 @@ pub fn any_command() -> impl Strategy<Value = Command> {
         ]
         .prop_map(|volume_db| Command::SetMasterVolume { volume_db }),
         3 => (any_clip_id(), one_or_two(any_note())).prop_map(|(clip, notes)| Command::AddNotes { clip, notes }),
-        1 => (any_clip_id(), one_or_two(pooled_note_id())).prop_map(|(clip, notes)| Command::RemoveNotes { clip, notes }),
+        2 => (any_clip_id(), one_or_two(pooled_note_id())).prop_map(|(clip, notes)| Command::RemoveNotes { clip, notes }),
         2 => (any_clip_id(), one_or_two(any_note())).prop_map(|(clip, notes)| Command::SetNotes { clip, notes }),
         1 => prop_oneof![8 => 20.0f32..=300.0, 1 => 0.0f32..20.0, 1 => 300.5f32..1000.0]
             .prop_map(|bpm| Command::SetTempo { bpm }),

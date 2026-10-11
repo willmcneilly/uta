@@ -327,7 +327,7 @@ pub fn empty_drum_track(id: u128) -> Track {
 /// A synth track with no clips, playing a sine at full sustain.
 pub fn empty_sine_track(id: u128) -> Track {
     let settings = uta_core::SynthSettings {
-        waveform: uta_core::Waveform::Sine,
+        osc1_wave: uta_core::Waveform::Sine,
         sustain: 1.0,
         ..uta_core::SynthSettings::default()
     };
@@ -342,7 +342,7 @@ pub fn empty_sine_track(id: u128) -> Track {
 /// sustain, with the shortest release, so a note is silent 1 ms after it
 /// ends.
 pub const PLAIN_SINE: [SynthParam; 3] = [
-    SynthParam::Waveform(uta_core::Waveform::Sine),
+    SynthParam::Osc1Wave(uta_core::Waveform::Sine),
     SynthParam::Sustain(1.0),
     SynthParam::ReleaseSeconds(0.001),
 ];

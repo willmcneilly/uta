@@ -5,7 +5,9 @@ import {
   formatAmount,
   formatHz,
   formatLevel,
+  formatOctaves,
   formatSeconds,
+  formatSemitones,
   fromPosition,
   toPosition,
 } from "./synthScale";
@@ -13,6 +15,7 @@ import {
 const cutoff: Limits = [20, 20_000];
 const envelope: Limits = [0.001, 10];
 const level: Limits = [0, 1];
+const pitch: Limits = [-12, 12];
 
 describe("fromPosition", () => {
   it("gives exactly the limits at the ends", () => {
@@ -34,6 +37,17 @@ describe("fromPosition", () => {
   it("moves each step by the same amount on a linear scale", () => {
     expect(fromPosition(250, level, "linear")).toBe(0.25);
   });
+
+  it("is fine near the centre on a cubic scale, and exactly zero there", () => {
+    expect(fromPosition(0, pitch, "cubic")).toBe(-12);
+    expect(fromPosition(SETTING_STEPS / 2, pitch, "cubic")).toBe(0);
+    expect(fromPosition(SETTING_STEPS, pitch, "cubic")).toBe(12);
+    // Half way out from the centre is an eighth of the way to the end.
+    expect(fromPosition(750, pitch, "cubic")).toBeCloseTo(1.5, 9);
+    expect(fromPosition(250, pitch, "cubic")).toBeCloseTo(-1.5, 9);
+    // One step from the centre is well under a cent.
+    expect(fromPosition(501, pitch, "cubic")).toBeLessThan(0.0001);
+  });
 });
 
 describe("toPosition", () => {
@@ -42,6 +56,7 @@ describe("toPosition", () => {
       [cutoff, "log"],
       [envelope, "log"],
       [level, "linear"],
+      [pitch, "cubic"],
     ] as const) {
       for (let position = 0; position <= SETTING_STEPS; position += 1) {
         const f32 = Math.fround(fromPosition(position, limits, scale));
@@ -77,5 +92,15 @@ describe("formatting", () => {
   it("shows resonance as an amount and sustain as a percentage", () => {
     expect(formatAmount(0.35)).toBe("0.35");
     expect(formatLevel(0.7)).toBe("70%");
+  });
+
+  it("shows pitch offsets signed, with a true minus, and zero unsigned", () => {
+    expect(formatSemitones(0.07)).toBe("+0.07 st");
+    expect(formatSemitones(-12)).toBe("\u221212.00 st");
+    expect(formatSemitones(0)).toBe("0.00 st");
+    expect(formatSemitones(-0.001)).toBe("0.00 st");
+    expect(formatOctaves(1)).toBe("+1 oct");
+    expect(formatOctaves(-2)).toBe("\u22122 oct");
+    expect(formatOctaves(0)).toBe("0 oct");
   });
 });

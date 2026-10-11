@@ -14,6 +14,7 @@ mod drums;
 mod effects;
 pub mod live;
 mod mixer;
+mod noise;
 pub mod offline;
 mod processor;
 mod ramp;

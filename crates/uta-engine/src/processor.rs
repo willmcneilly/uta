@@ -696,14 +696,16 @@ impl Processor {
     /// it, and for the song's end otherwise. See RFC-003, "Playing a song",
     /// and open question 1.
     ///
-    /// Each kit's free-running parts restart from the same point, so what
-    /// you hear from a place is what a render plays from there. See
-    /// RFC-006, resolved open question 3.
+    /// Each kit's and synth's free-running parts restart from the same
+    /// point, so what you hear from a place is what a render plays from
+    /// there. See RFC-006, resolved open question 3, and RFC-008, "In the
+    /// engine".
     fn play_from(&mut self, playhead: u64) {
         let sequence = &self.snapshot.sequence;
         self.looping = sequence.loop_enabled() && playhead < sequence.loop_samples().end;
         for slot in self.slots.iter_mut() {
             slot.kit.restart();
+            slot.synth.restart();
         }
         self.start_from(playhead);
     }
@@ -1060,7 +1062,7 @@ mod tests {
             Command::SetLoopLength { bars: 1 },
             Command::SetSynthParam {
                 track,
-                param: SynthParam::Waveform(uta_core::Waveform::Sine),
+                param: SynthParam::Osc1Wave(uta_core::Waveform::Sine),
             },
             Command::SetSynthParam {
                 track,
