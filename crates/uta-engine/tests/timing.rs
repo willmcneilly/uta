@@ -504,11 +504,12 @@ fn report_block_timing() {
     let mut table =
         format!("### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n");
     if let Some(baseline) = &baseline {
-        // Measured when the baseline was recorded: two runs of the same code.
+        // Measured when the baseline was recorded: three runs of the same
+        // code, the last with other sessions building.
         table += &format!(
-            "Compared with {BASELINE}. {} Two runs of the same code moved p50 \
-             by under 5% and p99 by up to 90%, so read p50 first, and run it \
-             again before trusting a change in p99.\n\n\
+            "Compared with {BASELINE}. {} Runs of the same code have moved p50 \
+             by up to 6% and p99 by up to 265%, more with other work running, \
+             so read p50 first, and run it again before trusting a change.\n\n\
              | Load | Block | Deadline | p50 | p99 | Max | p99 of deadline | p50 change | p99 change |\n\
              |---|---|---|---|---|---|---|---|---|\n",
             baseline.recorded,
@@ -533,8 +534,10 @@ fn report_block_timing() {
                 .rows
                 .get(&(r.load.name().to_string(), r.block_size))
             {
-                Some(&(_, p99)) => format!(" {p99:.2} µs | {} |", change(r.p99, p99)),
-                None => " – | new |".to_string(),
+                Some(&(p50, p99)) => {
+                    format!(" {} | {} |", change(r.p50, p50), change(r.p99, p99))
+                }
+                None => " new | new |".to_string(),
             };
         }
         table += "\n";
