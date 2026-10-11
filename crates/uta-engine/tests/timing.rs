@@ -2,7 +2,7 @@
 //! CI machines are too noisy to fail on. Ignored by default because debug
 //! timings mean nothing. Run it with
 //! `cargo test -p uta-engine --release --test timing -- --ignored --nocapture`.
-//! Locally it compares each p99 with the committed baseline (see
+//! Locally it compares each p50 and p99 with the committed baseline (see
 //! [`BASELINE`]). In CI it also writes the table to the job summary.
 
 mod common;
@@ -448,9 +448,10 @@ fn write_baseline(reports: &[Report]) {
     // squashed into main.
     let date = output("date", &["+%-d %b %Y"]);
     let commit = output("git", &["rev-parse", "--short", "HEAD"]);
+    let machine = output("hostname", &["-s"]);
     let mut text = format!(
         "# The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.\n\
-         # Recorded on {date} at {commit}, on Will's Mac.\n\
+         # Recorded on {date} at {commit}, on {machine}.\n\
          load\tblock\tp50_us\tp99_us\n"
     );
     for r in reports {

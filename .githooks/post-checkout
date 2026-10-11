@@ -3,5 +3,8 @@
 # previous HEAD, which is all zeros only when the worktree was just created.
 # Never fails: its exit status would become git worktree add's.
 [ "$1" = 0000000000000000000000000000000000000000 ] || exit 0
-"$(git rev-parse --show-toplevel)/scripts/warm" || true
+warm="$(git rev-parse --show-toplevel)/scripts/warm"
+# A branch from before scripts/warm has nothing to run.
+[ -x "$warm" ] || exit 0
+"$warm" || true
 exit 0
