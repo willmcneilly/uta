@@ -69,7 +69,7 @@ npm run tauri build -- --ci                         # release build: target/rele
 - the frontend checks (tokens, `designmd`, typecheck, lint, test) when `app/` outside `app/src-tauri/`, or `DESIGN.md`, changed;
 - the release build (`tauri build`) only when `app/src-tauri/` or `app/package.json` changed. CI builds it on every PR.
 
-Each pass is stamped with the content it checked, so running it again is instant. It warns when `origin/main` has moved on. `git push` runs it through the pre-push hook and blocks a push that hasn't passed; don't skip that with `--no-verify`. The timing reports and golden WAVs aren't in it: run them by hand when a change calls for them. CI runs the full set on every PR.
+Each pass is stamped with the content it checked, so running it again is instant. It warns when `origin/main` has moved on. `git push` runs it through the pre-push hook and blocks a push that hasn't passed; don't skip that with `--no-verify`. The golden WAV comparisons run inside `rust: test`; the timing reports and regenerating goldens (`UTA_GOLDEN=1`) don't, so run those by hand when a change calls for them. CI runs the full set on every PR.
 
 ## The audio thread rules
 
