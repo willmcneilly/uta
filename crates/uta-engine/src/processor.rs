@@ -750,10 +750,10 @@ impl Processor {
 
     /// Renders every slot with a track or a sound into `output`, which holds
     /// whole frames: each track is stereo, its volume, balance (pan), mute
-    /// and solo set each side's level, and they're added together, then the master volume, then a hard clip
-    /// at full scale. The first two channels get the left and right, and any
-    /// more are silent. A single channel gets their average, so a centred
-    /// track sounds the same in mono. See RFC-003, "The master and headroom".
+    /// and solo set each side's level, and they're added together, then the
+    /// master volume, then a hard clip at full scale. The first two channels
+    /// get the left and right, and any more are silent. A single channel gets
+    /// their average, so a centred track sounds the same in mono. See RFC-003, "The master and headroom".
     ///
     /// Tracks are added in slot order, which reordering them doesn't change,
     /// so it doesn't change the sound either.
