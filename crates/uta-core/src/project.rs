@@ -334,9 +334,12 @@ impl Project {
                 };
                 let previous = kit.set(sound, param).map_err(|error| match error {
                     DrumParamError::NoSuchSetting => CommandError::NoSuchDrumParam { sound, param },
-                    DrumParamError::OutOfRange { .. } => {
-                        CommandError::DrumParamOutOfRange { sound, param }
-                    }
+                    DrumParamError::OutOfRange { min, max } => CommandError::DrumParamOutOfRange {
+                        sound,
+                        param,
+                        min,
+                        max,
+                    },
                 })?;
                 Ok(Command::SetDrumParam {
                     track,
@@ -688,7 +691,8 @@ mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
     use crate::{
-        DrumParam, DrumSound, Effect, KitSettings, MixerStrip, Note, SynthParam, Waveform,
+        DrumParam, DrumSound, Effect, KickModel, KitSettings, MixerStrip, Note, SynthParam,
+        Waveform,
     };
     use proptest::prelude::*;
 
@@ -1334,6 +1338,8 @@ mod tests {
             CommandError::DrumParamOutOfRange {
                 sound: DrumSound::Kick,
                 param,
+                min: 0.05,
+                max: 0.8,
             },
         );
         // The snare's, clap's, hats', toms' and cymbal's settings set and undo
@@ -1388,6 +1394,65 @@ mod tests {
             &project,
             set(unknown, DrumSound::Kick, DrumParam::TuneHz(60.0)),
             CommandError::UnknownTrack(unknown),
+        );
+    }
+
+    /// The kick's model sets and undoes, and the kick's settings go to the
+    /// chosen model: undoing a run of changes across a switch puts every
+    /// value back where it was, in both models.
+    #[test]
+    fn the_kicks_model_sets_and_undoes_with_each_models_settings() {
+        let (project, track, _) = with_drums();
+        let set = |param| Command::SetDrumParam {
+            track,
+            sound: DrumSound::Kick,
+            param,
+        };
+        let changed = apply_and_check_undo(&project, set(DrumParam::Model(KickModel::Tr909)));
+        for param in [
+            DrumParam::TuneHz(60.0),
+            DrumParam::Sweep(0.9),
+            DrumParam::Attack(0.0),
+            DrumParam::DecaySeconds(1.5),
+            DrumParam::LevelDb(-6.0),
+        ] {
+            apply_and_check_undo(&changed, set(param));
+        }
+        let mut edited = project.clone();
+        let mut inverses = Vec::new();
+        for param in [
+            DrumParam::TuneHz(60.0),
+            DrumParam::Model(KickModel::Tr909),
+            DrumParam::TuneHz(50.0),
+            DrumParam::Attack(1.0),
+            DrumParam::Model(KickModel::Tr808),
+            DrumParam::TuneHz(70.0),
+        ] {
+            inverses.push(edited.apply(&set(param)).unwrap());
+        }
+        let Source::Drums(kit) = edited.track(track).unwrap().source() else {
+            panic!("a drum track")
+        };
+        assert_eq!(kit.kick.model, KickModel::Tr808);
+        assert_eq!((kit.kick.tune_hz, kit.kick.tr909.tune_hz), (70.0, 50.0));
+        assert_eq!(kit.kick.tr909.attack, 1.0);
+        for inverse in inverses.iter().rev() {
+            edited.apply(inverse).unwrap();
+        }
+        assert_eq!(edited, project);
+        // Only the kick has a model.
+        let param = DrumParam::Model(KickModel::Tr909);
+        assert_rejected(
+            &project,
+            Command::SetDrumParam {
+                track,
+                sound: DrumSound::Snare,
+                param,
+            },
+            CommandError::NoSuchDrumParam {
+                sound: DrumSound::Snare,
+                param,
+            },
         );
     }
 

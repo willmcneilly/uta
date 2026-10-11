@@ -172,7 +172,7 @@ fn decay_follows_the_control() {
     for (pitch, (sound, param)) in cases {
         let samples = one_hit(pitch, &[(sound, param)], 127, 1.5);
         let measured = decay_seconds(&samples, RATE, 40.0).unwrap();
-        let ratio = measured / f64::from(param.value());
+        let ratio = measured / f64::from(param.value().unwrap());
         assert!(
             (0.9..1.1).contains(&ratio),
             "{sound:?} {param:?}: {measured:.3} s"

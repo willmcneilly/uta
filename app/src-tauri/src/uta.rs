@@ -12,9 +12,9 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, DrumParam, DrumSound, KIT, KitSettings,
-    MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session, Source, SynthParam,
-    SynthSettings, Track, TrackId, Waveform,
+    Clip, ClipId, ClipPosition, Command, CommandError, DrumParam, DrumSound, KIT, KickModel,
+    KickSettings, KitSettings, MixerStrip, Note, NoteId, PlacedClip, PlacedTrack, Project, Session,
+    Source, SynthParam, SynthSettings, Track, TrackId, Waveform,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -156,6 +156,52 @@ pub struct KitRowView {
     pub settings: Vec<DrumSettingView>,
     /// Settings it takes from another sound, which its panel says, if any.
     pub shares: Option<SharedSettingsView>,
+    /// Its choice of model, for a sound that has one: the kick. `settings`
+    /// are the chosen model's.
+    pub model: Option<ModelChoiceView>,
+}
+
+/// A sound's choice of model, as its panel's segmented choice shows it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChoiceView {
+    /// What the panel calls it: "Model".
+    pub label: &'static str,
+    /// The chosen model, as `SetDrumParam` carries it: `"808"`.
+    pub value: KickModel,
+    /// Every model, in the panel's order, with what it calls each.
+    pub options: Vec<ModelOptionView>,
+    /// A new drum track's model.
+    pub default: KickModel,
+}
+
+/// One model a sound can be.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOptionView {
+    pub value: KickModel,
+    pub label: &'static str,
+}
+
+impl ModelChoiceView {
+    /// `sound`'s choice of model in `kit`, if it has one.
+    fn of(kit: &KitSettings, sound: DrumSound) -> Option<Self> {
+        (sound == DrumSound::Kick).then(|| Self {
+            label: drum_label(&DrumParam::Model(KickModel::default())),
+            value: kit.kick.model,
+            options: KickModel::ALL
+                .iter()
+                .map(|&value| ModelOptionView {
+                    value,
+                    label: match value {
+                        KickModel::Tr808 => "808",
+                        KickModel::Tr909 => "909",
+                    },
+                })
+                .collect(),
+            default: KickSettings::default().model,
+        })
+    }
 }
 
 /// Settings one sound takes from another: the open hat plays with the
@@ -190,8 +236,9 @@ impl SharedSettingsView {
 }
 
 /// One setting of one drum sound: what the panel calls it, its value, the
-/// limits it has on that sound, what a reset sets it to, and the unit all
-/// of them are in, so the panel draws a sound it has never seen.
+/// limits it has on that sound (on the kick, its chosen model's), what a
+/// reset sets it to, and the unit all of them are in, so the panel draws a
+/// sound it has never seen.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DrumSettingView {
@@ -220,16 +267,17 @@ pub enum DrumUnit {
 }
 
 impl DrumUnit {
-    /// The unit of `param` on `sound`, or `None` if the sound doesn't have
-    /// it. A sound that gains a setting adds its unit here, or the outline
-    /// test fails.
-    fn of(sound: DrumSound, param: &DrumParam) -> Option<Self> {
-        KitSettings::range(sound, param)?;
+    /// The unit of `param` on `sound` in `kit`, or `None` if the sound
+    /// doesn't have it, or it's the kick's model, which has none. A sound
+    /// that gains a setting adds its unit here, or the outline test fails.
+    fn of(kit: &KitSettings, sound: DrumSound, param: &DrumParam) -> Option<Self> {
+        kit.range(sound, param)?;
         Some(match param {
             DrumParam::TuneHz(_) => Self::Hz,
             DrumParam::DecaySeconds(_) => Self::Seconds,
             DrumParam::LevelDb(_) => Self::Db,
-            DrumParam::Snappy(_) => Self::Fraction,
+            DrumParam::Snappy(_) | DrumParam::Sweep(_) | DrumParam::Attack(_) => Self::Fraction,
+            DrumParam::Model(_) => return None,
             DrumParam::Tone(_) => match sound {
                 DrumSound::Kick | DrumSound::Cymbal => Self::Fraction,
                 DrumSound::Snare => Self::Seconds,
@@ -248,13 +296,19 @@ fn drum_label(param: &DrumParam) -> &'static str {
         DrumParam::DecaySeconds(_) => "Decay",
         DrumParam::Snappy(_) => "Snappy",
         DrumParam::LevelDb(_) => "Level",
+        DrumParam::Sweep(_) => "Sweep",
+        DrumParam::Attack(_) => "Attack",
+        DrumParam::Model(_) => "Model",
     }
 }
 
 impl From<&KitSettings> for KitView {
     fn from(kit: &KitSettings) -> Self {
         let params = kit.params();
-        let defaults = KitSettings::default().params();
+        // The defaults of the kick's chosen model, so they line up.
+        let defaults = KitSettings::default()
+            .with_kick_model(kit.kick.model)
+            .params();
         Self {
             rows: KIT
                 .iter()
@@ -269,14 +323,18 @@ impl From<&KitSettings> for KitView {
                         .map(|((sound, param), (_, default))| DrumSettingView {
                             param: *param,
                             label: drum_label(param),
-                            limits: KitSettings::range(*sound, param)
+                            limits: kit
+                                .range(*sound, param)
                                 .expect("every setting a kit has has a range"),
-                            default: default.value(),
-                            unit: DrumUnit::of(*sound, param)
+                            default: default
+                                .value()
+                                .expect("every setting a kit has is a number"),
+                            unit: DrumUnit::of(kit, *sound, param)
                                 .expect("every setting a kit has has a unit"),
                         })
                         .collect(),
                     shares: SharedSettingsView::of(row.sound),
+                    model: ModelChoiceView::of(kit, row.sound),
                 })
                 .collect(),
         }
@@ -2589,6 +2647,76 @@ mod tests {
         uta.undo();
         assert_eq!(snappy(&uta), DrumParam::Snappy(0.5));
         assert_eq!(engine_kit(&uta).snare.snappy, 0.5);
+    }
+
+    /// The kick row carries its model choice, and only the chosen model's
+    /// settings, with that model's limits and defaults. Choosing the 909
+    /// goes through the project to the engine, and undoes.
+    #[test]
+    fn the_kick_row_shows_its_chosen_models_settings() {
+        let mut uta = offline();
+        let drums = uta.project().tracks[1].id;
+        let kick = |uta: &Uta| {
+            let SourceView::Drums { kit } = &uta.project().tracks[1].source else {
+                panic!("Drums 1 is a drum track");
+            };
+            kit.rows[0].clone()
+        };
+        let json = serde_json::to_value(uta.update().outline).unwrap();
+        assert_eq!(
+            json["tracks"][1]["source"]["kit"]["rows"][0]["model"],
+            serde_json::json!({
+                "label": "Model",
+                "value": "808",
+                "options": [{"value": "808", "label": "808"}, {"value": "909", "label": "909"}],
+                "default": "808",
+            })
+        );
+        // No other sound has a model.
+        let rows = json["tracks"][1]["source"]["kit"]["rows"]
+            .as_array()
+            .unwrap();
+        assert!(rows[1..].iter().all(|row| row["model"].is_null()));
+
+        uta.set_drum_param(
+            drums,
+            DrumSound::Kick,
+            DrumParam::Model(KickModel::Tr909),
+            None,
+        )
+        .unwrap();
+        let row = kick(&uta);
+        assert_eq!(row.model.unwrap().value, KickModel::Tr909);
+        let labels: Vec<_> = row.settings.iter().map(|setting| setting.label).collect();
+        assert_eq!(labels, ["Tune", "Sweep", "Attack", "Decay", "Level"]);
+        assert_eq!(
+            row.settings[0],
+            DrumSettingView {
+                param: DrumParam::TuneHz(55.0),
+                label: "Tune",
+                limits: (45.0, 70.0),
+                default: 55.0,
+                unit: DrumUnit::Hz,
+            }
+        );
+        assert_eq!(row.settings[1].unit, DrumUnit::Fraction);
+        assert_eq!(row.settings[3].limits, (0.1, 1.5));
+        let engine_model = |uta: &Uta| match uta.controller.snapshot().tracks()[1].sound {
+            uta_engine::TrackSound::Drums(kit) => kit.kick_model,
+            uta_engine::TrackSound::Synth(_) => panic!("a drum track"),
+        };
+        assert_eq!(engine_model(&uta), KickModel::Tr909);
+        // The kick's Tune is now the 909's.
+        uta.set_drum_param(drums, DrumSound::Kick, DrumParam::TuneHz(62.0), None)
+            .unwrap();
+        assert_eq!(kick(&uta).settings[0].param, DrumParam::TuneHz(62.0));
+
+        uta.undo();
+        uta.undo();
+        let row = kick(&uta);
+        assert_eq!(row.model.unwrap().value, KickModel::Tr808);
+        assert_eq!(row.settings[0].param, DrumParam::TuneHz(49.0));
+        assert_eq!(engine_model(&uta), KickModel::Tr808);
     }
 
     #[test]

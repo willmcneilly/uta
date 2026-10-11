@@ -1,0 +1,106 @@
+{
+  "project": "d5f09842-ae4a-5166-b803-722a537c1026",
+  "commands": [
+    {
+      "format": 4,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 125.0
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "set_loop",
+        "start_bar": 0,
+        "bars": 1
+      }
+    },
+    {
+      "format": 4,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "24ce6b3a-c147-5e2f-9b24-8df990586936",
+              "name": "Kick 909",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "909"
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "7a94cfaf-9e07-5c6c-9909-348845fd3f73",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "d6328660-5133-5a22-87ad-bb5443860b8c",
+                      "pitch": 36,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "d16b9f00-1330-5f60-93dc-71efdd2baa35",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "69150eba-5742-5bbc-9d4b-a4e127ca5b1c",
+                      "pitch": 36,
+                      "velocity": 70,
+                      "start": 1680,
+                      "length": 240
+                    },
+                    {
+                      "id": "1b9d4666-26ac-5489-b88b-03ccf2867cb7",
+                      "pitch": 36,
+                      "velocity": 110,
+                      "start": 1920,
+                      "length": 240
+                    },
+                    {
+                      "id": "24c277b3-ff67-5a4b-a409-73ad2cff7082",
+                      "pitch": 36,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "7afaee25-864b-5ce2-b8d7-ec245be514e0",
+                      "pitch": 36,
+                      "velocity": 90,
+                      "start": 3600,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

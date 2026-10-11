@@ -35,6 +35,35 @@ What to listen for, against how you remember an 808:
 - **Velocity:** the soft hits should sound softer *and* duller, like a lighter hit, not just quieter. 100 is an ordinary hit and 127 an accent: the accent should be clearly punchier, not only louder.
 - **Repeats and flams:** no clicks anywhere, and the 32nds shouldn't sound like a machine gun: each hit should blend into the ring of the last, a little different every time. The flams should sound like one fat hit at 10 ms and two hits at 40 ms.
 
+## Kick (909)
+
+The kick's other model, in `kick909/`. Each list chooses it on the kick row.
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | Four on the floor at the defaults (Tune 55 Hz, Sweep 0.4, Attack 0.5, Decay 0.5 s), with beat 1 of each bar accented. |
+| `02-tune` | Tune 45, 50, 55, 62 and 70 Hz, two hits a bar. |
+| `03-sweep` | Sweep 0, 0.2, 0.4, 0.6, 0.8 and 1. |
+| `04-attack` | Attack 0, 0.25, 0.5, 0.75 and 1. |
+| `05-decay` | Decay 0.1, 0.2, 0.35, 0.5, 0.8 and 1.5 s, one hit a bar. |
+| `06-level` | Level 0, -6, -12 and -24 dB. |
+| `07-velocity` | A kick a beat, velocity 8 up to 127. |
+| `08-repeats` | 8ths, 16ths, then 32nds, at the longest Decay so they pile up. |
+| `09-flams` | A soft grace hit then an accent, 40, 20 and 10 ms apart. |
+| `10-groove` | A 1-bar house pattern at 125 BPM, looped. Also the 909 kick's golden WAV. |
+| `11-808-and-909` | The 808 then the 909 at their defaults, a bar each, twice: an A/B. |
+
+What to listen for, against how you remember a 909:
+
+- **Defaults:** tighter and punchier than the 808: a fast downward "doom" at the start and a short click on top, with a firm body that sits in the low mids rather than a long sub boom.
+- **Tune:** each step a different note, with the same character.
+- **Sweep:** 0 has no drop at all, a plain thud; up to 0.5 the drop gets deeper, from up to 4.5 times the note; past 0.5 it gets slower, towards a laser-ish "pew" at 1. Somewhere around 0.3 to 0.5 should be the classic 909.
+- **Attack:** 0 is a soft, rounded thump; 1 a hard, bright click on the front, like a beater on a tight head. The body shouldn't change level.
+- **Decay:** from a short "tuck" at 0.1 s to a long boom at 1.5 s.
+- **Velocity:** soft hits softer *and* rounder; accents clearly harder, with more click.
+- **Repeats and flams:** no clicks anywhere, and no machine gun: each hit adds to the ring of the last, so the 32nds blur into a roll.
+- **808 and 909:** the same kit row, two clearly different kicks, at about the same loudness.
+
 ## Snare (909)
 
 | Render | What it plays |

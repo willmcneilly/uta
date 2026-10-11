@@ -84,6 +84,13 @@
   row-gap: var(--space-2);
 }
 
+/* A sound's choice of model, across the top of its knobs, which are the
+   chosen model's. provisional: D-28 */
+.strip-model {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
 /* Settings a sound takes from another, said where its knobs would be. */
 .strip-shared {
   grid-column: 1 / -1;

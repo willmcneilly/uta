@@ -7,6 +7,7 @@ import type { DrumParam, DrumSettingView, Frame, KitRowView, ProjectView } from 
 import { pressKnob, knobAt } from "./design/knobTesting";
 import { press as pressFader, thumbX, RAIL_WIDTH } from "./design/faderTesting";
 import {
+  KICK_909_SETTINGS,
   KIT_ROWS,
   Updates,
   drumTrackView,
@@ -39,6 +40,26 @@ function withKit(rows: KitRowView[] = KIT_ROWS): ProjectView {
   });
 }
 
+/** `row` with `param` set as Rust would: a new model brings that model's settings. */
+function setOnRow(row: KitRowView, param: DrumParam): KitRowView {
+  if (param.name === "model") {
+    if (!row.model) return row;
+    const kick808 = KIT_ROWS[0].settings;
+    return {
+      ...row,
+      model: { ...row.model, value: param.value },
+      settings: param.value === "909" ? KICK_909_SETTINGS : kick808,
+    };
+  }
+  return {
+    ...row,
+    settings: row.settings.map((setting) =>
+      // Rust stores f32s, so what comes back isn't quite what was sent.
+      setting.name === param.name ? { ...setting, value: Math.fround(param.value) } : setting,
+    ),
+  };
+}
+
 /** The kit's rows in the project, with `sound`'s `param` set as Rust would. */
 function setDrum(sound: string, param: DrumParam): ProjectView {
   return {
@@ -46,17 +67,7 @@ function setDrum(sound: string, param: DrumParam): ProjectView {
     canUndo: true,
     tracks: project.tracks.map((track) => {
       if (track.source.kind !== "drums") return track;
-      const rows = track.source.kit.rows.map((row) =>
-        row.sound !== sound
-          ? row
-          : {
-              ...row,
-              settings: row.settings.map((setting) =>
-                // Rust stores f32s, so what comes back isn't quite what was sent.
-                setting.name === param.name ? { ...setting, value: Math.fround(param.value) } : setting,
-              ),
-            },
-      );
+      const rows = track.source.kit.rows.map((row) => (row.sound !== sound ? row : setOnRow(row, param)));
       return { ...track, source: { kind: "drums", kit: { rows } } };
     }),
   };
@@ -169,6 +180,41 @@ describe("the drum panel", () => {
     expect(kit().getAllByText(/: the .*’s$/)).toHaveLength(2);
   });
 
+  it("shows the kick's model as a segmented choice, and only the chosen model's knobs", async () => {
+    await renderSound();
+    const model = strip("Kick").getByRole("radiogroup", { name: "Model" });
+    expect(within(model).getByRole("radio", { name: "808" })).toBeChecked();
+    expect(within(model).getByRole("radio", { name: "909" })).not.toBeChecked();
+    // No other sound has a model.
+    expect(kit().getAllByRole("radiogroup")).toHaveLength(1);
+
+    fireEvent.click(within(model).getByRole("radio", { name: "909" }));
+    await waitFor(() => expect(within(model).getByRole("radio", { name: "909" })).toBeChecked());
+    expect(sent("set_drum_param")).toEqual([
+      { track: "drums", sound: "kick", param: { name: "model", value: "909" }, gesture: null },
+    ]);
+    // The 909's knobs, from the outline: no Tone, and Sweep and Attack.
+    expect(strip("Kick").getAllByRole("slider").map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Kick tune",
+      "Kick sweep",
+      "Kick attack",
+      "Kick decay",
+      "Kick level",
+    ]);
+    expect(slider("Kick tune")).toHaveAttribute("aria-valuetext", "55 Hz");
+    expect(slider("Kick sweep")).toHaveAttribute("aria-valuetext", "40%");
+    expect(slider("Kick decay")).toHaveAttribute("aria-valuetext", "500 ms");
+    // A 909 knob sends the 909's setting.
+    fireEvent.keyDown(slider("Kick attack"), { key: "ArrowUp" });
+    await waitFor(() => expect(sent("set_drum_param")).toHaveLength(2));
+    expect(sent("set_drum_param")[1]).toMatchObject({ sound: "kick", param: { name: "attack" } });
+
+    // And back: the 808's knobs again.
+    fireEvent.click(within(model).getByRole("radio", { name: "808" }));
+    await waitFor(() => expect(slider("Kick tone")).toBeInTheDocument());
+    expect(kit().queryByRole("slider", { name: "Kick sweep" })).toBeNull();
+  });
+
   it("draws a sound it has never seen, from the outline alone", async () => {
     const hz = (value: number, limits: [number, number]): DrumSettingView => ({
       name: "tune_hz",
@@ -188,6 +234,7 @@ describe("the drum panel", () => {
         { name: "level_db", label: "Level", value: -6, limits: [-60, 6], default: -6, unit: "db" },
       ],
       shares: null,
+      model: null,
     };
     project = withKit(KIT_ROWS.map((row) => (row.sound === "low_tom" ? tom : row)));
     await renderSound();

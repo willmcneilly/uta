@@ -146,6 +146,22 @@ export interface KitRowView {
   settings: DrumSettingView[];
   /** Settings it takes from another sound, which its panel says, or null. */
   shares: SharedSettingsView | null;
+  /** Its choice of model, for a sound that has one (the kick), or null. `settings` are the chosen model's. */
+  model: ModelChoiceView | null;
+}
+
+/** Which kick plays. */
+export type KickModel = "808" | "909";
+
+/** A sound's choice of model, as its panel's segmented choice shows it. */
+export interface ModelChoiceView {
+  /** What the panel calls it: "Model". */
+  label: string;
+  value: KickModel;
+  /** Every model, in the panel's order. */
+  options: { value: KickModel; label: string }[];
+  /** A new drum track's model. */
+  default: KickModel;
 }
 
 /** Settings one sound takes from another: the open hat's Tune and Tone are the closed hat's. */
@@ -158,7 +174,7 @@ export interface SharedSettingsView {
 
 /** One setting of one drum sound, in that sound's own unit. */
 export interface DrumSettingView {
-  name: DrumParam["name"];
+  name: DrumNumber["name"];
   /** What the panel calls it: "Tune", "Level". */
   label: string;
   value: number;
@@ -170,9 +186,12 @@ export interface DrumSettingView {
   unit: DrumUnit;
 }
 
-/** One drum setting with its value, as `SetDrumParam` carries it. */
-export interface DrumParam {
-  name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db";
+/** One drum setting with its value, as `SetDrumParam` carries it: a number, or the kick's model. */
+export type DrumParam = DrumNumber | { name: "model"; value: KickModel };
+
+/** A drum setting that's a number. The kick's are its chosen model's. */
+export interface DrumNumber {
+  name: "tune_hz" | "tone" | "decay_seconds" | "snappy" | "level_db" | "sweep" | "attack";
   value: number;
 }
 

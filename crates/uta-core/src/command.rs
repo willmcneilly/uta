@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::time::Ticks;
 use crate::{
-    Clip, ClipId, DrumParam, DrumSound, KitSettings, MixerStrip, Note, NoteId, SynthParam, Track,
-    TrackId,
+    Clip, ClipId, DrumParam, DrumSound, MixerStrip, Note, NoteId, SynthParam, Track, TrackId,
 };
 
 /// The command format written by this version of Uta. Bump it when a saved
@@ -219,9 +218,13 @@ pub enum CommandError {
     /// A synth setting was outside its range, or not a number.
     SynthParamOutOfRange(SynthParam),
     /// A drum setting was outside its range on that sound, or not a number.
+    /// The limits are the ones it has on that sound (on the kick, its chosen
+    /// model's).
     DrumParamOutOfRange {
         sound: DrumSound,
         param: DrumParam,
+        min: f32,
+        max: f32,
     },
     /// A drum setting the sound doesn't have.
     NoSuchDrumParam {
@@ -334,14 +337,12 @@ impl std::fmt::Display for CommandError {
                 }
                 None => write!(f, "{param:?} is out of range"),
             },
-            Self::DrumParamOutOfRange { sound, param } => match KitSettings::range(*sound, param) {
-                Some((min, max)) => write!(
-                    f,
-                    "{sound:?} {param:?}: {} is out of range ({min} to {max})",
-                    param.value()
-                ),
-                None => write!(f, "{sound:?} {param:?} is out of range"),
-            },
+            Self::DrumParamOutOfRange {
+                sound,
+                param,
+                min,
+                max,
+            } => write!(f, "{sound:?} {param:?} is out of range ({min} to {max})"),
             Self::NoSuchDrumParam { sound, param } => {
                 write!(f, "the {sound:?} has no setting {param:?}")
             }
@@ -770,7 +771,9 @@ mod wire {
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
-    use crate::{DrumParam, DrumSound, KitSettings, Source, SynthSettings, Waveform, time::Ticks};
+    use crate::{
+        DrumParam, DrumSound, KickModel, KitSettings, Source, SynthSettings, Waveform, time::Ticks,
+    };
     use proptest::prelude::*;
 
     fn clip() -> ClipId {
@@ -794,15 +797,17 @@ mod tests {
             Command::SetTempo { bpm } => !bpm.is_finite(),
             Command::SetSynthParam { param: p, .. } => param(p),
             Command::SetTrackMixer { mixer: m, .. } => mixer(m),
-            Command::SetDrumParam { param, .. } => !param.value().is_finite(),
+            Command::SetDrumParam { param, .. } => param.value().is_some_and(|v| !v.is_finite()),
             Command::AddTracks { tracks } => tracks.iter().any(|placed| {
                 mixer(placed.track.mixer())
                     || match placed.track.source() {
                         Source::Synth(settings) => settings.params().iter().any(param),
-                        Source::Drums(kit) => kit
-                            .params()
-                            .iter()
-                            .any(|(_, param)| !param.value().is_finite()),
+                        Source::Drums(kit) => KickModel::ALL.iter().any(|&model| {
+                            kit.with_kick_model(model)
+                                .params()
+                                .iter()
+                                .any(|(_, param)| param.value().is_some_and(|v| !v.is_finite()))
+                        }),
                     }
             }),
             _ => false,
@@ -1008,7 +1013,8 @@ mod tests {
             ..note(0, 36, 0)
         };
         let kit_json = concat!(
-            r#"{"kick":{"tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0},"#,
+            r#"{"kick":{"model":"808","tune_hz":49.0,"tone":0.2,"decay_seconds":0.3,"level_db":0.0,"#,
+            r#""909":{"tune_hz":55.0,"sweep":0.4,"attack":0.5,"decay_seconds":0.5,"level_db":0.0}},"#,
             r#""snare":{"tune_hz":180.0,"tone_seconds":0.16,"snappy":0.5,"level_db":0.0},"#,
             r#""clap":{"tone_hz":1000.0,"decay_seconds":0.2,"level_db":0.0},"#,
             r#""closed_hat":{"tune_hz":205.3,"tone_hz":7100.0,"decay_seconds":0.05,"level_db":0.0},"#,
@@ -1026,6 +1032,16 @@ mod tests {
                 },
                 format!(
                     r#"{{"type":"set_drum_param","track":"{track}","sound":"kick","param":{{"name":"tune_hz","value":55.0}}}}"#
+                ),
+            ),
+            (
+                Command::SetDrumParam {
+                    track,
+                    sound: DrumSound::Kick,
+                    param: DrumParam::Model(KickModel::Tr909),
+                },
+                format!(
+                    r#"{{"type":"set_drum_param","track":"{track}","sound":"kick","param":{{"name":"model","value":"909"}}}}"#
                 ),
             ),
             (
@@ -1068,6 +1084,7 @@ mod tests {
         let tune = set(DrumSound::Kick, DrumParam::TuneHz(50.0));
         assert!(tune.sets_same_as(&set(DrumSound::Kick, DrumParam::TuneHz(60.0))));
         assert!(!tune.sets_same_as(&set(DrumSound::Kick, DrumParam::Tone(0.2))));
+        assert!(!tune.sets_same_as(&set(DrumSound::Kick, DrumParam::Model(KickModel::Tr909))));
         assert!(!tune.sets_same_as(&set(DrumSound::LowTom, DrumParam::TuneHz(90.0))));
         assert!(!tune.sets_same_as(&Command::SetDrumParam {
             track: TrackId::random(),

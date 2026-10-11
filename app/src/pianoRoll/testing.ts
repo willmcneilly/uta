@@ -10,6 +10,7 @@ import type {
   DrumUnit,
   KitRowView,
   Limits,
+  ModelChoiceView,
   MixerView,
   NoteView,
   Outline,
@@ -121,6 +122,8 @@ const LABELS: Record<DrumSettingView["name"], string> = {
   decay_seconds: "Decay",
   snappy: "Snappy",
   level_db: "Level",
+  sweep: "Sweep",
+  attack: "Attack",
 };
 
 function setting(
@@ -131,6 +134,26 @@ function setting(
 ): DrumSettingView {
   return { name, label: LABELS[name], value, limits, default: value, unit };
 }
+
+/** The kick's choice of model, the 808 chosen, as Rust sends it. */
+export const KICK_MODEL: ModelChoiceView = {
+  label: "Model",
+  value: "808",
+  options: [
+    { value: "808", label: "808" },
+    { value: "909", label: "909" },
+  ],
+  default: "808",
+};
+
+/** The 909 kick's settings at their defaults, as Rust sends them with the 909 chosen. */
+export const KICK_909_SETTINGS: DrumSettingView[] = [
+  setting("tune_hz", 55, [45, 70], "hz"),
+  setting("sweep", 0.4, [0, 1], "fraction"),
+  setting("attack", 0.5, [0, 1], "fraction"),
+  setting("decay_seconds", 0.5, [0.1, 1.5], "seconds"),
+  setting("level_db", 0, [-60, 6], "db"),
+];
 
 /** The kit's rows as Rust sends them, bottom to top. */
 export const KIT_ROWS: KitRowView[] = [
@@ -145,6 +168,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: null,
+    model: KICK_MODEL,
   },
   {
     sound: "snare",
@@ -157,6 +181,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: null,
+    model: null,
   },
   {
     sound: "clap",
@@ -168,9 +193,10 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: null,
+    model: null,
   },
-  { sound: "low_tom", name: "Low tom", pitch: 45, settings: [], shares: null },
-  { sound: "high_tom", name: "High tom", pitch: 50, settings: [], shares: null },
+  { sound: "low_tom", name: "Low tom", pitch: 45, settings: [], shares: null, model: null },
+  { sound: "high_tom", name: "High tom", pitch: 50, settings: [], shares: null, model: null },
   {
     sound: "closed_hat",
     name: "Closed hat",
@@ -182,6 +208,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: null,
+    model: null,
   },
   {
     sound: "open_hat",
@@ -192,6 +219,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: { sound: "closed_hat", labels: ["Tune", "Tone"] },
+    model: null,
   },
   {
     sound: "cymbal",
@@ -203,6 +231,7 @@ export const KIT_ROWS: KitRowView[] = [
       setting("level_db", 0, [-60, 6], "db"),
     ],
     shares: { sound: "closed_hat", labels: ["Tune"] },
+    model: null,
   },
 ];
 
