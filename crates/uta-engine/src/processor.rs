@@ -117,9 +117,10 @@ struct Slot {
     budget: usize,
     /// The track's gain for the left and right, from its mixer strip.
     gains: [Ramp; 2],
-    /// The synth's and kit's output for the part of the block being
-    /// rendered.
-    buffer: [f32; TRACK_BUFFER_FRAMES],
+    /// The track's left and right for the part of the block being rendered.
+    /// The synth and kit make one channel, which goes into both sides; from
+    /// here on the track is stereo. See RFC-007, "The chain becomes stereo".
+    buffer: [[f32; TRACK_BUFFER_FRAMES]; 2],
     /// The loudest sample since status was last delivered, after the gains.
     peak: f32,
 }
@@ -143,7 +144,7 @@ impl Slot {
             bookmark: 0,
             budget: MAX_NOTE_EVENTS_PER_BLOCK,
             gains: gain_ramps(track, soloing, sample_rate),
-            buffer: [0.0; TRACK_BUFFER_FRAMES],
+            buffer: [[0.0; TRACK_BUFFER_FRAMES]; 2],
             peak: 0.0,
         }
     }
@@ -354,11 +355,19 @@ impl Slot {
     }
 
     /// Renders the synth and the kit into the buffer, then adds it to `left`
-    /// and `right` through the track's gains. At most
-    /// [`TRACK_BUFFER_FRAMES`] frames. Whichever of them isn't sounding does
-    /// no work, beyond its settings' glide.
+    /// and `right` through the track's balance. At most
+    /// [`TRACK_BUFFER_FRAMES`] frames.
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
-        let buffer = &mut self.buffer[..left.len()];
+        self.render_source(left.len());
+        self.balance_into(left, right);
+    }
+
+    /// Renders the synth and the kit into both sides of the buffer, for
+    /// `frames` frames. Whichever of them isn't sounding does no work, beyond
+    /// its settings' glide.
+    fn render_source(&mut self, frames: usize) {
+        let [buffer_left, buffer_right] = &mut self.buffer;
+        let buffer = &mut buffer_left[..frames];
         if self.synth.is_sounding() || !self.drums {
             for sample in buffer.iter_mut() {
                 *sample = self.synth.next_sample();
@@ -371,11 +380,23 @@ impl Slot {
                 *sample += self.kit.next_sample();
             }
         }
+        buffer_right[..frames].copy_from_slice(buffer);
+    }
+
+    /// Adds the buffer's left and right to `left` and `right` through the
+    /// track's gains: a balance, which turns each side up or down on its own
+    /// and never moves sound from one side to the other. With the same sound
+    /// on both sides, it's exactly today's pan. See RFC-007, "The chain
+    /// becomes stereo".
+    fn balance_into(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let [buffer_left, buffer_right] = &self.buffer;
         let [left_gain, right_gain] = &mut self.gains;
         let mut peak = self.peak;
-        for ((&sample, left), right) in buffer.iter().zip(left).zip(right) {
-            let track_left = sample * left_gain.next_value();
-            let track_right = sample * right_gain.next_value();
+        for (((&in_left, &in_right), left), right) in
+            buffer_left.iter().zip(buffer_right).zip(left).zip(right)
+        {
+            let track_left = in_left * left_gain.next_value();
+            let track_right = in_right * right_gain.next_value();
             *left += track_left;
             *right += track_right;
             peak = peak.max(track_left.abs()).max(track_right.abs());
@@ -728,11 +749,11 @@ impl Processor {
     }
 
     /// Renders every slot with a track or a sound into `output`, which holds
-    /// whole frames: each track's volume, pan, mute and solo make it stereo,
-    /// and they're added together, then the master volume, then a hard clip
-    /// at full scale. The first two channels get the left and right, and any
-    /// more are silent. A single channel gets their average, so a centred
-    /// track sounds the same in mono. See RFC-003, "The master and headroom".
+    /// whole frames: each track is stereo, its volume, balance (pan), mute
+    /// and solo set each side's level, and they're added together, then the
+    /// master volume, then a hard clip at full scale. The first two channels
+    /// get the left and right, and any more are silent. A single channel gets
+    /// their average, so a centred track sounds the same in mono. See RFC-003, "The master and headroom".
     ///
     /// Tracks are added in slot order, which reordering them doesn't change,
     /// so it doesn't change the sound either.
@@ -938,7 +959,7 @@ mod tests {
 
     use super::*;
     use crate::offline::Renderer;
-    use crate::{EngineConfig, VOICE_LEVEL, db_to_gain, velocity_to_gain};
+    use crate::{EngineConfig, MixerStrip, VOICE_LEVEL, db_to_gain, velocity_to_gain};
 
     const BEAT: Ticks = 960;
 
@@ -1243,6 +1264,48 @@ mod tests {
                 jump <= limit,
                 "{from} Hz to {to} Hz: jump {jump}, limit {limit}"
             );
+        }
+    }
+
+    /// Pan is a balance on a stereo track: each side is turned up or down on
+    /// its own, by the pan law's gain for that side, and nothing crosses
+    /// from one side to the other. Panned left, the right side is turned
+    /// down and the left keeps its own sound. See RFC-007, "The chain
+    /// becomes stereo".
+    #[test]
+    fn the_balance_turns_down_only_the_far_side_of_a_stereo_track() {
+        let mut snapshot = Snapshot::from(&beats());
+        for pan in [-1.0, -0.5, 0.0, 0.25, 1.0] {
+            snapshot.tracks_mut()[0].mixer = MixerStrip {
+                pan,
+                ..MixerStrip::default()
+            };
+            let mut slot = Slot::new(snapshot.track_in(0), false, 48_000.0);
+            let frames = 64;
+            // Different sounds on the two sides: a rising ramp on the left,
+            // a falling one on the right.
+            for frame in 0..frames {
+                slot.buffer[0][frame] = 0.25 + frame as f32 / 512.0;
+                slot.buffer[1][frame] = -0.5 + frame as f32 / 1024.0;
+            }
+            let (mut left, mut right) = (vec![0.0; frames], vec![0.0; frames]);
+            slot.balance_into(&mut left, &mut right);
+
+            let [left_gain, right_gain] = snapshot.tracks()[0].mixer.gains(false);
+            for frame in 0..frames {
+                assert_eq!(left[frame], slot.buffer[0][frame] * left_gain, "pan {pan}");
+                assert_eq!(
+                    right[frame],
+                    slot.buffer[1][frame] * right_gain,
+                    "pan {pan}"
+                );
+            }
+            // Only the far side is turned down; the near side isn't.
+            match pan {
+                p if p < 0.0 => assert!(right_gain < 1.0 && left_gain > 1.0, "pan {pan}"),
+                p if p > 0.0 => assert!(left_gain < 1.0 && right_gain > 1.0, "pan {pan}"),
+                _ => assert_eq!([left_gain, right_gain], [1.0, 1.0]),
+            }
         }
     }
 }

@@ -27,6 +27,9 @@ impl MixerStrip {
     /// muted, and either no track is soloed or it is, so mute wins even on a
     /// soloed track. See RFC-003, "The mixer in the track headers".
     ///
+    /// The track is stereo by the time these apply, so pan is a balance: each
+    /// gain scales its own side. See RFC-007, "The chain becomes stereo".
+    ///
     /// Pan uses the "−3 dB compensated" constant-power law: centred, both
     /// speakers get the track unchanged; panned hard to one side, that
     /// speaker gets it 3 dB louder and the other nothing. Worked out in `f64`,
