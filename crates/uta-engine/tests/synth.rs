@@ -216,25 +216,29 @@ fn the_filter_cuts_above_the_cutoff() {
 }
 
 /// The loudest partial in `spectrum` that isn't a harmonic of
-/// `frequency_hz`, in dB relative to the fundamental.
+/// `frequency_hz`, in dB relative to the loudest harmonic: for a saw, its
+/// fundamental, and for a synced wave, whichever harmonic its restarts make
+/// loudest.
 fn loudest_alias_db(spectrum: &[f64], frequency_hz: f64, fft_len: usize) -> f64 {
     let bin_hz = f64::from(RATE) / fft_len as f64;
     // The window's main lobe is 4 bins either side; allow a little more.
     let lobe = 6.0;
-    let fundamental_bin = (frequency_hz / bin_hz).round() as usize;
-    let fundamental = spectrum[fundamental_bin - 6..fundamental_bin + 6]
-        .iter()
-        .fold(0.0f64, |a, &b| a.max(b));
-    let near_harmonic = |bin: usize| {
+    // The harmonic each bin is on, if it's on one: 0 is any offset, which
+    // isn't an alias but isn't a harmonic either.
+    let harmonic = |bin: usize| {
         let harmonic = (bin as f64 * bin_hz / frequency_hz).round();
-        (bin as f64 - harmonic * frequency_hz / bin_hz).abs() <= lobe
+        ((bin as f64 - harmonic * frequency_hz / bin_hz).abs() <= lobe).then_some(harmonic)
     };
-    let alias = spectrum
-        .iter()
-        .enumerate()
-        .filter(|&(bin, _)| !near_harmonic(bin))
-        .fold(0.0f64, |a, (_, &b)| a.max(b));
-    20.0 * (alias / fundamental).log10()
+    let loudest = |on: fn(Option<f64>) -> bool| {
+        spectrum
+            .iter()
+            .enumerate()
+            .filter(|&(bin, _)| on(harmonic(bin)))
+            .fold(0.0f64, |a, (_, &b)| a.max(b))
+    };
+    let alias = loudest(|harmonic| harmonic.is_none());
+    let harmonics = loudest(|harmonic| harmonic.is_some_and(|h| h >= 1.0));
+    20.0 * (alias / harmonics).log10()
 }
 
 /// C7 at 2093 Hz: its 11th harmonic is already past half the sample rate, so
@@ -453,16 +457,16 @@ fn session(block_size: usize) -> Vec<f32> {
     }
     for (i, waveform) in [
         Waveform::Pulse,
-        Waveform::Triangle,
+        Waveform::Pulse,
         Waveform::Sine,
         Waveform::Saw,
     ]
     .into_iter()
     .enumerate()
     {
-        // Every setting moves: oscillator 2 detunes and changes octave, the
-        // sub and noise come in, and the oscillators run free from the
-        // second change on.
+        // Every setting moves: oscillator 1's pulse narrows, oscillator 2
+        // detunes, changes octave and syncs on and off, the sub and noise
+        // come in, and the oscillators run free from the second change on.
         renderer
             .controller
             .set_synth_settings(
@@ -470,9 +474,11 @@ fn session(block_size: usize) -> Vec<f32> {
                 SynthSettings {
                     osc1_wave: waveform,
                     osc1_octave: i as i8 - 1,
+                    osc1_width: 0.2 + 0.2 * i as f32,
                     osc2_wave: [Waveform::Saw, Waveform::Pulse][i % 2],
                     osc2_octave: 1 - i as i8,
                     osc2_pitch_semitones: 0.07 + 3.0 * i as f32,
+                    osc2_sync: i % 2 == 1,
                     sub_octave: -1 - (i % 2) as i8,
                     osc1_level: 1.0 - 0.2 * i as f32,
                     osc2_level: 0.3 * i as f32,
@@ -841,10 +847,23 @@ fn play_restarts_the_noise_and_free_running_oscillators() {
 /// sample `at` (a whole number of 128-sample blocks). Returns `with` minus
 /// `without`, sample by sample, from `at` on.
 fn turn_difference(base: SynthSettings, turned: SynthSettings, at: usize) -> Vec<f32> {
+    turn_difference_at(45, base, turned, at)
+}
+
+/// [`turn_difference`] for a note at `pitch`.
+fn turn_difference_at(
+    pitch: u8,
+    base: SynthSettings,
+    turned: SynthSettings,
+    at: usize,
+) -> Vec<f32> {
     assert_eq!(at % 128, 0, "turns land on a block boundary");
     let render = |turn: Option<SynthSettings>| {
         let mut renderer = renderer(base, 128);
-        renderer.controller.note_on(0, NoteKey(1), 45, 127).unwrap();
+        renderer
+            .controller
+            .note_on(0, NoteKey(1), pitch, 127)
+            .unwrap();
         renderer.render(at);
         if let Some(turned) = turn {
             renderer.controller.set_synth_settings(0, turned).unwrap();
@@ -1009,4 +1028,356 @@ fn click_limit_catches_a_phase_jump() {
         .collect();
     let limit = click_limit(4, 880.0, std::f32::consts::SQRT_2, usize::MAX);
     assert!(max_jump(&samples).0 > limit * 2.0);
+}
+
+/// Oscillator 1 alone, a pulse `width` wide.
+fn pulse(width: f32) -> SynthSettings {
+    SynthSettings {
+        osc1_wave: Waveform::Pulse,
+        osc1_width: width,
+        ..only_osc1(1.0)
+    }
+}
+
+/// The level of the `harmonic`th harmonic of `frequency_hz` in `spectrum`,
+/// in dB relative to the fundamental: the loudest bin within the window's
+/// main lobe of it.
+fn harmonic_db(spectrum: &[f64], frequency_hz: f64, harmonic: usize, fft_len: usize) -> f64 {
+    let bin_hz = f64::from(RATE) / fft_len as f64;
+    let level = |harmonic: usize| {
+        let bin = (harmonic as f64 * frequency_hz / bin_hz).round() as usize;
+        spectrum[bin - 4..=bin + 4]
+            .iter()
+            .fold(0.0f64, |a, &b| a.max(b))
+    };
+    20.0 * (level(harmonic) / level(1)).log10()
+}
+
+/// A pulse a quarter of a cycle wide has no 4th, 8th or 12th harmonic, and
+/// a square no even ones, as their widths say they should: the Width puts
+/// the second jump where it says.
+#[test]
+fn at_a_quarter_width_every_fourth_harmonic_is_missing() {
+    let frequency = pitch_to_hz(45); // 110 Hz
+    let harmonics = |width: f32| {
+        let samples = held_note(pulse(width), 45, 127, 1.2)[seconds(0.4)..].to_vec();
+        let spectrum = spectrum(&samples[..FFT_LEN]);
+        (1..=12)
+            .map(|harmonic| harmonic_db(&spectrum, frequency, harmonic, FFT_LEN))
+            .collect::<Vec<_>>()
+    };
+    let quarter = harmonics(0.25);
+    for (index, db) in quarter.iter().enumerate() {
+        let harmonic = index + 1;
+        if harmonic % 4 == 0 {
+            assert!(db < &-50.0, "harmonic {harmonic} is at {db} dB");
+        } else {
+            // A pulse's nth harmonic is |sin(n π w)| / n of the first's.
+            let expected = 20.0
+                * ((harmonic as f64 * PI * 0.25).sin().abs()
+                    / (harmonic as f64 * (PI * 0.25).sin()))
+                .log10();
+            assert!(
+                (db - expected).abs() < 1.0,
+                "harmonic {harmonic} is at {db} dB, not {expected}"
+            );
+        }
+    }
+    let square = harmonics(0.5);
+    for harmonic in [2, 4, 6, 8] {
+        assert!(square[harmonic - 1] < -50.0, "the square's {harmonic}");
+    }
+    assert!(square[2] > -10.0, "the square's 3rd is at {}", square[2]);
+}
+
+/// However narrow or wide the pulse, it averages zero: a narrow one is
+/// high briefly and far, and low for long and near, rather than sitting
+/// below the middle.
+#[test]
+fn the_pulse_has_no_offset_at_any_width() {
+    for width in [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95] {
+        let samples = held_note(pulse(width), 45, 127, 2.4)[seconds(0.4)..].to_vec();
+        let mean = samples.iter().map(|&s| f64::from(s)).sum::<f64>() / samples.len() as f64;
+        // A pulse that drifted off centre would average 1 - 2 × its width
+        // of its level.
+        let level = rms(&samples);
+        assert!(
+            mean.abs() < 0.005 * level,
+            "width {width}: an offset of {mean} at a level of {level}"
+        );
+    }
+}
+
+/// The pitch of a steady tone from its period: the lag, between the
+/// periods of `high_hz` and `low_hz`, at which the tone matches itself
+/// best, refined between samples. Unlike counting zero crossings, it works
+/// for a wave that crosses zero several times a cycle, as a synced one
+/// does.
+fn pitch_from_period(samples: &[f32], low_hz: f64, high_hz: f64) -> f64 {
+    let rate = f64::from(RATE);
+    let (shortest, longest) = ((rate / high_hz) as usize, (rate / low_hz).ceil() as usize);
+    let span = samples.len() - longest - 1;
+    let difference = |lag: usize| -> f64 {
+        (0..span)
+            .map(|n| f64::from(samples[n] - samples[n + lag]).powi(2))
+            .sum()
+    };
+    let differences: Vec<f64> = (shortest - 1..=longest + 1).map(difference).collect();
+    let best = (1..differences.len() - 1)
+        .min_by(|&a, &b| differences[a].total_cmp(&differences[b]))
+        .unwrap();
+    let (a, b, c) = (
+        differences[best - 1],
+        differences[best],
+        differences[best + 1],
+    );
+    let offset = 0.5 * (a - c) / (a - 2.0 * b + c);
+    rate / ((shortest - 1 + best) as f64 + offset)
+}
+
+/// Oscillator 2 alone, `wave` at `octave` and `semitones`, synced to
+/// oscillator 1, which isn't heard.
+fn synced(wave: Waveform, octave: i8, semitones: f32) -> SynthSettings {
+    SynthSettings {
+        osc2_wave: wave,
+        osc2_sync: true,
+        ..only_osc2(octave, semitones)
+    }
+}
+
+/// Under sync, oscillator 2 sounds at oscillator 1's pitch, whatever its
+/// own Octave and Pitch, below oscillator 1 or above it, for every wave.
+/// Without sync, the same settings play oscillator 2's own pitch.
+#[test]
+fn under_sync_the_pitch_follows_oscillator_1() {
+    let note = 45; // 110 Hz
+    let frequency = pitch_to_hz(note);
+    let measure = |settings: SynthSettings| {
+        let samples = steady(settings, note, 127);
+        pitch_from_period(&samples[..seconds(0.2)], 0.8 * frequency, 5.0 * frequency)
+    };
+    for wave in Waveform::ALL {
+        for (octave, semitones) in [
+            (0, 3.3),
+            (0, 7.0),
+            (0, -7.0),
+            (-1, 5.0),
+            (1, -5.0),
+            (1, 4.5),
+            (2, -1.0),
+        ] {
+            let synced = measure(synced(wave, octave, semitones));
+            assert!(
+                (synced / frequency - 1.0).abs() < 0.002,
+                "{wave:?} at octave {octave} and {semitones}: {synced} Hz"
+            );
+            let free = measure(SynthSettings {
+                osc2_sync: false,
+                ..self::synced(wave, octave, semitones)
+            });
+            // Its own pitch, or (as a whole number of its cycles is a period
+            // too) a half or a third of it, where that's the closest match.
+            let own = frequency * (f64::from(octave) + f64::from(semitones) / 12.0).exp2();
+            if own > 0.8 * frequency {
+                assert!(
+                    (1..=3).any(|k| (free * f64::from(k) / own - 1.0).abs() < 0.002),
+                    "{wave:?} at octave {octave} and {semitones} without sync: {free} Hz, not {own}"
+                );
+            }
+        }
+    }
+}
+
+/// The loudest alias allowed in a sync sweep, for each wave, relative to the
+/// loudest harmonic: oscillator 2 synced to C7 (2093 Hz) and swept up two
+/// octaves. Measured here as the saw -25.6 dB, the pulse -24.3, the
+/// triangle -35.9 and the sine -42.9; uncorrected, as
+/// `sync_aliasing_measure_catches_a_naive_sync` checks, they're 9 to 16 dB
+/// worse. Without the corner correction (PolyBLAMP) at the restart, the
+/// triangle measures -34.5 and the sine -38.6, over their limits.
+const SYNC_ALIAS_LIMIT_DB: [(Waveform, f64); 4] = [
+    (Waveform::Saw, -25.0),
+    (Waveform::Pulse, -23.5),
+    (Waveform::Triangle, -35.5),
+    (Waveform::Sine, -42.0),
+];
+
+/// Oscillator 2's Octave and Pitch across a sync sweep: up two octaves from
+/// oscillator 1, in steps of a semitone and a half.
+fn sync_sweep() -> impl Iterator<Item = (i8, f32)> {
+    (0..=16).map(|step| {
+        let semitones = 1.5 * step as f32;
+        if semitones > 12.0 {
+            (1, semitones - 12.0)
+        } else {
+            (0, semitones)
+        }
+    })
+}
+
+/// The aliasing anywhere in a sync sweep to a high pitch, sync's hardest
+/// case, stays at or under the figure measured for each wave when it was
+/// built, so it can't quietly get worse. See RFC-008, "Risks & unknowns"
+/// (Sync aliasing at extreme settings).
+#[test]
+fn sync_sweep_aliasing_is_below_the_limit() {
+    let frequency = pitch_to_hz(HIGH_NOTE);
+    for (wave, limit) in SYNC_ALIAS_LIMIT_DB {
+        for (octave, semitones) in sync_sweep() {
+            let settings = synced(wave, octave, semitones);
+            let samples = held_note(settings, HIGH_NOTE, 127, 1.2)[seconds(0.4)..].to_vec();
+            let alias_db = loudest_alias_db(&spectrum(&samples[..FFT_LEN]), frequency, FFT_LEN);
+            assert!(
+                alias_db <= limit,
+                "{wave:?} at octave {octave} and {semitones}: {alias_db} dB, limit {limit} dB"
+            );
+        }
+    }
+}
+
+/// Guards the sync aliasing test: oscillator 2 restarted where oscillator 1
+/// wraps with nothing corrected, its own jumps included, must fail it
+/// clearly somewhere in the sweep.
+#[test]
+fn sync_aliasing_measure_catches_a_naive_sync() {
+    let frequency = pitch_to_hz(HIGH_NOTE);
+    let increment = frequency / f64::from(RATE);
+    for (wave, limit) in SYNC_ALIAS_LIMIT_DB {
+        let worst = sync_sweep()
+            .map(|(octave, semitones)| {
+                let ratio = (f64::from(octave) + f64::from(semitones) / 12.0).exp2();
+                let (mut leader, mut phase) = (0.0f64, 0.0f64);
+                let naive: Vec<f32> = (0..FFT_LEN)
+                    .map(|_| {
+                        let value = match wave {
+                            Waveform::Sine => (std::f64::consts::TAU * phase).sin(),
+                            Waveform::Triangle => 1.0 - 4.0 * (phase - 0.5).abs(),
+                            Waveform::Saw => 2.0 * phase - 1.0,
+                            Waveform::Pulse => {
+                                if phase < 0.5 {
+                                    1.0
+                                } else {
+                                    -1.0
+                                }
+                            }
+                        };
+                        leader += increment;
+                        if leader >= 1.0 {
+                            leader -= 1.0;
+                            phase = (leader * ratio).fract();
+                        } else {
+                            phase = (phase + increment * ratio).fract();
+                        }
+                        value as f32
+                    })
+                    .collect();
+                loudest_alias_db(&spectrum(&naive), frequency, FFT_LEN)
+            })
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            worst > limit + 8.0,
+            "a naive synced {wave:?}'s loudest alias is only {worst} dB"
+        );
+    }
+}
+
+/// Fails unless a change that moves where a wave jumps glides in: a pulse's
+/// width, or a synced oscillator's pitch, which moves its own wrap against
+/// its restart. Moving a jump by more than a sample makes a full-height
+/// difference, so the peak can't tell a glide from a jump (as
+/// `assert_glides` does); the difference's energy can. Gliding, the jump
+/// has moved a twentieth of the way on average in the first tenth of the
+/// glide, so the RMS there is about a quarter of the change's whole RMS,
+/// after the glide. Jumping, it's all the way there at once.
+fn assert_jumps_glide(difference: &[f32], glide: usize, what: &str) {
+    let early = rms(&difference[..glide / 10]);
+    let full = rms(&difference[glide..2 * glide]);
+    assert!(full > 1e-3, "{what}: the turn changed nothing");
+    assert!(
+        early < 0.45 * full,
+        "{what}: {:.0}% of its RMS in the first tenth of the glide",
+        100.0 * early / full
+    );
+}
+
+/// Guards [`assert_jumps_glide`]: a pulse whose width jumps from a half to
+/// a tenth, against the same pulse left alone, must fail it.
+#[test]
+#[should_panic(expected = "of its RMS in the first tenth")]
+fn width_glide_check_catches_a_jump() {
+    let glide = (uta_engine::SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    let cycle = f64::from(RATE) / pitch_to_hz(81);
+    let difference: Vec<f32> = (0..3 * glide)
+        .map(|n| {
+            let phase = (n as f64 / cycle).fract();
+            let level = |width: f64| {
+                if phase < width {
+                    2.0 - 2.0 * width
+                } else {
+                    -2.0 * width
+                }
+            };
+            (level(0.1) - level(0.5)) as f32
+        })
+        .collect();
+    assert_jumps_glide(&difference, glide, "a jump");
+}
+
+/// Oscillator 1's Width glides, switching Sync on or off crossfades between
+/// oscillator 2 free and synced, and a synced oscillator's Pitch glides:
+/// each changes the sound over the glide, not at once, so turning them
+/// while a note plays doesn't click. The width and the synced pitch are
+/// turned at A5, so many of their cycles fall in the glide.
+#[test]
+fn width_and_sync_glide_when_turned() {
+    let glide = (uta_engine::SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    let at = 128 * 22;
+    let square = SynthSettings {
+        sustain: 1.0,
+        ..pulse(0.5)
+    };
+    for width in [0.1, 0.9] {
+        let difference = turn_difference_at(
+            81,
+            square,
+            SynthSettings {
+                osc1_width: width,
+                ..square
+            },
+            at,
+        );
+        assert_jumps_glide(&difference, glide, &format!("the width to {width}"));
+    }
+    let synced = SynthSettings {
+        sustain: 1.0,
+        ..synced(Waveform::Saw, 0, 7.0)
+    };
+    let difference = turn_difference_at(
+        81,
+        synced,
+        SynthSettings {
+            osc2_pitch_semitones: 12.0,
+            ..synced
+        },
+        at,
+    );
+    assert_jumps_glide(&difference, glide, "the synced oscillator's pitch");
+    let free = SynthSettings {
+        osc1_level: 0.0,
+        osc2_level: 1.0,
+        osc2_pitch_semitones: 7.0,
+        sustain: 1.0,
+        ..SynthSettings::default()
+    };
+    let with_sync = SynthSettings {
+        osc2_sync: true,
+        ..free
+    };
+    let turns = [
+        ("sync switched on", free, with_sync),
+        ("sync switched off", with_sync, free),
+    ];
+    for (what, from, to) in turns {
+        assert_glides(&turn_difference(from, to, at), glide, what);
+    }
 }
