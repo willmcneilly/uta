@@ -100,7 +100,8 @@ struct Voice {
     filter: Filter,
     /// The filter envelope, which runs alongside the amp envelope whether
     /// or not anything listens to it, so turning its amount up mid-note
-    /// picks it up where it is.
+    /// picks it up where it is. It moves on once every
+    /// [`FILTER_CONTROL_SAMPLES`], the only times its level is used.
     filter_envelope: Envelope,
     /// This voice's own filter settings while its cutoff moves on its own,
     /// and the step they glide by each sample to the next point they're
@@ -289,12 +290,13 @@ pub(crate) struct Synth {
     filter_env_octaves: Ramp,
     filter_key: Ramp,
     filter_sustain: Ramp,
-    /// Samples until the voices work out their own filter settings again,
-    /// while they have their own.
+    /// Samples until the filter envelopes move on, and the voices work out
+    /// their own filter settings again while they have their own.
     filter_countdown: u32,
     /// Whether the voices had their own filter settings on the last sample.
     per_voice_filter: bool,
     times: Times,
+    /// The filter envelope's times, in steps of [`FILTER_CONTROL_SAMPLES`].
     filter_times: Times,
 
     osc1_wave: Crossfade<Waveform>,
@@ -583,8 +585,10 @@ impl Synth {
     /// While the filter envelope's amount and key tracking are both zero,
     /// every voice's filter shares one set of settings, worked out only when
     /// the cutoff or resonance moves, as before either existed. Otherwise
-    /// each voice works out its own every [`FILTER_CONTROL_SAMPLES`], from
-    /// its filter envelope and its note, and glides to them in between.
+    /// each voice works out its own every [`FILTER_CONTROL_SAMPLES`] (the
+    /// control rate), from its filter envelope and its note, and glides to
+    /// them in between. The filter envelopes move on at the control rate
+    /// either way.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         self.advance_settings();
@@ -597,25 +601,19 @@ impl Synth {
         let env_octaves = self.filter_env_octaves.next_value();
         let key = self.filter_key.next_value();
         let per_voice_filter = env_octaves != 0.0 || key != 0.0;
-        // Each voice's own filter settings: worked out afresh from the
-        // shared ones on the sample they start being used, and then every
-        // FILTER_CONTROL_SAMPLES.
-        let retune = if per_voice_filter {
-            if !self.per_voice_filter {
-                for voice in self.voices.iter_mut() {
-                    voice.tuning = self.tuning;
-                }
-                self.filter_countdown = 0;
+        // Voices starting to have their own filter settings start from the
+        // shared ones, and glide from there at the next control point.
+        if per_voice_filter && !self.per_voice_filter {
+            for voice in self.voices.iter_mut() {
+                voice.tuning = self.tuning;
+                voice.tuning_step = Tuning::default();
             }
-            let retune = self.filter_countdown == 0;
-            self.filter_countdown = if retune {
-                FILTER_CONTROL_SAMPLES - 1
-            } else {
-                self.filter_countdown - 1
-            };
-            retune
+        }
+        let control = self.filter_countdown == 0;
+        self.filter_countdown = if control {
+            FILTER_CONTROL_SAMPLES - 1
         } else {
-            false
+            self.filter_countdown - 1
         };
         self.per_voice_filter = per_voice_filter;
         let base_octaves = self.cutoff_octaves.value();
@@ -668,16 +666,18 @@ impl Synth {
             if voice.osc1.advance() {
                 voice.osc1_cycle = (voice.osc1_cycle + 1) % 4;
             }
-            let filter_level = voice
-                .filter_envelope
-                .next_level(filter_sustain, &self.filter_times);
-            let outputs = if per_voice_filter {
-                if retune {
+            if control {
+                let filter_level = voice
+                    .filter_envelope
+                    .next_level(filter_sustain, &self.filter_times);
+                if per_voice_filter {
                     let octaves =
                         filter_octaves(base_octaves, env_octaves, filter_level, key, voice.pitch);
                     let target = Tuning::new(octaves.exp2(), resonance, sample_rate);
                     voice.tuning_step = voice.tuning.step_to(target, FILTER_CONTROL_SAMPLES);
                 }
+            }
+            let outputs = if per_voice_filter {
                 voice.tuning.advance(voice.tuning_step);
                 voice
                     .filter
@@ -750,7 +750,7 @@ impl Synth {
         voice.filter_envelope.start(&self.filter_times);
         // A note starting while the voices have their own filter settings
         // starts at its own, which the filter envelope's attack moves on
-        // from at the next point they're worked out.
+        // from at the next control point.
         let octaves = filter_octaves(
             self.cutoff_octaves.value(),
             self.filter_env_octaves.value(),
@@ -818,7 +818,7 @@ impl Synth {
             f64::from(s.filter_attack_seconds),
             f64::from(s.filter_decay_seconds),
             f64::from(s.filter_release_seconds),
-            self.sample_rate,
+            self.sample_rate / f64::from(FILTER_CONTROL_SAMPLES),
         );
     }
 

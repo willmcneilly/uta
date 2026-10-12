@@ -38,6 +38,11 @@ enum Load {
     /// All 16 synth voices sounding saws, with the filter cutoff gliding, on
     /// top of an empty loop.
     Voices,
+    /// [`Load::Voices`] with only the filter envelope and key tracking on,
+    /// so each voice works out its own filter settings: against
+    /// [`Load::Voices`], the cost of the per-voice filter. See RFC-008,
+    /// "Risks & unknowns" (CPU per voice goes up).
+    FilterVoices,
     /// [`Load::Voices`] with every synth feature on ([`FULL_VOICE`]), and
     /// oscillator 2's Pitch and level gliding with the cutoff.
     FullVoices,
@@ -74,6 +79,7 @@ impl Load {
         match self {
             Self::Loop => "Demo loop",
             Self::Voices => "16 voices",
+            Self::FilterVoices => "16 voices, per-voice filter",
             Self::FullVoices => "16 full voices",
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
@@ -303,7 +309,7 @@ struct Report {
 fn snapshot(load: Load) -> Snapshot {
     match load {
         Load::Loop => Snapshot::from(&common::demo_loop()),
-        Load::Voices => Snapshot::default(),
+        Load::Voices | Load::FilterVoices => Snapshot::default(),
         Load::FullVoices => Snapshot::from(&common::project(120.0, 4, &FULL_VOICE, Vec::new())),
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks(&[])),
@@ -342,7 +348,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let mut times = Vec::with_capacity(BLOCKS);
     renderer.controller.play().unwrap();
-    if let Load::Voices | Load::FullVoices = load {
+    if let Load::Voices | Load::FilterVoices | Load::FullVoices = load {
         for i in 0..VOICES as u8 {
             renderer
                 .controller
@@ -361,18 +367,24 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         .unwrap()
                 }
                 // Sustain 1, so the voices never fade to silence.
-                Load::Voices => renderer
-                    .controller
-                    .set_synth_settings(
-                        0,
-                        SynthSettings {
-                            cutoff_hz: 200.0 * (1 + (i / 64) % 50) as f32,
-                            resonance: 0.5,
-                            sustain: 1.0,
-                            ..SynthSettings::default()
-                        },
-                    )
-                    .unwrap(),
+                Load::Voices | Load::FilterVoices => {
+                    let own_filter = matches!(load, Load::FilterVoices);
+                    renderer
+                        .controller
+                        .set_synth_settings(
+                            0,
+                            SynthSettings {
+                                cutoff_hz: 200.0 * (1 + (i / 64) % 50) as f32,
+                                resonance: 0.5,
+                                sustain: 1.0,
+                                filter_env_octaves: if own_filter { 3.0 } else { 0.0 },
+                                filter_key: if own_filter { 0.5 } else { 0.0 },
+                                filter_sustain: 0.5,
+                                ..SynthSettings::default()
+                            },
+                        )
+                        .unwrap()
+                }
                 // The cutoff, oscillator 2's Pitch and its level, on every
                 // full voice.
                 Load::FullVoices => {
@@ -545,6 +557,7 @@ fn report_block_timing() {
     let loads = [
         Load::Loop,
         Load::Voices,
+        Load::FilterVoices,
         Load::FullVoices,
         Load::Song,
         Load::Tracks,
