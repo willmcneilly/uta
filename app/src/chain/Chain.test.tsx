@@ -3,7 +3,14 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import type { ChainAddress, DelayParam, EffectView, ProjectView, TrackView } from "../backend";
+import type {
+  ChainAddress,
+  DelayParam,
+  EffectKind,
+  EffectView,
+  ProjectView,
+  TrackView,
+} from "../backend";
 import { knobAt, slideKnob } from "../design/knobTesting";
 import {
   Updates,
@@ -287,12 +294,24 @@ describe("the Sound tab's chain", () => {
   });
 
   it("+ opens its menu with the first kind focused, moves with the arrow keys, and closes on Esc", async () => {
+    // A second kind, as Rust will send once there is one, so the keys have somewhere to go.
+    const echo = { kind: "echo" as unknown as EffectKind, name: "Echo" };
+    project = { ...project, effectKinds: [...project.effectKinds, echo] };
     await openSound([synthWith()]);
     fireEvent.click(addKey());
     const delay = screen.getByRole("menuitem", { name: "Delay" });
+    const second = screen.getByRole("menuitem", { name: "Echo" });
     expect(delay).toHaveFocus();
     fireEvent.keyDown(delay, { key: "ArrowDown" });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(second, { key: "ArrowDown" });
     expect(delay).toHaveFocus();
+    fireEvent.keyDown(delay, { key: "ArrowUp" });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(second, { key: "Home" });
+    expect(delay).toHaveFocus();
+    fireEvent.keyDown(delay, { key: "End" });
+    expect(second).toHaveFocus();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(addKey()).toHaveFocus();
@@ -389,6 +408,10 @@ describe("the Sound tab's chain", () => {
     expect(first).toHaveAttribute("aria-current", "true");
     // A click on something that doesn't take focus leaves it on the page.
     (document.activeElement as HTMLElement).blur();
+    // ⌘⌫ is Delete Track's: it's left to the menu bar.
+    fireEvent.keyDown(document.body, { key: "Backspace", metaKey: true });
+    fireEvent.keyDown(first, { key: "Backspace", metaKey: true });
+    expect(sent("remove_effects")).toEqual([]);
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => expect(panels()).toHaveLength(1));
     expect(sent("remove_effects")).toEqual([{ effects: ["d-1"] }]);
@@ -490,12 +513,15 @@ describe("the master", () => {
     expect(screen.getByRole("region", { name: "Synth" })).toBeInTheDocument();
   });
 
-  it("using its volume while editing notes selects it, but leaves Notes open", async () => {
+  it("using its volume or clip light leaves the selected track and its notes open", async () => {
     await openSound();
     fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
-    fireEvent.pointerDown(screen.getByRole("slider", { name: "Master volume" }));
-    expect(screen.getByRole("region", { name: "Master" })).toHaveAttribute("aria-current", "true");
+    const master = screen.getByRole("region", { name: "Master" });
+    fireEvent.pointerDown(within(master).getByRole("slider", { name: "Master volume" }));
+    fireEvent.focus(within(master).getByRole("slider", { name: "Master volume" }));
+    fireEvent.pointerDown(within(master).getByRole("button", { name: "Master hasn't clipped" }));
+    expect(master).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("The master has no notes. Its effects are on the Sound tab.")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Piano roll" })).toBeInTheDocument();
   });
 });

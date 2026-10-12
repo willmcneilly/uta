@@ -207,6 +207,15 @@ function AddEffect({
   );
 }
 
+/**
+ * Delete or Backspace on its own. With ⌘, ⌃ or ⌥ it's left to the menu bar's
+ * shortcuts: ⌘⌫ deletes the track.
+ */
+function isDeleteKey(event: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  return event.key === "Delete" || event.key === "Backspace";
+}
+
 /** Whether `target` is a control of its own, which takes its own keys and clicks. */
 function inControl(target: EventTarget, panel: Element): boolean {
   const control = target instanceof Element ? target.closest("button, input, select, [role=slider]") : null;
@@ -327,7 +336,7 @@ export function ChainRow({
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.target !== document.body || latestSelected.current === null) return;
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (!isDeleteKey(event)) return;
       event.preventDefault();
       latestRemove.current(latestSelected.current);
     };
@@ -337,7 +346,7 @@ export function ChainRow({
 
   const removeKey = (effect: EffectView) => (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== event.currentTarget) return;
-    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    if (!isDeleteKey(event)) return;
     event.preventDefault();
     onRemove(effect.id);
   };

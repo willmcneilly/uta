@@ -19,11 +19,11 @@ interface Props {
   /** Whether the master has clipped since the light was last clicked. */
   clipped: boolean;
   /**
-   * Selects the master. `open` is true for a click on the row itself, which
-   * opens its chain on the Sound tab; using its volume or clip light, or
-   * tabbing onto them, leaves the editor's tab as it is.
+   * Selects the master, showing its chain on the Sound tab: a click on the
+   * row, not on its volume or clip light, which you use without leaving
+   * what the editor shows.
    */
-  onSelect: (open: boolean) => void;
+  onSelect: () => void;
   /** `gesture` is the same for every change in one drag. */
   onVolume: (volumeDb: number, gesture?: number) => void;
   /** Puts the clip light out. */
@@ -53,11 +53,11 @@ export function MasterHeader({
       className={`master-header${selected ? " selected" : ""}`}
       aria-label="Master"
       aria-current={selected ? "true" : undefined}
-      onPointerDown={(event) =>
-        onSelect(!(event.target instanceof Element && event.target.closest("button, [role=slider]")))
-      }
-      // Tabbing onto its volume or clip light selects it too.
-      onFocus={() => onSelect(false)}
+      onPointerDown={(event) => {
+        if (!(event.target instanceof Element && event.target.closest("button, [role=slider]"))) {
+          onSelect();
+        }
+      }}
     >
       <span className="master-name">Master</span>
       <Fader
