@@ -1458,7 +1458,7 @@ mod tests {
         let source = &outline["tracks"][0]["source"];
         assert_eq!(source["kind"], "synth");
         assert_eq!(source["settings"][0]["value"], "saw");
-        assert_eq!(source["settings"][10]["value"], 20_000.0);
+        assert_eq!(source["settings"][11]["value"], 20_000.0);
         assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
@@ -1707,8 +1707,15 @@ mod tests {
                 Some("fraction"),
                 Some("fraction"),
                 Some("fraction"),
+                None,
                 Some("hz"),
                 Some("amount"),
+                Some("octaves"),
+                Some("fraction"),
+                Some("seconds"),
+                Some("seconds"),
+                Some("fraction"),
+                Some("seconds"),
                 Some("seconds"),
                 Some("seconds"),
                 Some("fraction"),
