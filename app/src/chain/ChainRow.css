@@ -76,7 +76,7 @@
 /* Across the spine, the line runs behind the on/off key. */
 .spine::before {
   position: absolute;
-  top: 12px;
+  top: var(--space-5);
   right: 0;
   left: 0;
   border-top: var(--stroke-clip) solid var(--ink-3);
@@ -248,7 +248,7 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 24px;
+  height: var(--space-7);
   overflow: visible;
   fill: none;
   stroke: var(--ink-3);
@@ -272,7 +272,7 @@
 .wire-arrow {
   position: absolute;
   z-index: 1;
-  top: 6px;
+  top: var(--space-3);
   right: -5px;
   fill: none;
   stroke: var(--ink-3);
@@ -315,7 +315,7 @@
 
 .wired-end::before {
   position: absolute;
-  top: 12px;
+  top: var(--space-5);
   left: 0;
   width: 40px;
   border-top: var(--stroke-clip) solid var(--ink-3);
@@ -342,7 +342,7 @@
   width: 32px;
   height: 100%;
   margin: 0;
-  padding: 2px 0 var(--space-2);
+  padding: var(--space-1) 0 var(--space-2);
   border: 0;
   background: transparent;
   color: var(--ink-2);
@@ -379,7 +379,7 @@
   border: var(--stroke-grid) solid var(--ink-2);
   border-radius: var(--rounded-md);
   background: var(--sheet);
-  font-size: 15px;
+  font-size: var(--font-title-size);
   line-height: 1;
 }
 
@@ -392,7 +392,7 @@
 }
 
 /* It opens leftwards, back over the chain: the + is the row's last panel,
-   and the row clips anything past its end. */
+   and the row clips anything past its end. provisional: D-36 */
 .add-menu {
   position: absolute;
   z-index: 5;
@@ -431,7 +431,7 @@
   align-items: center;
   width: var(--space-7);
   margin-left: var(--space-4);
-  padding-top: 4px;
+  padding-top: var(--space-2);
 }
 
 /* The map of the chain, in the tab bar: each panel's name, a flat key that

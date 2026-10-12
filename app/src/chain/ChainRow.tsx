@@ -111,7 +111,11 @@ function OnKey({ effect, onEnabled }: { effect: EffectView; onEnabled: (on: bool
   );
 }
 
-/** The + on the line at the end of the chain, opening a menu of the kinds of effect. */
+/**
+ * The + on the line at the end of the chain, opening a menu of the kinds of
+ * effect. The menu takes focus on its first item and moves with the arrow
+ * keys; Escape or a click elsewhere closes it. provisional: D-36
+ */
 function AddEffect({
   kinds,
   full,
@@ -124,15 +128,20 @@ function AddEffect({
   onAdd: (kind: EffectKind) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLDivElement>(null);
-  // A click anywhere else, or Escape, closes the menu.
+  const area = useRef<HTMLDivElement>(null);
+  const key = useRef<HTMLButtonElement>(null);
+  const items = () => Array.from(area.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []);
+  // Opened, its first item takes focus. A click anywhere else, or Escape, closes it.
   useEffect(() => {
     if (!open) return;
+    items()[0]?.focus();
     const away = (event: globalThis.PointerEvent) => {
-      if (!menu.current?.contains(event.target as Node)) setOpen(false);
+      if (!area.current?.contains(event.target as Node)) setOpen(false);
     };
     const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      key.current?.focus();
     };
     window.addEventListener("pointerdown", away);
     window.addEventListener("keydown", escape);
@@ -143,9 +152,25 @@ function AddEffect({
   }, [open]);
   if (full && open) setOpen(false);
 
+  /** Up and down move through the items, round from the ends; Home and End go to them. */
+  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    const all = items();
+    const now = all.indexOf(document.activeElement as HTMLElement);
+    const next = {
+      ArrowDown: (now + 1) % all.length,
+      ArrowUp: (now - 1 + all.length) % all.length,
+      Home: 0,
+      End: all.length - 1,
+    }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    all[next]?.focus();
+  };
+
   return (
-    <div className="add-effect" ref={menu}>
+    <div className="add-effect" ref={area}>
       <button
+        ref={key}
         type="button"
         className="add-key"
         aria-haspopup="menu"
@@ -160,13 +185,15 @@ function AddEffect({
         <span className="spine-name">Add effect</span>
       </button>
       {open && (
-        <div className="add-menu" role="menu" aria-label="Add effect">
+        <div className="add-menu" role="menu" aria-label="Add effect" onKeyDown={moveFocus}>
           {kinds.map((kind) => (
             <button
               key={kind.kind}
               type="button"
               role="menuitem"
+              tabIndex={-1}
               onClick={() => {
+                // Focus goes to the new panel once Rust has sent it, not back to the +.
                 setOpen(false);
                 onAdd(kind.kind);
               }}
@@ -280,6 +307,33 @@ export function ChainRow({
     if (!reorder || reorder.to === reorder.from || index !== reorder.to) return undefined;
     return reorder.to < reorder.from ? "before" : "after";
   };
+
+  // A panel selected from outside the row (a new effect, once Rust has sent
+  // it) takes focus, unless something in the row has it, so Delete deletes it.
+  useEffect(() => {
+    const row = ownRow.current;
+    if (!row || selected === null || row.contains(document.activeElement)) return;
+    row.querySelector<HTMLElement>(`[data-panel="${selected}"]`)?.focus();
+  }, [selected]);
+
+  // With nothing focused (after a click on something that doesn't take
+  // focus), Delete still deletes the panel shown as selected.
+  const latestSelected = useRef(selected);
+  const latestRemove = useRef(onRemove);
+  useEffect(() => {
+    latestSelected.current = selected;
+    latestRemove.current = onRemove;
+  });
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.target !== document.body || latestSelected.current === null) return;
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      event.preventDefault();
+      latestRemove.current(latestSelected.current);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const removeKey = (effect: EffectView) => (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== event.currentTarget) return;

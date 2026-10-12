@@ -391,9 +391,12 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     if (clipTrack === null || clipTrack.id !== id) setSelectedClipIds([]);
   };
 
-  /** Selects the master, and shows its chain: it has no notes. */
-  const selectMaster = () => {
-    if (!masterSelected) setTab("sound");
+  /**
+   * Selects the master. `open` shows its chain on the Sound tab, as a click
+   * on its row does: it has no notes.
+   */
+  const selectMaster = (open: boolean) => {
+    if (open) setTab("sound");
     setMasterSelected(true);
     setSelectedClipIds([]);
   };
@@ -651,7 +654,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onVolume={changeVolume}
               onClipSeen={() => setSeenClips(status?.clips ?? 0)}
             />
-            <div className="master-lane" onPointerDown={selectMaster} />
+            <div className="master-lane" onPointerDown={() => selectMaster(true)} />
           </div>
         )}
       </div>

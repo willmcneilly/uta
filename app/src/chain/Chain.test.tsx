@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -277,6 +278,25 @@ describe("the Sound tab's chain", () => {
     expect(panels()[1]).toHaveAttribute("data-panel", added.id);
     expect(panels()[1]).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    // The new panel has focus, so Delete deletes it straight away.
+    expect(panels()[1]).toHaveFocus();
+    fireEvent.keyDown(panels()[1], { key: "Delete" });
+    await waitFor(() => expect(panels()).toHaveLength(1));
+    expect(sent("remove_effects")).toEqual([{ effects: [added.id] }]);
+  });
+
+  it("+ opens its menu with the first kind focused, moves with the arrow keys, and closes on Esc", async () => {
+    await openSound([synthWith()]);
+    fireEvent.click(addKey());
+    const delay = screen.getByRole("menuitem", { name: "Delay" });
+    expect(delay).toHaveFocus();
+    fireEvent.keyDown(delay, { key: "ArrowDown" });
+    expect(delay).toHaveFocus();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(addKey()).toHaveFocus();
+    expect(sent("add_effect")).toEqual([]);
   });
 
   it("greys out + when the chain holds eight", async () => {
@@ -362,6 +382,18 @@ describe("the Sound tab's chain", () => {
     expect(panels().map((panel) => panel.dataset.panel)).toEqual(["d-1", "d-2"]);
   });
 
+  it("Delete with nothing focused deletes the panel shown as selected", async () => {
+    await openSound([synthWith(delayView("d-1"), delayView("d-2"))]);
+    const [first] = panels();
+    fireEvent.pointerDown(within(first).getByRole("slider", { name: "Delay mix" }));
+    expect(first).toHaveAttribute("aria-current", "true");
+    // A click on something that doesn't take focus leaves it on the page.
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    await waitFor(() => expect(panels()).toHaveLength(1));
+    expect(sent("remove_effects")).toEqual([{ effects: ["d-1"] }]);
+  });
+
   it("Delete on one of a panel's knobs resets the knob, not the panel", async () => {
     await openSound([synthWith(delayView("d-1", { feedback: 0.7 }))]);
     const feedback = within(panels()[0]).getByRole("slider", { name: "Delay feedback" });
@@ -443,10 +475,27 @@ describe("the master", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
     expect(screen.getByText("The master has no notes. Its effects are on the Sound tab.")).toBeInTheDocument();
 
+    // The Track menu's Delete and Duplicate leave the tracks alone while the master is selected.
+    await act(async () => {
+      await emit("track-menu", "delete-track");
+      await emit("track-menu", "duplicate-track");
+    });
+    expect(sent("remove_track")).toEqual([]);
+    expect(sent("duplicate_track")).toEqual([]);
+
     // Selecting a track again shows its chain.
     fireEvent.pointerDown(synth);
     fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
     expect(panels().map((panel) => panel.dataset.panel)).toEqual(["d-1", "d-2"]);
     expect(screen.getByRole("region", { name: "Synth" })).toBeInTheDocument();
+  });
+
+  it("using its volume while editing notes selects it, but leaves Notes open", async () => {
+    await openSound();
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    fireEvent.pointerDown(screen.getByRole("slider", { name: "Master volume" }));
+    expect(screen.getByRole("region", { name: "Master" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("The master has no notes. Its effects are on the Sound tab.")).toBeInTheDocument();
   });
 });
