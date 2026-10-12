@@ -19,6 +19,7 @@ import type {
   SynthNumber,
   SynthParam,
   SynthSettingView,
+  SynthToggle,
   TrackView,
   Unit,
   Update,
@@ -96,9 +97,11 @@ export const MIXER_DEFAULTS: MixerView = { volumeDb: 0, pan: 0, mute: false, sol
 export interface SynthValues {
   osc1Wave: Waveform;
   osc1Octave: number;
+  osc1Width: number;
   osc2Wave: Waveform;
   osc2Octave: number;
   osc2PitchSemitones: number;
+  osc2Sync: boolean;
   subOctave: number;
   osc1Level: number;
   osc2Level: number;
@@ -117,9 +120,11 @@ export interface SynthValues {
 export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   osc1_wave: "osc1Wave",
   osc1_octave: "osc1Octave",
+  osc1_width: "osc1Width",
   osc2_wave: "osc2Wave",
   osc2_octave: "osc2Octave",
   osc2_pitch_semitones: "osc2PitchSemitones",
+  osc2_sync: "osc2Sync",
   sub_octave: "subOctave",
   osc1_level: "osc1Level",
   osc2_level: "osc2Level",
@@ -138,9 +143,11 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
 export const SYNTH_DEFAULTS: SynthValues = {
   osc1Wave: "saw",
   osc1Octave: 0,
+  osc1Width: 0.5,
   osc2Wave: "saw",
   osc2Octave: 0,
   osc2PitchSemitones: 0,
+  osc2Sync: false,
   subOctave: -1,
   osc1Level: 1,
   osc2Level: 0,
@@ -207,6 +214,17 @@ export function synthSettings(
     };
     return unit === "octaves" ? { ...setting, step: 1 } : setting;
   };
+  const toggle = (name: SynthToggle, label: string): SynthSettingView => {
+    const field = name === "osc2_sync" ? "osc2Sync" : "oscRetrigger";
+    return {
+      kind: "toggle",
+      name,
+      label,
+      sounds: SOUNDS,
+      value: values[field],
+      default: defaults[field],
+    };
+  };
   const wave = <N extends "osc1_wave" | "osc2_wave">(
     name: N,
     label: string,
@@ -225,9 +243,11 @@ export function synthSettings(
   return [
     wave("osc1_wave", "Osc 1 wave"),
     number("osc1_octave", "Osc 1 octave", "octaves", [-2, 2]),
+    number("osc1_width", "Osc 1 width", "fraction", [0.05, 0.95]),
     wave("osc2_wave", "Osc 2 wave"),
     number("osc2_octave", "Osc 2 octave", "octaves", [-2, 2]),
     number("osc2_pitch_semitones", "Osc 2 pitch", "semitones", [-12, 12]),
+    toggle("osc2_sync", "Osc 2 sync"),
     number("sub_octave", "Sub octave", "octaves", [-2, -1]),
     number("osc1_level", "Osc 1 level", "fraction", [0, 1]),
     number("osc2_level", "Osc 2 level", "fraction", [0, 1]),
@@ -239,14 +259,7 @@ export function synthSettings(
     number("decay_seconds", "Decay", "seconds", [0.001, 10]),
     number("sustain", "Sustain", "fraction", [0, 1]),
     number("release_seconds", "Release", "seconds", [0.001, 10]),
-    {
-      kind: "toggle",
-      name: "osc_retrigger",
-      label: "Osc retrigger",
-      sounds: SOUNDS,
-      value: values.oscRetrigger,
-      default: defaults.oscRetrigger,
-    },
+    toggle("osc_retrigger", "Osc retrigger"),
   ];
 }
 

@@ -1458,7 +1458,8 @@ mod tests {
         let source = &outline["tracks"][0]["source"];
         assert_eq!(source["kind"], "synth");
         assert_eq!(source["settings"][0]["value"], "saw");
-        assert_eq!(source["settings"][10]["value"], 20_000.0);
+        assert_eq!(source["settings"][12]["name"], "cutoff_hz");
+        assert_eq!(source["settings"][12]["value"], 20_000.0);
         assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
@@ -1646,17 +1647,27 @@ mod tests {
         assert_eq!(octave["value"], 0);
         assert_eq!(octave["unit"], "octaves");
         assert_eq!(octave["step"], 1.0);
-        let pitch = &json["settings"][4];
+        let width = &json["settings"][2];
+        assert_eq!(width["name"], "osc1_width");
+        assert_eq!(width["value"], 0.5);
+        assert_eq!(width["unit"], "fraction");
+        let limits: (f32, f32) = serde_json::from_value(width["limits"].clone()).unwrap();
+        assert_eq!(limits, (0.05, 0.95));
+        let pitch = &json["settings"][5];
         assert_eq!(pitch["name"], "osc2_pitch_semitones");
         assert_eq!(pitch["unit"], "semitones");
         assert_eq!(pitch["scale"], "cubic");
         assert_eq!(pitch["limits"], serde_json::json!([-12.0, 12.0]));
-        let retrigger = &json["settings"][16];
+        let sync = &json["settings"][6];
+        assert_eq!(sync["name"], "osc2_sync");
+        assert_eq!(sync["value"], false);
+        assert_eq!(sync["kind"], "toggle");
+        let retrigger = &json["settings"][18];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
         assert_eq!(retrigger["default"], true);
-        let cutoff = &json["settings"][10];
+        let cutoff = &json["settings"][12];
         assert_eq!(cutoff["name"], "cutoff_hz");
         assert_eq!(cutoff["value"], 20_000.0);
         assert_eq!(cutoff["label"], "Cutoff");
@@ -1686,9 +1697,11 @@ mod tests {
             [
                 None,
                 Some("octaves"),
+                Some("fraction"),
                 None,
                 Some("octaves"),
                 Some("semitones"),
+                None,
                 Some("octaves"),
                 Some("fraction"),
                 Some("fraction"),
@@ -1898,6 +1911,14 @@ mod tests {
             (
                 serde_json::json!({"name": "osc_retrigger", "value": false}),
                 SynthParam::OscRetrigger(false),
+            ),
+            (
+                serde_json::json!({"name": "osc1_width", "value": 0.2}),
+                SynthParam::Osc1Width(0.2),
+            ),
+            (
+                serde_json::json!({"name": "osc2_sync", "value": true}),
+                SynthParam::Osc2Sync(true),
             ),
             (
                 serde_json::json!({"name": "noise_level", "value": 0.25}),
