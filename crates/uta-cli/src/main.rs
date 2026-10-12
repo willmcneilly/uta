@@ -634,7 +634,9 @@ mod tests {
         );
     }
 
-    /// Every listening render builds, and `render-all` finds them all.
+    /// Every listening render builds, `render-all` finds them all, and every
+    /// note starts inside its clip, so none is silently left out: a note's
+    /// start is counted from its clip's, not the song's.
     #[test]
     fn the_listening_lists_build() {
         for sound in ["kick", "snare", "clap", "hats", "toms", "cymbal", "synth"] {
@@ -646,6 +648,21 @@ mod tests {
             for list in lists {
                 let project = load(Some(&list), false).unwrap();
                 assert!(default_seconds(&project) > 1.0, "{}", list.display());
+                for track in project.tracks() {
+                    for clip in track.clips() {
+                        let content =
+                            clip.content_offset()..clip.content_offset() + clip.content_length();
+                        for note in clip.notes() {
+                            assert!(
+                                content.contains(&note.start),
+                                "{}: {} has a note at {}, outside its clip's {content:?}",
+                                list.display(),
+                                track.name(),
+                                note.start
+                            );
+                        }
+                    }
+                }
             }
         }
     }

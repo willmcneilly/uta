@@ -894,6 +894,81 @@ mod tests {
         synth
     }
 
+    /// While Env amount and Key are both zero, the voices share one set of
+    /// filter settings; turning either up gives them their own, and once
+    /// both have glided back to zero they share again.
+    #[test]
+    fn the_voices_share_filter_settings_until_something_moves_them() {
+        let mut synth = Synth::new(SynthSettings::default(), RATE);
+        synth.note_on(note(1));
+        run(&mut synth, 100);
+        assert!(!synth.per_voice_filter, "the default shares");
+        let glide = samples(SYNTH_SMOOTHING_SECONDS, RATE) as usize;
+        for turned in [
+            SynthSettings {
+                filter_env_octaves: -2.0,
+                ..SynthSettings::default()
+            },
+            SynthSettings {
+                filter_key: 0.5,
+                ..SynthSettings::default()
+            },
+        ] {
+            // A glide's first sample is still at the old value.
+            synth.set_settings(turned);
+            run(&mut synth, 2);
+            assert!(synth.per_voice_filter, "{turned:?} gives each its own");
+            synth.set_settings(SynthSettings::default());
+            run(&mut synth, glide);
+            assert!(synth.per_voice_filter, "still gliding back");
+            run(&mut synth, 1);
+            assert!(!synth.per_voice_filter, "shared once back at zero");
+        }
+    }
+
+    /// With its own filter settings, a voice works them out again every 16
+    /// samples (RFC-008's figure, written here rather than read from
+    /// FILTER_CONTROL_SAMPLES so a change to it fails), and moves on each
+    /// sample in between by a step that stays the same until the next
+    /// control point: a straight line from one to the next, not a jump.
+    #[test]
+    fn a_voice_works_out_its_filter_at_the_control_rate_and_glides_between() {
+        let mut synth = Synth::new(
+            SynthSettings {
+                cutoff_hz: 300.0,
+                filter_env_octaves: 5.0,
+                filter_decay_seconds: 0.05,
+                ..SynthSettings::default()
+            },
+            RATE,
+        );
+        synth.note_on(note(1));
+        run(&mut synth, 200);
+        let index = voice_of(&synth, 1).unwrap();
+        let mut changes = Vec::new();
+        let mut last = synth.voices[index];
+        for n in 0..8 * 16 {
+            synth.next_sample();
+            let voice = synth.voices[index];
+            assert_ne!(
+                voice.tuning, last.tuning,
+                "sample {n}: the filter didn't move"
+            );
+            if voice.tuning_step != last.tuning_step {
+                changes.push(n);
+            }
+            last = voice;
+        }
+        let spacing: Vec<_> = changes.windows(2).map(|w| w[1] - w[0]).collect();
+        assert_eq!(changes.len(), 8, "control points at {changes:?}");
+        assert!(
+            spacing
+                .iter()
+                .all(|&gap| gap == FILTER_CONTROL_SAMPLES as usize),
+            "control points at {changes:?}"
+        );
+    }
+
     #[test]
     fn notes_take_free_voices_first() {
         let synth = full_synth();

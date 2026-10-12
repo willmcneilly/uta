@@ -13,8 +13,8 @@ use std::f64::consts::PI;
 use common::*;
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, FILTER_CONTROL_SAMPLES, FilterMode, NoteKey, Snapshot, SynthSettings,
-    VOICE_LEVEL, VOICES, Waveform, pitch_to_hz, velocity_to_gain,
+    EngineConfig, FilterMode, NoteKey, Snapshot, SynthSettings, VOICE_LEVEL, VOICES, Waveform,
+    pitch_to_hz, velocity_to_gain,
 };
 
 const RATE: u32 = 48_000;
@@ -1243,13 +1243,12 @@ fn the_per_voice_filter_matches_the_shared_one_when_nothing_moves_it() {
     }
 }
 
-/// The voices work out their own cutoff every FILTER_CONTROL_SAMPLES and
-/// glide in between, so a filter envelope sweeping fast still moves the
-/// sound smoothly: a 1 ms attack over 8 octaves on a sine at 110 Hz moves
-/// it no faster than the notes allow.
+/// A filter envelope sweeping fast still moves the sound smoothly: a 1 ms
+/// attack over 8 octaves on a sine at 110 Hz moves it no faster than the
+/// notes allow. (How the voices work out their own cutoff at the control
+/// rate is unit-tested in `synth/mod.rs`.)
 #[test]
 fn a_fast_filter_sweep_moves_smoothly() {
-    assert_eq!(FILTER_CONTROL_SAMPLES, 16);
     let settings = SynthSettings {
         filter_env_octaves: 8.0,
         filter_attack_seconds: 0.001,
@@ -1418,4 +1417,65 @@ fn click_limit_catches_a_mode_switch() {
     let limit = filter_click_limit();
     let (jump, _) = max_jump(&switched);
     assert!(jump > limit, "a jump of {jump} passes the limit {limit}");
+}
+
+/// The filter's Sustain holds it open while a note is held: at 0.5, half
+/// the Env amount stays on after the decay, so the end of the note is
+/// brighter than with none.
+#[test]
+fn filter_sustain_holds_the_filter_open() {
+    let late = [0.6];
+    let none = brightness(pluck(200.0, 6.0), 45, &late)[0];
+    let half = brightness(
+        SynthSettings {
+            filter_sustain: 0.5,
+            ..pluck(200.0, 6.0)
+        },
+        45,
+        &late,
+    )[0];
+    assert!(
+        half > 2.0 * none,
+        "brightness {half:.2} at sustain 0.5, {none:.2} at none"
+    );
+}
+
+/// The filter's Release closes it after the note is let go: with a long
+/// filter release the amp's release tail stays bright, and with a short
+/// one it closes at once.
+#[test]
+fn filter_release_closes_the_filter_after_the_note() {
+    let tail_brightness = |filter_release_seconds| {
+        let settings = SynthSettings {
+            cutoff_hz: 200.0,
+            filter_env_octaves: 5.0,
+            filter_sustain: 1.0,
+            filter_release_seconds,
+            sustain: 1.0,
+            release_seconds: 2.0,
+            ..SynthSettings::default()
+        };
+        let mut renderer = renderer(settings, 128);
+        renderer.controller.note_on(0, NoteKey(1), 45, 127).unwrap();
+        renderer.render_seconds(0.5);
+        renderer.controller.note_off(0, NoteKey(1)).unwrap();
+        renderer.render_seconds(0.5);
+        let samples = renderer.into_samples();
+        let from = seconds(0.8);
+        let bins = spectrum(&samples[from..from + 2048]);
+        let bin_hz = f64::from(RATE) / 2048.0;
+        let total: f64 = bins.iter().sum();
+        let weighted: f64 = bins
+            .iter()
+            .enumerate()
+            .map(|(k, magnitude)| k as f64 * bin_hz * magnitude)
+            .sum();
+        weighted / total / pitch_to_hz(45)
+    };
+    let short = tail_brightness(0.05);
+    let long = tail_brightness(5.0);
+    assert!(
+        long > 2.0 * short,
+        "brightness {long:.2} with a long filter release, {short:.2} with a short one"
+    );
 }
