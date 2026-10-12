@@ -12,6 +12,8 @@ mod envelope;
 mod filter;
 pub(crate) mod oscillator;
 mod settings;
+#[cfg(test)]
+mod sync_ab;
 
 pub use settings::{SynthSettings, Waveform};
 
