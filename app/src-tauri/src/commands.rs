@@ -10,7 +10,10 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use uta_core::time::Ticks;
-use uta_core::{ClipId, ClipPosition, DrumParam, DrumSound, Note, NoteId, SynthParam, TrackId};
+use uta_core::{
+    Chain, ClipId, ClipPosition, DelayParam, DrumParam, DrumSound, EffectId, EffectKind, Note,
+    NoteId, SynthParam, TrackId,
+};
 
 use crate::menu::MenuState;
 use crate::stress::TestSong;
@@ -232,6 +235,71 @@ pub fn move_track<R: Runtime>(
     index: usize,
 ) -> Result<Update, String> {
     edit(&app, |uta| uta.move_track(track, index))
+}
+
+/// Adds an effect of `kind`, with its defaults, at the end of a track's or
+/// the master's chain: the **+** on the Sound tab. The UI picks its ID.
+#[tauri::command]
+pub fn add_effect<R: Runtime>(
+    app: AppHandle<R>,
+    chain: Chain,
+    id: EffectId,
+    kind: EffectKind,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.add_effect(chain, id, kind))
+}
+
+/// Deletes effects, from whichever chains they're in. One undo step.
+#[tauri::command]
+pub fn remove_effects<R: Runtime>(
+    app: AppHandle<R>,
+    effects: Vec<EffectId>,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.remove_effects(effects))
+}
+
+/// Moves an effect to `index` in its own chain, counting from 0.
+#[tauri::command]
+pub fn move_effect<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    index: usize,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.move_effect(effect, index))
+}
+
+/// Switches an effect on or off.
+#[tauri::command]
+pub fn set_effect_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    enabled: bool,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_effect_enabled(effect, enabled))
+}
+
+/// Sets an effect's Mix. Calls to the same effect with the same `gesture`
+/// (one drag) undo as one step.
+#[tauri::command]
+pub fn set_effect_mix<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    mix: f32,
+    gesture: Option<u32>,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_effect_mix(effect, mix, gesture))
+}
+
+/// Sets one of a Delay's settings. Calls to the same setting with the same
+/// `gesture` (one drag) undo as one step.
+#[tauri::command]
+pub fn set_delay_param<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    param: DelayParam,
+    gesture: Option<u32>,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_delay_param(effect, param, gesture))
 }
 
 /// Adds an empty clip to a track: drawn on the timeline. The UI picks its
