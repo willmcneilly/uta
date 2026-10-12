@@ -646,6 +646,23 @@ mod tests {
             for list in lists {
                 let project = load(Some(&list), false).unwrap();
                 assert!(default_seconds(&project) > 1.0, "{}", list.display());
+                // A note's start is from its clip's start, so one past the
+                // clip's length never plays.
+                for track in project.tracks() {
+                    for clip in track.clips() {
+                        for note in clip.notes() {
+                            assert!(
+                                note.start < clip.content_length(),
+                                "{}: track {:?}'s clip at {} has a note at {}, past its length {}",
+                                list.display(),
+                                track.name(),
+                                clip.start(),
+                                note.start,
+                                clip.content_length(),
+                            );
+                        }
+                    }
+                }
             }
         }
     }
