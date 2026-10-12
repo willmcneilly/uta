@@ -139,7 +139,7 @@ const MAX_EVENTS: usize = 9;
 
 /// The half cycles crossed either side of a restart that a step looks for:
 /// more would be far above half the sample rate.
-const MAX_CROSSINGS: u32 = 4;
+const MAX_CROSSINGS: usize = 4;
 
 /// An oscillator that restarts its cycle where its leader starts one: hard
 /// sync. Its waves are oscillator 2's: a pulse is a square.
@@ -287,19 +287,18 @@ impl Step {
             return;
         }
         let end = phase + span * dt;
-        let mut half = (phase * 2.0).floor() as u32 + 1;
-        for _ in 0..MAX_CROSSINGS {
+        let first = (phase * 2.0).floor() as u32 + 1;
+        for half in (first..).take(MAX_CROSSINGS) {
             let at = f64::from(half) / 2.0;
             if at > end {
                 break;
             }
-            let kind = if half % 2 == 0 {
+            let kind = if half.is_multiple_of(2) {
                 EventKind::Wrap
             } else {
                 EventKind::Half
             };
             self.push(start + (at - phase) / dt, kind);
-            half += 1;
         }
     }
 }
