@@ -497,6 +497,33 @@ mod tests {
         }
     }
 
+    /// Started part way through its leader's cycle, a synced oscillator is
+    /// where it would be had it followed the leader since its last restart.
+    #[test]
+    fn a_synced_oscillator_starts_where_following_would_have_put_it() {
+        let leader_increment = 1.0 / 200.0;
+        for ratio in [0.6, 1.7, 3.3] {
+            let mut leader = Oscillator::default();
+            leader.set_increment(leader_increment);
+            let mut following = Synced::default();
+            following.start_with(&leader, leader_increment * ratio);
+            // Into the leader's second cycle, past a restart.
+            for _ in 0..317 {
+                let step = following.step(&leader);
+                following.advance(&step);
+                leader.advance();
+            }
+            let mut started = Synced::default();
+            started.start_with(&leader, leader_increment * ratio);
+            assert!(
+                (started.phase - following.phase).abs() < 1e-9,
+                "× {ratio}: {} against {}",
+                started.phase,
+                following.phase
+            );
+        }
+    }
+
     /// Wherever the leader restarts it, the synced oscillator's jump is
     /// spread over the samples either side, sized by the jump: no step is
     /// more than three quarters of it (when the restart falls half way

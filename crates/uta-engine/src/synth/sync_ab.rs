@@ -6,13 +6,15 @@
 //! oscillator is to be oversampled.
 //!
 //! Which is A and which is B is chosen at random on each run, and written
-//! only to `key.txt` beside them, so the listener can't know.
+//! only to `sync-ab-key.txt` outside their folder, so the listener can't
+//! come across it.
 //!
 //! ```text
 //! cargo test -p uta-engine --release --lib sync_ab -- --ignored --nocapture
 //! ```
 //!
-//! It writes `a.wav`, `b.wav` and `key.txt` to `target/listen/sync-ab`.
+//! It writes `a.wav` and `b.wav` to `target/listen/sync-ab`, and the key to
+//! `target/listen/sync-ab-key.txt`.
 
 use std::f64::consts::PI;
 use std::path::Path;
@@ -153,6 +155,6 @@ fn sync_ab() {
     };
     crate::offline::write_wav(&folder.join("a.wav"), config, a).unwrap();
     crate::offline::write_wav(&folder.join("b.wav"), config, b).unwrap();
-    std::fs::write(folder.join("key.txt"), format!("{key}\n")).unwrap();
+    std::fs::write(folder.with_file_name("sync-ab-key.txt"), format!("{key}\n")).unwrap();
     println!("Wrote a.wav and b.wav to {}", folder.display());
 }
