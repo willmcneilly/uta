@@ -962,9 +962,7 @@ mod tests {
         let spacing: Vec<_> = changes.windows(2).map(|w| w[1] - w[0]).collect();
         assert_eq!(changes.len(), 8, "control points at {changes:?}");
         assert!(
-            spacing
-                .iter()
-                .all(|&gap| gap == FILTER_CONTROL_SAMPLES as usize),
+            spacing.iter().all(|&gap| gap == 16),
             "control points at {changes:?}"
         );
     }
