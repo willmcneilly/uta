@@ -50,9 +50,9 @@ impl Transport {
     }
 }
 
-/// A project: a master volume, a transport, and tracks holding clips of
-/// notes. See RFC-002, "The shared model", and RFC-003, "The shared model,
-/// extended".
+/// A project: a master volume and chain, a transport, and tracks holding
+/// clips of notes. See RFC-002, "The shared model", RFC-003, "The shared
+/// model, extended", and RFC-007, "The chain".
 ///
 /// Its data only changes through [`Command`]s, so every change can be undone
 /// and replayed. Every track, clip and note has an ID that's unique across
@@ -61,6 +61,9 @@ impl Transport {
 pub struct Project {
     id: ProjectId,
     master_volume_db: f32,
+    /// The master's chain: at most [`MAX_EFFECTS`], between the sum of the
+    /// tracks and the master volume.
+    master_effects: Vec<Effect>,
     transport: Transport,
     tracks: Vec<Track>,
 }
@@ -107,6 +110,7 @@ impl Project {
         Self {
             id,
             master_volume_db: Self::DEFAULT_MASTER_VOLUME_DB,
+            master_effects: Vec::new(),
             transport: Transport {
                 tempo_map: TempoMap::new(Self::DEFAULT_BPM),
                 time_signature,
@@ -148,6 +152,12 @@ impl Project {
         self.master_volume_db
     }
 
+    /// The master's chain: the effects after the sum of the tracks, in
+    /// order.
+    pub fn master_effects(&self) -> &[Effect] {
+        &self.master_effects
+    }
+
     pub fn transport(&self) -> &Transport {
         &self.transport
     }
@@ -169,13 +179,15 @@ impl Project {
 
     /// The effect with this ID, in whichever chain it's in.
     pub fn effect(&self, id: EffectId) -> Option<&Effect> {
-        self.tracks.iter().find_map(|track| track.effect(id))
+        self.place_of(id)
+            .and_then(|(chain, index)| self.chain(chain)?.get(index))
     }
 
     /// The effects in `chain`, in order, if it exists.
     pub fn chain(&self, chain: Chain) -> Option<&[Effect]> {
         match chain {
             Chain::Track(id) => self.track(id).map(|track| track.effects()),
+            Chain::Master => Some(&self.master_effects),
         }
     }
 
@@ -404,6 +416,29 @@ impl Project {
             }
             Command::AddEffects { effects } => self.add_effects(effects),
             Command::RemoveEffects { effects } => self.remove_effects(effects),
+            &Command::MoveEffect { effect, index } => {
+                let (chain, from) = self
+                    .place_of(effect)
+                    .ok_or(CommandError::UnknownEffect(effect))?;
+                let effects = self.chain_mut(chain)?;
+                if index >= effects.len() {
+                    return Err(CommandError::EffectIndexOutOfRange(index));
+                }
+                let moved = effects.remove(from);
+                effects.insert(index, moved);
+                Ok(Command::MoveEffect {
+                    effect,
+                    index: from,
+                })
+            }
+            &Command::SetEffectEnabled { effect, enabled } => {
+                let found = self.effect_mut(effect)?;
+                let previous = std::mem::replace(&mut found.enabled, enabled);
+                Ok(Command::SetEffectEnabled {
+                    effect,
+                    enabled: previous,
+                })
+            }
             &Command::SetEffectMix { effect, mix } => {
                 check_mix(mix)?;
                 let found = self.effect_mut(effect)?;
@@ -675,16 +710,21 @@ impl Project {
 
     /// The chain the effect with this ID is in, and its place there.
     fn place_of(&self, id: EffectId) -> Option<(Chain, usize)> {
-        self.tracks.iter().find_map(|track| {
-            let index = track.effects.iter().position(|effect| effect.id == id)?;
-            Some((Chain::Track(track.id), index))
-        })
+        let index = |effects: &[Effect]| effects.iter().position(|effect| effect.id == id);
+        index(&self.master_effects)
+            .map(|index| (Chain::Master, index))
+            .or_else(|| {
+                self.tracks
+                    .iter()
+                    .find_map(|track| Some((Chain::Track(track.id), index(&track.effects)?)))
+            })
     }
 
     fn chain_effects(&self, chain: Chain) -> Result<&[Effect], CommandError> {
-        self.chain(chain).ok_or(match chain {
-            Chain::Track(id) => CommandError::UnknownTrack(id),
-        })
+        match chain {
+            Chain::Track(id) => Ok(&self.tracks[self.track_index(id)?].effects),
+            Chain::Master => Ok(&self.master_effects),
+        }
     }
 
     fn chain_mut(&mut self, chain: Chain) -> Result<&mut Vec<Effect>, CommandError> {
@@ -693,15 +733,13 @@ impl Project {
                 let index = self.track_index(id)?;
                 Ok(&mut self.tracks[index].effects)
             }
+            Chain::Master => Ok(&mut self.master_effects),
         }
     }
 
     fn effect_mut(&mut self, id: EffectId) -> Result<&mut Effect, CommandError> {
-        self.tracks
-            .iter_mut()
-            .flat_map(|track| &mut track.effects)
-            .find(|effect| effect.id == id)
-            .ok_or(CommandError::UnknownEffect(id))
+        let (chain, index) = self.place_of(id).ok_or(CommandError::UnknownEffect(id))?;
+        Ok(&mut self.chain_mut(chain)?[index])
     }
 
     /// The track the clip with this ID is on.
@@ -3069,6 +3107,181 @@ mod tests {
         assert_eq!(undone.len(), 1);
         assert_eq!(undone[0].command, time(0.375));
         assert_eq!(session.project(), &with_three_delays());
+    }
+
+    #[test]
+    fn move_effect_moves_it_within_its_chain_and_undoes() {
+        let project = with_three_delays();
+        let track = track_id(&project);
+        let effect = testing::effect_id;
+        for (moved, index, order) in [
+            (0, 2, [effect(1), effect(2), effect(0)]),
+            (2, 0, [effect(2), effect(0), effect(1)]),
+            (1, 2, [effect(0), effect(2), effect(1)]),
+        ] {
+            let command = Command::MoveEffect {
+                effect: effect(moved),
+                index,
+            };
+            let after = apply_and_check_undo(&project, command.clone());
+            assert_eq!(ids(&after, track), order, "{command:?}");
+            let mut changed = project.clone();
+            assert_eq!(
+                changed.apply(&command),
+                Ok(Command::MoveEffect {
+                    effect: effect(moved),
+                    index: moved as usize,
+                })
+            );
+            // It keeps its settings, Mix and on/off.
+            assert_eq!(after.effect(effect(moved)), project.effect(effect(moved)));
+        }
+        // Moving to where it is changes nothing, and undoes to the same.
+        let mut same = project.clone();
+        let inverse = same
+            .apply(&Command::MoveEffect {
+                effect: effect(1),
+                index: 1,
+            })
+            .unwrap();
+        assert_eq!(same, project);
+        assert_eq!(
+            inverse,
+            Command::MoveEffect {
+                effect: effect(1),
+                index: 1
+            }
+        );
+        // Only within its chain: an index past its end is refused.
+        assert_rejected(
+            &project,
+            Command::MoveEffect {
+                effect: effect(0),
+                index: 3,
+            },
+            CommandError::EffectIndexOutOfRange(3),
+        );
+        assert_rejected(
+            &project,
+            Command::MoveEffect {
+                effect: effect(7),
+                index: 0,
+            },
+            CommandError::UnknownEffect(effect(7)),
+        );
+    }
+
+    #[test]
+    fn set_effect_enabled_switches_it_and_undoes() {
+        let project = with_three_delays();
+        let effect = testing::effect_id(1);
+        let off = apply_and_check_undo(
+            &project,
+            Command::SetEffectEnabled {
+                effect,
+                enabled: false,
+            },
+        );
+        assert!(!off.effect(effect).unwrap().enabled());
+        let on = apply_and_check_undo(
+            &off,
+            Command::SetEffectEnabled {
+                effect,
+                enabled: true,
+            },
+        );
+        assert_eq!(on, project, "back on, with everything else as it was");
+        assert_rejected(
+            &project,
+            Command::SetEffectEnabled {
+                effect: testing::effect_id(7),
+                enabled: false,
+            },
+            CommandError::UnknownEffect(testing::effect_id(7)),
+        );
+    }
+
+    /// "The master" is a chain like a track's: every chain command works on
+    /// it, it holds eight, and an effect's ID is unique across it and the
+    /// tracks' chains.
+    #[test]
+    fn the_masters_chain_takes_every_chain_command() {
+        let project = testing::project();
+        assert_eq!(project.master_effects(), &[] as &[Effect]);
+        let master = |index, effect| PlacedEffect {
+            chain: Chain::Master,
+            index,
+            effect,
+        };
+        let effect = testing::effect_id;
+        let two = apply_and_check_undo(
+            &project,
+            add_effects(vec![master(0, delay(0)), master(1, delay(1))]),
+        );
+        assert_eq!(two.chain(Chain::Master).unwrap(), [delay(0), delay(1)]);
+        assert_eq!(two.master_effects(), [delay(0), delay(1)]);
+        assert_eq!(two.effect(effect(1)), Some(&delay(1)));
+        for command in [
+            Command::MoveEffect {
+                effect: effect(0),
+                index: 1,
+            },
+            Command::SetEffectEnabled {
+                effect: effect(1),
+                enabled: false,
+            },
+            Command::SetEffectMix {
+                effect: effect(0),
+                mix: 0.9,
+            },
+            Command::SetDelayParam {
+                effect: effect(1),
+                param: crate::DelayParam::Feedback(0.75),
+            },
+            Command::RemoveEffects {
+                effects: vec![effect(0)],
+            },
+        ] {
+            apply_and_check_undo(&two, command);
+        }
+        // Moved, it stays in the master's chain.
+        let mut moved = two.clone();
+        moved
+            .apply(&Command::MoveEffect {
+                effect: effect(0),
+                index: 1,
+            })
+            .unwrap();
+        assert_eq!(moved.master_effects(), [delay(1), delay(0)]);
+
+        // An ID in the master's chain can't be used on a track, and the
+        // other way round.
+        let track = track_id(&project);
+        assert_rejected(
+            &two,
+            add_effects(vec![at(track, 0, delay(0))]),
+            CommandError::EffectAlreadyExists(effect(0)),
+        );
+        let on_track = apply_and_check_undo(&project, add_effects(vec![at(track, 0, delay(5))]));
+        assert_rejected(
+            &on_track,
+            add_effects(vec![master(0, delay(5))]),
+            CommandError::EffectAlreadyExists(effect(5)),
+        );
+
+        // Eight, and no ninth.
+        let eight: Vec<_> = (0..8).map(|n| master(n as usize, delay(n))).collect();
+        let full = apply_and_check_undo(&project, add_effects(eight));
+        assert_rejected(
+            &full,
+            add_effects(vec![master(8, delay(8))]),
+            CommandError::ChainFull(Chain::Master),
+        );
+        let error = CommandError::ChainFull(Chain::Master).to_string();
+        assert!(
+            error.contains("master's chain can hold at most 8"),
+            "{error}"
+        );
     }
 
     #[test]

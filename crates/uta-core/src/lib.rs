@@ -11,8 +11,10 @@
 //!   within one clip. Clip commands never trim notes.
 //! - [`Clip::copy`] and [`Track::copy`] copy with new IDs throughout, for
 //!   pasting and duplicating.
-//! - Each track has a chain of up to [`MAX_EFFECTS`] insert [`Effect`]s,
-//!   between its source and its mixer strip. See RFC-007.
+//! - Each track, and the master, has a chain of up to [`MAX_EFFECTS`]
+//!   insert [`Effect`]s: a track's between its source and its mixer strip,
+//!   the master's between the sum of the tracks and the master volume. See
+//!   RFC-007.
 //! - Positions and lengths are musical: whole ticks, turned into samples by
 //!   the [`time::TempoMap`]. See RFC-002, "The shared model".
 //!

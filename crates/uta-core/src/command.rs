@@ -23,12 +23,14 @@ use crate::{
 ///   and Osc retrigger, and renames `waveform` to `osc1_wave` and `square`
 ///   to `pulse` (RFC-008). Older synth settings still read: those they
 ///   didn't have take their defaults, and the old names read as the new.
-pub const COMMAND_FORMAT: u32 = 6;
+/// - Format 7 adds `move_effect`, `set_effect_enabled` and the master's
+///   chain (RFC-007).
+pub const COMMAND_FORMAT: u32 = 7;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":6,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":7,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -88,6 +90,11 @@ pub enum Command {
     /// Remove effects from whichever chains they're in, with their
     /// settings. The inverse of [`Command::AddEffects`].
     RemoveEffects { effects: Vec<EffectId> },
+    /// Move an effect to `index` in its own chain, counting from 0.
+    MoveEffect { effect: EffectId, index: usize },
+    /// Switch an effect on or off. Off, the sound passes through it
+    /// unchanged.
+    SetEffectEnabled { effect: EffectId, enabled: bool },
     /// Set how much of an effect you hear, from 0 to 1.
     SetEffectMix { effect: EffectId, mix: f32 },
     /// Set one of a Delay's settings.
@@ -460,6 +467,11 @@ impl std::fmt::Display for CommandError {
                 "track {id}'s chain can hold at most {} effects",
                 crate::MAX_EFFECTS
             ),
+            Self::ChainFull(Chain::Master) => write!(
+                f,
+                "the master's chain can hold at most {} effects",
+                crate::MAX_EFFECTS
+            ),
             Self::EffectIndexOutOfRange(index) => {
                 write!(f, "effect position {index} is past the end of its chain")
             }
@@ -495,9 +507,9 @@ impl std::error::Error for CommandError {}
 /// in-memory type can change while older saved formats still load: a new
 /// format gets its own body type here and a conversion to [`Command`].
 ///
-/// Formats 2 to 5 only added commands, a kind of track and a track's
-/// effects, so one body type reads every format, and an envelope may only
-/// hold the commands and tracks its format had.
+/// Formats 2 to 6 only added commands, a kind of track, a track's effects
+/// and the master's chain, so one body type reads every format, and an
+/// envelope may only hold the commands, tracks and chains its format had.
 mod wire {
     use std::collections::HashSet;
 
@@ -599,6 +611,15 @@ mod wire {
             effect: EffectId,
             param: DelayParam,
         },
+        // Format 6.
+        MoveEffect {
+            effect: EffectId,
+            index: usize,
+        },
+        SetEffectEnabled {
+            effect: EffectId,
+            enabled: bool,
+        },
     }
 
     impl Body {
@@ -607,6 +628,12 @@ mod wire {
         fn since_format(&self) -> u32 {
             match self {
                 Self::SetMasterVolume { .. } => 1,
+                Self::MoveEffect { .. } | Self::SetEffectEnabled { .. } => 7,
+                Self::AddEffects { effects }
+                    if effects.iter().any(|at| at.chain == Chain::Master) =>
+                {
+                    7
+                }
                 Self::AddNotes { .. }
                 | Self::RemoveNotes { .. }
                 | Self::SetNotes { .. }
@@ -855,6 +882,10 @@ mod wire {
                         .collect(),
                 },
                 Command::RemoveEffects { effects } => Body::RemoveEffects { effects },
+                Command::MoveEffect { effect, index } => Body::MoveEffect { effect, index },
+                Command::SetEffectEnabled { effect, enabled } => {
+                    Body::SetEffectEnabled { effect, enabled }
+                }
                 Command::SetEffectMix { effect, mix } => Body::SetEffectMix { effect, mix },
                 Command::SetDelayParam { effect, param } => Body::SetDelayParam { effect, param },
             };
@@ -939,6 +970,10 @@ mod wire {
                         .collect(),
                 },
                 Body::RemoveEffects { effects } => Command::RemoveEffects { effects },
+                Body::MoveEffect { effect, index } => Command::MoveEffect { effect, index },
+                Body::SetEffectEnabled { effect, enabled } => {
+                    Command::SetEffectEnabled { effect, enabled }
+                }
                 Body::SetEffectMix { effect, mix } => Command::SetEffectMix { effect, mix },
                 Body::SetDelayParam { effect, param } => Command::SetDelayParam { effect, param },
             })
@@ -1020,7 +1055,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":6,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":7,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1086,11 +1121,11 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 2 to 5 lists still load.
-            for format in [2, 3, 4, 5] {
+            // Format 2 to 6 lists still load.
+            for format in [2, 3, 4, 5, 6] {
                 let json = format!(r#"{{"format":{format},"command":{body}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -1191,11 +1226,11 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 3 to 5 lists still load.
-            for format in [3, 4, 5] {
+            // Format 3 to 6 lists still load.
+            for format in [3, 4, 5, 6] {
                 let json = format!(r#"{{"format":{format},"command":{body}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -1266,11 +1301,11 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 4 and 5 lists still load.
-            for format in [4, 5] {
+            // Format 4 to 6 lists still load.
+            for format in [4, 5, 6] {
                 let json = format!(r#"{{"format":{format},"command":{body}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -1393,15 +1428,61 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            let json = format!(r#"{{"format":5,"command":{body}}}"#);
-            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // Format 5 and 6 lists still load.
+            for format in [5, 6] {
+                let json = format!(r#"{{"format":{format},"command":{body}}}"#);
+                assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            }
             // Effects are new in format 5, even in a format 4 command.
             let json = format!(r#"{{"format":4,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
             assert!(error.to_string().contains("arrived in format 5"), "{error}");
+        }
+    }
+
+    #[test]
+    fn the_format_7_commands_serialise_like_this() {
+        let effect = testing::effect_id(0);
+        let delay = Effect::default_of(effect, crate::EffectKind::Delay);
+        let delay_json = format!(
+            r#"{{"id":"{effect}","settings":{{"delay":{{"time_seconds":0.375,"feedback":0.4}}}},"enabled":true,"mix":0.3}}"#
+        );
+        let cases = [
+            (
+                Command::MoveEffect { effect, index: 2 },
+                format!(r#"{{"type":"move_effect","effect":"{effect}","index":2}}"#),
+            ),
+            (
+                Command::SetEffectEnabled {
+                    effect,
+                    enabled: false,
+                },
+                format!(r#"{{"type":"set_effect_enabled","effect":"{effect}","enabled":false}}"#),
+            ),
+            (
+                Command::AddEffects {
+                    effects: vec![PlacedEffect {
+                        chain: Chain::Master,
+                        index: 0,
+                        effect: delay,
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_effects","effects":[{{"chain":"master","index":0,"effect":{delay_json}}}]}}"#
+                ),
+            ),
+        ];
+        for (command, body) in cases {
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // They're new in format 7, even in a format 6 command.
+            let json = format!(r#"{{"format":6,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(error.to_string().contains("arrived in format 7"), "{error}");
         }
     }
 
@@ -1417,6 +1498,12 @@ mod tests {
         assert!(!time.sets_same_as(&set(a, DelayParam::Feedback(0.5))));
         assert!(!time.sets_same_as(&set(b, DelayParam::TimeSeconds(0.5))));
         assert!(!time.sets_same_as(&mix(a, 0.25)));
+        // Switching and moving are steps of their own: switching off and on
+        // again is two undos, as is moving twice.
+        let switch = |enabled| Command::SetEffectEnabled { effect: a, enabled };
+        assert!(!switch(false).sets_same_as(&switch(true)));
+        let move_to = |index| Command::MoveEffect { effect: a, index };
+        assert!(!move_to(0).sets_same_as(&move_to(1)));
     }
 
     #[test]
@@ -1507,7 +1594,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 7, 99] {
+        for format in [0, 8, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

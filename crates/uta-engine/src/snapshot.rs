@@ -23,6 +23,9 @@ pub struct Snapshot {
     pub gain: f32,
     /// The tempo, the loop and the song's end, timed in samples.
     pub sequence: Sequence,
+    /// The master's chain, in order: each effect's settings as plain
+    /// numbers, as a track's are.
+    pub effects: Vec<EffectSnapshot>,
     /// Every track, in the project's order.
     tracks: Vec<TrackSnapshot>,
     /// For each slot, the index in `tracks` of the track that uses it.
@@ -180,10 +183,20 @@ impl Snapshot {
                 }
             })
             .collect();
-        Self::with_tracks(1.0, sequence, tracks).with_volume_db(project.master_volume_db())
+        let effects = project
+            .master_effects()
+            .iter()
+            .map(EffectSnapshot::from)
+            .collect();
+        Self::with_tracks(1.0, sequence, effects, tracks).with_volume_db(project.master_volume_db())
     }
 
-    fn with_tracks(gain: f32, sequence: Sequence, tracks: Vec<TrackSnapshot>) -> Self {
+    fn with_tracks(
+        gain: f32,
+        sequence: Sequence,
+        effects: Vec<EffectSnapshot>,
+        tracks: Vec<TrackSnapshot>,
+    ) -> Self {
         let mut slots = [None; TRACK_SLOTS];
         for (index, track) in tracks.iter().enumerate() {
             assert!(slots[track.slot].is_none(), "two tracks in one slot");
@@ -192,6 +205,7 @@ impl Snapshot {
         Self {
             gain,
             sequence,
+            effects,
             tracks,
             slots,
         }
@@ -224,7 +238,7 @@ impl Snapshot {
                 ..track.clone()
             })
             .collect();
-        Self::with_tracks(self.gain, sequence, tracks)
+        Self::with_tracks(self.gain, sequence, self.effects.clone(), tracks)
     }
 
     /// Every track, in the project's order.

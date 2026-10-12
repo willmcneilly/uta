@@ -3,9 +3,9 @@
 //!
 //! An effect is its permanent ID, its settings (which say its kind), an
 //! on/off switch and a Mix. A chain is an ordered list of up to
-//! [`MAX_EFFECTS`] of them, on a track for now. It belongs to the place it
-//! sits rather than assuming it's a track's, so the master, and later a
-//! return or a group, can have one: [`Chain`] names which.
+//! [`MAX_EFFECTS`] of them, on a track or the master. It belongs to the
+//! place it sits rather than assuming it's a track's, so later a return or a
+//! group can have one too: [`Chain`] names which.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,12 +19,16 @@ use crate::{EffectId, TrackId};
 /// question 5).
 pub const MAX_EFFECTS: usize = 8;
 
-/// Which chain a command means. Serialises as `{"track":"<id>"}`.
+/// Which chain a command means. Serialises as `{"track":"<id>"}` or
+/// `"master"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Chain {
     /// The chain between a track's source and its mixer strip.
     Track(TrackId),
+    /// The master's chain, between the sum of the tracks and the master
+    /// volume.
+    Master,
 }
 
 /// One insert effect: its ID, its kind with its settings, whether it's on,
@@ -408,6 +412,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Chain::Track(id)).unwrap(),
             format!(r#"{{"track":"{id}"}}"#)
+        );
+        assert_eq!(
+            serde_json::to_string(&Chain::Master).unwrap(),
+            r#""master""#
         );
         assert_eq!(
             serde_json::to_string(&DelayParam::Feedback(0.5)).unwrap(),

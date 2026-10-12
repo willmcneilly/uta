@@ -6,7 +6,7 @@ use rtrb::{Consumer, Producer};
 use uta_core::TrackId;
 use uta_core::time::{MAX_TICKS, Ticks};
 
-use crate::effects::chain::Arriving;
+use crate::effects::chain::{Arriving, ChainAt};
 use crate::{
     Command, EffectState, NoteKey, Snapshot, Status, Swap, SynthSettings, TRACK_SLOTS, TrackSound,
 };
@@ -119,11 +119,12 @@ impl Controller {
     ) -> Self {
         // The processor made a state for each of the first snapshot's
         // effects.
-        let states_out = snapshot
-            .tracks()
-            .iter()
-            .map(|track| track.effects.len())
-            .sum();
+        let states_out = snapshot.effects.len()
+            + snapshot
+                .tracks()
+                .iter()
+                .map(|track| track.effects.len())
+                .sum::<usize>();
         Self {
             commands,
             status,
@@ -203,19 +204,32 @@ impl Controller {
         Ok(())
     }
 
-    /// A new state for each effect in `snapshot` whose slot didn't have it in
-    /// the last snapshot sent: the effects the audio thread hasn't got.
+    /// A new state for each effect in `snapshot` whose chain didn't have it
+    /// in the last snapshot sent: the effects the audio thread hasn't got.
     fn new_effect_states(&self, snapshot: &Snapshot) -> Vec<Arriving> {
         let sample_rate = f64::from(self.sample_rate);
+        let chains = snapshot
+            .tracks()
+            .iter()
+            .map(|track| {
+                let before = self.snapshot.track_in(track.slot());
+                (
+                    ChainAt::Slot(track.slot()),
+                    &track.effects,
+                    before.map_or(&[][..], |before| before.effects.as_slice()),
+                )
+            })
+            .chain([(
+                ChainAt::Master,
+                &snapshot.effects,
+                self.snapshot.effects.as_slice(),
+            )]);
         let mut states = Vec::new();
-        for track in snapshot.tracks() {
-            let before = self.snapshot.track_in(track.slot());
-            for effect in &track.effects {
-                let held = before
-                    .is_some_and(|before| before.effects.iter().any(|other| other.id == effect.id));
-                if !held {
+        for (at, effects, before) in chains {
+            for effect in effects {
+                if !before.iter().any(|other| other.id == effect.id) {
                     states.push(Arriving {
-                        slot: track.slot(),
+                        at,
                         id: effect.id,
                         state: Some(EffectState::new(&effect.settings, sample_rate)),
                     });

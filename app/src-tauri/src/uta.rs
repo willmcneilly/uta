@@ -68,6 +68,9 @@ pub struct Outline<C = ClipOutline> {
     pub max_volume_db: f32,
     /// A new project's master volume, which the volume control resets to.
     pub default_volume_db: f32,
+    /// The master's chain: the effects after the sum of the tracks, in
+    /// order.
+    pub master_effects: Vec<EffectView>,
     pub can_undo: bool,
     pub can_redo: bool,
     pub bpm: f32,
@@ -1209,6 +1212,11 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         min_volume_db: VOLUME_RANGE_DB.0,
         max_volume_db: VOLUME_RANGE_DB.1,
         default_volume_db: Project::DEFAULT_MASTER_VOLUME_DB,
+        master_effects: project
+            .master_effects()
+            .iter()
+            .map(EffectView::from)
+            .collect(),
         can_undo: session.can_undo(),
         can_redo: session.can_redo(),
         bpm: transport.tempo_map().bpm(),
@@ -1747,8 +1755,32 @@ mod tests {
         assert!(time["sounds"].as_str().is_some_and(|s| s.ends_with('.')));
         assert_eq!(settings[1]["label"], "Feedback");
         assert_eq!(settings[1]["unit"], "fraction");
-        // The other track's chain is still empty.
+        // The other track's chain is still empty, and so is the master's.
         assert!(outline.tracks[1].effects.is_empty());
+        assert!(outline.master_effects.is_empty());
+
+        // The master's chain is carried the same way, switched off here.
+        let master = EffectId::random();
+        uta.change(
+            Command::AddEffects {
+                effects: vec![uta_core::PlacedEffect {
+                    chain: uta_core::Chain::Master,
+                    index: 0,
+                    effect: Effect::default_of(master, uta_core::EffectKind::Delay)
+                        .with_enabled(false),
+                }],
+            },
+            None,
+        )
+        .unwrap();
+        let outline = uta.update().outline;
+        let [effect] = outline.master_effects.as_slice() else {
+            panic!("one effect: {:?}", outline.master_effects);
+        };
+        assert_eq!(effect.id, master);
+        assert!(!effect.enabled);
+        let json = serde_json::to_value(&outline).unwrap();
+        assert_eq!(json["masterEffects"][0]["name"], "Delay");
     }
 
     #[test]
