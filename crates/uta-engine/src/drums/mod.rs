@@ -9,7 +9,7 @@
 
 mod clap;
 mod cymbal;
-mod filter;
+pub(crate) mod filter;
 mod hats;
 mod kick;
 mod kick909;

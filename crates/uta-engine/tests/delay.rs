@@ -5,7 +5,9 @@
 
 mod common;
 
-use common::{PLAIN_SINE, demo_loop, level_at, max_difference, note, peak, project, synth_project};
+use common::{
+    PLAIN_SINE, demo_loop, level_at, max_difference, note, peak, project, rms, synth_project,
+};
 use uta_core::{
     Chain, Command, DelayParam, DelaySettings, Effect, EffectId, EffectSettings, PlacedEffect,
     Project,
@@ -53,10 +55,7 @@ fn with_delay_on(
     let index = project.chain(chain).expect("the chain exists").len();
     let effect = Effect::new(
         effect_id(n),
-        EffectSettings::Delay(DelaySettings {
-            time_seconds,
-            feedback,
-        }),
+        EffectSettings::Delay(DelaySettings::plain(time_seconds, feedback)),
     )
     .with_mix(mix);
     project
@@ -360,11 +359,13 @@ fn a_render_stops_at_the_limit_when_the_echoes_never_fade() {
         (tail - MAX_TAIL_SECONDS).abs() < 0.01,
         "a tail of {tail} s, not {MAX_TAIL_SECONDS}"
     );
-    // Still echoing at the end, as loud as the first.
+    // Still echoing at the end, as loud as the first: the cuts, wide open,
+    // take only the very lowest and highest of the stab's sound each time
+    // round, and leave its tone.
     let end = song.samples.len();
-    let first = level_at(&song.samples, 24_000 + 3000, 480);
-    let last = peak(&song.samples[end - 24_000..]);
-    assert!((last - first).abs() < 1e-3 * first, "{first} then {last}");
+    let first = rms(&song.samples[24_000..48_000]);
+    let last = rms(&song.samples[end - 24_000..]);
+    assert!((last - first).abs() < 0.02 * first, "{first} then {last}");
 }
 
 /// A project with no effects renders exactly as long as it always has:
