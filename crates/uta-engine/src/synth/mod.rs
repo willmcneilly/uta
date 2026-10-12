@@ -1,5 +1,6 @@
 //! The built-in synth: 16 voices, each two oscillators, a sub-oscillator and
-//! noise, mixed into a low-pass filter and an envelope. See RFC-002, "The
+//! noise, mixed into a low-pass filter and an envelope. Oscillator 1's pulse
+//! has a width, and oscillator 2 can sync to oscillator 1. See RFC-002, "The
 //! synth is ours, small and fixed-size", and RFC-008, "In the engine".
 //!
 //! Everything here runs on the audio thread. The voices are a fixed array
@@ -16,7 +17,7 @@ pub use settings::{SynthSettings, Waveform};
 
 use envelope::{Envelope, Stage, Times};
 use filter::{Coefficients, Filter};
-use oscillator::Oscillator;
+use oscillator::{Oscillator, SQUARE, Synced};
 
 use crate::noise::Noise;
 use crate::ramp::Ramp;
@@ -27,7 +28,8 @@ pub const VOICES: usize = 16;
 /// note starts in it.
 pub const TAKE_OVER_SECONDS: f64 = 0.005;
 /// How long a change to the synth's settings takes to glide to its new value.
-/// A new wave or sub octave crossfades from the old one over the same time.
+/// A new wave or sub octave, or switching Sync, crossfades from the old one
+/// over the same time.
 /// An octave changes at once: the oscillators carry on from where they are
 /// in their cycle, so the wave doesn't jump.
 pub const SYNTH_SMOOTHING_SECONDS: f64 = 0.02;
@@ -83,6 +85,12 @@ struct Voice {
     increment: f64,
     osc1: Oscillator,
     osc2: Oscillator,
+    /// Oscillator 2 under sync, following oscillator 1. While Sync
+    /// crossfades, both it and `osc2` run.
+    osc2_synced: Synced,
+    /// Whether `osc2_synced` is following oscillator 1. It stops whenever
+    /// it isn't heard, and starts again from oscillator 1's phase.
+    osc2_following: bool,
     /// Oscillator 1's wraps, counted round from 0 to 3, which the sub flips
     /// on.
     osc1_cycle: u32,
@@ -109,6 +117,8 @@ impl Voice {
             increment: 0.0,
             osc1: Oscillator::default(),
             osc2: Oscillator::default(),
+            osc2_synced: Synced::default(),
+            osc2_following: false,
             osc1_cycle: 0,
             noise: Noise::seeded(noise_seed(index)),
             filter: Filter::default(),
@@ -245,7 +255,10 @@ pub(crate) struct Synth {
     times: Times,
 
     osc1_wave: Crossfade<Waveform>,
+    /// Oscillator 1's pulse width.
+    osc1_width: Ramp,
     osc2_wave: Crossfade<Waveform>,
+    osc2_sync: Crossfade<bool>,
     sub_octave: Crossfade<i8>,
     /// Oscillator 2's Pitch, in semitones.
     osc2_pitch: Ramp,
@@ -282,7 +295,9 @@ impl Synth {
             coefficients: Coefficients::new(1.0, 0.0, sample_rate),
             times: Times::new(1.0, 1.0, 1.0, sample_rate),
             osc1_wave: Crossfade::new(settings.osc1_wave, 1),
+            osc1_width: Ramp::new(0.0, 1),
             osc2_wave: Crossfade::new(settings.osc2_wave, 1),
+            osc2_sync: Crossfade::new(settings.osc2_sync, 1),
             sub_octave: Crossfade::new(settings.sub_octave, 1),
             osc2_pitch: Ramp::new(0.0, 1),
             osc1_ratio: 1.0,
@@ -337,7 +352,9 @@ impl Synth {
         self.resonance = Ramp::new(settings.resonance, smoothing);
         self.sustain = Ramp::new(settings.sustain, smoothing);
         self.osc1_wave = Crossfade::new(settings.osc1_wave, smoothing);
+        self.osc1_width = Ramp::new(settings.osc1_width, smoothing);
         self.osc2_wave = Crossfade::new(settings.osc2_wave, smoothing);
+        self.osc2_sync = Crossfade::new(settings.osc2_sync, smoothing);
         self.sub_octave = Crossfade::new(settings.sub_octave, smoothing);
         self.osc2_pitch = Ramp::new(settings.osc2_pitch_semitones, smoothing);
         self.levels = [
@@ -368,6 +385,7 @@ impl Synth {
         self.cutoff_octaves.set_target(settings.cutoff_hz.log2());
         self.resonance.set_target(settings.resonance);
         self.sustain.set_target(settings.sustain);
+        self.osc1_width.set_target(settings.osc1_width);
         self.osc2_pitch.set_target(settings.osc2_pitch_semitones);
         let levels = [
             settings.osc1_level,
@@ -507,12 +525,19 @@ impl Synth {
     /// Each voice mixes its two oscillators, the sub and its noise at the
     /// mixer's levels, and filters the mix. A source whose level is zero
     /// isn't worked out, and oscillator 2 and the noise wait where they are
-    /// until it's turned up: they cost nothing while they're off.
+    /// until it's turned up: they cost nothing while they're off. So does
+    /// whichever of oscillator 2, free or synced, isn't heard.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
         self.advance_settings();
         let osc1_wave = self.osc1_wave.next();
+        let osc1_width = f64::from(self.osc1_width.next_value());
         let osc2_wave = self.osc2_wave.next();
+        let osc2_sync = self.osc2_sync.next();
+        // Whether each of oscillator 2 free and synced is heard.
+        let crossfading = osc2_sync.mix != 0.0;
+        let free = !osc2_sync.from || (crossfading && !osc2_sync.to);
+        let synced = osc2_sync.from || (crossfading && osc2_sync.to);
         let sub_octave = self.sub_octave.next();
         let sustain = f64::from(self.sustain.next_value());
         let semitones = self.osc2_pitch.next_value();
@@ -542,12 +567,33 @@ impl Synth {
             voice.osc1.set_increment(voice.increment * osc1_ratio);
             let mut mix = 0.0;
             if osc1_level != 0.0 {
-                mix = osc1_level * osc1_wave.of(|wave| voice.osc1.value(wave));
+                mix = osc1_level * osc1_wave.of(|wave| voice.osc1.value(wave, osc1_width));
             }
             if osc2_level != 0.0 {
-                voice.osc2.set_increment(voice.increment * osc2_ratio);
-                mix += osc2_level * osc2_wave.of(|wave| voice.osc2.value(wave));
-                voice.osc2.advance();
+                let increment = voice.increment * osc2_ratio;
+                let mut free_value = 0.0;
+                if free {
+                    voice.osc2.set_increment(increment);
+                    free_value = osc2_wave.of(|wave| voice.osc2.value(wave, SQUARE));
+                    voice.osc2.advance();
+                }
+                let mut synced_value = 0.0;
+                if synced {
+                    let osc = &mut voice.osc2_synced;
+                    if voice.osc2_following {
+                        osc.set_increment(increment);
+                    } else {
+                        osc.start_with(&voice.osc1, increment);
+                        voice.osc2_following = true;
+                    }
+                    let step = osc.step(&voice.osc1);
+                    synced_value = osc2_wave.of(|wave| osc.value(wave, &step));
+                    osc.advance(&step);
+                }
+                voice.osc2_following &= synced;
+                mix += osc2_level * osc2_sync.of(|on| if on { synced_value } else { free_value });
+            } else {
+                voice.osc2_following = false;
             }
             if sub_level != 0.0 {
                 let cycle = voice.osc1_cycle;
@@ -622,6 +668,8 @@ impl Synth {
             let cycles = running * voice.increment * self.osc2_ratio;
             voice.osc2.start_at(cycles.fract());
         }
+        // Under sync, oscillator 2 starts from oscillator 1's phase.
+        voice.osc2_following = false;
         voice.filter.reset();
         voice.envelope.start(&self.times);
         voice.velocity_gain = velocity_to_gain(note.velocity);
@@ -638,6 +686,7 @@ impl Synth {
         }
         self.osc1_wave.follow(self.settings.osc1_wave);
         self.osc2_wave.follow(self.settings.osc2_wave);
+        self.osc2_sync.follow(self.settings.osc2_sync);
         self.sub_octave.follow(self.settings.sub_octave);
     }
 
