@@ -3,11 +3,13 @@
 use proptest::prelude::*;
 use uuid::Uuid;
 
+use crate::time::NoteDivision;
+
 use crate::{
-    Chain, Clip, ClipId, ClipPosition, Command, DelayParam, DelaySettings, DrumParam, DrumSound,
-    Effect, EffectId, EffectSettings, KIT, KitSettings, MixerStrip, Note, NoteId, PlacedClip,
-    PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings, Track,
-    TrackId, Waveform,
+    Chain, Clip, ClipId, ClipPosition, Command, DelayMode, DelayParam, DelaySettings, DrumParam,
+    DrumSound, Effect, EffectId, EffectSettings, KIT, KitSettings, MixerStrip, Note, NoteId,
+    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings,
+    Track, TrackId, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -153,8 +155,15 @@ fn any_track() -> impl Strategy<Value = Track> {
 fn any_delay_param() -> impl Strategy<Value = DelayParam> {
     prop_oneof![
         (0.0f32..5.5).prop_map(DelayParam::TimeSeconds),
-        (-0.1f32..1.1).prop_map(DelayParam::Feedback),
+        (-0.1f32..1.2).prop_map(DelayParam::Feedback),
         Just(DelayParam::Feedback(f32::NAN)),
+        any::<bool>().prop_map(DelayParam::Sync),
+        prop::sample::select(NoteDivision::ALL.to_vec()).prop_map(DelayParam::Division),
+        prop_oneof![Just(DelayMode::Stereo), Just(DelayMode::PingPong)].prop_map(DelayParam::Mode),
+        (10.0f32..2_200.0).prop_map(DelayParam::LowCutHz),
+        (400.0f32..21_000.0).prop_map(DelayParam::HighCutHz),
+        (-0.1f32..1.1).prop_map(DelayParam::Drive),
+        (-0.1f32..1.1).prop_map(DelayParam::Wobble),
     ]
 }
 

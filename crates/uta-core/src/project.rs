@@ -3059,9 +3059,17 @@ mod tests {
         let effect = testing::effect_id(1);
         let mixed = apply_and_check_undo(&project, Command::SetEffectMix { effect, mix: 1.0 });
         assert_eq!(mixed.effect(effect).unwrap().mix(), 1.0);
+        // Every setting, each changed from its default.
         for param in [
+            crate::DelayParam::Sync(false),
+            crate::DelayParam::Division(crate::time::NoteDivision::from_value("1/4t").unwrap()),
             crate::DelayParam::TimeSeconds(0.25),
-            crate::DelayParam::Feedback(0.0),
+            crate::DelayParam::Mode(crate::DelayMode::PingPong),
+            crate::DelayParam::Feedback(1.1),
+            crate::DelayParam::LowCutHz(400.0),
+            crate::DelayParam::HighCutHz(2_000.0),
+            crate::DelayParam::Drive(1.0),
+            crate::DelayParam::Wobble(0.5),
         ] {
             let set = apply_and_check_undo(&project, Command::SetDelayParam { effect, param });
             let EffectSettings::Delay(settings) = set.effect(effect).unwrap().settings();

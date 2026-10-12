@@ -25,12 +25,17 @@ use crate::{
 ///   didn't have take their defaults, and the old names read as the new.
 /// - Format 7 adds `move_effect`, `set_effect_enabled` and the master's
 ///   chain (RFC-007).
-pub const COMMAND_FORMAT: u32 = 7;
+/// - Format 8 adds the Delay's tape loop: its Sync, synced time (a note
+///   division), Mode, Low cut, High cut, Drive and Wobble, and Feedback up
+///   to 110% (RFC-007). A Delay from an older format reads as the plain
+///   Delay it was: unsynced, with its cuts wide open and no Drive or
+///   Wobble.
+pub const COMMAND_FORMAT: u32 = 8;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":7,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":8,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -484,10 +489,12 @@ impl std::fmt::Display for CommandError {
                 Effect::MIN_MIX,
                 Effect::MAX_MIX
             ),
-            Self::DelayParamOutOfRange(param) => {
-                let (value, min, max) = param.range();
-                write!(f, "{param:?}: {value} is out of range ({min} to {max})")
-            }
+            Self::DelayParamOutOfRange(param) => match param.range() {
+                Some((value, min, max)) => {
+                    write!(f, "{param:?}: {value} is out of range ({min} to {max})")
+                }
+                None => write!(f, "{param:?} is out of range"),
+            },
             Self::NoteOffKit { note, pitch } => write!(
                 f,
                 "note {note}: pitch {pitch} isn't one of the drum kit's notes ({})",
@@ -628,6 +635,7 @@ mod wire {
         fn since_format(&self) -> u32 {
             match self {
                 Self::SetMasterVolume { .. } => 1,
+                Self::SetDelayParam { param, .. } => param.since_format(),
                 Self::MoveEffect { .. } | Self::SetEffectEnabled { .. } => 7,
                 Self::AddEffects { effects }
                     if effects.iter().any(|at| at.chain == Chain::Master) =>
@@ -647,8 +655,7 @@ mod wire {
                 }
                 Self::AddEffects { .. }
                 | Self::RemoveEffects { .. }
-                | Self::SetEffectMix { .. }
-                | Self::SetDelayParam { .. } => 5,
+                | Self::SetEffectMix { .. } => 5,
                 Self::AddTracks { tracks }
                     if tracks
                         .iter()
@@ -985,6 +992,7 @@ mod wire {
 mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
+    use crate::time::NoteDivision;
     use crate::{
         DrumParam, DrumSound, KickModel, KitSettings, Source, SynthSettings, Waveform, time::Ticks,
     };
@@ -1009,10 +1017,13 @@ mod tests {
         let effect = |effect: &Effect| {
             !effect.mix().is_finite()
                 || match effect.settings() {
-                    crate::EffectSettings::Delay(settings) => settings
-                        .params()
-                        .iter()
-                        .any(|param| !param.range().0.is_finite()),
+                    crate::EffectSettings::Delay(settings) => {
+                        settings.params().iter().any(|param| {
+                            param
+                                .range()
+                                .is_some_and(|(value, _, _)| !value.is_finite())
+                        })
+                    }
                 }
         };
         match command {
@@ -1022,7 +1033,9 @@ mod tests {
             Command::SetTrackMixer { mixer: m, .. } => mixer(m),
             Command::SetDrumParam { param, .. } => param.value().is_some_and(|v| !v.is_finite()),
             Command::SetEffectMix { mix, .. } => !mix.is_finite(),
-            Command::SetDelayParam { param, .. } => !param.range().0.is_finite(),
+            Command::SetDelayParam { param, .. } => param
+                .range()
+                .is_some_and(|(value, _, _)| !value.is_finite()),
             Command::AddEffects { effects } => effects.iter().any(|placed| effect(&placed.effect)),
             Command::AddTracks { tracks } => tracks.iter().any(|placed| {
                 mixer(placed.track.mixer())
@@ -1041,6 +1054,10 @@ mod tests {
         }
     }
 
+    /// The plain Delay's settings, as today's format writes them.
+    const PLAIN_DELAY_JSON: &str = r#"{"sync":false,"division":"1/8d","time_seconds":0.375,"mode":"stereo","feedback":0.4,"low_cut_hz":20.0,"high_cut_hz":20000.0,"drive":0.0,"wobble":0.0}"#;
+    /// A new Delay's settings.
+    const DEFAULT_DELAY_JSON: &str = r#"{"sync":true,"division":"1/8d","time_seconds":0.375,"mode":"stereo","feedback":0.4,"low_cut_hz":100.0,"high_cut_hz":8000.0,"drive":0.2,"wobble":0.1}"#;
     /// A new track's synth settings, as `add_tracks` carries them.
     const DEFAULT_SYNTH_JSON: &str = concat!(
         r#"{"osc1_wave":"saw","osc1_octave":0,"osc2_wave":"saw","osc2_octave":0,"#,
@@ -1055,7 +1072,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":7,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":8,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1121,7 +1138,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 2 to 6 lists still load.
@@ -1226,7 +1243,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 3 to 6 lists still load.
@@ -1301,7 +1318,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 4 to 6 lists still load.
@@ -1372,9 +1389,15 @@ mod tests {
     fn the_format_5_commands_serialise_like_this() {
         let track = track();
         let effect = testing::effect_id(0);
-        let delay = Effect::default_of(effect, crate::EffectKind::Delay).with_mix(0.5);
+        // The plain Delay format 5 had, which it wrote with only its time
+        // and Feedback, and today's format writes in full.
+        let delay = Effect::new(
+            effect,
+            crate::EffectSettings::Delay(crate::DelaySettings::plain(0.375, 0.4)),
+        )
+        .with_mix(0.5);
         let delay_json = format!(
-            r#"{{"id":"{effect}","settings":{{"delay":{{"time_seconds":0.375,"feedback":0.4}}}},"enabled":true,"mix":0.5}}"#
+            r#"{{"id":"{effect}","settings":{{"delay":{PLAIN_DELAY_JSON}}},"enabled":true,"mix":0.5}}"#
         );
         let new_track = testing::track_id(0);
         let settings_json = DEFAULT_SYNTH_JSON;
@@ -1428,12 +1451,14 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 5 and 6 lists still load.
-            for format in [5, 6] {
-                let json = format!(r#"{{"format":{format},"command":{body}}}"#);
+            // Format 5 to 7 lists still load, with the Delay as they wrote
+            // it.
+            let old = body.replace(PLAIN_DELAY_JSON, r#"{"time_seconds":0.375,"feedback":0.4}"#);
+            for format in [5, 6, 7] {
+                let json = format!(r#"{{"format":{format},"command":{old}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
             // Effects are new in format 5, even in a format 4 command.
@@ -1448,7 +1473,7 @@ mod tests {
         let effect = testing::effect_id(0);
         let delay = Effect::default_of(effect, crate::EffectKind::Delay);
         let delay_json = format!(
-            r#"{{"id":"{effect}","settings":{{"delay":{{"time_seconds":0.375,"feedback":0.4}}}},"enabled":true,"mix":0.3}}"#
+            r#"{{"id":"{effect}","settings":{{"delay":{DEFAULT_DELAY_JSON}}},"enabled":true,"mix":0.3}}"#
         );
         let cases = [
             (
@@ -1476,7 +1501,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 7, even in a format 6 command.
@@ -1484,6 +1509,52 @@ mod tests {
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
             assert!(error.to_string().contains("arrived in format 7"), "{error}");
         }
+    }
+
+    #[test]
+    fn the_format_8_delay_settings_serialise_like_this() {
+        let effect = testing::effect_id(0);
+        let cases = [
+            (DelayParam::Sync(false), r#"{"name":"sync","value":false}"#),
+            (
+                DelayParam::Division(NoteDivision::from_value("1/4t").unwrap()),
+                r#"{"name":"division","value":"1/4t"}"#,
+            ),
+            (
+                DelayParam::Mode(crate::DelayMode::PingPong),
+                r#"{"name":"mode","value":"ping_pong"}"#,
+            ),
+            (
+                DelayParam::LowCutHz(250.0),
+                r#"{"name":"low_cut_hz","value":250.0}"#,
+            ),
+            (
+                DelayParam::HighCutHz(3000.0),
+                r#"{"name":"high_cut_hz","value":3000.0}"#,
+            ),
+            (DelayParam::Drive(0.5), r#"{"name":"drive","value":0.5}"#),
+            (
+                DelayParam::Wobble(0.25),
+                r#"{"name":"wobble","value":0.25}"#,
+            ),
+        ];
+        for (param, param_json) in cases {
+            let command = Command::SetDelayParam { effect, param };
+            let body =
+                format!(r#"{{"type":"set_delay_param","effect":"{effect}","param":{param_json}}}"#);
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            // New in format 8, even in a format 7 command.
+            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(error.to_string().contains("arrived in format 8"), "{error}");
+        }
+        // Feedback past 100% is a format 5 setting with a wider range.
+        let json = format!(
+            r#"{{"format":5,"command":{{"type":"set_delay_param","effect":"{effect}","param":{{"name":"feedback","value":1.1}}}}}}"#
+        );
+        assert!(serde_json::from_str::<Command>(&json).is_ok());
     }
 
     #[test]
@@ -1594,7 +1665,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 8, 99] {
+        for format in [0, 9, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );
