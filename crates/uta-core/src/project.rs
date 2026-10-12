@@ -1472,9 +1472,11 @@ mod tests {
         for param in [
             SynthParam::Osc1Wave(Waveform::Sine),
             SynthParam::Osc1Octave(-1),
+            SynthParam::Osc1Width(0.2),
             SynthParam::Osc2Wave(Waveform::Pulse),
             SynthParam::Osc2Octave(1),
             SynthParam::Osc2PitchSemitones(-0.1),
+            SynthParam::Osc2Sync(true),
             SynthParam::SubOctave(-2),
             SynthParam::Osc1Level(0.5),
             SynthParam::Osc2Level(0.5),
