@@ -26,7 +26,9 @@ pub const DELAY_TAPE_SECONDS: f64 = uta_core::DelaySettings::MAX_TIME_SECONDS as
 const WOBBLE_ROOM_SECONDS: f64 = 0.05;
 /// How quickly the playback head glides to a new time. Its place is
 /// smoothed twice in a row with this time constant, so it eases away and
-/// eases in, like a tape machine's head, and lands within a second.
+/// eases in, like a tape machine's head. A small change lands within a
+/// second; a large one is held back by [`MAX_REPITCH`], so going from 1 ms
+/// to 5 s takes at least 10 s.
 const REPITCH_SECONDS: f64 = 0.05;
 /// The fastest the playback head moves against the tape while it glides,
 /// in samples a sample: the echoes play between half speed (an octave

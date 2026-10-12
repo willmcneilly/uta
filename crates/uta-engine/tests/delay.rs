@@ -391,7 +391,7 @@ fn a_render_stops_at_the_limit_when_the_echoes_never_fade() {
     let end = song.samples.len();
     let first = rms(&song.samples[24_000..48_000]);
     let last = rms(&song.samples[end - 24_000..]);
-    assert!((last - first).abs() < 0.02 * first, "{first} then {last}");
+    assert!((last - first).abs() < 1e-3 * first, "{first} then {last}");
 }
 
 /// A project with no effects renders exactly as long as it always has:
@@ -775,5 +775,69 @@ fn wobble_moves_the_echoes_by_about_the_amount_set() {
                 "Wobble {wobble}: up to {furthest} samples, set {set}: {shifts:?}"
             );
         }
+    }
+}
+
+/// Every setting glides while echoes ring, and Play restarts the wobble
+/// without a jump: a held A3 through a Delay at 60% Feedback, with only
+/// its echoes heard, has Mode, both cuts, Drive and Wobble turned in turn,
+/// then Stop and Play pressed while the echoes ring, and no sample jumps by
+/// more than its echoes could, played a little sharp by the Wobble.
+#[test]
+fn turning_every_setting_and_playing_again_while_it_rings_does_not_click() {
+    // Released over 50 ms, so Stop doesn't cut the tone off with a jump
+    // of its own.
+    let soft = [
+        SynthParam::Osc1Wave(Waveform::Sine),
+        SynthParam::Sustain(1.0),
+        SynthParam::ReleaseSeconds(0.05),
+    ];
+    let held = once(project(120.0, 4, &soft, vec![note(0, 57, 0, 4 * 3840)]));
+    let dry = play(&held, mono(48_000), 0.5);
+    let project = with_settings(held, 0, DelaySettings::plain(0.1, 0.6), 1.0);
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), 128);
+    renderer.controller.play().unwrap();
+    // A second and a quarter of a cycle, so each change lands where the
+    // tone is at its peak, not where it crosses zero and a jump would be
+    // smallest.
+    renderer.render(48_000 + 55);
+    let mut project = project;
+    let set = |param| Command::SetDelayParam {
+        effect: effect_id(0),
+        param,
+    };
+    for command in [
+        set(DelayParam::Mode(DelayMode::PingPong)),
+        set(DelayParam::LowCutHz(400.0)),
+        set(DelayParam::HighCutHz(2000.0)),
+        set(DelayParam::Drive(1.0)),
+        set(DelayParam::Wobble(1.0)),
+        set(DelayParam::Mode(DelayMode::Stereo)),
+    ] {
+        project.apply(&command).unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        renderer.render_seconds(0.3);
+    }
+    renderer.controller.stop().unwrap();
+    renderer.render_seconds(0.05);
+    assert_eq!(renderer.take_status().ringing_chains, 1, "the echoes ring");
+    renderer.controller.play().unwrap();
+    renderer.render_seconds(0.5);
+    // The echoes add up to at most the tone over (1 - Feedback), on one
+    // side √2 louder in ping-pong, and the steepest each can be is the
+    // tone's own, played sharp: by up to 2% by full Wobble, and 5.4% more
+    // while the playback head glides back from where the old sway had it
+    // (2.7 ms over 50 ms) after Play.
+    let limit =
+        common::sine_max_step(220.0 * 1.08, 48_000) * peak(&dry) * std::f32::consts::SQRT_2 / 0.4;
+    for side in [0, 1] {
+        let samples: Vec<f32> = renderer
+            .samples()
+            .iter()
+            .skip(side)
+            .step_by(2)
+            .copied()
+            .collect();
+        common::assert_no_click(&samples, limit, "turning the tape loop");
     }
 }
