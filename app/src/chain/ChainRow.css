@@ -391,11 +391,13 @@
   font: var(--font-text);
 }
 
+/* It opens leftwards, back over the chain: the + is the row's last panel,
+   and the row clips anything past its end. */
 .add-menu {
   position: absolute;
   z-index: 5;
   top: var(--space-7);
-  left: 32px;
+  right: 100%;
   display: flex;
   flex-direction: column;
   min-width: 120px;
