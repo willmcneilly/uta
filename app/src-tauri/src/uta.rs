@@ -1651,12 +1651,25 @@ mod tests {
         assert_eq!(pitch["unit"], "semitones");
         assert_eq!(pitch["scale"], "cubic");
         assert_eq!(pitch["limits"], serde_json::json!([-12.0, 12.0]));
-        let retrigger = &json["settings"][16];
+        let mode = &json["settings"][10];
+        assert_eq!(mode["name"], "filter_mode");
+        assert_eq!(mode["value"], "low_pass");
+        assert_eq!(mode["kind"], "choice");
+        assert_eq!(
+            mode["options"][2],
+            serde_json::json!({"value": "high_pass", "label": "High-pass"})
+        );
+        let env = &json["settings"][13];
+        assert_eq!(env["name"], "filter_env_octaves");
+        assert_eq!(env["unit"], "octaves");
+        assert_eq!(env["limits"], serde_json::json!([-10.0, 10.0]));
+        assert!(env.get("step").is_none());
+        let retrigger = &json["settings"][23];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
         assert_eq!(retrigger["default"], true);
-        let cutoff = &json["settings"][10];
+        let cutoff = &json["settings"][11];
         assert_eq!(cutoff["name"], "cutoff_hz");
         assert_eq!(cutoff["value"], 20_000.0);
         assert_eq!(cutoff["label"], "Cutoff");
@@ -1902,6 +1915,18 @@ mod tests {
             (
                 serde_json::json!({"name": "noise_level", "value": 0.25}),
                 SynthParam::NoiseLevel(0.25),
+            ),
+            (
+                serde_json::json!({"name": "filter_mode", "value": "band_pass"}),
+                SynthParam::FilterMode(uta_core::FilterMode::BandPass),
+            ),
+            (
+                serde_json::json!({"name": "filter_env_octaves", "value": -2.5}),
+                SynthParam::FilterEnvOctaves(-2.5),
+            ),
+            (
+                serde_json::json!({"name": "filter_sustain", "value": 0.5}),
+                SynthParam::FilterSustain(0.5),
             ),
         ] {
             assert_eq!(serde_json::from_value::<SynthParam>(json).unwrap(), param);

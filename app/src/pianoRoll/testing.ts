@@ -7,6 +7,7 @@ import type {
   ClipNotes,
   ClipView,
   ChoiceSettingView,
+  FilterMode,
   DrumSettingView,
   KickModel,
   KitRowView,
@@ -104,8 +105,15 @@ export interface SynthValues {
   osc2Level: number;
   subLevel: number;
   noiseLevel: number;
+  filterMode: FilterMode;
   cutoffHz: number;
   resonance: number;
+  filterEnvOctaves: number;
+  filterKey: number;
+  filterAttackSeconds: number;
+  filterDecaySeconds: number;
+  filterSustain: number;
+  filterReleaseSeconds: number;
   attackSeconds: number;
   decaySeconds: number;
   sustain: number;
@@ -125,8 +133,15 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   osc2_level: "osc2Level",
   sub_level: "subLevel",
   noise_level: "noiseLevel",
+  filter_mode: "filterMode",
   cutoff_hz: "cutoffHz",
   resonance: "resonance",
+  filter_env_octaves: "filterEnvOctaves",
+  filter_key: "filterKey",
+  filter_attack_seconds: "filterAttackSeconds",
+  filter_decay_seconds: "filterDecaySeconds",
+  filter_sustain: "filterSustain",
+  filter_release_seconds: "filterReleaseSeconds",
   attack_seconds: "attackSeconds",
   decay_seconds: "decaySeconds",
   sustain: "sustain",
@@ -146,8 +161,15 @@ export const SYNTH_DEFAULTS: SynthValues = {
   osc2Level: 0,
   subLevel: 0,
   noiseLevel: 0,
+  filterMode: "low_pass",
   cutoffHz: 20_000,
   resonance: 0,
+  filterEnvOctaves: 0,
+  filterKey: 0,
+  filterAttackSeconds: 0.001,
+  filterDecaySeconds: 0.3,
+  filterSustain: 0,
+  filterReleaseSeconds: 0.2,
   attackSeconds: 0.005,
   decaySeconds: 0.2,
   sustain: 0.7,
@@ -164,6 +186,13 @@ const WAVES: ChoiceSettingView<string, Waveform>["options"] = [
   { value: "triangle", label: "Triangle" },
   { value: "saw", label: "Saw" },
   { value: "pulse", label: "Pulse" },
+];
+
+/** Every filter mode, as Rust offers them. */
+const FILTER_MODES: ChoiceSettingView<string, FilterMode>["options"] = [
+  { value: "low_pass", label: "Low-pass" },
+  { value: "band_pass", label: "Band-pass" },
+  { value: "high_pass", label: "High-pass" },
 ];
 
 /**
@@ -192,6 +221,7 @@ export function synthSettings(
     label: string,
     unit: Unit,
     limits: Limits,
+    step?: number,
   ): SynthSettingView => {
     const field = SYNTH_FIELDS[name] as NumberField;
     const setting: NumberSettingView<SynthNumber["name"]> = {
@@ -205,7 +235,7 @@ export function synthSettings(
       limits,
       default: defaults[field],
     };
-    return unit === "octaves" ? { ...setting, step: 1 } : setting;
+    return step === undefined ? setting : { ...setting, step };
   };
   const wave = <N extends "osc1_wave" | "osc2_wave">(
     name: N,
@@ -224,17 +254,32 @@ export function synthSettings(
   };
   return [
     wave("osc1_wave", "Osc 1 wave"),
-    number("osc1_octave", "Osc 1 octave", "octaves", [-2, 2]),
+    number("osc1_octave", "Osc 1 octave", "octaves", [-2, 2], 1),
     wave("osc2_wave", "Osc 2 wave"),
-    number("osc2_octave", "Osc 2 octave", "octaves", [-2, 2]),
+    number("osc2_octave", "Osc 2 octave", "octaves", [-2, 2], 1),
     number("osc2_pitch_semitones", "Osc 2 pitch", "semitones", [-12, 12]),
-    number("sub_octave", "Sub octave", "octaves", [-2, -1]),
+    number("sub_octave", "Sub octave", "octaves", [-2, -1], 1),
     number("osc1_level", "Osc 1 level", "fraction", [0, 1]),
     number("osc2_level", "Osc 2 level", "fraction", [0, 1]),
     number("sub_level", "Sub level", "fraction", [0, 1]),
     number("noise_level", "Noise level", "fraction", [0, 1]),
+    {
+      kind: "choice",
+      name: "filter_mode",
+      label: "Filter mode",
+      sounds: SOUNDS,
+      value: values.filterMode,
+      options: FILTER_MODES,
+      default: defaults.filterMode,
+    },
     number("cutoff_hz", "Cutoff", "hz", [20, 20_000]),
     number("resonance", "Resonance", "amount", [0, 1]),
+    number("filter_env_octaves", "Env amount", "octaves", [-10, 10]),
+    number("filter_key", "Key", "fraction", [0, 1]),
+    number("filter_attack_seconds", "Filter attack", "seconds", [0.001, 10]),
+    number("filter_decay_seconds", "Filter decay", "seconds", [0.001, 10]),
+    number("filter_sustain", "Filter sustain", "fraction", [0, 1]),
+    number("filter_release_seconds", "Filter release", "seconds", [0.001, 10]),
     number("attack_seconds", "Attack", "seconds", [0.001, 10]),
     number("decay_seconds", "Decay", "seconds", [0.001, 10]),
     number("sustain", "Sustain", "fraction", [0, 1]),

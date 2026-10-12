@@ -16,8 +16,8 @@ use common::synth_project;
 
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, Command, DrumParam, DrumSound, KIT, KickModel, Note, NoteId, PlacedClip,
-    PlacedTrack, Project, SynthParam, TrackId, Waveform,
+    Clip, ClipId, Command, DrumParam, DrumSound, FilterMode, KIT, KickModel, Note, NoteId,
+    PlacedClip, PlacedTrack, Project, SynthParam, TrackId, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -130,11 +130,12 @@ fn check_7() -> Project {
 }
 
 /// Every synth feature so far, on: oscillator 2 detuned against oscillator
-/// 1, the sub and noise in the mix, the oscillators running free, and some
-/// resonance, at full sustain. The full-voice loads play it, so they measure
+/// 1, the sub and noise in the mix, the oscillators running free, some
+/// resonance, and the filter envelope and key tracking, so each voice works
+/// out its own filter settings, at full sustain. The full-voice loads play it, so they measure
 /// the most a voice costs. Each Synth features ticket adds its features
 /// here (RFC-008, "How we'll verify it", Timing report).
-const FULL_VOICE: [SynthParam; 9] = [
+const FULL_VOICE: [SynthParam; 13] = [
     SynthParam::Osc2Wave(Waveform::Pulse),
     SynthParam::Osc2PitchSemitones(0.07),
     SynthParam::Osc2Level(0.8),
@@ -143,6 +144,10 @@ const FULL_VOICE: [SynthParam; 9] = [
     SynthParam::OscRetrigger(false),
     SynthParam::CutoffHz(4000.0),
     SynthParam::Resonance(0.5),
+    SynthParam::FilterMode(FilterMode::BandPass),
+    SynthParam::FilterEnvOctaves(3.0),
+    SynthParam::FilterKey(0.5),
+    SynthParam::FilterSustain(0.5),
     SynthParam::Sustain(1.0),
 ];
 
