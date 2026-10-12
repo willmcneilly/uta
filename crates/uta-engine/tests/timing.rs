@@ -129,14 +129,18 @@ fn check_7() -> Project {
     project
 }
 
-/// Every synth feature so far, on: oscillator 2 detuned against oscillator
-/// 1, the sub and noise in the mix, the oscillators running free, and some
-/// resonance, at full sustain. The full-voice loads play it, so they measure
-/// the most a voice costs. Each Synth features ticket adds its features
-/// here (RFC-008, "How we'll verify it", Timing report).
-const FULL_VOICE: [SynthParam; 9] = [
+/// Every synth feature so far, on: oscillator 1 a narrow pulse, oscillator 2
+/// synced to it a fifth up, the sub and noise in the mix, the oscillators
+/// running free, and some resonance, at full sustain. The full-voice loads
+/// play it, so they measure the most a voice costs. Each Synth features
+/// ticket adds its features here (RFC-008, "How we'll verify it", Timing
+/// report).
+const FULL_VOICE: [SynthParam; 12] = [
+    SynthParam::Osc1Wave(Waveform::Pulse),
+    SynthParam::Osc1Width(0.3),
     SynthParam::Osc2Wave(Waveform::Pulse),
-    SynthParam::Osc2PitchSemitones(0.07),
+    SynthParam::Osc2PitchSemitones(7.07),
+    SynthParam::Osc2Sync(true),
     SynthParam::Osc2Level(0.8),
     SynthParam::SubLevel(0.5),
     SynthParam::NoiseLevel(0.2),
@@ -368,8 +372,8 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         },
                     )
                     .unwrap(),
-                // The cutoff, oscillator 2's Pitch and its level, on every
-                // full voice.
+                // The cutoff, oscillator 1's Width, oscillator 2's Pitch and
+                // its level, on every full voice.
                 Load::FullVoices => {
                     let TrackSound::Synth(full) = renderer.controller.snapshot().tracks()[0].sound
                     else {
@@ -382,7 +386,8 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                             0,
                             SynthSettings {
                                 cutoff_hz: 200.0 * (1.0 + step),
-                                osc2_pitch_semitones: 0.07 + step / 50.0,
+                                osc1_width: 0.3 + step / 100.0,
+                                osc2_pitch_semitones: 7.07 + step / 50.0,
                                 osc2_level: 0.5 + step / 100.0,
                                 ..full
                             },
