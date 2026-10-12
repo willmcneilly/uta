@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::{
     Chain, Clip, ClipId, ClipPosition, Command, DelayParam, DelaySettings, DrumParam, DrumSound,
-    Effect, EffectId, EffectSettings, KIT, KitSettings, MixerStrip, Note, NoteId, PlacedClip,
-    PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings, Track,
-    TrackId, Waveform,
+    Effect, EffectId, EffectSettings, FilterMode, KIT, KitSettings, MixerStrip, Note, NoteId,
+    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings,
+    Track, TrackId, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -238,6 +238,18 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
         (-0.1f32..1.1).prop_map(SynthParam::SubLevel),
         (-0.1f32..1.1).prop_map(SynthParam::NoiseLevel),
         any::<bool>().prop_map(SynthParam::OscRetrigger),
+        prop_oneof![
+            Just(FilterMode::LowPass),
+            Just(FilterMode::BandPass),
+            Just(FilterMode::HighPass),
+        ]
+        .prop_map(SynthParam::FilterMode),
+        (-11.0f32..11.0).prop_map(SynthParam::FilterEnvOctaves),
+        (-0.1f32..1.1).prop_map(SynthParam::FilterKey),
+        (0.0f32..11.0).prop_map(SynthParam::FilterAttackSeconds),
+        (0.0f32..11.0).prop_map(SynthParam::FilterDecaySeconds),
+        (-0.1f32..1.1).prop_map(SynthParam::FilterSustain),
+        (0.0f32..11.0).prop_map(SynthParam::FilterReleaseSeconds),
         (0.0f32..22_000.0).prop_map(SynthParam::CutoffHz),
         (-0.1f32..1.1).prop_map(SynthParam::Resonance),
         (0.0f32..11.0).prop_map(SynthParam::AttackSeconds),
