@@ -47,6 +47,9 @@ function update(
       mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
       mixerDefaults: track.mixer,
       maxTracks: 32,
+      masterEffects: [],
+      effectKinds: [{ kind: "delay", name: "Delay" }],
+      maxEffects: 8,
       tracks: [
         {
           ...track,

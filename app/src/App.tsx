@@ -3,9 +3,12 @@ import { flushSync } from "react-dom";
 import "./design/tokens.css";
 import "./App.css";
 import {
+  type ChainAddress,
   type ClipNotes,
   type ClipOutline,
+  type DelayParam,
   type DrumParam,
+  type EffectKind,
   type DrumSound,
   type Frame,
   type MixerView,
@@ -16,6 +19,7 @@ import {
   type TrackView,
   type Update,
   addClip,
+  addEffect,
   addNotes,
   addStressNotes,
   addTrack,
@@ -25,6 +29,7 @@ import {
   getNotes,
   getProject,
   locate,
+  moveEffect,
   moveTrack,
   onDevelopMenu,
   onEditMenu,
@@ -34,11 +39,15 @@ import {
   pause,
   play,
   removeClips,
+  removeEffects,
   removeNotes,
   removeTrack,
   resume,
   setBufferSize,
   setClips,
+  setDelayParam,
+  setEffectEnabled,
+  setEffectMix,
   setLoop,
   setLoopEnabled,
   setNotes,
@@ -61,10 +70,11 @@ import {
   browserClock,
   runBenchmark,
 } from "./benchmark/run";
+import { ChainMap, ChainRow } from "./chain/ChainRow";
 import { Divider } from "./Divider";
 import { DragSteps } from "./dragSteps";
 import { FrameLoop } from "./frameLoop";
-import { Meter } from "./Meter";
+import { MasterHeader } from "./MasterHeader";
 import { MeterLevel, TrackLevels, clipLit } from "./meterLevel";
 import { type BarBeat, barBeat } from "./musicalTime";
 import { Output } from "./Output";
@@ -90,7 +100,6 @@ import {
 } from "./timeline/Timeline";
 import { TrackHeaders } from "./TrackHeaders";
 import { Transport } from "./Transport";
-import { Volume } from "./Volume";
 
 /** The slow-changing part of a frame: what the text on screen shows. */
 interface Status {
@@ -115,6 +124,11 @@ function toStatus(frame: Frame, project: ProjectView | null): Status {
 
 function sameStatus(a: Status | null, b: Status): boolean {
   return a !== null && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** What a track's source is called on its spine and in the chain map. */
+function sourceName(track: TrackView): string {
+  return track.source.kind === "synth" ? "Synth" : "Drums";
 }
 
 /** Inputs that take typing, where Space types a space rather than playing. */
@@ -161,6 +175,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // What's selected, which tab is open, how tall the editor is, and when
   // the clip light was last clicked are the UI's own: none is project data.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The master is selected instead of a track: the Sound tab shows its chain.
+  const [masterSelected, setMasterSelected] = useState(false);
+  // The effect picked on the Sound tab, which Delete deletes.
+  const [selectedEffect, setSelectedEffect] = useState<string | null>(null);
   // The clips picked on the timeline, in the order they were picked.
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("notes");
@@ -183,6 +201,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // Which view the Edit menu acts on: the one last clicked in.
   const editView = useRef<EditView>("pianoRoll");
   const headers = useRef<HTMLElement>(null);
+  // The Sound tab's row, which the chain map scrolls.
+  const chainRow = useRef<HTMLDivElement | null>(null);
   // How many project-changed events have arrived, for the benchmark to wait on.
   const changeEvents = useRef(0);
   // The cache as of the latest render, for the benchmark to read once it's drawn.
@@ -212,12 +232,25 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const clipTrack =
     project?.tracks.find((t) => t.clips.some((c) => c.id === selectedClipId)) ?? null;
   if (clipTrack && clipTrack.id !== selectedId) setSelectedId(clipTrack.id);
+  // Picking a clip selects its track rather than the master.
+  if (clipTrack && masterSelected) setMasterSelected(false);
   // The selected track, or the top one if none is.
   const track: TrackView | null =
     clipTrack ?? project?.tracks.find((t) => t.id === selectedId) ?? project?.tracks[0] ?? null;
   // The Notes tab shows the selected clip, or the track's first if none is.
   const clip =
     clipTrack?.clips.find((c) => c.id === selectedClipId) ?? track?.clips[0] ?? null;
+  // The chain the Sound tab shows: the master's, or the track's.
+  const chain = !project ? [] : masterSelected ? project.masterEffects : (track?.effects ?? []);
+  const chainAddress: ChainAddress | null = masterSelected
+    ? "master"
+    : track
+      ? { track: track.id }
+      : null;
+  // A selected effect that has gone (deleted, or its track changed) stays unselected.
+  if (selectedEffect !== null && !chain.some((effect) => effect.id === selectedEffect)) {
+    setSelectedEffect(null);
+  }
 
   useEffect(() => {
     let active = true;
@@ -354,13 +387,22 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   /** Selects a track. The selected clip stays selected if it's on it. */
   const selectTrack = (id: string | null) => {
     setSelectedId(id);
+    setMasterSelected(false);
     if (clipTrack === null || clipTrack.id !== id) setSelectedClipIds([]);
+  };
+
+  /** Selects the master, and shows its chain: it has no notes. */
+  const selectMaster = () => {
+    if (!masterSelected) setTab("sound");
+    setMasterSelected(true);
+    setSelectedClipIds([]);
   };
 
   /** Selects track `id` once Rust has sent the project with it in. */
   const showAndSelect = (id: string | null) => (update: Update) => {
     show(update);
     setSelectedId(id);
+    setMasterSelected(false);
     setSelectedClipIds([]);
   };
 
@@ -381,12 +423,12 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     "add-synth-track": () => newTrack("synth"),
     "add-drum-track": () => newTrack("drums"),
     "duplicate-track": () => {
-      if (!track) return;
+      if (!track || masterSelected) return;
       const id = crypto.randomUUID();
       duplicateTrack(track.id, id).then(showAndSelect(id), report);
     },
     "delete-track": () => {
-      if (!project || !track) return;
+      if (!project || !track || masterSelected) return;
       // The track below takes its place, or the one above if it was last.
       const index = project.tracks.indexOf(track);
       const next = project.tracks[index + 1] ?? project.tracks[index - 1] ?? null;
@@ -429,6 +471,26 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     if (!track) return;
     const id = track.id;
     drags.step(gesture, () => setDrumParam(id, sound, param, gesture).then(show, report));
+  };
+
+  // The Sound tab's row edits the chain it shows. A new effect is selected
+  // once Rust has sent it back.
+  const newEffect = (kind: EffectKind) => {
+    if (!chainAddress) return;
+    const address = chainAddress;
+    const id = crypto.randomUUID();
+    drags.then(() =>
+      addEffect(address, id, kind).then((update) => {
+        show(update);
+        setSelectedEffect(id);
+      }, report),
+    );
+  };
+  const changeEffectMix = (id: string, mix: number, gesture?: number) => {
+    drags.step(gesture, () => setEffectMix(id, mix, gesture).then(show, report));
+  };
+  const changeEffectSetting = (id: string, param: DelayParam, gesture?: number) => {
+    drags.step(gesture, () => setDelayParam(id, param, gesture).then(show, report));
   };
 
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
@@ -518,21 +580,6 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           onLoopEnabled={changeLoopEnabled}
         />
 
-        <section className="master" aria-label="Master">
-          {project && <Volume project={project} onChange={changeVolume} />}
-          <div className="master-meter">
-            <Meter level={level} label="Level meter" width={120} />
-            <button
-              type="button"
-              className="clip-light"
-              data-lit={clipped}
-              aria-label={clipped ? "Master clipped. Click to reset" : "Master hasn't clipped"}
-              title={clipped ? "The master clipped. Click to reset." : "Lights if the master clips"}
-              onClick={() => setSeenClips(status?.clips ?? 0)}
-            />
-          </div>
-        </section>
-
         {status && (
           <Output
             output={status.output}
@@ -551,44 +598,61 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       )}
 
       <div className="arrangement" onPointerDownCapture={() => (editView.current = "timeline")}>
+        <div className="arrangement-tracks">
+          {project && (
+            <TrackHeaders
+              project={project}
+              selected={masterSelected ? null : (track?.id ?? null)}
+              levels={trackLevels}
+              onSelect={selectTrack}
+              onMixer={changeMixer}
+              onSoloAlone={soloAlone}
+              onAdd={newTrack}
+              onMove={moveTrackTo}
+              scrollRef={headers}
+            />
+          )}
+          {project && (
+            <Timeline
+              ref={timeline}
+              project={project}
+              selectedTrack={masterSelected ? null : (track?.id ?? null)}
+              // Only clips chosen on the timeline are highlighted there, so
+              // Backspace never deletes the one Notes falls back to.
+              selectedClips={clipIds}
+              editor={clipEditor}
+              ruler={rulerActions}
+              clock={clock}
+              frames={frames}
+              headers={headers}
+              onSelectTrack={(id) => {
+                // A click on empty space selects the track and no clip.
+                setSelectedId(id);
+                setMasterSelected(false);
+                setSelectedClipIds([]);
+              }}
+              onSelectClips={setSelectedClipIds}
+              onOpenClip={(_track, clipId) => {
+                setSelectedClipIds([clipId]);
+                setTab("notes");
+              }}
+              createRenderer={createTimelineRenderer}
+            />
+          )}
+        </div>
         {project && (
-          <TrackHeaders
-            project={project}
-            selected={track?.id ?? null}
-            levels={trackLevels}
-            onSelect={selectTrack}
-            onMixer={changeMixer}
-            onSoloAlone={soloAlone}
-            onAdd={newTrack}
-            onMove={moveTrackTo}
-            scrollRef={headers}
-          />
-        )}
-        {project && (
-          <Timeline
-            ref={timeline}
-            project={project}
-            selectedTrack={track?.id ?? null}
-            // Only clips chosen on the timeline are highlighted there, so
-            // Backspace never deletes the one Notes falls back to.
-            selectedClips={clipIds}
-            editor={clipEditor}
-            ruler={rulerActions}
-            clock={clock}
-            frames={frames}
-            headers={headers}
-            onSelectTrack={(id) => {
-              // A click on empty space selects the track and no clip.
-              setSelectedId(id);
-              setSelectedClipIds([]);
-            }}
-            onSelectClips={setSelectedClipIds}
-            onOpenClip={(_track, clipId) => {
-              setSelectedClipIds([clipId]);
-              setTab("notes");
-            }}
-            createRenderer={createTimelineRenderer}
-          />
+          <div className="master-row">
+            <MasterHeader
+              project={project}
+              selected={masterSelected}
+              level={level}
+              clipped={clipped}
+              onSelect={selectMaster}
+              onVolume={changeVolume}
+              onClipSeen={() => setSeenClips(status?.clips ?? 0)}
+            />
+            <div className="master-lane" onPointerDown={selectMaster} />
+          </div>
         )}
       </div>
 
@@ -615,12 +679,25 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               aria-controls={`panel-${name}`}
               aria-selected={tab === name}
               tabIndex={tab === name ? 0 : -1}
+              // The master has no notes, so its Notes tab is in the third ink.
+              data-empty={(name === "notes" && masterSelected) || undefined}
               onClick={() => setTab(name)}
             >
               {name === "notes" ? "Notes" : "Sound"}
             </button>
           ))}
-          {track && <span className="editing">{track.name}</span>}
+          {tab === "sound" && project && (masterSelected || track) && (
+            <ChainMap
+              source={masterSelected || !track ? null : sourceName(track)}
+              effects={chain}
+              rowRef={chainRow}
+            />
+          )}
+          {masterSelected ? (
+            <span className="editing">Master</span>
+          ) : (
+            track && <span className="editing">{track.name}</span>
+          )}
         </div>
 
         <div
@@ -629,23 +706,49 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
           id={`panel-${tab}`}
           aria-labelledby={`tab-${tab}`}
         >
-          {!project || !track ? (
+          {project && masterSelected && tab === "notes" ? (
+            <p className="empty">The master has no notes. Its effects are on the Sound tab.</p>
+          ) : !project || (!track && !masterSelected) ? (
             <p className="empty">No track selected. Add one with + Synth or + Drums.</p>
           ) : tab === "sound" ? (
-            track.source.kind === "synth" ? (
-              <SynthPanel
-                settings={track.source.settings}
-                sampleRate={status?.output.sampleRate ?? null}
-                onChange={changeSynth}
-              />
-            ) : (
-              <DrumPanel
-                rows={track.source.kit.rows}
-                onChange={changeDrum}
-                onAudition={(pitch) => editor.audition(pitch, NEW_NOTE_VELOCITY)}
-              />
-            )
-          ) : clip ? (
+            <ChainRow
+              source={
+                masterSelected || !track
+                  ? null
+                  : {
+                      name: sourceName(track),
+                      panel:
+                        track.source.kind === "synth" ? (
+                          <SynthPanel
+                            settings={track.source.settings}
+                            sampleRate={status?.output.sampleRate ?? null}
+                            onChange={changeSynth}
+                          />
+                        ) : (
+                          <DrumPanel
+                            rows={track.source.kit.rows}
+                            onChange={changeDrum}
+                            onAudition={(pitch) => editor.audition(pitch, NEW_NOTE_VELOCITY)}
+                          />
+                        ),
+                    }
+              }
+              effects={chain}
+              kinds={project.effectKinds}
+              maxEffects={project.maxEffects}
+              selected={selectedEffect}
+              onSelect={setSelectedEffect}
+              onAdd={newEffect}
+              onEnabled={(id, enabled) =>
+                drags.then(() => setEffectEnabled(id, enabled).then(show, report))
+              }
+              onMove={(id, index) => drags.then(() => moveEffect(id, index).then(show, report))}
+              onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
+              onMix={changeEffectMix}
+              onSetting={changeEffectSetting}
+              rowRef={chainRow}
+            />
+          ) : !track ? null : clip ? (
             <PianoRoll
               ref={pianoRoll}
               project={project}
