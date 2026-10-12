@@ -1,0 +1,107 @@
+{
+  "project": "166cad9c-4441-59aa-a19e-1bbc1547cef5",
+  "commands": [
+    {
+      "format": 8,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "2d1732d5-c31e-5ecd-977d-cf09d3ed6d95",
+              "name": "Feedback 110%",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "aa6f1443-6cd1-5d7e-94bb-5b6f95feb691",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 1.1,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 0.1
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a11a1560-77fa-5e99-a21d-9d88153faac7",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "7a8faac7-95ef-5d33-b7bb-6fda8fe9e6e3",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "dcbe8ca2-5a17-51de-a5b1-36552556fb46",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "85a4a352-8d5d-5f61-8a11-f91269b10f78",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

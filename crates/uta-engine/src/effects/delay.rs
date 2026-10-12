@@ -82,7 +82,7 @@ const RESTART_GLIDE_SECONDS: f64 = 0.05;
 pub struct DelaySettings {
     /// The echoes' spacing, from 1 ms to 5 s: a synced time at the tempo,
     /// or the time in seconds.
-    pub time_seconds: f32,
+    pub time_seconds: f64,
     pub mode: DelayMode,
     /// How much of each echo comes round again, from 0 to 1.1.
     pub feedback: f32,
@@ -132,13 +132,16 @@ impl DelaySettings {
                 value.clamp(min, max)
             }
         };
+        let time_seconds = if self.time_seconds.is_nan() {
+            f64::from(default.time_seconds)
+        } else {
+            self.time_seconds.clamp(
+                f64::from(Core::MIN_TIME_SECONDS),
+                f64::from(Core::MAX_TIME_SECONDS),
+            )
+        };
         Self {
-            time_seconds: clamp(
-                self.time_seconds,
-                Core::MIN_TIME_SECONDS,
-                Core::MAX_TIME_SECONDS,
-                default.time_seconds,
-            ),
+            time_seconds,
             mode: self.mode,
             feedback: clamp(
                 self.feedback,
@@ -341,9 +344,9 @@ impl Delay {
     /// `settings`' time in samples at the current rate, kept to what the
     /// tape holds.
     fn time_samples(&self, settings: DelaySettings) -> f64 {
-        // Rounded to an `f32`, as precise as the time itself, so a time of
-        // 0.02 s is 960 samples exactly, not 959.99997.
-        let samples = (f64::from(settings.time_seconds) * self.sample_rate) as f32;
+        // Rounded to an `f32`, as precise as a time in seconds set as one,
+        // so a time of 0.02 s is 960 samples exactly, not 959.99997.
+        let samples = (settings.time_seconds * self.sample_rate) as f32;
         f64::from(samples).clamp(MIN_DELAY_SAMPLES, self.longest())
     }
 

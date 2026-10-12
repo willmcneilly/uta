@@ -1,0 +1,159 @@
+{
+  "project": "e73a482c-51af-5579-8648-0f3ab03caf88",
+  "commands": [
+    {
+      "format": 8,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_loop",
+        "start_bar": 0,
+        "bars": 1
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "49a65c17-5a3e-5404-bcb3-6feb41004e2a",
+              "name": "Pluck",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "c63bed20-c20b-52bc-add3-e03fb907e6d2",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.35,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 0.1
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.35
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "86e7afd1-8c97-5267-957e-d1a375af11c5",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "a3a3ba8d-f3de-5371-b036-b59be611073e",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "5aaa880f-9d9f-59dc-9461-60ce57282541",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 240
+                    },
+                    {
+                      "id": "5e4ef931-d19d-5ada-877a-27e00de6a1d7",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 240
+                    },
+                    {
+                      "id": "538d144c-60c4-5d0d-b27b-51a74fd80275",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1680,
+                      "length": 240
+                    },
+                    {
+                      "id": "2712082a-73a6-5ebf-9704-2b13d34fee4d",
+                      "pitch": 67,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 240
+                    },
+                    {
+                      "id": "a3d744c5-a550-5608-a542-22d0ef3fd270",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "add_effects",
+        "effects": [
+          {
+            "chain": "master",
+            "index": 0,
+            "effect": {
+              "id": "62e8387f-8b7d-505c-929d-35bb9ce22896",
+              "settings": {
+                "delay": {
+                  "sync": true,
+                  "division": "1/4",
+                  "time_seconds": 0.375,
+                  "mode": "ping_pong",
+                  "feedback": 0.3,
+                  "low_cut_hz": 200.0,
+                  "high_cut_hz": 3000.0,
+                  "drive": 0.2,
+                  "wobble": 0.1
+                }
+              },
+              "enabled": true,
+              "mix": 0.25
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -273,13 +273,18 @@ impl DelaySettings {
 
     /// The echoes' spacing in seconds at `bpm`: the division's length when
     /// synced, held at [`Self::MAX_TIME_SECONDS`], or the time in seconds
-    /// when not.
-    pub fn time_seconds_at(&self, bpm: f32) -> f32 {
+    /// when not. In `f64`, which holds a division's length at any tempo
+    /// closely enough to land on its sample: 0.6 s, a quarter at 100 BPM,
+    /// is 28,800 samples at 48 kHz, where as an `f32` it would be a hair
+    /// over.
+    pub fn time_seconds_at(&self, bpm: f32) -> f64 {
         if self.sync {
-            (self.division.seconds_at(bpm) as f32)
-                .clamp(Self::MIN_TIME_SECONDS, Self::MAX_TIME_SECONDS)
+            self.division.seconds_at(bpm).clamp(
+                f64::from(Self::MIN_TIME_SECONDS),
+                f64::from(Self::MAX_TIME_SECONDS),
+            )
         } else {
-            self.time_seconds
+            f64::from(self.time_seconds)
         }
     }
 
@@ -711,8 +716,8 @@ mod tests {
         assert_eq!(settings.time_seconds_at(20.0), 5.0);
         settings.sync = false;
         settings.time_seconds = 0.2;
-        assert_eq!(settings.time_seconds_at(40.0), 0.2);
-        assert_eq!(settings.time_seconds_at(300.0), 0.2);
+        assert_eq!(settings.time_seconds_at(40.0), f64::from(0.2f32));
+        assert_eq!(settings.time_seconds_at(300.0), f64::from(0.2f32));
     }
 
     #[test]

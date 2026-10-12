@@ -1,0 +1,326 @@
+{
+  "project": "a4f07c1f-80ba-517c-8f15-bf1da2b44201",
+  "commands": [
+    {
+      "format": 8,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "05e143ba-2fbb-5447-b7b0-ec8f2257cba4",
+              "name": "Wobble 0.0",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.6,
+                  "sustain": 0.6,
+                  "release_seconds": 0.2
+                }
+              },
+              "effects": [
+                {
+                  "id": "4f85358c-d113-5247-a7f3-e6cf32b31112",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/4",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.5,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "047868b9-45d0-5503-8db4-c65fc887bfbc",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "8513c0c9-c892-5ccb-9be3-9d98c896e0f6",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "e6ead57a-fe4b-51ad-accb-af4a238a5f36",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "34509127-c946-5175-b99a-34990b065a62",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "2a64a321-6fd3-50b9-9859-388b49a1e4e8",
+              "name": "Wobble 0.25",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.6,
+                  "sustain": 0.6,
+                  "release_seconds": 0.2
+                }
+              },
+              "effects": [
+                {
+                  "id": "9652a3fa-1e75-50bd-8147-4aa12e14b564",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/4",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.5,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 0.25
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "d50c4f35-ea1a-5a78-a996-7d56ca02d178",
+                  "start": 7680,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "fbf179ea-bc0d-54c1-a3b1-c203ceffc8e5",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "2750db4f-2042-5bc5-b558-e697af52f8b8",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "14984e34-a568-5431-b2ea-45b743a355e5",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "2ee43332-97fb-562f-9e68-badae4123f1f",
+              "name": "Wobble 0.5",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.6,
+                  "sustain": 0.6,
+                  "release_seconds": 0.2
+                }
+              },
+              "effects": [
+                {
+                  "id": "a2211ffa-39ae-5be0-9af7-a1b09f90097c",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/4",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.5,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 0.5
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "5eb6ae7c-7346-51a4-b758-5b04289f97ad",
+                  "start": 15360,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "38b07a13-5abb-517c-95b0-02e6a848312f",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "5f44921f-d6f2-51a9-8666-d49391e74fb4",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "db4ada1f-dae4-5c39-9d4f-b97180bb463d",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "7dff55b7-2cec-5552-85bb-84cc55086d0e",
+              "name": "Wobble 1.0",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.6,
+                  "sustain": 0.6,
+                  "release_seconds": 0.2
+                }
+              },
+              "effects": [
+                {
+                  "id": "2b9fa820-72a4-521d-8768-f3d0cd125783",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/4",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.5,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.2,
+                      "wobble": 1.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "7d384679-d66a-5809-a14c-3acd36ac60cc",
+                  "start": 23040,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "1b1368e9-4402-5858-8288-016c7430116c",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "fb7729cc-b550-569e-8cf3-6159463a3341",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    },
+                    {
+                      "id": "599f468b-d622-5769-bbb7-f62ba76a961b",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
