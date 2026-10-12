@@ -54,12 +54,21 @@ export function MasterHeader({
       aria-label="Master"
       aria-current={selected ? "true" : undefined}
       onPointerDown={(event) => {
-        if (!(event.target instanceof Element && event.target.closest("button, [role=slider]"))) {
+        if (!(event.target instanceof Element && event.target.closest(".master-volume, .clip-light"))) {
           onSelect();
         }
       }}
     >
-      <span className="master-name">Master</span>
+      {/* A key, so the master can be selected from the keyboard too. */}
+      <button
+        type="button"
+        className="master-name"
+        aria-pressed={selected}
+        title="Show the master's chain"
+        onClick={onSelect}
+      >
+        Master
+      </button>
       <Fader
         className="master-volume"
         label="Vol"

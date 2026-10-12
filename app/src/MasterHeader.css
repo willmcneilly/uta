@@ -42,10 +42,23 @@
 
 .master-name {
   grid-area: name;
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
   color: var(--ink);
   font: var(--font-name);
+  text-align: left;
+  cursor: default;
+  appearance: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.master-name:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
 }
 
 .master-header.selected .master-name {

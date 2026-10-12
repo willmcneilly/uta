@@ -513,6 +513,18 @@ describe("the master", () => {
     expect(screen.getByRole("region", { name: "Synth" })).toBeInTheDocument();
   });
 
+  it("can be selected from the keyboard by its name", async () => {
+    await openSound();
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    const name = screen.getByRole("button", { name: "Master" });
+    expect(name).toHaveAttribute("aria-pressed", "false");
+    // A key's click is what Return and Space on it send.
+    fireEvent.click(name);
+    expect(screen.getByRole("region", { name: "Master" })).toHaveAttribute("aria-current", "true");
+    expect(name).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "Sound" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("using its volume or clip light leaves the selected track and its notes open", async () => {
     await openSound();
     fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
