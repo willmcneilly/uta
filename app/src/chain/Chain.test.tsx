@@ -213,6 +213,7 @@ afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   clearMocks();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const sent = (cmd: string) => calls.filter((call) => call.cmd === cmd).map((call) => call.args);
@@ -316,6 +317,31 @@ describe("the Sound tab's chain", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(addKey()).toHaveFocus();
     expect(sent("add_effect")).toEqual([]);
+  });
+
+  it("opens the + menu against the window, to the right of +, or to its left at the window's edge", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(120);
+    const placeAt = (left: number) => {
+      addKey().getBoundingClientRect = () => ({ left, right: left + 32, top: 500 }) as DOMRect;
+    };
+    await openSound([synthWith()]);
+    // Near the start of the row, as on an empty master chain: it opens rightwards.
+    placeAt(40);
+    fireEvent.click(addKey());
+    let menu = screen.getByRole("menu", { name: "Add effect" });
+    expect(menu.style.left).toBe("72px");
+    expect(menu.style.top).toBe("524px");
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    // Near the window's right edge (jsdom's is 1024 wide): it opens leftwards.
+    placeAt(950);
+    fireEvent.click(addKey());
+    menu = screen.getByRole("menu", { name: "Add effect" });
+    expect(menu.style.left).toBe("830px");
+
+    // Scrolling the row moves the +, so the menu closes rather than float away.
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("greys out + when the chain holds eight", async () => {

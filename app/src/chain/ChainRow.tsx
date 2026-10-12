@@ -4,6 +4,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -111,6 +112,11 @@ function OnKey({ effect, onEnabled }: { effect: EffectView; onEnabled: (on: bool
   );
 }
 
+/** How far below the top of the + the menu opens, in CSS pixels: under its key. */
+const MENU_DROP = 24;
+/** The least room the menu leaves to the window's edges, in CSS pixels. */
+const MENU_MARGIN = 8;
+
 /**
  * The + on the line at the end of the chain, opening a menu of the kinds of
  * effect. The menu takes focus on its first item and moves with the arrow
@@ -130,11 +136,30 @@ function AddEffect({
   const [open, setOpen] = useState(false);
   const area = useRef<HTMLDivElement>(null);
   const key = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const items = () => Array.from(area.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []);
-  // Opened, its first item takes focus. A click anywhere else, or Escape, closes it.
+  // Opened, it's placed against the window, not the row, so the scrolling
+  // row never clips it wherever the + is: under the + and to its right, or
+  // to its left if the window's edge is in the way. It's placed before it's
+  // drawn, so it never shows in the wrong spot.
+  useLayoutEffect(() => {
+    const plus = key.current?.getBoundingClientRect();
+    const box = menu.current;
+    if (!open || !plus || !box) return;
+    const width = box.offsetWidth;
+    const right = plus.right + width <= window.innerWidth - MENU_MARGIN;
+    box.style.top = `${plus.top + MENU_DROP}px`;
+    box.style.left = `${right ? plus.right : Math.max(MENU_MARGIN, plus.left - width)}px`;
+  }, [open]);
+
+  // Opened, its first item takes focus. A click anywhere else, Escape, or
+  // scrolling or resizing what it was placed against closes it.
   useEffect(() => {
     if (!open) return;
     items()[0]?.focus();
+    const moved = () => setOpen(false);
+    window.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", moved);
     const away = (event: globalThis.PointerEvent) => {
       if (!area.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -148,6 +173,8 @@ function AddEffect({
     return () => {
       window.removeEventListener("pointerdown", away);
       window.removeEventListener("keydown", escape);
+      window.removeEventListener("scroll", moved, true);
+      window.removeEventListener("resize", moved);
     };
   }, [open]);
   if (full && open) setOpen(false);
@@ -185,7 +212,13 @@ function AddEffect({
         <span className="spine-name">Add effect</span>
       </button>
       {open && (
-        <div className="add-menu" role="menu" aria-label="Add effect" onKeyDown={moveFocus}>
+        <div
+          ref={menu}
+          className="add-menu"
+          role="menu"
+          aria-label="Add effect"
+          onKeyDown={moveFocus}
+        >
           {kinds.map((kind) => (
             <button
               key={kind.kind}
