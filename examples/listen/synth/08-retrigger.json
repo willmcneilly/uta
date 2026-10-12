@@ -206,112 +206,112 @@
                       "id": "d334f453-6cc7-5de1-b068-d25081a67bf1",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 3840,
+                      "start": 0,
                       "length": 120
                     },
                     {
                       "id": "f6fccb93-66ec-5666-8594-fa1e3ab3719f",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 4080,
+                      "start": 240,
                       "length": 120
                     },
                     {
                       "id": "72105520-1518-5e28-bf52-1810215cba9c",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 4320,
+                      "start": 480,
                       "length": 120
                     },
                     {
                       "id": "6df3e9a8-34a4-524e-a08b-4642825f19d7",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 4560,
+                      "start": 720,
                       "length": 120
                     },
                     {
                       "id": "b89e3d4c-c6ec-518c-b274-68940d53ead3",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 4800,
+                      "start": 960,
                       "length": 120
                     },
                     {
                       "id": "98acdb92-805e-5537-ab4e-49293f025e36",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 5040,
+                      "start": 1200,
                       "length": 120
                     },
                     {
                       "id": "77f78c17-1ab2-5f05-ba87-499ee8cce322",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 5280,
+                      "start": 1440,
                       "length": 120
                     },
                     {
                       "id": "fb7b301a-7b07-53d6-af9e-6f3ca9faf4e6",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 5520,
+                      "start": 1680,
                       "length": 120
                     },
                     {
                       "id": "687bb3f1-635a-5fce-8910-e64c73aebb92",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 5760,
+                      "start": 1920,
                       "length": 120
                     },
                     {
                       "id": "339a81b5-2615-57dc-a25b-a74d3b0561de",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6000,
+                      "start": 2160,
                       "length": 120
                     },
                     {
                       "id": "fccb5fd2-491a-52a9-ae9f-de51a0aaae01",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6240,
+                      "start": 2400,
                       "length": 120
                     },
                     {
                       "id": "41b37d3d-32eb-5003-b4d6-c1f8aaf4fcdf",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6480,
+                      "start": 2640,
                       "length": 120
                     },
                     {
                       "id": "aa15a868-adf5-55a3-8988-9c413bbf1d44",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6720,
+                      "start": 2880,
                       "length": 120
                     },
                     {
                       "id": "a488cd47-afd4-5171-851a-39b5195e6c82",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6960,
+                      "start": 3120,
                       "length": 120
                     },
                     {
                       "id": "4c6d93c6-2d73-5427-8bcb-83186f6bc0d8",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 7200,
+                      "start": 3360,
                       "length": 120
                     },
                     {
                       "id": "e1352b0f-e997-517c-babe-e9f7983224dd",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 7440,
+                      "start": 3600,
                       "length": 120
                     }
                   ]
@@ -352,112 +352,112 @@
                       "id": "b8279361-b352-5af2-aa70-e6b0e3241a36",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 7680,
+                      "start": 0,
                       "length": 120
                     },
                     {
                       "id": "010a5b47-7e18-5d65-ab51-5bd723e3d94e",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 7920,
+                      "start": 240,
                       "length": 120
                     },
                     {
                       "id": "9a058435-127a-5822-a6b2-1f2fe9d2d39f",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 8160,
+                      "start": 480,
                       "length": 120
                     },
                     {
                       "id": "b4e2e10e-464c-5f87-9263-ddf3fa2ef671",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 8400,
+                      "start": 720,
                       "length": 120
                     },
                     {
                       "id": "2a3f2ed0-ffb2-5693-81bc-da30c30a4a3b",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 8640,
+                      "start": 960,
                       "length": 120
                     },
                     {
                       "id": "a4dc4a43-221c-58d9-881f-1a311b9c40da",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 8880,
+                      "start": 1200,
                       "length": 120
                     },
                     {
                       "id": "cbcd813c-da15-55b1-8264-aca18e92c2f4",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 9120,
+                      "start": 1440,
                       "length": 120
                     },
                     {
                       "id": "195a0845-e6c8-522e-89ba-0d765cc234b9",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 9360,
+                      "start": 1680,
                       "length": 120
                     },
                     {
                       "id": "601d6f91-b28d-5551-84bf-9f3bbd26a536",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 9600,
+                      "start": 1920,
                       "length": 120
                     },
                     {
                       "id": "5f352ab5-8899-5549-bf7e-99bca3668c01",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 9840,
+                      "start": 2160,
                       "length": 120
                     },
                     {
                       "id": "4582ffbb-5185-5b8c-82fc-54e19a5e90e5",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 10080,
+                      "start": 2400,
                       "length": 120
                     },
                     {
                       "id": "9c645cc2-7e32-5f1c-9669-e95f777f86b2",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 10320,
+                      "start": 2640,
                       "length": 120
                     },
                     {
                       "id": "a3158520-b7ba-547f-b176-a77aa432570e",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 10560,
+                      "start": 2880,
                       "length": 120
                     },
                     {
                       "id": "8f506148-0b18-5ee9-9a43-42e978fbddad",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 10800,
+                      "start": 3120,
                       "length": 120
                     },
                     {
                       "id": "e4fed0dd-8d8d-52f1-bd83-100517a44bed",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 11040,
+                      "start": 3360,
                       "length": 120
                     },
                     {
                       "id": "e9f7d12f-693d-5126-ab76-2e5a202c6733",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 11280,
+                      "start": 3600,
                       "length": 120
                     }
                   ]
@@ -498,112 +498,112 @@
                       "id": "a7567d3e-6626-5950-acdc-a7da9a0a9e7a",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 11520,
+                      "start": 0,
                       "length": 120
                     },
                     {
                       "id": "136d6216-12e0-5a39-b715-8a43f2d61caa",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 11760,
+                      "start": 240,
                       "length": 120
                     },
                     {
                       "id": "ea7437b9-cc6e-52ab-a974-6787e94ebd7b",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 12000,
+                      "start": 480,
                       "length": 120
                     },
                     {
                       "id": "dec50f35-8d2a-5bd7-be4b-9a8b4daf5dfe",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 12240,
+                      "start": 720,
                       "length": 120
                     },
                     {
                       "id": "b3da9171-fbae-5ba3-bc0a-5fb6f3e2c1e2",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 12480,
+                      "start": 960,
                       "length": 120
                     },
                     {
                       "id": "27da1c8e-d64f-5d3c-bec7-4d009b0d244b",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 12720,
+                      "start": 1200,
                       "length": 120
                     },
                     {
                       "id": "293c142d-e420-5129-b9ac-71c764f55471",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 12960,
+                      "start": 1440,
                       "length": 120
                     },
                     {
                       "id": "bbe3b918-3017-525e-afa3-b3afc2ad9360",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 13200,
+                      "start": 1680,
                       "length": 120
                     },
                     {
                       "id": "08e63d31-b7ef-5d1a-bfd4-54b2ba286e61",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 13440,
+                      "start": 1920,
                       "length": 120
                     },
                     {
                       "id": "d2ab71ce-292a-54a1-ace3-41f1e69eab74",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 13680,
+                      "start": 2160,
                       "length": 120
                     },
                     {
                       "id": "75bfaa9f-71da-5171-b1d0-32c0b8930752",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 13920,
+                      "start": 2400,
                       "length": 120
                     },
                     {
                       "id": "6036075f-0e56-55e8-b76b-843fa71782b9",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 14160,
+                      "start": 2640,
                       "length": 120
                     },
                     {
                       "id": "e5c25ccc-35ef-53d0-ba21-fbae6d835f6e",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 14400,
+                      "start": 2880,
                       "length": 120
                     },
                     {
                       "id": "a7fe66a3-2984-5243-8a79-b139e1097ef8",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 14640,
+                      "start": 3120,
                       "length": 120
                     },
                     {
                       "id": "5f9045dc-ae4d-52c0-8ec0-9f945b0c2f36",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 14880,
+                      "start": 3360,
                       "length": 120
                     },
                     {
                       "id": "e8b80d0f-5b0a-5c85-a2d5-5075d7bf4773",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 15120,
+                      "start": 3600,
                       "length": 120
                     }
                   ]
