@@ -2,7 +2,7 @@
 //! device; `render-all` does the same for every command list in a folder;
 //! `play` plays it through the default output, round the loop until Ctrl-C
 //! or to the song's end. They build the project from a command list
-//! (`--commands`).
+//! (`--commands`). `analyse` measures a WAV with `uta-analysis`.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use uta_analysis::report::{Note, Report, Sound, Values};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks, TimeSignature};
 use uta_core::{CommandList, Project};
 use uta_engine::live::{self, DeviceState, DeviceStatus, LiveOutput};
@@ -55,6 +56,29 @@ enum Command {
         /// The folder to write the WAVs to. It's created if it isn't there.
         out: PathBuf,
     },
+    /// Measure a WAV: one line for each measurement, with its unit, from the
+    /// same code the sound tests use. A stereo WAV is measured as its mid.
+    #[command(visible_alias = "analyze")]
+    Analyse {
+        /// The WAV to measure, at 48 kHz, such as one `uta render` wrote.
+        file: PathBuf,
+        /// Another WAV to measure alongside it: both columns, then this one
+        /// minus that one.
+        #[arg(long)]
+        against: Option<PathBuf>,
+        /// Print the report as JSON. The fields are documented in
+        /// `uta-analysis`'s `report` module.
+        #[arg(long)]
+        json: bool,
+        /// The note it's meant to be, such as `C3` (middle C is C4): the
+        /// report says how many cents off the measured pitch is. Without
+        /// it, the pitch is measured from the nearest note.
+        #[arg(long)]
+        pitch: Option<Note>,
+        /// The frequency to measure the share of the energy above, in Hz.
+        #[arg(long, default_value_t = 5000.0, value_parser = positive_hz)]
+        above: f64,
+    },
     /// Play the project through the default output: round the loop until
     /// Ctrl-C, or with the loop off (or starting after it) to the end of the
     /// song. Follows the output when you switch, unplug or replug it.
@@ -89,6 +113,13 @@ fn main() -> ExitCode {
             load(commands.as_deref(), no_loop).and_then(|project| render(&project, &file, seconds))
         }
         Command::RenderAll { commands, out } => render_all(&commands, &out),
+        Command::Analyse {
+            file,
+            against,
+            json,
+            pitch,
+            above,
+        } => analyse(&file, against.as_deref(), json, pitch, above),
         Command::Play {
             commands,
             buffer,
@@ -246,6 +277,90 @@ fn describe_project(project: &Project) -> String {
 
 /// How often the status line updates.
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Prints the report on `file`, or on it and `against` side by side, as
+/// text or JSON.
+fn analyse(
+    file: &Path,
+    against: Option<&Path>,
+    json: bool,
+    pitch: Option<Note>,
+    above_hz: f64,
+) -> Result<(), String> {
+    let this = measure(file, pitch, above_hz)?;
+    let Some(against) = against else {
+        if json {
+            println!("{}", to_json(&this));
+        } else {
+            print!("{}", this.text());
+        }
+        return Ok(());
+    };
+    // Both pitches are measured from the same note, so their cents compare.
+    let that = measure(against, pitch.or(this.note), above_hz)?;
+    if json {
+        let difference = this.difference(&that);
+        println!(
+            "{}",
+            to_json(&Against {
+                this: &this,
+                against: &that,
+                difference: Values(&difference),
+            })
+        );
+    } else {
+        print!("{}", this.text_against(&that));
+    }
+    Ok(())
+}
+
+/// Two reports and their difference, as `--against --json` prints them.
+#[derive(serde::Serialize)]
+struct Against<'a> {
+    this: &'a Report,
+    against: &'a Report,
+    difference: Values<'a>,
+}
+
+/// Reads a WAV and measures it.
+fn measure(file: &Path, note: Option<Note>, above_hz: f64) -> Result<Report, String> {
+    let (spec, samples) =
+        read_wav(file).map_err(|error| format!("couldn't read {}: {error}", file.display()))?;
+    if spec.sample_rate != 48_000 {
+        return Err(format!(
+            "{} is at {} Hz: `uta analyse` measures 48 kHz WAVs, the rate Uta renders at",
+            file.display(),
+            spec.sample_rate
+        ));
+    }
+    let mut sound = Sound::new(&samples, spec.channels, spec.sample_rate).with_above_hz(above_hz);
+    if let Some(note) = note {
+        sound = sound.with_note(note);
+    }
+    Ok(Report::measure(file.display().to_string(), &sound))
+}
+
+/// A WAV's format and interleaved samples, from -1 to 1: float, as Uta
+/// writes them, or integer, as most other software does.
+fn read_wav(file: &Path) -> Result<(hound::WavSpec, Vec<f32>), hound::Error> {
+    let mut reader = hound::WavReader::open(file)?;
+    let spec = reader.spec();
+    let samples = match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>()?,
+        hound::SampleFormat::Int => {
+            let full_scale = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|sample| sample.map(|s| s as f32 / full_scale))
+                .collect::<Result<_, _>>()?
+        }
+    };
+    Ok((spec, samples))
+}
+
+fn to_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string_pretty(value).expect("a report is always JSON")
+}
 
 fn play(project: &Project, buffer: u32, from: Position) -> Result<(), String> {
     check_from(project, from)?;
@@ -425,6 +540,13 @@ fn buffer_size(value: &str) -> Result<u32, String> {
         Ok(size) if sizes.contains(&size) => Ok(size),
         Ok(_) => Err(format!("must be one of {sizes:?}")),
         Err(error) => Err(error.to_string()),
+    }
+}
+
+fn positive_hz(value: &str) -> Result<f64, String> {
+    match value.parse::<f64>() {
+        Ok(hz) if hz > 0.0 && hz.is_finite() => Ok(hz),
+        _ => Err("must be a frequency above 0 Hz".to_string()),
     }
 }
 

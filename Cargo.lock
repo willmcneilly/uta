@@ -4207,6 +4207,9 @@ dependencies = [
 [[package]]
 name = "uta-analysis"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "uta-app"
@@ -4227,7 +4230,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ctrlc",
+ "hound",
+ "serde",
  "serde_json",
+ "uta-analysis",
  "uta-core",
  "uta-engine",
 ]

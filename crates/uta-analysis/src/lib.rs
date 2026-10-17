@@ -1,10 +1,26 @@
 //! Measurements of rendered audio, taken from the waveform: pitch, level,
-//! clicks, brightness, decay and loudness. The sound tests check Uta's
-//! renders with them.
+//! clicks, brightness, attack, decay and loudness. The sound tests check
+//! Uta's renders with them, and `uta analyse` prints them as a [`report`],
+//! so the numbers read from a render are the numbers the tests check.
 //!
 //! This crate only reads samples. It has no project, no engine, no Tauri and
 //! no audio thread. Most measurements assume 48 kHz, the rate the sound tests
 //! render at; the ones that take a `sample_rate` say so.
+//!
+//! # Adding a measurement
+//!
+//! A measurement is a function here and one entry in
+//! [`report::MEASUREMENTS`]:
+//!
+//! 1. Write the function, taking samples (and the sample rate, if it needs
+//!    it), with a doc comment saying what it measures and how.
+//! 2. Test it on a synthetic signal whose answer is known, such as a sine
+//!    of a known frequency or a decay of a known rate.
+//! 3. Add an entry to [`report::MEASUREMENTS`], with its key, unit and what
+//!    it measures. The text report, `--against` and `--json` all come from
+//!    that table, so nothing else changes.
+
+pub mod report;
 
 /// The sample rate the measurements that don't take one assume.
 const RATE: u32 = 48_000;
@@ -17,21 +33,55 @@ pub fn first_sound(samples: &[f32]) -> Option<usize> {
 /// The frequency of a steady tone, from the time between its first and last
 /// upward zero crossings (interpolated between samples).
 pub fn measure_frequency(samples: &[f32], sample_rate: u32) -> f64 {
-    let mut first = None;
-    let mut last = 0.0;
-    let mut crossings = 0usize;
-    for (i, pair) in samples.windows(2).enumerate() {
-        let (a, b) = (f64::from(pair[0]), f64::from(pair[1]));
-        if a < 0.0 && b >= 0.0 {
-            let at = i as f64 + a / (a - b);
-            first.get_or_insert(at);
-            last = at;
-            crossings += 1;
-        }
+    let crossings = upward_crossings(samples);
+    let (&first, &last) = (
+        crossings
+            .first()
+            .expect("no zero crossings: is the tone playing?"),
+        crossings.last().expect("a first crossing is a last"),
+    );
+    assert!(
+        crossings.len() >= 2,
+        "need at least two cycles to measure pitch"
+    );
+    (crossings.len() - 1) as f64 * f64::from(sample_rate) / (last - first)
+}
+
+/// Where `samples` crosses zero going up, in samples, interpolated between
+/// the two either side.
+fn upward_crossings(samples: &[f32]) -> Vec<f64> {
+    samples
+        .windows(2)
+        .enumerate()
+        .filter_map(|(i, pair)| {
+            let (a, b) = (f64::from(pair[0]), f64::from(pair[1]));
+            (a < 0.0 && b >= 0.0).then(|| i as f64 + a / (a - b))
+        })
+        .collect()
+}
+
+/// The pitch of a tone, in Hz, from its cycles (as [`pitch_over_time`] or
+/// [`loud_cycles`] gives them): how many there are over how long they last.
+/// `None` if there are fewer than two, or if their lengths jump about, as
+/// noise's do. "Jump about" is the median change from one cycle to the next
+/// being over 5%: a kick's pitch falls smoothly, by far less than that a
+/// cycle once it settles, but noise crosses zero at random. Zero crossings
+/// follow the fundamental of a clean tone; a tone with strong upper
+/// partials can cross more than once a cycle.
+pub fn steady_pitch(cycles: &[(f64, f64)]) -> Option<f64> {
+    if cycles.len() < 2 {
+        return None;
     }
-    let first = first.expect("no zero crossings: is the tone playing?");
-    assert!(crossings >= 2, "need at least two cycles to measure pitch");
-    (crossings - 1) as f64 * f64::from(sample_rate) / (last - first)
+    let mut changes: Vec<f64> = cycles
+        .windows(2)
+        .map(|pair| (pair[1].1 / pair[0].1).ln().abs())
+        .collect();
+    changes.sort_by(f64::total_cmp);
+    if changes[changes.len() / 2] > 1.05f64.ln() {
+        return None;
+    }
+    let seconds: f64 = cycles.iter().map(|&(_, hz)| 1.0 / hz).sum();
+    Some(cycles.len() as f64 / seconds)
 }
 
 pub fn rms(samples: &[f32]) -> f64 {
@@ -41,6 +91,66 @@ pub fn rms(samples: &[f32]) -> f64 {
 
 pub fn peak(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
+}
+
+/// The peak over the RMS: 1 for a square wave, √2 for a sine, and higher
+/// the punchier a sound is. Squashed, compressed sounds read low.
+pub fn crest_factor(samples: &[f32]) -> f64 {
+    f64::from(peak(samples)) / rms(samples)
+}
+
+/// How long a sound takes to rise from 10% to 90% of its peak, in seconds:
+/// its attack. It's the rise into the loudest sample, from the last 5 ms
+/// before it whose loudest sample is under 10% of the peak, so in a file of
+/// several hits it's the loudest hit's. Within that, it follows the running
+/// peak (the loudest sample so far), interpolated between samples, so it
+/// reads a tone's rise to within half a cycle. `None` for silence.
+pub fn attack_seconds(samples: &[f32], sample_rate: u32) -> Option<f64> {
+    let (loudest, peak) = samples.iter().enumerate().fold((0, 0.0f32), |max, (i, s)| {
+        if s.abs() > max.1 { (i, s.abs()) } else { max }
+    });
+    if peak == 0.0 {
+        return None;
+    }
+    let window = ((0.005 * f64::from(sample_rate)) as usize).max(1);
+    let start = (0..loudest / window)
+        .rev()
+        .map(|k| k * window)
+        .find(|&at| self::peak(&samples[at..at + window]) < 0.1 * peak)
+        .unwrap_or(0);
+    let rise = &samples[start..=loudest];
+    // Where the running peak first reaches `level`, in samples.
+    let reaches = |level: f32| {
+        let mut so_far = 0.0f32;
+        for (i, &sample) in rise.iter().enumerate() {
+            let here = sample.abs();
+            if here >= level {
+                return i as f64 - f64::from(here - level) / f64::from(here - so_far);
+            }
+            so_far = so_far.max(here);
+        }
+        unreachable!("the rise ends at the peak, which reaches every level below it")
+    };
+    Some((reaches(0.9 * peak) - reaches(0.1 * peak)) / f64::from(sample_rate))
+}
+
+/// The cycles of [`pitch_over_time`] whose middle is within `within_db` of
+/// the sound's loudest, from its level over 5 ms windows: the tone, without
+/// its quiet tail or the gaps between notes, where a "cycle" from one zero
+/// crossing to the next can span a silence.
+pub fn loud_cycles(samples: &[f32], sample_rate: u32, within_db: f64) -> Vec<(f64, f64)> {
+    let envelope = envelope_db(samples, sample_rate, 0.005);
+    let loudest = envelope.iter().fold(f64::MIN, |a, &(_, db)| a.max(db));
+    let window = (0.005 * f64::from(sample_rate)) as usize;
+    pitch_over_time(samples, sample_rate)
+        .into_iter()
+        .filter(|&(seconds, _)| {
+            let at = (seconds * f64::from(sample_rate)) as usize / window;
+            envelope
+                .get(at)
+                .is_some_and(|&(_, db)| db >= loudest - within_db)
+        })
+        .collect()
 }
 
 /// The biggest sample-to-sample jump, and where it happens.
@@ -106,14 +216,7 @@ pub fn level_at(samples: &[f32], at: usize, window: usize) -> f32 {
 /// For low, clean tones such as a kick or a tom; noise has no pitch.
 pub fn pitch_over_time(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
     let rate = f64::from(sample_rate);
-    let mut crossings = Vec::new();
-    for (i, pair) in samples.windows(2).enumerate() {
-        let (a, b) = (f64::from(pair[0]), f64::from(pair[1]));
-        if a < 0.0 && b >= 0.0 {
-            crossings.push(i as f64 + a / (a - b));
-        }
-    }
-    crossings
+    upward_crossings(samples)
         .windows(2)
         .map(|pair| ((pair[0] + pair[1]) / 2.0 / rate, rate / (pair[1] - pair[0])))
         .collect()
@@ -452,6 +555,75 @@ mod tests {
                 "{drop_db} dB in {seconds} s, expected {expected} s"
             );
         }
+    }
+
+    #[test]
+    fn a_sines_crest_factor_is_root_two() {
+        let crest = crest_factor(&sine(1000.0, 0.5));
+        assert!(
+            (crest - std::f64::consts::SQRT_2).abs() < 1e-4,
+            "crest factor {crest}"
+        );
+    }
+
+    #[test]
+    fn a_linear_ramp_reads_its_rise_time() {
+        // Rises from silence to 0.8 in 50 ms, then holds: 10% to 90% of the
+        // way is 80% of the ramp, 40 ms.
+        let ramp = (0.05 * f64::from(RATE)) as usize;
+        let samples: Vec<f32> = (0..RATE as usize)
+            .map(|i| 0.8 * (i as f32 / ramp as f32).min(1.0))
+            .collect();
+        let attack = attack_seconds(&samples, RATE).expect("it rises");
+        assert!((attack - 0.04).abs() < 1e-6, "attack {attack} s");
+    }
+
+    #[test]
+    fn a_tone_ramped_in_reads_its_rise_time_to_within_half_a_cycle() {
+        // A 1 kHz sine rising linearly over 20 ms: 16 ms from 10% to 90%.
+        let samples: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                ((t / 0.02).min(1.0) * (std::f64::consts::TAU * 1000.0 * t).sin()) as f32
+            })
+            .collect();
+        let attack = attack_seconds(&samples, RATE).expect("it rises");
+        assert!((attack - 0.016).abs() < 0.0005, "attack {attack} s");
+    }
+
+    #[test]
+    fn the_attack_is_the_loudest_hits() {
+        // A quiet hit that rises in 10 ms, then a loud one that rises in
+        // 1 ms: 10% to 90% of the loud one is 0.8 ms.
+        let hit = |level: f32, rise_seconds: f64| -> Vec<f32> {
+            let rise = rise_seconds * f64::from(RATE);
+            (0..RATE / 4)
+                .map(|i| {
+                    let t = f64::from(i);
+                    let envelope = (t / rise).min(1.0) * (-(t - rise).max(0.0) / 2400.0).exp();
+                    level * envelope as f32
+                })
+                .collect()
+        };
+        let mut samples = hit(0.3, 0.01);
+        samples.extend(hit(0.9, 0.001));
+        let attack = attack_seconds(&samples, RATE).expect("it rises");
+        assert!((attack - 0.0008).abs() < 1e-6, "attack {attack} s");
+    }
+
+    #[test]
+    fn the_loud_cycles_leave_out_the_gap_between_two_tones() {
+        // 220 Hz, a gap, then 220 Hz again: a "cycle" across the gap would
+        // read far lower.
+        let mut samples = sine(220.0, 0.5)[..12_000].to_vec();
+        samples.extend(vec![0.0; 4800]);
+        samples.extend(&sine(220.0, 0.5)[..12_000]);
+        let all = pitch_over_time(&samples, RATE);
+        assert!(all.iter().any(|&(_, hz)| hz < 100.0), "the gap is a cycle");
+        let loud = loud_cycles(&samples, RATE, 40.0);
+        assert!(loud.iter().all(|&(_, hz)| (hz - 220.0).abs() < 0.1));
+        let pitch = steady_pitch(&loud).expect("a steady tone");
+        assert!((pitch - 220.0).abs() < 0.01, "{pitch} Hz");
     }
 
     #[test]

@@ -1,0 +1,649 @@
+//! The report `uta analyse` prints: every measurement in [`MEASUREMENTS`],
+//! taken from one sound, as text or as data.
+//!
+//! # The report as data
+//!
+//! `uta analyse --json` prints a [`Report`] as a JSON object:
+//!
+//! - `file`: the file it measured, as it was named on the command line;
+//! - `sample_rate`: in Hz;
+//! - `channels`: the file's channels (a stereo file is measured as its mid,
+//!   half of left plus right);
+//! - `seconds`: how long the file is;
+//! - `note`: the note `pitch_cents` is measured from, such as `"C3"`: the
+//!   one `--pitch` names, or else the nearest to the measured pitch. `null`
+//!   when there's no pitch to measure from;
+//! - `above_hz`: the frequency `share_above_percent` is measured above;
+//! - `measurements`: an object with one number for each entry in
+//!   [`MEASUREMENTS`], under its `key`, in its `unit`, in the table's order.
+//!   A measurement that can't be taken (the pitch of noise, the decay of a
+//!   sound that never dies away, anything of silence) is `null`.
+//!
+//! With `--against`, it prints `{"this": <report>, "against": <report>,
+//! "difference": {...}}`, where `difference` has each measurement's key and
+//! `this` minus `against`, or `null` if either is.
+
+use std::fmt::Write;
+
+use serde::ser::{Serialize, SerializeMap, Serializer};
+
+use crate::{
+    attack_seconds, crest_factor, decay_seconds, first_sound, hit_loudness_db, loud_cycles,
+    max_jump, peak, rms, share_above, spectral_centroid, steady_pitch,
+};
+
+/// One measurement in the report.
+pub struct Measurement {
+    /// Its name in `--json`, which ends in its unit.
+    pub key: &'static str,
+    /// Its name in the text report. `{above}` is replaced by the report's
+    /// `above_hz`, and `{note}` by its note.
+    pub label: &'static str,
+    /// The unit it's in.
+    pub unit: &'static str,
+    /// How many decimal places the text report shows.
+    pub decimals: usize,
+    /// What it measures, and how.
+    pub about: &'static str,
+    /// Takes it. `None` when it can't be taken.
+    pub measure: fn(&Sound) -> Option<f64>,
+}
+
+/// Everything the report measures, in the order it's printed. To add a
+/// measurement, write it as a function in this crate, test it on a
+/// synthetic signal with a known answer, and add an entry here: the text
+/// report, `--against` and `--json` all come from this table.
+pub const MEASUREMENTS: &[Measurement] = &[
+    Measurement {
+        key: "peak_dbfs",
+        label: "peak",
+        unit: "dBFS",
+        decimals: 1,
+        about: "The loudest sample, in dB relative to full scale (1.0).",
+        measure: |sound| db(f64::from(peak(&sound.samples))),
+    },
+    Measurement {
+        key: "rms_dbfs",
+        label: "RMS",
+        unit: "dBFS",
+        decimals: 1,
+        about: "The RMS level from the first sound to the end, in dB relative to full scale.",
+        measure: |sound| db(rms(sound.since_first_sound())),
+    },
+    Measurement {
+        key: "crest_factor_db",
+        label: "crest factor",
+        unit: "dB",
+        decimals: 1,
+        about: "The peak over the RMS, from the first sound to the end: 3.0 dB for a sine, \
+                higher the punchier, lower the more squashed.",
+        measure: |sound| db(crest_factor(sound.since_first_sound())),
+    },
+    Measurement {
+        key: "loudness_db",
+        label: "loudness",
+        unit: "dB",
+        decimals: 1,
+        about: "How loud it sounds: the K-weighted RMS (the filter of ITU-R BS.1770) from \
+                the first sound to the end. Not yet BS.1770's gated loudness in LUFS.",
+        measure: |sound| {
+            let samples = sound.since_first_sound();
+            (peak(samples) > 0.0).then(|| {
+                hit_loudness_db(samples, samples.len() as f64 / f64::from(sound.sample_rate))
+            })
+        },
+    },
+    Measurement {
+        key: "brightness_hz",
+        label: "brightness",
+        unit: "Hz",
+        decimals: 0,
+        about: "The spectral centroid of the whole file: its average frequency, weighted by \
+                each frequency's magnitude. Higher is brighter.",
+        measure: |sound| finite(spectral_centroid(&sound.samples, sound.sample_rate)),
+    },
+    Measurement {
+        key: "share_above_percent",
+        label: "share above {above} Hz",
+        unit: "%",
+        decimals: 1,
+        about: "The share of the whole file's energy above `above_hz`.",
+        measure: |sound| {
+            finite(100.0 * share_above(&sound.samples, sound.sample_rate, sound.above_hz))
+        },
+    },
+    Measurement {
+        key: "attack_ms",
+        label: "attack (10-90%)",
+        unit: "ms",
+        decimals: 1,
+        about: "How long it takes to rise from 10% to 90% of its peak.",
+        measure: |sound| attack_seconds(&sound.samples, sound.sample_rate).map(|s| s * 1000.0),
+    },
+    Measurement {
+        key: "decay_20db_s",
+        label: "decay to -20 dB",
+        unit: "s",
+        decimals: 3,
+        about: "How long it takes to fall 20 dB from its loudest, from its level over 5 ms \
+                windows. `null` if it never does.",
+        measure: |sound| decay_seconds(&sound.samples, sound.sample_rate, 20.0),
+    },
+    Measurement {
+        key: "decay_40db_s",
+        label: "decay to -40 dB",
+        unit: "s",
+        decimals: 3,
+        about: "How long it takes to fall 40 dB from its loudest. `null` if it never does.",
+        measure: |sound| decay_seconds(&sound.samples, sound.sample_rate, 40.0),
+    },
+    Measurement {
+        key: "pitch_hz",
+        label: "pitch",
+        unit: "Hz",
+        decimals: 2,
+        about: "The average pitch while it's within 40 dB of its loudest, from zero \
+                crossings. `null` if it has no steady pitch, as noise doesn't.",
+        measure: Sound::pitch,
+    },
+    Measurement {
+        key: "pitch_cents",
+        label: "pitch off {note}",
+        unit: "cents",
+        decimals: 1,
+        about: "How far the pitch is from `note`, in cents (hundredths of a semitone): \
+                above it if positive.",
+        measure: |sound| Some(cents(sound.pitch()?, sound.note()?.frequency())),
+    },
+    Measurement {
+        key: "pitch_start_hz",
+        label: "pitch at the start",
+        unit: "Hz",
+        decimals: 2,
+        about: "The pitch of the first cycle within 40 dB of its loudest.",
+        measure: |sound| sound.pitch_over_time().first().map(|&(_, hz)| hz),
+    },
+    Measurement {
+        key: "pitch_end_hz",
+        label: "pitch at the end",
+        unit: "Hz",
+        decimals: 2,
+        about: "The pitch of the last cycle within 40 dB of its loudest.",
+        measure: |sound| sound.pitch_over_time().last().map(|&(_, hz)| hz),
+    },
+    Measurement {
+        key: "pitch_drift_cents",
+        label: "largest pitch drift",
+        unit: "cents",
+        decimals: 1,
+        about: "The cycle furthest from the average pitch, in cents from it: above it if \
+                positive. A kick's falling pitch drifts by hundreds; a steady tone by a few.",
+        measure: |sound| sound.largest_drift().map(|(_, cents)| cents),
+    },
+    Measurement {
+        key: "pitch_drift_at_s",
+        label: "largest pitch drift at",
+        unit: "s",
+        decimals: 3,
+        about: "When that cycle is, from the start of the file.",
+        measure: |sound| sound.largest_drift().map(|(seconds, _)| seconds),
+    },
+    Measurement {
+        key: "click_step_db",
+        label: "largest step",
+        unit: "dB re peak",
+        decimals: 1,
+        about: "The biggest change from one sample to the next, in dB relative to the peak. \
+                A sine's steepest step is -24.8 dB at 440 Hz and -3.8 dB at 5 kHz; a click is a step well above the sound's own.",
+        measure: |sound| {
+            let (step, _) = max_jump(&sound.samples);
+            db(f64::from(step) / f64::from(peak(&sound.samples)))
+        },
+    },
+    Measurement {
+        key: "click_at_s",
+        label: "largest step at",
+        unit: "s",
+        decimals: 4,
+        about: "When that step is, from the start of the file.",
+        measure: |sound| {
+            let (step, at) = max_jump(&sound.samples);
+            (step > 0.0).then(|| at as f64 / f64::from(sound.sample_rate))
+        },
+    },
+];
+
+/// The sound a report measures: one channel, and what it's measured with.
+pub struct Sound {
+    samples: Vec<f32>,
+    sample_rate: u32,
+    channels: u16,
+    note: Option<Note>,
+    above_hz: f64,
+}
+
+impl Sound {
+    /// A sound from interleaved samples. More than one channel is measured
+    /// as the mid: their average, which for a sound in the centre is the
+    /// same as either channel.
+    pub fn new(interleaved: &[f32], channels: u16, sample_rate: u32) -> Self {
+        let samples = interleaved
+            .chunks(usize::from(channels.max(1)))
+            .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+            .collect();
+        Self {
+            samples,
+            sample_rate,
+            channels,
+            note: None,
+            above_hz: 5000.0,
+        }
+    }
+
+    /// Measures the pitch from `note`, rather than from the nearest note.
+    pub fn with_note(mut self, note: Note) -> Self {
+        self.note = Some(note);
+        self
+    }
+
+    /// Measures the share of the energy above `hz`, rather than 5 kHz.
+    pub fn with_above_hz(mut self, hz: f64) -> Self {
+        self.above_hz = hz;
+        self
+    }
+
+    fn since_first_sound(&self) -> &[f32] {
+        &self.samples[first_sound(&self.samples).unwrap_or(self.samples.len())..]
+    }
+
+    /// Each cycle's pitch while it's within 40 dB of its loudest, with its
+    /// time from the start of the file, so the noise floor of a tail and the
+    /// gaps between notes don't count. Empty if it has no steady pitch.
+    fn pitch_over_time(&self) -> Vec<(f64, f64)> {
+        let cycles = loud_cycles(&self.samples, self.sample_rate, 40.0);
+        if steady_pitch(&cycles).is_none() {
+            return Vec::new();
+        }
+        cycles
+    }
+
+    fn pitch(&self) -> Option<f64> {
+        steady_pitch(&loud_cycles(&self.samples, self.sample_rate, 40.0))
+    }
+
+    /// The note the pitch is measured from: the one it was given, or the
+    /// nearest.
+    fn note(&self) -> Option<Note> {
+        self.note.or_else(|| Some(Note::nearest(self.pitch()?)))
+    }
+
+    /// The cycle furthest from the average pitch: when, and how far, in cents.
+    fn largest_drift(&self) -> Option<(f64, f64)> {
+        let pitch = self.pitch()?;
+        self.pitch_over_time()
+            .into_iter()
+            .map(|(seconds, hz)| (seconds, cents(hz, pitch)))
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+    }
+}
+
+/// A note, as a MIDI note number: middle C (C4) is 60, and A4 is 440 Hz.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Note(pub i32);
+
+impl Note {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+
+    /// The equal-tempered note nearest to `hz`.
+    pub fn nearest(hz: f64) -> Self {
+        Self((69.0 + 12.0 * (hz / 440.0).log2()).round() as i32)
+    }
+
+    /// Its frequency, in equal temperament with A4 at 440 Hz.
+    pub fn frequency(self) -> f64 {
+        440.0 * 2f64.powf(f64::from(self.0 - 69) / 12.0)
+    }
+}
+
+impl std::fmt::Display for Note {
+    /// `C3`, `F#4`, `A-1`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = Self::NAMES[self.0.rem_euclid(12) as usize];
+        write!(f, "{name}{}", self.0.div_euclid(12) - 1)
+    }
+}
+
+impl std::str::FromStr for Note {
+    type Err = String;
+
+    /// A note name such as `C3`, `F#4`, `Bb2` or `A-1` (C4 is middle C), or
+    /// a MIDI note number such as `48`.
+    fn from_str(text: &str) -> Result<Self, String> {
+        let wrong = || format!("{text:?} isn't a note: write it like C3, F#4 or Bb2");
+        if let Ok(number) = text.parse::<i32>() {
+            return Ok(Self(number));
+        }
+        let mut chars = text.chars();
+        let letter = chars.next().ok_or_else(wrong)?.to_ascii_uppercase();
+        let step = Self::NAMES
+            .iter()
+            .position(|name| name.starts_with(letter) && name.len() == 1)
+            .ok_or_else(wrong)? as i32;
+        let rest = chars.as_str();
+        let accidentals = rest.len() - rest.trim_start_matches(['#', 'b']).len();
+        let shift: i32 = rest[..accidentals]
+            .chars()
+            .map(|c| if c == '#' { 1 } else { -1 })
+            .sum();
+        let octave: i32 = rest[accidentals..].parse().map_err(|_| wrong())?;
+        Ok(Self((octave + 1) * 12 + step + shift))
+    }
+}
+
+/// Every measurement of one sound.
+pub struct Report {
+    /// The file it measured, as it was named.
+    pub file: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub seconds: f64,
+    /// The note `pitch_cents` is measured from.
+    pub note: Option<Note>,
+    pub above_hz: f64,
+    /// One for each entry in [`MEASUREMENTS`], in its order.
+    pub values: Vec<Option<f64>>,
+}
+
+impl Report {
+    /// Takes every measurement of `sound`, which came from `file`.
+    pub fn measure(file: impl Into<String>, sound: &Sound) -> Self {
+        Self {
+            file: file.into(),
+            sample_rate: sound.sample_rate,
+            channels: sound.channels,
+            seconds: sound.samples.len() as f64 / f64::from(sound.sample_rate),
+            note: sound.note(),
+            above_hz: sound.above_hz,
+            values: MEASUREMENTS
+                .iter()
+                .map(|measurement| (measurement.measure)(sound))
+                .collect(),
+        }
+    }
+
+    /// The value of the measurement whose key is `key`.
+    pub fn get(&self, key: &str) -> Option<f64> {
+        let index = MEASUREMENTS.iter().position(|m| m.key == key)?;
+        self.values[index]
+    }
+
+    /// Each measurement here minus the same in `other`, or `None` if either
+    /// is.
+    pub fn difference(&self, other: &Report) -> Vec<Option<f64>> {
+        self.values
+            .iter()
+            .zip(&other.values)
+            .map(|(a, b)| Some((*a)? - (*b)?))
+            .collect()
+    }
+
+    /// The report as text: a line about the file, then one line for each
+    /// measurement, with its unit.
+    pub fn text(&self) -> String {
+        let mut text = format!("{}\n", self.describe());
+        let labels: Vec<String> = MEASUREMENTS.iter().map(|m| self.label(m)).collect();
+        let width = labels.iter().map(String::len).max().unwrap_or(0);
+        for ((measurement, label), value) in MEASUREMENTS.iter().zip(&labels).zip(&self.values) {
+            let value = show(*value, measurement.decimals, false);
+            writeln!(text, "{label:<width$}  {value:>10} {}", measurement.unit).unwrap();
+        }
+        text
+    }
+
+    /// This report and `other` side by side, with the difference (this
+    /// minus other) in a third column.
+    pub fn text_against(&self, other: &Report) -> String {
+        let mut text = format!("{}\n{}\n\n", self.describe(), other.describe());
+        let labels: Vec<String> = MEASUREMENTS.iter().map(|m| self.label(m)).collect();
+        let width = labels.iter().map(String::len).max().unwrap_or(0);
+        let rows: Vec<[String; 3]> = MEASUREMENTS
+            .iter()
+            .zip(self.values.iter().zip(&other.values))
+            .zip(self.difference(other))
+            .map(|((m, (a, b)), difference)| {
+                [
+                    show(*a, m.decimals, false),
+                    show(*b, m.decimals, false),
+                    show(difference, m.decimals, true),
+                ]
+            })
+            .collect();
+        let headings = [self.file.as_str(), other.file.as_str(), "difference"];
+        let widths: Vec<usize> = (0..3)
+            .map(|column| {
+                rows.iter()
+                    .map(|row| row[column].len())
+                    .chain([headings[column].len()])
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect();
+        writeln!(
+            text,
+            "{:width$}  {:>a$}  {:>b$}  {:>c$}",
+            "",
+            headings[0],
+            headings[1],
+            headings[2],
+            a = widths[0],
+            b = widths[1],
+            c = widths[2]
+        )
+        .unwrap();
+        for ((m, label), row) in MEASUREMENTS.iter().zip(&labels).zip(&rows) {
+            writeln!(
+                text,
+                "{label:<width$}  {:>a$}  {:>b$}  {:>c$} {}",
+                row[0],
+                row[1],
+                row[2],
+                m.unit,
+                a = widths[0],
+                b = widths[1],
+                c = widths[2]
+            )
+            .unwrap();
+        }
+        text
+    }
+
+    /// `kick.wav: 48000 Hz, 2 channels (measured as their mid), 1.250 s`.
+    fn describe(&self) -> String {
+        let channels = match self.channels {
+            1 => "mono".to_string(),
+            n => format!("{n} channels (measured as their mid)"),
+        };
+        format!(
+            "{}: {} Hz, {channels}, {:.3} s",
+            self.file, self.sample_rate, self.seconds
+        )
+    }
+
+    fn label(&self, measurement: &Measurement) -> String {
+        let note = self
+            .note
+            .map_or("the nearest note".to_string(), |n| n.to_string());
+        measurement
+            .label
+            .replace("{above}", &format!("{}", self.above_hz))
+            .replace("{note}", &note)
+    }
+}
+
+impl Serialize for Report {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("file", &self.file)?;
+        map.serialize_entry("sample_rate", &self.sample_rate)?;
+        map.serialize_entry("channels", &self.channels)?;
+        map.serialize_entry("seconds", &self.seconds)?;
+        map.serialize_entry("note", &self.note.map(|note| note.to_string()))?;
+        map.serialize_entry("above_hz", &self.above_hz)?;
+        map.serialize_entry("measurements", &Values(&self.values))?;
+        map.end()
+    }
+}
+
+/// Values for each entry in [`MEASUREMENTS`], as data: an object with each
+/// one under its key, in the table's order.
+pub struct Values<'a>(pub &'a [Option<f64>]);
+
+impl Serialize for Values<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (measurement, value) in MEASUREMENTS.iter().zip(self.0) {
+            map.serialize_entry(measurement.key, value)?;
+        }
+        map.end()
+    }
+}
+
+/// `value` with `decimals` places, `-` if there isn't one, and with a sign
+/// if it's a difference. A difference that rounds to nothing is `0`.
+fn show(value: Option<f64>, decimals: usize, difference: bool) -> String {
+    let Some(value) = value else {
+        return "-".to_string();
+    };
+    let shown = format!("{value:.decimals$}");
+    if difference {
+        if shown
+            .trim_start_matches('-')
+            .chars()
+            .all(|c| c == '0' || c == '.')
+        {
+            "0".to_string()
+        } else if value > 0.0 {
+            format!("+{shown}")
+        } else {
+            shown
+        }
+    } else {
+        shown
+    }
+}
+
+/// `ratio` in dB, or `None` for silence.
+fn db(ratio: f64) -> Option<f64> {
+    finite(20.0 * ratio.log10())
+}
+
+/// How far `hz` is above `from`, in cents.
+fn cents(hz: f64, from: f64) -> f64 {
+    1200.0 * (hz / from).log2()
+}
+
+fn finite(value: f64) -> Option<f64> {
+    value.is_finite().then_some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RATE: u32 = 48_000;
+
+    fn sine(frequency_hz: f64, seconds: f64) -> Vec<f32> {
+        (0..(seconds * f64::from(RATE)) as usize)
+            .map(|i| {
+                (0.5 * (std::f64::consts::TAU * frequency_hz * i as f64 / 48_000.0).sin()) as f32
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_measurement_has_its_own_key() {
+        for (i, a) in MEASUREMENTS.iter().enumerate() {
+            assert!(
+                MEASUREMENTS[i + 1..].iter().all(|b| b.key != a.key),
+                "{} is there twice",
+                a.key
+            );
+        }
+    }
+
+    #[test]
+    fn notes_are_named_with_middle_c_as_c4() {
+        for (name, number) in [
+            ("C4", 60),
+            ("C3", 48),
+            ("c3", 48),
+            ("A4", 69),
+            ("F#4", 66),
+            ("Bb2", 46),
+            ("A-1", 9),
+            ("48", 48),
+        ] {
+            assert_eq!(name.parse::<Note>(), Ok(Note(number)), "{name}");
+        }
+        assert_eq!(Note(66).to_string(), "F#4");
+        assert_eq!(Note(9).to_string(), "A-1");
+        assert!((Note(69).frequency() - 440.0).abs() < 1e-9);
+        assert!("H3".parse::<Note>().is_err());
+        assert!("C".parse::<Note>().is_err());
+    }
+
+    #[test]
+    fn a_tone_reads_its_pitch_and_how_far_it_is_from_the_note() {
+        // 10 cents above C3.
+        let c3 = Note(48).frequency();
+        let hz = c3 * 2f64.powf(10.0 / 1200.0);
+        let report = Report::measure(
+            "tone",
+            &Sound::new(&sine(hz, 1.0), 1, RATE).with_note(Note(48)),
+        );
+        let pitch = report.get("pitch_hz").unwrap();
+        assert!((pitch - hz).abs() < 0.01, "{pitch} Hz");
+        let off = report.get("pitch_cents").unwrap();
+        assert!((off - 10.0).abs() < 0.1, "{off} cents");
+        let drift = report.get("pitch_drift_cents").unwrap();
+        assert!(drift.abs() < 1.0, "a steady tone drifts {drift} cents");
+    }
+
+    #[test]
+    fn noise_has_no_pitch() {
+        let mut state = 1u32;
+        let noise: Vec<f32> = (0..RATE)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 8) as f32 / (1 << 24) as f32 - 0.5
+            })
+            .collect();
+        let report = Report::measure("noise", &Sound::new(&noise, 1, RATE));
+        for key in [
+            "pitch_hz",
+            "pitch_cents",
+            "pitch_start_hz",
+            "pitch_drift_cents",
+        ] {
+            assert_eq!(report.get(key), None, "{key}");
+        }
+        assert!(report.get("peak_dbfs").is_some());
+    }
+
+    #[test]
+    fn silence_measures_nothing_and_says_so() {
+        let report = Report::measure("silence", &Sound::new(&[0.0; 4800], 1, RATE));
+        assert_eq!(report.values, vec![None; MEASUREMENTS.len()]);
+    }
+
+    #[test]
+    fn stereo_is_measured_as_its_mid() {
+        let mono = sine(440.0, 0.5);
+        let stereo: Vec<f32> = mono.iter().flat_map(|&s| [s, s]).collect();
+        let a = Report::measure("mono", &Sound::new(&mono, 1, RATE));
+        let b = Report::measure("stereo", &Sound::new(&stereo, 2, RATE));
+        assert_eq!(a.values, b.values);
+    }
+}

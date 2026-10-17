@@ -3,6 +3,7 @@ name = "uta-analysis"
 version.workspace = true
 edition.workspace = true
 publish = false
-description = "Measurements of rendered audio: pitch, level, brightness, decay. It only reads samples."
+description = "Measurements of rendered audio: pitch, level, brightness, attack, decay. It only reads samples."
 
 [dependencies]
+serde = "1"
