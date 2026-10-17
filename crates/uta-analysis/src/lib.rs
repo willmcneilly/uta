@@ -4,8 +4,9 @@
 //! so the numbers read from a render are the numbers the tests check.
 //!
 //! This crate only reads samples. It has no project, no engine, no Tauri and
-//! no audio thread. Most measurements assume 48 kHz, the rate the sound tests
-//! render at; the ones that take a `sample_rate` say so.
+//! no audio thread. Every measurement that depends on time or frequency
+//! takes the sample rate, and its FFTs (from `realfft`) take any length, so
+//! windows are sized in milliseconds rather than in powers of two.
 //!
 //! # Adding a measurement
 //!
@@ -22,8 +23,11 @@
 
 pub mod report;
 
-/// The sample rate the measurements that don't take one assume.
-const RATE: u32 = 48_000;
+use std::f64::consts::TAU;
+use std::sync::Arc;
+
+use realfft::num_complex::Complex;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// The index of the first sample that isn't silent.
 pub fn first_sound(samples: &[f32]) -> Option<usize> {
@@ -182,11 +186,13 @@ pub fn pitch_track(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
     let shortest = (rate / HIGHEST_PITCH_HZ).floor() as usize;
     let hop = (0.005 * rate) as usize;
     let n = (2 * window + longest).next_power_of_two();
+    let mut planner = RealFftPlanner::<f64>::new();
+    let (forward, inverse) = (planner.plan_fft_forward(n), planner.plan_fft_inverse(n));
     let mut track = Vec::new();
     let mut start = 0;
     while start + window + longest < samples.len() {
         let frame = &samples[start..start + window + longest + 1];
-        if let Some(lag) = yin_period(frame, window, shortest, longest, n) {
+        if let Some(lag) = yin_period(frame, window, shortest, longest, &forward, &inverse) {
             track.push(((start + window / 2) as f64 / rate, rate / lag));
         }
         start += hop;
@@ -198,13 +204,15 @@ pub fn pitch_track(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
 /// between `shortest` and `longest`: the first dip in its cumulative mean
 /// normalised difference below 0.15, refined between lags with a parabola.
 /// `None` if there's no dip that deep. `frame` holds `window + longest + 1`
-/// samples, and `n` is a power of two at least `2 * window + longest`.
+/// samples, and the FFTs' length is at least `2 * window + longest`, so the
+/// correlation doesn't wrap around.
 fn yin_period(
     frame: &[f32],
     window: usize,
     shortest: usize,
     longest: usize,
-    n: usize,
+    forward: &Arc<dyn RealToComplex<f64>>,
+    inverse: &Arc<dyn ComplexToReal<f64>>,
 ) -> Option<f64> {
     let energy: Vec<f64> = std::iter::once(0.0)
         .chain(frame.iter().scan(0.0, |sum, &s| {
@@ -220,24 +228,28 @@ fn yin_period(
     // the window that far on, minus twice their correlation, which comes
     // from one FFT of each and an inverse.
     let transform = |samples: &[f32]| {
-        let mut re: Vec<f64> = samples.iter().map(|&s| f64::from(s)).collect();
-        re.resize(n, 0.0);
-        let mut im = vec![0.0; n];
-        fft(&mut re, &mut im);
-        (re, im)
+        let mut input = forward.make_input_vec();
+        for (to, &from) in input.iter_mut().zip(samples) {
+            *to = f64::from(from);
+        }
+        let mut output = forward.make_output_vec();
+        forward
+            .process(&mut input, &mut output)
+            .expect("the buffers are the plan's");
+        output
     };
-    let (a_re, a_im) = transform(&frame[..window]);
-    let (b_re, b_im) = transform(frame);
-    // The inverse FFT of conj(A)·B, as the conjugate of the FFT of its
-    // conjugate.
-    let mut re: Vec<f64> = (0..n)
-        .map(|k| a_re[k] * b_re[k] + a_im[k] * b_im[k])
-        .collect();
-    let mut im: Vec<f64> = (0..n)
-        .map(|k| -(a_re[k] * b_im[k] - a_im[k] * b_re[k]))
-        .collect();
-    fft(&mut re, &mut im);
-    let correlation = |lag: usize| re[lag] / n as f64;
+    let (a, b) = (transform(&frame[..window]), transform(frame));
+    // The correlation is the inverse FFT of conj(A)·B. The first and last
+    // bins of a real signal's spectrum are real, and the inverse insists.
+    let mut product: Vec<Complex<f64>> = a.iter().zip(&b).map(|(a, b)| a.conj() * b).collect();
+    let last = product.len() - 1;
+    (product[0].im, product[last].im) = (0.0, 0.0);
+    let mut correlated = inverse.make_output_vec();
+    inverse
+        .process(&mut product, &mut correlated)
+        .expect("the buffers are the plan's");
+    let n = inverse.len() as f64;
+    let correlation = |lag: usize| correlated[lag] / n;
 
     let difference = |lag: usize| (energy_at(0) + energy_at(lag) - 2.0 * correlation(lag)).max(0.0);
     let mut normalised = vec![1.0; longest + 2];
@@ -287,27 +299,56 @@ pub fn max_difference(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0f32, |max, (x, y)| max.max((x - y).abs()))
 }
 
-/// The magnitude spectrum of `samples` (whose length must be a power of two)
-/// under a 4-term Blackman-Harris window, whose side lobes are 92 dB down,
-/// so a strong partial doesn't hide quiet ones far from it. Bin `k` is
+/// The magnitude spectrum of `samples`, any length, under a 4-term
+/// Blackman-Harris window, whose side lobes are 92 dB down, so a strong
+/// partial doesn't hide quiet ones far from it. Bin `k` is
 /// `k * sample_rate / samples.len()` Hz; only the bins up to half the sample
 /// rate are returned.
 pub fn spectrum(samples: &[f32]) -> Vec<f64> {
-    let n = samples.len();
-    assert!(n.is_power_of_two(), "FFT length must be a power of two");
+    let n = samples.len() as f64;
     let window = |i: usize| {
-        let x = std::f64::consts::TAU * i as f64 / n as f64;
+        let x = TAU * i as f64 / n;
         0.35875 - 0.48829 * x.cos() + 0.14128 * (2.0 * x).cos() - 0.01168 * (3.0 * x).cos()
     };
-    let mut re: Vec<f64> = samples
-        .iter()
-        .enumerate()
-        .map(|(i, &s)| f64::from(s) * window(i))
-        .collect();
-    let mut im = vec![0.0; n];
+    real_fft(
+        samples
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| f64::from(s) * window(i)),
+    )
+    .iter()
+    .map(|bin| bin.norm())
+    .collect()
+}
 
-    fft(&mut re, &mut im);
-    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
+/// The average power spectrum of `samples`, in frames of `frame` samples
+/// (any length) that overlap by half, each under a Hann window: Welch's
+/// method. One frame of noise is spiky, bin to bin; the average of many is
+/// smooth, so noise reads as the flat spectrum it is. Bin `k` is
+/// `k * sample_rate / frame` Hz, up to half the sample rate. A sound shorter
+/// than a frame is one frame, with silence after it.
+pub fn average_power_spectrum(samples: &[f32], frame: usize) -> Vec<f64> {
+    let fft = RealFftPlanner::<f64>::new().plan_fft_forward(frame);
+    let window: Vec<f64> = (0..frame)
+        .map(|i| 0.5 - 0.5 * (TAU * i as f64 / frame as f64).cos())
+        .collect();
+    let mut power = vec![0.0; frame / 2 + 1];
+    let mut frames = 0;
+    let (mut input, mut output) = (fft.make_input_vec(), fft.make_output_vec());
+    for start in (0..=samples.len().saturating_sub(frame)).step_by((frame / 2).max(1)) {
+        input.fill(0.0);
+        for ((to, &from), w) in input.iter_mut().zip(&samples[start..]).zip(&window) {
+            *to = f64::from(from) * w;
+        }
+        fft.process(&mut input, &mut output)
+            .expect("the buffers are the plan's");
+        for (sum, bin) in power.iter_mut().zip(&output) {
+            *sum += bin.norm_sqr();
+        }
+        frames += 1;
+    }
+    power.iter_mut().for_each(|sum| *sum /= f64::from(frames));
+    power
 }
 
 /// The loudest sample within `window / 2` samples of `at`. With a window of
@@ -420,22 +461,105 @@ pub fn share_above(samples: &[f32], sample_rate: u32, hz: f64) -> f64 {
 }
 
 /// How loud a hit sounds, in dB: its K-weighted RMS over the `seconds` from
-/// its first sound, at 48 kHz. K-weighting is the filter loudness meters
-/// put before measuring (ITU-R BS.1770-4): a high shelf of about +4 dB
-/// above 2 kHz, where the ear is most sensitive, and a high-pass that hears
-/// less of the lowest bass. Plain RMS would rank a kick's 50 Hz far louder
-/// than it sounds next to a hat.
-pub fn hit_loudness_db(samples: &[f32], seconds: f64) -> f64 {
+/// its first sound. K-weighting is the filter loudness meters put before
+/// measuring (ITU-R BS.1770-4): a high shelf of about +4 dB above 2 kHz,
+/// where the ear is most sensitive, and a high-pass that hears less of the
+/// lowest bass. Plain RMS would rank a kick's 50 Hz far louder than it
+/// sounds next to a hat. A hit is shorter than BS.1770's 400 ms blocks, so
+/// this is its level over the time the ear sums it, not a loudness in LUFS.
+pub fn hit_loudness_db(samples: &[f32], sample_rate: u32, seconds: f64) -> f64 {
     let start = first_sound(samples).expect("the hit sounds");
-    let end = (start + (seconds * 48_000.0) as usize).min(samples.len());
-    let weighted = k_weighted(&samples[start..end]);
+    let end = (start + (seconds * f64::from(sample_rate)) as usize).min(samples.len());
+    let weighted = k_weighted(&samples[start..end], sample_rate);
     20.0 * rms(&weighted).max(1e-12).log10()
 }
 
-/// `samples` through the K-weighting filter, with BS.1770-4's own
-/// coefficients for 48 kHz: the shelf, then the high-pass.
-fn k_weighted(samples: &[f32]) -> Vec<f32> {
-    let biquad = |input: &[f32], b: [f64; 3], a: [f64; 3]| {
+/// The window of BS.1770's momentary loudness, in seconds.
+pub const MOMENTARY_SECONDS: f64 = 0.4;
+
+/// The window of BS.1770's short-term loudness, in seconds.
+pub const SHORT_TERM_SECONDS: f64 = 3.0;
+
+/// The loudness of each `window_seconds` of a sound, in LUFS, by ITU-R
+/// BS.1770-4: K-weight each channel, take its mean square over the window,
+/// add the channels' together (every channel weighs 1, as left, right and
+/// centre do in BS.1770), and that's -0.691 + 10 log10 of the sum. With
+/// [`MOMENTARY_SECONDS`] it's the momentary loudness, and with
+/// [`SHORT_TERM_SECONDS`] the short-term. There's a window starting at every
+/// sample, so the loudest of them is the loudest the sound gets wherever it
+/// falls; one shorter than the window is one window, with silence after it,
+/// as a meter would hear it. A stereo 1 kHz sine at -23 dBFS reads -23.0.
+pub fn loudness_over_time(channels: &[&[f32]], sample_rate: u32, window_seconds: f64) -> Vec<f64> {
+    let window = ((window_seconds * f64::from(sample_rate)) as usize).max(1);
+    let energy = summed_energy(channels, sample_rate);
+    let last = energy.len().saturating_sub(1 + window);
+    (0..=last)
+        .map(|start| {
+            let end = (start + window).min(energy.len() - 1);
+            lufs((energy[end] - energy[start]) / window as f64)
+        })
+        .collect()
+}
+
+/// The integrated loudness of a whole sound, in LUFS, by ITU-R BS.1770-4
+/// (and EBU Tech 3341): the loudness of its 400 ms blocks, one every 100 ms
+/// (overlapping by 75%), leaving out first the blocks under -70 LUFS
+/// (silence), then those more than 10 LU under the loudness of the rest,
+/// and the loudness of the blocks that are left. Blocks are whole, so a
+/// sound under 400 ms has none. `None` if no block is left.
+pub fn integrated_loudness(channels: &[&[f32]], sample_rate: u32) -> Option<f64> {
+    let rate = f64::from(sample_rate);
+    let (block, hop) = ((MOMENTARY_SECONDS * rate) as usize, (0.1 * rate) as usize);
+    let energy = summed_energy(channels, sample_rate);
+    let blocks: Vec<f64> = (0..)
+        .map(|i| i * hop)
+        .take_while(|start| start + block < energy.len())
+        .map(|start| (energy[start + block] - energy[start]) / block as f64)
+        .collect();
+    let gated = |threshold: f64| -> Option<f64> {
+        let kept: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&mean_square| lufs(mean_square) > threshold)
+            .collect();
+        (!kept.is_empty()).then(|| kept.iter().sum::<f64>() / kept.len() as f64)
+    };
+    let absolute = gated(-70.0)?;
+    Some(lufs(gated((lufs(absolute) - 10.0).max(-70.0))?))
+}
+
+/// A mean square, summed over channels, as BS.1770's loudness in LUFS.
+fn lufs(mean_square: f64) -> f64 {
+    -0.691 + 10.0 * mean_square.log10()
+}
+
+/// The running total of the channels' K-weighted energy: entry `i` is the
+/// sum of every channel's squared samples before sample `i`, so the energy
+/// of any stretch is the difference of two entries.
+fn summed_energy(channels: &[&[f32]], sample_rate: u32) -> Vec<f64> {
+    let length = channels.iter().map(|c| c.len()).max().unwrap_or(0);
+    let mut squares = vec![0.0; length];
+    for channel in channels {
+        for (sum, &s) in squares.iter_mut().zip(&k_weighted(channel, sample_rate)) {
+            *sum += f64::from(s) * f64::from(s);
+        }
+    }
+    std::iter::once(0.0)
+        .chain(squares.iter().scan(0.0, |total, &square| {
+            *total += square;
+            Some(*total)
+        }))
+        .collect()
+}
+
+/// `samples` through the K-weighting filter of ITU-R BS.1770-4: the shelf,
+/// then the high-pass. BS.1770 gives their coefficients at 48 kHz only;
+/// these come from the analogue filters those were made from, through the
+/// bilinear transform, as libebur128 does, so they work at any sample rate
+/// and match BS.1770's own at 48 kHz.
+fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    let (shelf, high_pass) = k_weighting(sample_rate);
+    let biquad = |input: &[f32], (b, a): ([f64; 3], [f64; 3])| {
         let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
         input
             .iter()
@@ -447,20 +571,39 @@ fn k_weighted(samples: &[f32]) -> Vec<f32> {
             })
             .collect::<Vec<f32>>()
     };
-    let shelf = biquad(
-        samples,
-        [
-            1.535_124_859_586_97,
-            -2.691_696_189_406_38,
-            1.198_392_810_852_85,
-        ],
-        [1.0, -1.690_659_293_182_41, 0.732_480_774_215_85],
+    biquad(&biquad(samples, shelf), high_pass)
+}
+
+/// The K-weighting's two biquads at `sample_rate`, each as its numerator
+/// and denominator coefficients: the shelf, then the high-pass.
+#[allow(clippy::type_complexity)]
+fn k_weighting(sample_rate: u32) -> (([f64; 3], [f64; 3]), ([f64; 3], [f64; 3])) {
+    let rate = f64::from(sample_rate);
+    let (f0, gain_db, q) = (
+        1_681.974_450_955_533,
+        3.999_843_853_973_347,
+        0.707_175_236_955_419_6,
     );
-    biquad(
-        &shelf,
+    let k = (std::f64::consts::PI * f0 / rate).tan();
+    let vh = 10f64.powf(gain_db / 20.0);
+    let vb = vh.powf(0.499_666_774_154_541_6);
+    let a0 = 1.0 + k / q + k * k;
+    let shelf = (
+        [
+            (vh + vb * k / q + k * k) / a0,
+            2.0 * (k * k - vh) / a0,
+            (vh - vb * k / q + k * k) / a0,
+        ],
+        [1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0],
+    );
+    let (f0, q) = (38.135_470_876_024_44, 0.500_327_037_323_877_3);
+    let k = (std::f64::consts::PI * f0 / rate).tan();
+    let a0 = 1.0 + k / q + k * k;
+    let high_pass = (
         [1.0, -2.0, 1.0],
-        [1.0, -1.990_047_454_833_98, 0.990_072_250_366_21],
-    )
+        [1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0],
+    );
+    (shelf, high_pass)
 }
 
 /// The frequency of the strongest partial between `low` and `high` Hz,
@@ -532,56 +675,37 @@ pub fn burst_peaks(samples: &[f32], sample_rate: u32, prominence_db: f64) -> Vec
 /// [`spectrum`] without the window: for a whole sound that starts and ends
 /// in silence, where a window would only weigh its middle more.
 fn spectrum_unwindowed(samples: &[f32]) -> Vec<f64> {
-    let n = samples.len();
-    let mut re: Vec<f64> = samples.iter().map(|&s| f64::from(s)).collect();
-    let mut im = vec![0.0; n];
-    fft(&mut re, &mut im);
-    (0..=n / 2).map(|k| re[k].hypot(im[k])).collect()
+    real_fft(samples.iter().map(|&s| f64::from(s)))
+        .iter()
+        .map(|bin| bin.norm())
+        .collect()
 }
 
-/// An iterative radix-2 FFT, in place: bit-reversal, then butterflies.
-fn fft(re: &mut [f64], im: &mut [f64]) {
-    let n = re.len();
-    let mut j = 0;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j |= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
+/// The FFT of real `samples`, any length, from `realfft`: bins 0 to half
+/// the length.
+fn real_fft(samples: impl Iterator<Item = f64>) -> Vec<Complex<f64>> {
+    let mut input: Vec<f64> = samples.collect();
+    if input.is_empty() {
+        return Vec::new();
     }
-    let mut len = 2;
-    while len <= n {
-        let angle = -std::f64::consts::TAU / len as f64;
-        let twiddles: Vec<(f64, f64)> = (0..len / 2)
-            .map(|k| ((angle * k as f64).cos(), (angle * k as f64).sin()))
-            .collect();
-        for start in (0..n).step_by(len) {
-            for (k, &(w_re, w_im)) in twiddles.iter().enumerate() {
-                let (a, b) = (start + k, start + k + len / 2);
-                let t_re = re[b] * w_re - im[b] * w_im;
-                let t_im = re[b] * w_im + im[b] * w_re;
-                re[b] = re[a] - t_re;
-                im[b] = im[a] - t_im;
-                re[a] += t_re;
-                im[a] += t_im;
-            }
-        }
-        len <<= 1;
-    }
+    let fft = RealFftPlanner::<f64>::new().plan_fft_forward(input.len());
+    let mut output = fft.make_output_vec();
+    fft.process(&mut input, &mut output)
+        .expect("the buffers are the plan's");
+    output
 }
 
-/// The loudest partial in `spectrum` that isn't a harmonic of
-/// `frequency_hz`, in dB relative to the loudest harmonic: for a saw, its
-/// fundamental, and for a synced wave, whichever harmonic its restarts make
-/// loudest.
-pub fn loudest_alias_db(spectrum: &[f64], frequency_hz: f64, fft_len: usize) -> f64 {
-    let bin_hz = f64::from(RATE) / fft_len as f64;
+/// The loudest alias in `samples` of a tone at `frequency_hz`: the loudest
+/// partial between its harmonics, in dB relative to the loudest harmonic,
+/// from their [`spectrum`]. Aliasing is harmonics above half the sample
+/// rate folding back down, where they land between the true harmonics, so
+/// a naive saw on a high note reads high. For a saw, the loudest harmonic is
+/// its fundamental, and for a synced wave, whichever harmonic its restarts
+/// make loudest. The pitch has to be steady and right to within a few bins
+/// at the top harmonic: one that glides smears its harmonics into the gaps.
+pub fn alias_db(samples: &[f32], sample_rate: u32, frequency_hz: f64) -> f64 {
+    let spectrum = spectrum(samples);
+    let bin_hz = f64::from(sample_rate) / samples.len() as f64;
     // The window's main lobe is 4 bins either side; allow a little more.
     let lobe = 6.0;
     // The harmonic each bin is on, if it's on one: 0 is any offset, which
@@ -602,6 +726,79 @@ pub fn loudest_alias_db(spectrum: &[f64], frequency_hz: f64, fft_len: usize) -> 
     20.0 * (alias / harmonics).log10()
 }
 
+/// How far a sound's partials sit from whole-number multiples of
+/// `frequency_hz`, from 0 (harmonic, as a saw or a square is) to 1: what
+/// makes a sound metallic or bell-like. Each partial is a peak in the
+/// [`spectrum`] of `samples` (the loudest within the window's main lobe,
+/// no more than 60 dB under the loudest, between half the pitch and
+/// 20 kHz), refined between bins with a parabola. Its distance from the
+/// nearest harmonic is in harmonics, so at most a half; the average
+/// distance, weighted by each peak's power, is doubled (Peeters, 2004). A
+/// sum of unrelated partials, as a bell or a drum's head has, reads well
+/// above 0. `None` if there are no peaks.
+pub fn inharmonicity(samples: &[f32], sample_rate: u32, frequency_hz: f64) -> Option<f64> {
+    let spectrum = spectrum(samples);
+    let bin_hz = f64::from(sample_rate) / samples.len() as f64;
+    let lobe = 4;
+    let floor = spectrum.iter().fold(0.0f64, |a, &b| a.max(b)) * 1e-3;
+    let first = ((0.5 * frequency_hz / bin_hz).ceil() as usize).max(lobe);
+    let last = ((20_000.0 / bin_hz) as usize).min(spectrum.len().saturating_sub(lobe + 1));
+    let (mut distance, mut power) = (0.0, 0.0);
+    for k in first..last {
+        let here = spectrum[k];
+        let is_peak = here > floor
+            && spectrum[k - lobe..=k + lobe]
+                .iter()
+                .enumerate()
+                .all(|(i, &there)| there < here || (there == here && i >= lobe));
+        if !is_peak {
+            continue;
+        }
+        let (a, b, c) = (spectrum[k - 1].ln(), here.ln(), spectrum[k + 1].ln());
+        let curve = a - 2.0 * b + c;
+        let offset = if curve < 0.0 {
+            0.5 * (a - c) / curve
+        } else {
+            0.0
+        };
+        let ratio = (k as f64 + offset) * bin_hz / frequency_hz;
+        let off = (ratio - ratio.round().max(1.0)).abs().min(0.5);
+        distance += off * here * here;
+        power += here * here;
+    }
+    (power > 0.0).then(|| 2.0 * distance / power)
+}
+
+/// How wide a stereo sound is: the share of its energy in the side
+/// (left minus right) rather than the mid (left plus right), from 0 to 1. 0
+/// for mono (left = right), a half for two unrelated channels, and 1 for
+/// left = -right, which is all side and vanishes in mono.
+pub fn stereo_width(left: &[f32], right: &[f32]) -> f64 {
+    let (mid, side) = left
+        .iter()
+        .zip(right)
+        .fold((0.0, 0.0), |(mid, side), (&l, &r)| {
+            let (l, r) = (f64::from(l), f64::from(r));
+            (mid + (l + r).powi(2), side + (l - r).powi(2))
+        });
+    side / (mid + side)
+}
+
+/// How noise-like a sound is, from 0 (pure tones) to 1 (white noise): its
+/// spectral flatness, the geometric mean of its [`average_power_spectrum`]
+/// (in 40 ms frames) over the arithmetic mean, from 20 Hz to 20 kHz (or
+/// half the sample rate, if that's lower). `None` for silence.
+pub fn spectral_flatness(samples: &[f32], sample_rate: u32) -> Option<f64> {
+    let frame = (0.04 * f64::from(sample_rate)) as usize;
+    let power = average_power_spectrum(samples, frame);
+    let bin_hz = f64::from(sample_rate) / frame as f64;
+    let band = &power
+        [(20.0 / bin_hz).ceil() as usize..=((20_000.0 / bin_hz) as usize).min(power.len() - 1)];
+    let mean = band.iter().sum::<f64>() / band.len() as f64;
+    let log_mean = band.iter().map(|p| p.ln()).sum::<f64>() / band.len() as f64;
+    (mean > 0.0).then(|| log_mean.exp() / mean)
+}
+
 /// The correlation of two signals, from -1 to 1.
 pub fn correlation(a: &[f32], b: &[f32]) -> f64 {
     let dot = |x: &[f32], y: &[f32]| {
@@ -616,6 +813,8 @@ pub fn correlation(a: &[f32], b: &[f32]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const RATE: u32 = 48_000;
 
     /// One second of a sine at `frequency_hz` and `amplitude`, at 48 kHz.
     fn sine(frequency_hz: f64, amplitude: f32) -> Vec<f32> {
@@ -847,5 +1046,283 @@ mod tests {
         let inverse: Vec<f32> = samples.iter().map(|s| -s).collect();
         assert!((correlation(&samples, &samples) - 1.0).abs() < 1e-9);
         assert!((correlation(&samples, &inverse) + 1.0).abs() < 1e-9);
+    }
+
+    /// A 1 kHz sine at each `(seconds, dBFS)` in turn, its peak at that
+    /// level, at `rate`: the tones EBU Tech 3341's test signals are made of.
+    fn tones(rate: u32, segments: &[(f64, f64)]) -> Vec<f32> {
+        let mut samples = Vec::new();
+        for &(seconds, dbfs) in segments {
+            let amplitude = 10f64.powf(dbfs / 20.0);
+            let start = samples.len();
+            samples.extend((0..(seconds * f64::from(rate)).round() as usize).map(|i| {
+                let t = (start + i) as f64 / f64::from(rate);
+                (amplitude * (TAU * 1000.0 * t).sin()) as f32
+            }));
+        }
+        samples
+    }
+
+    /// Silence and the 1 kHz tone at -23 dBFS, for Tech 3341's tests of the
+    /// loudest window.
+    fn silence_then_tone(rate: u32, silence: f64, tone: f64) -> Vec<f32> {
+        tones(rate, &[(silence, -200.0), (tone, -23.0), (1.0, -200.0)])
+    }
+
+    fn assert_lufs(name: &str, lufs: f64, expected: f64) {
+        assert!(
+            (lufs - expected).abs() <= 0.1,
+            "{name}: {lufs} LUFS, expected {expected}"
+        );
+    }
+
+    fn loudest(samples: &[f32], rate: u32, window_seconds: f64) -> f64 {
+        loudness_over_time(&[samples, samples], rate, window_seconds)
+            .into_iter()
+            .fold(f64::NEG_INFINITY, f64::max)
+    }
+
+    #[test]
+    fn the_k_weighting_at_48_khz_is_bs_1770s_own() {
+        let (shelf, high_pass) = k_weighting(48_000);
+        let bs_1770 = [
+            (
+                [
+                    1.535_124_859_586_97,
+                    -2.691_696_189_406_38,
+                    1.198_392_810_852_85,
+                ],
+                [1.0, -1.690_659_293_182_41, 0.732_480_774_215_85],
+            ),
+            (
+                [1.0, -2.0, 1.0],
+                [1.0, -1.990_047_454_833_98, 0.990_072_250_366_21],
+            ),
+        ];
+        for ((b, a), (b_1770, a_1770)) in [shelf, high_pass].into_iter().zip(bs_1770) {
+            for (ours, theirs) in b.iter().chain(&a).zip(b_1770.iter().chain(&a_1770)) {
+                assert!((ours - theirs).abs() < 1e-8, "{ours}, BS.1770 has {theirs}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_stereo_1_khz_sine_reads_the_loudness_ebu_tech_3341_gives() {
+        // Tech 3341's tests 1 and 2: 20 s at -23 dBFS and at -33 dBFS read
+        // that in LUFS, momentary, short-term and integrated.
+        for dbfs in [-23.0, -33.0] {
+            let tone = tones(RATE, &[(20.0, dbfs)]);
+            assert_lufs("momentary", loudest(&tone, RATE, MOMENTARY_SECONDS), dbfs);
+            assert_lufs("short-term", loudest(&tone, RATE, SHORT_TERM_SECONDS), dbfs);
+            let integrated = integrated_loudness(&[&tone, &tone], RATE).unwrap();
+            assert_lufs("integrated", integrated, dbfs);
+        }
+    }
+
+    #[test]
+    fn the_integrated_loudness_is_gated_as_ebu_tech_3341_says() {
+        // Tech 3341's tests 3 (the relative gate leaves out the quiet ends),
+        // 4 (the absolute gate leaves out the near-silence) and 5: each
+        // reads -23.0.
+        for (test, segments) in [
+            (3, vec![(10.0, -36.0), (60.0, -23.0), (10.0, -36.0)]),
+            (
+                4,
+                vec![
+                    (10.0, -72.0),
+                    (10.0, -36.0),
+                    (60.0, -23.0),
+                    (10.0, -36.0),
+                    (10.0, -72.0),
+                ],
+            ),
+            (5, vec![(20.0, -26.0), (20.1, -20.0), (20.0, -26.0)]),
+        ] {
+            let tone = tones(RATE, &segments);
+            let integrated = integrated_loudness(&[&tone, &tone], RATE).unwrap();
+            assert_lufs(&format!("test {test}"), integrated, -23.0);
+        }
+    }
+
+    #[test]
+    fn momentary_and_short_term_loudness_read_as_ebu_tech_3341_says() {
+        // Test 9: 1.34 s at -20 dBFS and 1.66 s at -30, five times, reads
+        // -23.0 short-term all the way through. Test 12: 0.18 s and 0.22 s,
+        // 25 times, reads -23.0 momentary all the way through.
+        for (test, (loud, quiet, times), window) in [
+            (9, (1.34, 1.66, 5), SHORT_TERM_SECONDS),
+            (12, (0.18, 0.22, 25), MOMENTARY_SECONDS),
+        ] {
+            let tone = tones(RATE, &[(loud, -20.0), (quiet, -30.0)].repeat(times));
+            let over_time = loudness_over_time(&[&tone, &tone], RATE, window);
+            for (at, lufs) in over_time.into_iter().enumerate() {
+                assert_lufs(&format!("test {test} at sample {at}"), lufs, -23.0);
+            }
+        }
+        // Tests 10 and 13, for meters that read a file: 3 s and 400 ms of
+        // tone at -23 dBFS, after silence, read -23.0 at their loudest
+        // wherever they start.
+        for i in 0..20 {
+            let short = silence_then_tone(RATE, 0.15 * f64::from(i), 3.0);
+            assert_lufs(&format!("test 10, {i}"), loudest(&short, RATE, 3.0), -23.0);
+            let momentary = silence_then_tone(RATE, 0.02 * f64::from(i), 0.4);
+            assert_lufs(
+                &format!("test 13, {i}"),
+                loudest(&momentary, RATE, 0.4),
+                -23.0,
+            );
+        }
+    }
+
+    #[test]
+    fn loudness_reads_the_same_at_44_1_khz() {
+        let rate = 44_100;
+        let tone = tones(rate, &[(20.0, -23.0)]);
+        assert_lufs("momentary", loudest(&tone, rate, MOMENTARY_SECONDS), -23.0);
+        let integrated = integrated_loudness(&[&tone, &tone], rate).unwrap();
+        assert_lufs("integrated", integrated, -23.0);
+        // A 100 Hz tone, where the high-pass starts to bite, reads the same
+        // at both rates.
+        let low = |rate: u32| {
+            let tone: Vec<f32> = (0..5 * rate)
+                .map(|i| (0.1 * (TAU * 100.0 * f64::from(i) / f64::from(rate)).sin()) as f32)
+                .collect();
+            integrated_loudness(&[&tone, &tone], rate).unwrap()
+        };
+        assert!(
+            (low(44_100) - low(48_000)).abs() < 0.01,
+            "{} and {}",
+            low(44_100),
+            low(48_000)
+        );
+    }
+
+    #[test]
+    fn silence_has_no_loudness() {
+        let silence = [0.0; 48_000];
+        assert_eq!(integrated_loudness(&[&silence, &silence], RATE), None);
+        assert_eq!(
+            loudest(&silence, RATE, MOMENTARY_SECONDS),
+            f64::NEG_INFINITY
+        );
+    }
+
+    #[test]
+    fn a_spectrum_takes_any_length() {
+        // A second at 44.1 kHz is 44 100 samples, not a power of two: bins
+        // are 1 Hz apart, and a 1 kHz sine is at bin 1000.
+        for rate in [44_100u32, 48_000] {
+            let samples: Vec<f32> = (0..rate)
+                .map(|i| (TAU * 1000.0 * f64::from(i) / f64::from(rate)).sin() as f32)
+                .collect();
+            let bins = spectrum(&samples);
+            assert_eq!(bins.len(), rate as usize / 2 + 1);
+            let loudest = (0..bins.len()).max_by(|&a, &b| bins[a].total_cmp(&bins[b]));
+            assert_eq!(loudest, Some(1000), "at {rate} Hz");
+        }
+    }
+
+    /// One second of white noise, from -0.5 to 0.5, from `seed`.
+    fn noise(seed: u32) -> Vec<f32> {
+        let mut state = seed;
+        (0..RATE)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 8) as f32 / (1 << 24) as f32 - 0.5
+            })
+            .collect()
+    }
+
+    #[test]
+    fn white_noise_reads_flat_and_a_sine_tonal() {
+        let flatness = spectral_flatness(&noise(1), RATE).unwrap();
+        assert!(flatness > 0.95, "white noise reads {flatness}");
+        let flatness = spectral_flatness(&sine(1000.0, 0.5), RATE).unwrap();
+        assert!(flatness < 0.01, "a sine reads {flatness}");
+        assert_eq!(spectral_flatness(&[0.0; 4800], RATE), None);
+    }
+
+    #[test]
+    fn a_squares_partials_are_harmonic_and_unrelated_ones_arent() {
+        // A band-limited square at 220 Hz: odd harmonics at 1/k.
+        let square: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                let sum: f64 = (1..90)
+                    .step_by(2)
+                    .map(|k| (TAU * 220.0 * f64::from(k) * t).sin() / f64::from(k))
+                    .sum();
+                (0.3 * sum) as f32
+            })
+            .collect();
+        let square = inharmonicity(&square, RATE, 220.0).unwrap();
+        assert!(square < 0.01, "a square reads {square}");
+        // A drum head's first modes over 200 Hz, all at one level: none is
+        // a whole multiple of the first.
+        let modes = [1.0, 1.594, 2.136, 2.296, 2.653, 2.918];
+        let head: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                let sum: f64 = modes.iter().map(|m| (TAU * 200.0 * m * t).sin()).sum();
+                (0.1 * sum) as f32
+            })
+            .collect();
+        let head = inharmonicity(&head, RATE, 200.0).unwrap();
+        assert!(head > 0.3, "a drum head's modes read {head}");
+    }
+
+    #[test]
+    fn stereo_reads_its_correlation_and_width() {
+        let left = noise(1);
+        let inverse: Vec<f32> = left.iter().map(|s| -s).collect();
+        let unrelated = noise(2);
+        for (name, right, expected_correlation, expected_width) in
+            [("L = R", &left, 1.0, 0.0), ("L = -R", &inverse, -1.0, 1.0)]
+        {
+            let correlation = correlation(&left, right);
+            assert!(
+                (correlation - expected_correlation).abs() < 1e-9,
+                "{name}: {correlation}"
+            );
+            let width = stereo_width(&left, right);
+            assert!(
+                (width - expected_width).abs() < 1e-9,
+                "{name}: width {width}"
+            );
+        }
+        let correlation = correlation(&left, &unrelated);
+        assert!(correlation.abs() < 0.05, "unrelated noise: {correlation}");
+        let width = stereo_width(&left, &unrelated);
+        assert!((width - 0.5).abs() < 0.05, "unrelated noise: width {width}");
+    }
+
+    #[test]
+    fn a_naive_saw_aliases_and_a_band_limited_one_doesnt() {
+        // C7, 2093 Hz: its 12th harmonic is already past half the sample
+        // rate, so a naive saw folds strong aliases back down between the
+        // harmonics.
+        for rate in [44_100u32, 48_000] {
+            let frequency = 2093.0;
+            let naive: Vec<f32> = (0..rate)
+                .map(|n| (2.0 * (f64::from(n) * frequency / f64::from(rate)).fract() - 1.0) as f32)
+                .collect();
+            let alias = alias_db(&naive, rate, frequency);
+            assert!(alias > -30.0, "a naive saw at {rate} Hz reads {alias} dB");
+            let clean: Vec<f32> = (0..rate)
+                .map(|n| {
+                    let t = f64::from(n) / f64::from(rate);
+                    let top = (f64::from(rate) / 2.0 / frequency) as usize;
+                    let sum: f64 = (1..=top)
+                        .map(|k| (TAU * frequency * k as f64 * t).sin() / k as f64)
+                        .sum();
+                    (0.5 * sum) as f32
+                })
+                .collect();
+            let alias = alias_db(&clean, rate, frequency);
+            assert!(
+                alias < -80.0,
+                "a band-limited saw at {rate} Hz reads {alias} dB"
+            );
+        }
     }
 }

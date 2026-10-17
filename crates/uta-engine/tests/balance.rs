@@ -30,7 +30,7 @@ fn default_kit_project(params: &[(DrumSound, DrumParam)], hits: Vec<Note>) -> Pr
 /// `params`: its loudness, in dB.
 fn loudness(pitch: u8, params: &[(DrumSound, DrumParam)]) -> f64 {
     let project = default_kit_project(params, vec![hit(0, pitch, 127, 0)]);
-    hit_loudness_db(&render_drums(&project, 0.5, 128), LOUDNESS_SECONDS)
+    hit_loudness_db(&render_drums(&project, 0.5, 128), 48_000, LOUDNESS_SECONDS)
 }
 
 /// Each sound's default Level puts it at its target against the kick: the

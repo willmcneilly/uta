@@ -57,10 +57,12 @@ enum Command {
         out: PathBuf,
     },
     /// Measure a WAV: one line for each measurement, with its unit, from the
-    /// same code the sound tests use. A stereo WAV is measured as its mid.
+    /// same code the sound tests use. A stereo WAV is measured as its mid,
+    /// except for its loudness in LUFS and its stereo measurements.
     #[command(visible_alias = "analyze")]
     Analyse {
-        /// The WAV to measure, at 48 kHz, such as one `uta render` wrote.
+        /// The WAV to measure, at any sample rate, such as one `uta render`
+        /// wrote.
         file: PathBuf,
         /// Another WAV to measure alongside it: both columns, then this one
         /// minus that one.
@@ -72,7 +74,9 @@ enum Command {
         json: bool,
         /// The note it's meant to be, such as `C3` (middle C is C4): the
         /// report says how many cents off the measured pitch is. Without
-        /// it, the pitch is measured from the nearest note.
+        /// it, the pitch is measured from the nearest note. The aliasing and
+        /// inharmonicity are measured from the measured pitch's harmonics,
+        /// or this note's when the sound has no steady pitch.
         #[arg(long)]
         pitch: Option<Note>,
         /// The frequency to measure the share of the energy above, in Hz.
@@ -326,13 +330,6 @@ struct Against<'a> {
 fn measure(file: &Path, note: Option<Note>, above_hz: f64) -> Result<Report, String> {
     let (spec, samples) =
         read_wav(file).map_err(|error| format!("couldn't read {}: {error}", file.display()))?;
-    if spec.sample_rate != 48_000 {
-        return Err(format!(
-            "{} is at {} Hz: `uta analyse` measures 48 kHz WAVs, the rate Uta renders at",
-            file.display(),
-            spec.sample_rate
-        ));
-    }
     let mut sound = Sound::new(&samples, spec.channels, spec.sample_rate).with_above_hz(above_hz);
     if let Some(note) = note {
         sound = sound.with_note(note);

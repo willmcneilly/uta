@@ -3,7 +3,9 @@ name = "uta-analysis"
 version.workspace = true
 edition.workspace = true
 publish = false
-description = "Measurements of rendered audio: pitch, level, brightness, attack, decay. It only reads samples."
+description = "Measurements of rendered audio: pitch, level, loudness, brightness, noisiness, aliasing, stereo, attack, decay. It only reads samples."
 
 [dependencies]
+# The FFT, for any length of real samples, on rustfft.
+realfft = "3"
 serde = "1"
