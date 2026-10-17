@@ -309,19 +309,23 @@ export type SynthSettingView =
   | ChoiceSettingView<"osc2_wave", Waveform>
   | ChoiceSettingView<"filter_mode", FilterMode>
   | NumberSettingView<SynthNumber["name"]>
-  | ToggleSettingView<"osc_retrigger">;
+  | ToggleSettingView<SynthToggle>;
 
 /** One synth setting and its new value, as `set_synth_param` takes it. */
 export type SynthParam =
   | { name: "osc1_wave" | "osc2_wave"; value: Waveform }
   | { name: "filter_mode"; value: FilterMode }
   | SynthNumber
-  | { name: "osc_retrigger"; value: boolean };
+  | { name: SynthToggle; value: boolean };
+
+/** A synth setting that's on or off. */
+export type SynthToggle = "osc2_sync" | "osc_retrigger";
 
 /** A synth setting that's a number. */
 export interface SynthNumber {
   name:
     | "osc1_octave"
+    | "osc1_width"
     | "osc2_octave"
     | "osc2_pitch_semitones"
     | "sub_octave"

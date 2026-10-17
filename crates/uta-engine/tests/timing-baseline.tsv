@@ -1,39 +1,39 @@
 # The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.
-# Recorded on 17 Oct 2026 at a824061, on MacBook-Pro.
+# Recorded on 17 Oct 2026 at 1640a70, on MacBook-Pro.
 load	block	p50_us	p99_us
-Demo loop	32	2.38	3.83
-Demo loop	128	6.83	9.29
-Demo loop	1024	52.08	64.83
-16 voices	32	3.79	4.96
-16 voices	128	13.88	18.92
-16 voices	1024	109.04	149.17
-16 voices, per-voice filter	32	4.25	5.46
-16 voices, per-voice filter	128	15.46	20.88
-16 voices, per-voice filter	1024	119.62	156.46
-16 full voices	32	7.33	9.67
-16 full voices	128	27.75	36.54
-16 full voices	1024	215.29	255.88
-Demo song	32	3.25	4.75
-Demo song	128	11.58	16.58
-Demo song	1024	92.62	127.50
-32 tracks × 8 voices	32	52.00	99.12
-32 tracks × 8 voices	128	209.62	384.08
-32 tracks × 8 voices	1024	1695.00	3672.17
-32 tracks × 8 full voices	32	115.08	219.42
-32 tracks × 8 full voices	128	451.75	884.38
-32 tracks × 8 full voices	1024	3634.50	7138.58
-32 tracks × 8 voices, a Delay on each and the master	32	87.21	138.08
-32 tracks × 8 voices, a Delay on each and the master	128	345.42	524.92
-32 tracks × 8 voices, a Delay on each and the master	1024	2779.62	4185.00
-Check 7 (588k notes)	32	21.62	60.96
-Check 7 (588k notes)	128	85.92	150.83
-Check 7 (588k notes)	1024	691.00	1119.42
-Check 7, first block after Play from bar 10.5	32	134.67	302.75
-Check 7, first block after Play from bar 10.5	128	199.50	420.46
-Check 7, first block after Play from bar 10.5	1024	914.83	1179.50
-32 drum tracks × every sound	32	78.38	164.00
-32 drum tracks × every sound	128	284.00	580.12
-32 drum tracks × every sound	1024	2259.42	4061.54
-32 drum tracks × every sound, 909 kick	32	88.21	226.29
-32 drum tracks × every sound, 909 kick	128	311.88	593.71
-32 drum tracks × every sound, 909 kick	1024	2490.96	4407.88
+Demo loop	32	2.08	2.92
+Demo loop	128	7.00	13.42
+Demo loop	1024	53.79	66.12
+16 voices	32	3.83	8.21
+16 voices	128	13.58	18.96
+16 voices	1024	110.12	128.58
+16 voices, per-voice filter	32	4.25	8.62
+16 voices, per-voice filter	128	15.71	20.54
+16 voices, per-voice filter	1024	121.04	133.08
+16 full voices	32	14.12	17.08
+16 full voices	128	54.21	63.00
+16 full voices	1024	426.92	474.71
+Demo song	32	3.38	4.46
+Demo song	128	12.29	16.50
+Demo song	1024	96.88	131.04
+32 tracks × 8 voices	32	55.71	108.00
+32 tracks × 8 voices	128	224.38	409.12
+32 tracks × 8 voices	1024	1765.46	3402.50
+32 tracks × 8 full voices	32	222.96	1184.96
+32 tracks × 8 full voices	128	885.08	5186.33
+32 tracks × 8 full voices	1024	7071.42	13930.96
+32 tracks × 8 voices, a Delay on each and the master	32	90.50	232.33
+32 tracks × 8 voices, a Delay on each and the master	128	360.62	539.29
+32 tracks × 8 voices, a Delay on each and the master	1024	2829.96	4355.79
+Check 7 (588k notes)	32	22.25	40.83
+Check 7 (588k notes)	128	87.71	138.25
+Check 7 (588k notes)	1024	700.67	790.21
+Check 7, first block after Play from bar 10.5	32	137.17	235.08
+Check 7, first block after Play from bar 10.5	128	201.04	244.29
+Check 7, first block after Play from bar 10.5	1024	812.75	960.00
+32 drum tracks × every sound	32	73.25	141.54
+32 drum tracks × every sound	128	274.00	520.08
+32 drum tracks × every sound	1024	2189.00	3930.67
+32 drum tracks × every sound, 909 kick	32	80.83	147.46
+32 drum tracks × every sound, 909 kick	128	305.33	561.21
+32 drum tracks × every sound, 909 kick	1024	2440.21	4400.21

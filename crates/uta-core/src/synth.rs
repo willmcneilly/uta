@@ -16,8 +16,8 @@ pub enum Waveform {
     Sine,
     Triangle,
     Saw,
-    /// A pulse wave. Until it has a Width it's a square, which command
-    /// formats before 6 called it.
+    /// A pulse wave. At a Width of 50% it's a square, which command formats
+    /// before 6 called it.
     #[serde(alias = "square")]
     Pulse,
 }
@@ -105,8 +105,8 @@ const FILTER_MODES: [Choice; 3] = [
 /// in, and the order [`Self::params`] gives them.
 ///
 /// Serialises with the same names as [`SynthParam`], as `AddTracks` carries
-/// it. A setting left out takes its default, so command format 4's seven
-/// settings, and those of formats 5 to 7, still read, with `waveform` as
+/// it. A setting left out takes its default, so the settings of every
+/// older command format still read, with format 4's `waveform` as
 /// oscillator 1's wave.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -115,12 +115,18 @@ pub struct SynthSettings {
     pub osc1_wave: Waveform,
     /// Oscillator 1's octave, from the note: -2 to 2.
     pub osc1_octave: i8,
+    /// How much of each cycle oscillator 1's pulse spends high, from 0.05
+    /// to 0.95: 0.5 is a square. Only the pulse has a width.
+    pub osc1_width: f32,
     pub osc2_wave: Waveform,
     /// Oscillator 2's octave, from the note: -2 to 2.
     pub osc2_octave: i8,
     /// Oscillator 2's offset from its octave, in semitones: -12 to 12.
     /// Controls move it finely near zero, for detuning.
     pub osc2_pitch_semitones: f32,
+    /// Whether oscillator 2 restarts its cycle each time oscillator 1
+    /// starts one, so it always sounds at oscillator 1's pitch.
+    pub osc2_sync: bool,
     /// How far under oscillator 1 the sub plays, in octaves: -1 or -2.
     pub sub_octave: i8,
     /// How much of each goes into the filter, from 0 to 1 (linear).
@@ -159,6 +165,11 @@ pub struct SynthSettings {
 impl SynthSettings {
     pub const MIN_OCTAVE: i8 = -2;
     pub const MAX_OCTAVE: i8 = 2;
+    /// The narrowest pulse, and the widest: closer to 0 or 1 its two jumps
+    /// fall within a sample of each other at high notes, and can't both be
+    /// smoothed. See RFC-008, "In the engine".
+    pub const MIN_WIDTH: f32 = 0.05;
+    pub const MAX_WIDTH: f32 = 0.95;
     /// Oscillator 2's Pitch either side of its octave, in semitones.
     pub const MAX_PITCH_SEMITONES: f32 = 12.0;
     pub const MIN_SUB_OCTAVE: i8 = -2;
@@ -183,13 +194,15 @@ impl SynthSettings {
 
     /// Every setting, as `SetSynthParam` carries them, in the order the
     /// sound flows through them.
-    pub fn params(&self) -> [SynthParam; 24] {
+    pub fn params(&self) -> [SynthParam; 26] {
         [
             SynthParam::Osc1Wave(self.osc1_wave),
             SynthParam::Osc1Octave(self.osc1_octave),
+            SynthParam::Osc1Width(self.osc1_width),
             SynthParam::Osc2Wave(self.osc2_wave),
             SynthParam::Osc2Octave(self.osc2_octave),
             SynthParam::Osc2PitchSemitones(self.osc2_pitch_semitones),
+            SynthParam::Osc2Sync(self.osc2_sync),
             SynthParam::SubOctave(self.sub_octave),
             SynthParam::Osc1Level(self.osc1_level),
             SynthParam::Osc2Level(self.osc2_level),
@@ -232,6 +245,9 @@ impl SynthSettings {
             SynthParam::Osc1Octave(octave) => {
                 SynthParam::Osc1Octave(replace(&mut self.osc1_octave, octave))
             }
+            SynthParam::Osc1Width(value) => {
+                SynthParam::Osc1Width(replace(&mut self.osc1_width, value))
+            }
             SynthParam::Osc2Wave(wave) => SynthParam::Osc2Wave(replace(&mut self.osc2_wave, wave)),
             SynthParam::Osc2Octave(octave) => {
                 SynthParam::Osc2Octave(replace(&mut self.osc2_octave, octave))
@@ -239,6 +255,7 @@ impl SynthSettings {
             SynthParam::Osc2PitchSemitones(value) => {
                 SynthParam::Osc2PitchSemitones(replace(&mut self.osc2_pitch_semitones, value))
             }
+            SynthParam::Osc2Sync(on) => SynthParam::Osc2Sync(replace(&mut self.osc2_sync, on)),
             SynthParam::SubOctave(octave) => {
                 SynthParam::SubOctave(replace(&mut self.sub_octave, octave))
             }
@@ -300,17 +317,19 @@ impl SynthSettings {
 
 impl Default for SynthSettings {
     /// Today's sound, from before RFC-008: oscillator 1 a saw at the note's
-    /// pitch and full level, everything else in the mixer at zero, a
-    /// low-pass filter that nothing moves, and the oscillators restarting on
-    /// each note. The filter envelope is set for a pluck, so turning up its
-    /// amount alone makes one.
+    /// pitch and full level, everything else in the mixer at zero, oscillator
+    /// 2 free of oscillator 1, a low-pass filter that nothing moves, and the
+    /// oscillators restarting on each note. The filter envelope is set for a
+    /// pluck, so turning up its amount alone makes one.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
             osc1_octave: 0,
+            osc1_width: 0.5,
             osc2_wave: Waveform::Saw,
             osc2_octave: 0,
             osc2_pitch_semitones: 0.0,
+            osc2_sync: false,
             sub_octave: -1,
             osc1_level: 1.0,
             osc2_level: 0.0,
@@ -344,9 +363,11 @@ pub enum SynthParam {
     #[serde(alias = "waveform")]
     Osc1Wave(Waveform),
     Osc1Octave(i8),
+    Osc1Width(f32),
     Osc2Wave(Waveform),
     Osc2Octave(i8),
     Osc2PitchSemitones(f32),
+    Osc2Sync(bool),
     SubOctave(i8),
     Osc1Level(f32),
     Osc2Level(f32),
@@ -391,6 +412,7 @@ impl SynthParam {
             | Self::FilterDecaySeconds(_)
             | Self::FilterSustain(_)
             | Self::FilterReleaseSeconds(_) => 8,
+            Self::Osc1Width(_) | Self::Osc2Sync(_) => 10,
             _ => 6,
         }
     }
@@ -403,12 +425,15 @@ impl SynthParam {
             Some((f32::from(octave), f32::from(min), f32::from(max)))
         };
         match *self {
-            Self::Osc1Wave(_) | Self::Osc2Wave(_) | Self::FilterMode(_) | Self::OscRetrigger(_) => {
-                None
-            }
+            Self::Osc1Wave(_)
+            | Self::Osc2Wave(_)
+            | Self::Osc2Sync(_)
+            | Self::FilterMode(_)
+            | Self::OscRetrigger(_) => None,
             Self::Osc1Octave(value) | Self::Osc2Octave(value) => {
                 octave(value, S::MIN_OCTAVE, S::MAX_OCTAVE)
             }
+            Self::Osc1Width(value) => Some((value, S::MIN_WIDTH, S::MAX_WIDTH)),
             Self::Osc2PitchSemitones(value) => {
                 Some((value, -S::MAX_PITCH_SEMITONES, S::MAX_PITCH_SEMITONES))
             }
@@ -471,6 +496,16 @@ impl SynthParam {
                  the note. Down for a bass from the same notes; up for a lead \
                  that cuts through.",
             ),
+            Self::Osc1Width(_) => number(
+                "Osc 1 width",
+                "How much of each cycle oscillator 1's pulse spends high. Half \
+                 is a square, hollow and woody; narrower thins it towards a \
+                 nasal, reedy buzz. Moving it slowly gives a pad the gentle, \
+                 chorus-like movement of a string machine. Only the pulse has \
+                 a width.",
+                Unit::Fraction,
+                Linear,
+            ),
             Self::Osc2Wave(_) => Description::choice(
                 "Osc 2 wave",
                 "Oscillator 2's shape. A second saw a few cents from the first \
@@ -493,6 +528,15 @@ impl SynthParam {
                  semitones is a fifth, a big, organ-like interval.",
                 Unit::Semitones,
                 Cubic,
+            ),
+            Self::Osc2Sync(_) => Description::toggle(
+                "Osc 2 sync",
+                "Restarts oscillator 2 each time oscillator 1 starts a cycle, \
+                 so it always sounds at oscillator 1's pitch. Its own Pitch \
+                 then changes its tone instead of its note: higher is brighter \
+                 and more nasal, and sweeping it gives the tearing, vocal sound \
+                 of a classic sync lead.",
+                defaults.osc2_sync,
             ),
             Self::SubOctave(_) => octave(
                 "Sub octave",
@@ -659,9 +703,11 @@ mod tests {
         let settings = SynthSettings::default();
         assert_eq!(settings.osc1_wave, Waveform::Saw);
         assert_eq!(settings.osc1_octave, 0);
+        assert_eq!(settings.osc1_width, 0.5);
         assert_eq!(settings.osc2_wave, Waveform::Saw);
         assert_eq!(settings.osc2_octave, 0);
         assert_eq!(settings.osc2_pitch_semitones, 0.0);
+        assert!(!settings.osc2_sync);
         assert_eq!(settings.sub_octave, -1);
         assert_eq!(
             [
@@ -721,6 +767,15 @@ mod tests {
             Ok(SynthParam::Osc2PitchSemitones(0.0))
         );
         assert_eq!(
+            settings.set(SynthParam::Osc1Width(0.25)),
+            Ok(SynthParam::Osc1Width(0.5))
+        );
+        assert_eq!(
+            settings.set(SynthParam::Osc2Sync(true)),
+            Ok(SynthParam::Osc2Sync(false))
+        );
+        assert_eq!((settings.osc1_width, settings.osc2_sync), (0.25, true));
+        assert_eq!(
             (
                 settings.sub_octave,
                 settings.osc_retrigger,
@@ -736,9 +791,11 @@ mod tests {
         let changed = SynthSettings {
             osc1_wave: Waveform::Sine,
             osc1_octave: -2,
+            osc1_width: 0.05,
             osc2_wave: Waveform::Triangle,
             osc2_octave: 2,
             osc2_pitch_semitones: -12.0,
+            osc2_sync: true,
             sub_octave: -2,
             osc1_level: 0.5,
             osc2_level: 0.25,
@@ -781,6 +838,8 @@ mod tests {
         for param in [
             SynthParam::Osc1Octave(-2),
             SynthParam::Osc1Octave(2),
+            SynthParam::Osc1Width(0.05),
+            SynthParam::Osc1Width(0.95),
             SynthParam::Osc2Octave(-2),
             SynthParam::Osc2Octave(2),
             SynthParam::Osc2PitchSemitones(-12.0),
@@ -843,7 +902,11 @@ mod tests {
                     assert_eq!(default, value);
                 }
                 (Kind::Toggle { default }, None) => {
-                    assert_eq!(param, SynthParam::OscRetrigger(default));
+                    let on = match param {
+                        SynthParam::Osc2Sync(on) | SynthParam::OscRetrigger(on) => on,
+                        _ => panic!("{param:?} is a toggle"),
+                    };
+                    assert_eq!(default, on, "{param:?}");
                 }
                 (kind, range) => panic!("{param:?} is described as {kind:?} with {range:?}"),
             }
@@ -873,6 +936,7 @@ mod tests {
             units,
             [
                 (Octaves, Linear, Some(1.0)),
+                (Fraction, Linear, None),
                 (Octaves, Linear, Some(1.0)),
                 (Semitones, Cubic, None),
                 (Octaves, Linear, Some(1.0)),
@@ -941,6 +1005,9 @@ mod tests {
         for param in [
             SynthParam::Osc1Octave(-3),
             SynthParam::Osc2Octave(3),
+            SynthParam::Osc1Width(0.049),
+            SynthParam::Osc1Width(0.951),
+            SynthParam::Osc1Width(f32::NAN),
             SynthParam::Osc2PitchSemitones(12.01),
             SynthParam::Osc2PitchSemitones(f32::NAN),
             SynthParam::SubOctave(0),
@@ -1006,6 +1073,8 @@ mod tests {
         assert_eq!(json["osc1_wave"], "saw");
         assert_eq!(json["sub_octave"], -1);
         assert_eq!(json["osc_retrigger"], true);
+        assert_eq!(json["osc1_width"], 0.5);
+        assert_eq!(json["osc2_sync"], false);
         assert!(serde_json::from_str::<SynthSettings>(r#"{"wave":"saw"}"#).is_err());
     }
 }
