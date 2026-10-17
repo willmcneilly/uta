@@ -51,11 +51,15 @@ pub struct Targets {
     pub brightness_hz: RangeInclusive<f64>,
     /// How fast it starts: the rise from 10% to 90% of its peak, in ms.
     pub attack_ms: RangeInclusive<f64>,
-    /// How long it takes to fade: from its loudest to 40 dB under it, in
-    /// seconds. For a sound that holds, that includes the time it's held.
+    /// How long it lasts: from its first sound until it has faded for good
+    /// to 40 dB under its loudest, in seconds. A pluck's is its own decay,
+    /// held or not; a held sound's is the time it's held and its release.
     pub fade_seconds: RangeInclusive<f64>,
-    /// How loud it is while held: the K-weighted RMS (the filter of ITU-R
-    /// BS.1770) from its first sound for as long as it's held, in dB.
+    /// How loud it is while held, against the default sound (a new
+    /// track's saw) playing middle C for a second, in dB: the K-weighted RMS
+    /// (the filter of ITU-R BS.1770) from its first sound for as long as
+    /// it's held. Against the default, so choosing a factory sound on a new
+    /// track doesn't change how loud it is.
     pub loudness_db: RangeInclusive<f64>,
 }
 
@@ -64,10 +68,10 @@ pub struct Targets {
 /// in a loop shouldn't make you reach for the volume.
 pub const LOUDNESS_SPREAD_DB: f64 = 3.0;
 
-/// The loudness every sound aims for while held, in dB, as
-/// [`Targets::loudness_db`] measures it, within half of
-/// [`LOUDNESS_SPREAD_DB`] either side.
-const LOUDNESS_DB: f64 = -21.0;
+/// The loudness every sound aims for while held, against the default
+/// sound, as [`Targets::loudness_db`] measures it: as loud as it, within
+/// half of [`LOUDNESS_SPREAD_DB`] either side.
+const LOUDNESS_DB: f64 = 0.0;
 
 /// [`LOUDNESS_DB`], give or take half the spread.
 const LOUDNESS: RangeInclusive<f64> =
@@ -109,15 +113,15 @@ fn bass() -> FactorySound {
         },
         targets: Targets {
             brightness_hz: 150.0..=450.0,
-            attack_ms: 0.0..=10.0,
+            attack_ms: 0.0..=25.0,
             fade_seconds: 0.4..=0.8,
             loudness_db: LOUDNESS,
         },
         settings: SynthSettings {
             osc1_wave: Waveform::Saw,
             sub_octave: -1,
-            osc1_level: 0.7,
-            sub_level: 0.6,
+            osc1_level: 0.8,
+            sub_level: 0.7,
             cutoff_hz: 320.0,
             resonance: 0.15,
             filter_env_octaves: 2.5,
@@ -140,7 +144,7 @@ fn glide_bass() -> FactorySound {
         key: "glide_bass",
         name: "Glide bass",
         brief: "A mono bass that slides between overlapping notes, like an SH-101 or a \
-                TB-303 line: a saw and a slightly detuned pulse through a resonant filter \
+                TB-303 line: a saw and a pulse an octave under it through a resonant filter \
                 that snaps open on each fresh note. Overlapping notes glide in about 80 ms \
                 without re-attacking (Legato), so a line sounds like one rubbery voice.",
         audition: Audition {
@@ -149,16 +153,16 @@ fn glide_bass() -> FactorySound {
         },
         targets: Targets {
             brightness_hz: 250.0..=700.0,
-            attack_ms: 0.0..=10.0,
+            attack_ms: 0.0..=25.0,
             fade_seconds: 0.3..=0.8,
             loudness_db: LOUDNESS,
         },
         settings: SynthSettings {
             osc1_wave: Waveform::Saw,
             osc2_wave: Waveform::Pulse,
-            osc2_pitch_semitones: -0.08,
-            osc1_level: 0.7,
-            osc2_level: 0.45,
+            osc2_octave: -1,
+            osc1_level: 0.8,
+            osc2_level: 0.4,
             cutoff_hz: 260.0,
             resonance: 0.55,
             filter_env_octaves: 3.5,
@@ -185,7 +189,7 @@ fn pluck() -> FactorySound {
         name: "Pluck",
         brief: "A round, short Juno pluck that sits under a chord: two saws a few cents \
                 apart, with the filter snapping open and closing over about 150 ms, and the \
-                note gone within half a second whether you hold it or not. Bright at the \
+                note gone within about half a second whether you hold it or not. Bright at the \
                 start, never harsh; it should work as 8th-note arpeggios around middle C.",
         audition: Audition {
             pitches: &[60],
@@ -201,20 +205,21 @@ fn pluck() -> FactorySound {
             osc1_wave: Waveform::Saw,
             osc2_wave: Waveform::Saw,
             osc2_pitch_semitones: 0.1,
-            osc1_level: 0.6,
-            osc2_level: 0.6,
-            cutoff_hz: 300.0,
+            osc1_level: 1.0,
+            osc2_level: 1.0,
+            sub_level: 0.6,
+            cutoff_hz: 250.0,
             resonance: 0.2,
-            filter_env_octaves: 4.5,
+            filter_env_octaves: 4.0,
             filter_key: 0.6,
             filter_attack_seconds: 0.001,
             filter_decay_seconds: 0.15,
             filter_sustain: 0.0,
             filter_release_seconds: 0.15,
             attack_seconds: 0.002,
-            decay_seconds: 0.35,
+            decay_seconds: 1.2,
             sustain: 0.0,
-            release_seconds: 0.25,
+            release_seconds: 0.35,
             ..SynthSettings::default()
         },
     }
@@ -243,10 +248,10 @@ fn pad() -> FactorySound {
             osc1_wave: Waveform::Saw,
             osc2_wave: Waveform::Saw,
             osc2_pitch_semitones: 0.12,
-            osc1_level: 0.5,
-            osc2_level: 0.5,
+            osc1_level: 0.45,
+            osc2_level: 0.45,
             noise_level: 0.03,
-            cutoff_hz: 700.0,
+            cutoff_hz: 650.0,
             resonance: 0.1,
             filter_env_octaves: 1.2,
             filter_key: 0.4,
@@ -289,8 +294,8 @@ fn strings() -> FactorySound {
             osc1_width: 0.5,
             osc2_wave: Waveform::Saw,
             osc2_pitch_semitones: -0.06,
-            osc1_level: 0.7,
-            osc2_level: 0.25,
+            osc1_level: 0.33,
+            osc2_level: 0.12,
             cutoff_hz: 2400.0,
             resonance: 0.05,
             filter_key: 0.5,
@@ -326,13 +331,13 @@ fn lead() -> FactorySound {
         },
         settings: SynthSettings {
             osc1_wave: Waveform::Saw,
-            osc2_wave: Waveform::Pulse,
-            osc2_pitch_semitones: 0.05,
+            osc2_wave: Waveform::Saw,
+            osc2_pitch_semitones: 0.08,
             osc1_level: 0.6,
-            osc2_level: 0.4,
-            cutoff_hz: 1800.0,
+            osc2_level: 0.5,
+            cutoff_hz: 1400.0,
             resonance: 0.3,
-            filter_env_octaves: 1.5,
+            filter_env_octaves: 1.0,
             filter_key: 0.7,
             filter_attack_seconds: 0.005,
             filter_decay_seconds: 0.4,
@@ -378,7 +383,7 @@ fn sync_lead() -> FactorySound {
             osc2_sync: true,
             osc1_level: 0.2,
             osc2_level: 0.8,
-            cutoff_hz: 5000.0,
+            cutoff_hz: 4000.0,
             resonance: 0.1,
             filter_key: 0.5,
             filter_attack_seconds: 0.001,
@@ -435,9 +440,9 @@ fn bell() -> FactorySound {
             filter_sustain: 0.0,
             filter_release_seconds: 0.3,
             attack_seconds: 0.001,
-            decay_seconds: 2.0,
+            decay_seconds: 3.0,
             sustain: 0.0,
-            release_seconds: 1.5,
+            release_seconds: 2.5,
             mod2_source: ModSource::FilterEnv,
             mod2_destination: ModDestination::Osc2Level,
             mod2_amount: 0.6,
