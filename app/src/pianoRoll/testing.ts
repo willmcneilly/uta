@@ -257,6 +257,7 @@ export function trackView(id: string, name: string, clips: ClipView[] = []): Tra
     name,
     mixer: { ...MIXER_DEFAULTS },
     source: { kind: "synth", settings: synthSettings() },
+    effects: [],
     clips,
   };
 }
@@ -416,6 +417,7 @@ export function drumTrackView(id: string, name: string, clips: ClipView[] = []):
     name,
     mixer: { ...MIXER_DEFAULTS },
     source: { kind: "drums", kit: { rows: KIT_ROWS } },
+    effects: [],
     clips,
   };
 }
@@ -442,6 +444,9 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
     mixerLimits: { volumeDb: [-60, 6], pan: [-1, 1] },
     mixerDefaults: MIXER_DEFAULTS,
     maxTracks: 32,
+    masterEffects: [],
+    effectKinds: [{ kind: "delay", name: "Delay" }],
+    maxEffects: 8,
     tracks: [trackView("track-1", "Synth 1", [{ id: "clip-1", start: 0, length: 4 * 3840, notes }])],
     ...overrides,
   };

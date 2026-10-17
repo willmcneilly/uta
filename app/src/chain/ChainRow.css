@@ -1,0 +1,480 @@
+/*
+ * The Sound tab's row: panels left to right, scrolling sideways when wider
+ * than the window. Each panel has a 24 px spine down its left side, with its
+ * on/off key at the top, its name stood on end (click it to fold the panel)
+ * and its handle at the foot. A line runs along the top of the row, 12 px
+ * down, from the source through every panel to the mixer. provisional: D-30
+ */
+.chain-row {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* The source's panel keeps its own layout, but scrolls with the row. */
+.chain-row .synth,
+.chain-row .drums {
+  overflow: visible;
+}
+
+.chain-row .drums {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+/* Each panel: its spine, then its body, with the line along the top of both. */
+.wired {
+  position: relative;
+  display: flex;
+  flex: none;
+  border-right: var(--stroke-grid) solid var(--line-2);
+}
+
+.wired:focus {
+  outline: none;
+}
+
+.wired:focus-visible .spine {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: calc(-1 * var(--stroke-clip-selected));
+}
+
+.spine {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: var(--space-7);
+  padding: 0 0 var(--space-3);
+  border-right: var(--stroke-grid) solid var(--line-2);
+  background: var(--line);
+}
+
+.wired.effect .spine {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wired.effect .spine:hover {
+  background: var(--line-2);
+}
+
+.chain-row[data-reordering],
+.chain-row[data-reordering] * {
+  cursor: grabbing;
+}
+
+/* Across the spine, the line runs behind the on/off key. */
+.spine::before {
+  position: absolute;
+  top: var(--space-5);
+  right: 0;
+  left: 0;
+  border-top: var(--stroke-clip) solid var(--ink-3);
+  content: "";
+}
+
+.wired.source .spine::before {
+  left: 50%;
+}
+
+/* The selected panel's spine is washed, and edged in the selected ink. */
+.wired[aria-current="true"] .spine {
+  background: var(--selected-wash);
+  box-shadow: inset calc(-1 * var(--stroke-clip-selected)) 0 0 var(--selected);
+}
+
+.wired[data-dragging] {
+  opacity: 0.5;
+}
+
+/* Where a dragged panel would land. */
+.wired[data-drop="before"] {
+  box-shadow: inset var(--stroke-clip-selected) 0 0 var(--selected);
+}
+
+.wired[data-drop="after"] {
+  box-shadow: inset calc(-1 * var(--stroke-clip-selected)) 0 0 var(--selected);
+}
+
+.spine-name {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font: var(--font-name);
+  white-space: nowrap;
+}
+
+.spine-name.quiet {
+  color: var(--ink-2);
+  font: var(--font-text);
+}
+
+[data-off] .spine-name {
+  color: var(--ink-3);
+}
+
+/* The name on a spine folds and unfolds its panel. */
+.fold {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  appearance: none;
+}
+
+.fold:hover {
+  background: var(--line-2);
+}
+
+.fold:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.fold[aria-expanded="false"] {
+  color: var(--ink-2);
+}
+
+.handle {
+  display: inline-flex;
+  margin-top: auto;
+  color: var(--ink-3);
+}
+
+.spine:hover .handle {
+  color: var(--ink-2);
+}
+
+.grip circle {
+  fill: currentColor;
+}
+
+/* Where the sound starts: a dot on the line. */
+.wire-start {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 9px 0 1px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+/* The on/off key: an 18 px circle on the line, with a power mark. On, it's
+   filled in ink with the mark in the sheet's colour. */
+.on-key {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  appearance: none;
+}
+
+.on-key svg {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 3px;
+  border: var(--stroke-grid) solid var(--ink-3);
+  border-radius: 50%;
+  background: var(--sheet);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.on-key:hover svg {
+  border-color: var(--ink-2);
+  background: var(--line);
+}
+
+.on-key[aria-pressed="true"] {
+  color: var(--sheet);
+}
+
+.on-key[aria-pressed="true"] svg {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.on-key[aria-pressed="true"]:hover svg {
+  border-color: var(--ink-2);
+  background: var(--ink-2);
+}
+
+.on-key:focus-visible {
+  outline: none;
+}
+
+.on-key:focus-visible svg {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.wired-body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  padding: var(--space-7) var(--space-6) var(--space-3);
+}
+
+.wire {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--space-7);
+  overflow: visible;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-clip);
+}
+
+.wire path {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Off, the line goes dashed and hops over the panel, and its controls fade,
+   still usable. */
+[data-off] .wire {
+  stroke-dasharray: 3 3;
+}
+
+[data-off] .effect-controls {
+  opacity: 0.45;
+}
+
+.wire-arrow {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-3);
+  right: -5px;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-clip);
+}
+
+/* The master's chain starts from the tracks: just a spine. */
+.tracks-in .spine {
+  border-right: 0;
+  background: transparent;
+}
+
+/* An effect's controls, until its own panel lays them out (UTA-76). */
+.effect-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--ink);
+  font: var(--font-text);
+}
+
+.effect-controls .knob {
+  min-width: 56px;
+}
+
+.effect-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--ink-2);
+}
+
+/* The +, and the mixer the line ends at. */
+.wired-end {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
+.wired-end::before {
+  position: absolute;
+  top: var(--space-5);
+  left: 0;
+  width: 40px;
+  border-top: var(--stroke-clip) solid var(--ink-3);
+  content: "";
+}
+
+.wired-end .wire-arrow {
+  right: auto;
+  left: 34px;
+}
+
+.add-effect {
+  position: relative;
+  flex: none;
+}
+
+.add-key {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 32px;
+  height: 100%;
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-text);
+  cursor: pointer;
+  appearance: none;
+}
+
+.add-key:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.add-key:active:not(:disabled) {
+  background: var(--line-2);
+}
+
+.add-key:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.add-key:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.add-key .plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: var(--stroke-grid) solid var(--ink-2);
+  border-radius: var(--rounded-md);
+  background: var(--sheet);
+  font-size: var(--font-title-size);
+  line-height: 1;
+}
+
+.add-key:disabled .plus {
+  border-color: var(--ink-3);
+}
+
+.add-key .spine-name {
+  font: var(--font-text);
+}
+
+/* Placed against the window (ChainRow.tsx sets where), so the scrolling
+   row never clips it: to the right of the +, or to its left near the
+   window's edge. provisional: D-36 */
+.add-menu {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: var(--space-2);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
+  background: var(--sheet);
+}
+
+.add-menu button {
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+}
+
+.add-menu button:hover,
+.add-menu button:focus-visible {
+  background: var(--line);
+  outline: none;
+}
+
+.mixer-stub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--space-7);
+  margin-left: var(--space-4);
+  padding-top: var(--space-2);
+}
+
+/* The map of the chain, in the tab bar: each panel's name, a flat key that
+   scrolls the row to it. */
+.chain-map {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: var(--space-6);
+  overflow: hidden;
+  color: var(--ink-3);
+}
+
+.chain-step {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chain-arrow {
+  padding: 0 var(--space-1);
+}
+
+.chain-map button {
+  height: 22px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--rounded-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-text);
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+}
+
+.chain-map button:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.chain-map button:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.chain-map button[data-off] {
+  color: var(--ink-3);
+}
