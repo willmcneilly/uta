@@ -725,7 +725,8 @@ describe("the timeline", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
       const synth = screen.getByRole("region", { name: "Synth" });
-      expect(within(synth).getByRole("radio", { name: "Pulse" })).toBeChecked();
+      const wave = within(synth).getByRole("radiogroup", { name: "Osc 1 wave" });
+      expect(within(wave).getByRole("radio", { name: "Pulse" })).toBeChecked();
     });
 
     it("opens a clip in the Notes tab on a double-click", async () => {
