@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::setting::Choice;
+
 /// A position or length in ticks: whole fractions of a beat.
 pub type Ticks = u64;
 
@@ -179,6 +181,7 @@ enum Feel {
 
 impl NoteDivision {
     pub const DOTTED_EIGHTH: Self = Self::new(8, Feel::Dotted);
+    pub const QUARTER: Self = Self::new(4, Feel::Straight);
 
     /// Every division, in a menu's order: from the shortest note to the
     /// longest, each as a triplet, straight, then dotted.
@@ -192,6 +195,25 @@ impl NoteDivision {
             index += 1;
         }
         all
+    };
+
+    /// Every division, as a synced setting's menu offers them: the Delay's
+    /// Time and the LFO's Rate.
+    pub(crate) const CHOICES: [Choice; 18] = {
+        let mut choices = [Choice {
+            value: "",
+            label: "",
+        }; 18];
+        let mut index = 0;
+        while index < 18 {
+            let division = Self::ALL[index];
+            choices[index] = Choice {
+                value: division.value(),
+                label: division.label(),
+            };
+            index += 1;
+        }
+        choices
     };
 
     const fn new(note: u8, feel: Feel) -> Self {
