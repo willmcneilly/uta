@@ -19,7 +19,7 @@ pub use settings::{SynthSettings, Waveform};
 
 use envelope::{Envelope, Stage, Times};
 use filter::{Coefficients, Filter};
-use oscillator::{Oscillator, SQUARE, Synced};
+use oscillator::{Decimator, Oscillator, OversampledSync, SQUARE};
 
 use crate::noise::Noise;
 use crate::ramp::Ramp;
@@ -87,9 +87,9 @@ struct Voice {
     increment: f64,
     osc1: Oscillator,
     osc2: Oscillator,
-    /// Oscillator 2 under sync, following oscillator 1. While Sync
-    /// crossfades, both it and `osc2` run.
-    osc2_synced: Synced,
+    /// Oscillator 2 under sync, following oscillator 1 four steps a
+    /// sample. While Sync crossfades, both it and `osc2` run.
+    osc2_synced: OversampledSync,
     /// Whether `osc2_synced` is following oscillator 1. It stops whenever
     /// it isn't heard, and starts again from oscillator 1's phase.
     osc2_following: bool,
@@ -119,7 +119,7 @@ impl Voice {
             increment: 0.0,
             osc1: Oscillator::default(),
             osc2: Oscillator::default(),
-            osc2_synced: Synced::default(),
+            osc2_synced: OversampledSync::default(),
             osc2_following: false,
             osc1_cycle: 0,
             noise: Noise::seeded(noise_seed(index)),
@@ -261,6 +261,8 @@ pub(crate) struct Synth {
     osc1_width: Ramp,
     osc2_wave: Crossfade<Waveform>,
     osc2_sync: Crossfade<bool>,
+    /// Brings oscillator 2 under sync back down from four steps a sample.
+    decimator: Decimator,
     sub_octave: Crossfade<i8>,
     /// Oscillator 2's Pitch, in semitones.
     osc2_pitch: Ramp,
@@ -300,6 +302,7 @@ impl Synth {
             osc1_width: Ramp::new(0.0, 1),
             osc2_wave: Crossfade::new(settings.osc2_wave, 1),
             osc2_sync: Crossfade::new(settings.osc2_sync, 1),
+            decimator: Decimator::new(),
             sub_octave: Crossfade::new(settings.sub_octave, 1),
             osc2_pitch: Ramp::new(0.0, 1),
             osc1_ratio: 1.0,
@@ -588,9 +591,13 @@ impl Synth {
                         osc.start_with(&voice.osc1, increment);
                         voice.osc2_following = true;
                     }
-                    let step = osc.step(&voice.osc1);
-                    synced_value = osc2_wave.of(|wave| osc.value(wave, &step));
-                    osc.advance(&step);
+                    synced_value = osc.next(
+                        &voice.osc1,
+                        osc2_wave.from,
+                        osc2_wave.to,
+                        osc2_wave.mix,
+                        &self.decimator,
+                    );
                 }
                 voice.osc2_following &= synced;
                 mix += osc2_level * osc2_sync.of(|on| if on { synced_value } else { free_value });

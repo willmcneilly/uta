@@ -22,7 +22,10 @@
 //! samples that the leader's phase gives. So it finds each jump and corner in
 //! the step to the next sample, natural or from a restart, and corrects the
 //! samples either side by its size: PolyBLEP for the jump, PolyBLAMP for the
-//! corner.
+//! corner. Even corrected, a restart is a hard edge, and at high notes
+//! what PolyBLEP leaves of it can be heard (the sync A/B, RFC-008's manual
+//! check 2), so an [`OversampledSync`] runs it four times a sample and
+//! brings it back down through a [`Decimator`], a steep low-pass.
 //!
 //! References: Välimäki and Huovilainen, "Antialiasing oscillators in
 //! subtractive synthesis" (2007), and Esqueda, Välimäki and Bilbao,
@@ -87,6 +90,16 @@ impl Oscillator {
         let divide = f64::from(divide);
         let t = (f64::from(cycle) % divide + self.phase) / divide;
         square(t, self.increment / divide) as f32
+    }
+
+    /// The same oscillator moving a quarter as far each step: its pace at
+    /// four steps a sample.
+    #[inline]
+    fn quartered(&self) -> Self {
+        Self {
+            phase: self.phase,
+            increment: self.increment / OVERSAMPLE as f64,
+        }
     }
 
     /// When it next wraps, if it does before the next sample: how far
@@ -359,6 +372,140 @@ fn slope(waveform: Waveform, t: f64) -> f64 {
     }
 }
 
+/// How many steps a synced oscillator takes each sample.
+pub(crate) const OVERSAMPLE: usize = 4;
+
+/// How many taps the [`Decimator`] has: enough for its pass band to run
+/// flat to 20 kHz at 48 kHz and its stop band, from 28 kHz, to be 80 dB
+/// down, so nothing above the sample rate's half folds back audibly.
+const DECIMATOR_TAPS: usize = 128;
+
+/// The low-pass a synced oscillator's four steps a sample go through before
+/// one in four is kept: a windowed sinc, cutting at half the sample rate,
+/// under a Kaiser window. Made on the control side, with the synth.
+#[derive(Debug, Clone)]
+pub(crate) struct Decimator {
+    taps: [f32; DECIMATOR_TAPS],
+}
+
+impl Decimator {
+    pub(crate) fn new() -> Self {
+        // Cutting at the sample rate's half, a quarter of it at four times
+        // the rate, and 80 dB down in the stop band (Kaiser's beta for it).
+        let cutoff = 0.5 / OVERSAMPLE as f64;
+        let beta = 0.1102 * (80.0 - 8.7);
+        let middle = (DECIMATOR_TAPS - 1) as f64 / 2.0;
+        let mut taps = [0.0f64; DECIMATOR_TAPS];
+        for (n, tap) in taps.iter_mut().enumerate() {
+            let x = n as f64 - middle;
+            let sinc = if x == 0.0 {
+                2.0 * cutoff
+            } else {
+                (TAU * cutoff * x).sin() / (std::f64::consts::PI * x)
+            };
+            let r = x / middle;
+            *tap = sinc * bessel_i0(beta * (1.0 - r * r).max(0.0).sqrt()) / bessel_i0(beta);
+        }
+        let sum: f64 = taps.iter().sum();
+        Self {
+            taps: taps.map(|tap| (tap / sum) as f32),
+        }
+    }
+}
+
+/// The modified Bessel function of the first kind, order 0, for the Kaiser
+/// window: its series, to well past f64's precision for the beta used.
+fn bessel_i0(x: f64) -> f64 {
+    let mut sum = 1.0;
+    let mut term = 1.0;
+    for k in 1..50 {
+        term *= (x / (2.0 * f64::from(k))).powi(2);
+        sum += term;
+    }
+    sum
+}
+
+/// Oscillator 2 under sync, as the synth plays it: a [`Synced`] oscillator
+/// taking four steps a sample behind a leader slowed to match, through a
+/// [`Decimator`]. Its history is a fixed array, written twice over so the
+/// last [`DECIMATOR_TAPS`] steps always lie in one run.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OversampledSync {
+    synced: Synced,
+    history: [f32; 2 * DECIMATOR_TAPS],
+    /// Where the next step goes, from 0 to [`DECIMATOR_TAPS`].
+    position: usize,
+}
+
+impl Default for OversampledSync {
+    fn default() -> Self {
+        Self {
+            synced: Synced::default(),
+            history: [0.0; 2 * DECIMATOR_TAPS],
+            position: 0,
+        }
+    }
+}
+
+impl OversampledSync {
+    /// Starts where it would be had it followed `leader` since the leader's
+    /// last restart, at `increment` cycles a sample, with nothing before.
+    pub(crate) fn start_with(&mut self, leader: &Oscillator, increment: f64) {
+        self.synced
+            .start_with(&leader.quartered(), increment / OVERSAMPLE as f64);
+        self.history = [0.0; 2 * DECIMATOR_TAPS];
+        self.position = 0;
+    }
+
+    /// Sets how far it moves each sample, in cycles.
+    #[inline]
+    pub(crate) fn set_increment(&mut self, increment: f64) {
+        self.synced.set_increment(increment / OVERSAMPLE as f64);
+    }
+
+    /// The next sample: four steps behind `leader` at this sample, each
+    /// `from` crossfaded `mix` of the way to `to`, through `decimator`.
+    #[inline]
+    pub(crate) fn next(
+        &mut self,
+        leader: &Oscillator,
+        from: Waveform,
+        to: Waveform,
+        mix: f32,
+        decimator: &Decimator,
+    ) -> f32 {
+        let mut leader = leader.quartered();
+        for _ in 0..OVERSAMPLE {
+            let step = self.synced.step(&leader);
+            let mut value = self.synced.value(from, &step);
+            if mix != 0.0 {
+                value += (self.synced.value(to, &step) - value) * mix;
+            }
+            self.synced.advance(&step);
+            leader.advance();
+            self.history[self.position] = value;
+            self.history[self.position + DECIMATOR_TAPS] = value;
+            self.position = (self.position + 1) % DECIMATOR_TAPS;
+        }
+        // The taps are symmetric, so the oldest-first run needs no reversing.
+        let recent = &self.history[self.position..self.position + DECIMATOR_TAPS];
+        dot(recent, &decimator.taps)
+    }
+}
+
+/// The sum of `a` times `b`, in eight running sums, so it can be worked out
+/// eight at a time.
+#[inline]
+fn dot(a: &[f32], b: &[f32; DECIMATOR_TAPS]) -> f32 {
+    let mut sums = [0.0f32; 8];
+    for (a, b) in a.as_chunks::<8>().0.iter().zip(b.as_chunks::<8>().0) {
+        for lane in 0..8 {
+            sums[lane] += a[lane] * b[lane];
+        }
+    }
+    sums.iter().sum()
+}
+
 /// The PolyBLEP correction for an upward jump of 2 at phase 0, for a sample
 /// at phase `t` with `dt` cycles per sample. Zero except within a sample
 /// either side of the jump.
@@ -522,6 +669,73 @@ mod tests {
                 following.phase
             );
         }
+    }
+
+    /// The decimator's response at `hz` for a 48 kHz synth, in dB.
+    fn decimator_db(decimator: &Decimator, hz: f64) -> f64 {
+        let rate = 48_000.0 * OVERSAMPLE as f64;
+        let (mut re, mut im) = (0.0, 0.0);
+        for (n, tap) in decimator.taps.iter().enumerate() {
+            let angle = TAU * hz * n as f64 / rate;
+            re += f64::from(*tap) * angle.cos();
+            im -= f64::from(*tap) * angle.sin();
+        }
+        20.0 * re.hypot(im).log10()
+    }
+
+    /// The decimator passes everything up to 20 kHz within a tenth of a dB,
+    /// and takes everything from 28 kHz up, which would fold back under
+    /// 20 kHz, at least 75 dB down.
+    #[test]
+    fn the_decimator_passes_the_audio_and_stops_what_would_fold_back() {
+        let decimator = Decimator::new();
+        for hz in (0..=20_000).step_by(250) {
+            let db = decimator_db(&decimator, f64::from(hz));
+            assert!(db.abs() < 0.1, "{db} dB at {hz} Hz");
+        }
+        for hz in (28_000..=96_000).step_by(250) {
+            let db = decimator_db(&decimator, f64::from(hz));
+            assert!(db < -75.0, "{db} dB at {hz} Hz");
+        }
+    }
+
+    /// A synced sine restarted half way through its cycle hardly jumps
+    /// (from about 0 to 0), but its slope turns from falling to rising: a
+    /// corner. The sample before each restart gets PolyBLAMP's correction
+    /// for it, sized by the change of slope, on top of the small jump's.
+    #[test]
+    fn a_restart_s_corner_gets_polyblamp() {
+        let leader_increment = 1.0 / 100.37;
+        let increment = leader_increment * 0.5;
+        let mut leader = Oscillator::default();
+        leader.set_increment(leader_increment);
+        let mut synced = Synced::default();
+        synced.start_with(&leader, increment);
+        let mut restarts = 0;
+        // The largest corner correction, to check it isn't too small to
+        // tell from nothing.
+        let mut largest = 0.0f64;
+        for _ in 0..10_000 {
+            let step = synced.step(&leader);
+            let value = f64::from(synced.value(Waveform::Sine, &step));
+            if let Some(at) = leader.wraps_at() {
+                let before = 1.0 - at;
+                let from = (synced.phase + at * increment).fract();
+                let jump = -(from * TAU).sin();
+                let bend = TAU * (1.0 - (from * TAU).cos()) * increment;
+                largest = largest.max(bend * before.powi(3) / 6.0);
+                let expected = (synced.phase * TAU).sin()
+                    + synced.carry[Waveform::Sine as usize]
+                    + jump / 2.0 * before * before
+                    + bend * before.powi(3) / 6.0;
+                assert!((value - expected).abs() < 1e-6, "{value} not {expected}");
+                restarts += 1;
+            }
+            synced.advance(&step);
+            leader.advance();
+        }
+        assert!(restarts > 90);
+        assert!(largest > 1e-3, "the largest corner correction is {largest}");
     }
 
     /// Wherever the leader restarts it, the synced oscillator's jump is

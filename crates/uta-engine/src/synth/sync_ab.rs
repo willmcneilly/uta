@@ -1,9 +1,10 @@
 //! The sync A/B (RFC-008, "How we'll verify it", manual check 2): a sync
 //! sweep made two ways, for listening. One is the synced oscillator as
-//! built; the other is the same oscillator run at eight times the sample
-//! rate and brought back down through a steep low-pass filter, which leaves
-//! almost no aliasing. If the two can be told apart by ear, the synced
-//! oscillator is to be oversampled.
+//! built, four steps a sample; the other is the same corrected oscillator
+//! run at eight times the sample rate and brought back down through a much
+//! steeper low-pass, which leaves almost no aliasing. The first A/B, with
+//! the synced oscillator taking one step a sample, was told apart by ear,
+//! so it now takes four; this one checks four is enough.
 //!
 //! Which is A and which is B is chosen at random on each run, and written
 //! only to `sync-ab-key.txt` outside their folder, so the listener can't
@@ -20,12 +21,12 @@ use std::f64::consts::PI;
 use std::path::Path;
 
 use super::Waveform;
-use super::oscillator::{Oscillator, Synced};
+use super::oscillator::{Decimator, Oscillator, OversampledSync, Synced};
 use crate::EngineConfig;
 
 const RATE: u32 = 48_000;
-/// How many times faster the oversampled sweep runs.
-const OVERSAMPLE: u32 = 8;
+/// How many times faster the reference sweep runs.
+const REFERENCE: u32 = 8;
 /// Both renders are cut above this, so they differ only below it.
 const CUTOFF_HZ: f64 = 20_000.0;
 
@@ -41,8 +42,10 @@ const LEVEL: f64 = 0.25;
 const FADE_SECONDS: f64 = 0.01;
 
 /// The sweep at `rate`: each note's synced saw, its pitch over oscillator
-/// 1's rising smoothly by `SWEEP_SEMITONES`.
-fn sweep(rate: f64) -> Vec<f64> {
+/// 1's rising smoothly by `SWEEP_SEMITONES`. As the synth plays it, if
+/// `as_built`, or else one corrected step a sample.
+fn sweep(rate: f64, as_built: bool) -> Vec<f64> {
+    let decimator = Decimator::new();
     let note_samples = ((SWEEP_SECONDS + HOLD_SECONDS) * rate) as usize;
     let gap = (GAP_SECONDS * rate) as usize;
     let fade = FADE_SECONDS * rate;
@@ -53,13 +56,23 @@ fn sweep(rate: f64) -> Vec<f64> {
         leader.set_increment(increment);
         let mut synced = Synced::default();
         synced.start_with(&leader, increment);
+        let mut oversampled = OversampledSync::default();
+        oversampled.start_with(&leader, increment);
         for n in 0..note_samples {
             let t = n as f64 / rate;
             let semitones = SWEEP_SEMITONES * (t / SWEEP_SECONDS).min(1.0);
-            synced.set_increment(increment * (semitones / 12.0).exp2());
-            let step = synced.step(&leader);
-            let value = f64::from(synced.value(Waveform::Saw, &step));
-            synced.advance(&step);
+            let ratio = (semitones / 12.0).exp2();
+            let value = if as_built {
+                oversampled.set_increment(increment * ratio);
+                let (saw, mix) = (Waveform::Saw, 0.0);
+                f64::from(oversampled.next(&leader, saw, saw, mix, &decimator))
+            } else {
+                synced.set_increment(increment * ratio);
+                let step = synced.step(&leader);
+                let value = f64::from(synced.value(Waveform::Saw, &step));
+                synced.advance(&step);
+                value
+            };
             leader.advance();
             let n = n as f64;
             let envelope = (n / fade).min(1.0).min((note_samples as f64 - n) / fade);
@@ -117,26 +130,15 @@ fn filter_and_keep(samples: &[f64], filter: &[f64], keep: usize) -> Vec<f32> {
 #[ignore = "writes the sync A/B to listen to; run by hand"]
 fn sync_ab() {
     let rate = f64::from(RATE);
-    let as_built = filter_and_keep(&sweep(rate), &low_pass(CUTOFF_HZ, rate, 255), 1);
-    let fast = f64::from(RATE * OVERSAMPLE);
+    let as_built = filter_and_keep(&sweep(rate, true), &low_pass(CUTOFF_HZ, rate, 255), 1);
+    let fast = f64::from(RATE * REFERENCE);
     let oversampled = filter_and_keep(
-        &sweep(fast),
+        &sweep(fast, false),
         &low_pass(CUTOFF_HZ, fast, 2047),
-        OVERSAMPLE as usize,
+        REFERENCE as usize,
     );
     let length = as_built.len().min(oversampled.len());
     let (as_built, oversampled) = (&as_built[..length], &oversampled[..length]);
-
-    let difference = as_built
-        .iter()
-        .zip(oversampled)
-        .map(|(a, b)| f64::from(a - b).powi(2))
-        .sum::<f64>();
-    let level = as_built.iter().map(|a| f64::from(*a).powi(2)).sum::<f64>();
-    println!(
-        "The two differ by {:.1} dB against the sweep.",
-        10.0 * (difference / level).log10()
-    );
 
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/listen/sync-ab");
     std::fs::create_dir_all(&folder).unwrap();
@@ -149,9 +151,17 @@ fn sync_ab() {
         .unwrap()
         .subsec_nanos();
     let (a, b, key) = if nanos.is_multiple_of(2) {
-        (as_built, oversampled, "A is as built; B is oversampled.")
+        (
+            as_built,
+            oversampled,
+            "A is as built (4x); B is the 8x reference.",
+        )
     } else {
-        (oversampled, as_built, "A is oversampled; B is as built.")
+        (
+            oversampled,
+            as_built,
+            "A is the 8x reference; B is as built (4x).",
+        )
     };
     crate::offline::write_wav(&folder.join("a.wav"), config, a).unwrap();
     crate::offline::write_wav(&folder.join("b.wav"), config, b).unwrap();

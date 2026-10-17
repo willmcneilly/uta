@@ -1190,16 +1190,18 @@ fn under_sync_the_pitch_follows_oscillator_1() {
 
 /// The loudest alias allowed in a sync sweep, for each wave, relative to the
 /// loudest harmonic: oscillator 2 synced to C7 (2093 Hz) and swept up two
-/// octaves. Measured here as the saw -25.6 dB, the pulse -24.3, the
-/// triangle -35.9 and the sine -42.9; uncorrected, as
-/// `sync_aliasing_measure_catches_a_naive_sync` checks, they're 9 to 16 dB
-/// worse. Without the corner correction (PolyBLAMP) at the restart, the
-/// triangle measures -34.5 and the sine -38.6, over their limits.
+/// octaves. Measured here, with the synced oscillator taking four steps a
+/// sample, as the saw and pulse -46.0 dB, the triangle -55.6 and the sine
+/// -65.5. Taking one step a sample, PolyBLEP and PolyBLAMP alone, they
+/// measured -25.6, -24.3, -35.9 and -42.9: about 20 dB worse, and the
+/// difference the sync A/B heard. Uncorrected, as
+/// `sync_aliasing_measure_catches_a_naive_sync` checks, they're worse
+/// still.
 const SYNC_ALIAS_LIMIT_DB: [(Waveform, f64); 4] = [
-    (Waveform::Saw, -25.0),
-    (Waveform::Pulse, -23.5),
-    (Waveform::Triangle, -35.5),
-    (Waveform::Sine, -42.0),
+    (Waveform::Saw, -45.5),
+    (Waveform::Pulse, -45.5),
+    (Waveform::Triangle, -55.0),
+    (Waveform::Sine, -65.0),
 ];
 
 /// Oscillator 2's Octave and Pitch across a sync sweep: up two octaves from
