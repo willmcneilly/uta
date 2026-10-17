@@ -173,6 +173,8 @@ pub(crate) struct Synced {
     /// For each wave, the second half of the corrections for the last step,
     /// which falls on this sample. In [`Waveform`] order.
     carry: [f64; 4],
+    /// Whether the last step had anything in it, so `carry` may not be zero.
+    carrying: bool,
 }
 
 /// What happens to a synced oscillator between one sample and the next.
@@ -215,6 +217,7 @@ impl Synced {
         };
         self.increment = increment;
         self.carry = [0.0; 4];
+        self.carrying = false;
     }
 
     /// Sets how far it moves each sample, in cycles.
@@ -280,7 +283,33 @@ impl Synced {
             }
             self.carry[waveform as usize] = carry;
         }
+        self.carrying = step.count > 0;
         self.phase = step.next_phase;
+    }
+
+    /// Whether nothing happens between this sample and the next, given its
+    /// leader at this sample: the leader doesn't wrap, this one crosses no
+    /// half cycle, and nothing carries over from the last step. Most steps
+    /// are like that, and [`Self::coast`] takes them for a fraction of the
+    /// cost of [`Self::step`].
+    #[inline]
+    fn is_quiet(&self, leader: &Oscillator) -> bool {
+        let next = self.phase + self.increment;
+        !self.carrying
+            && leader.phase + leader.increment < 1.0
+            && (next * 2.0).floor() == (self.phase * 2.0).floor()
+    }
+
+    /// For a quiet step: the output for this sample, nothing to correct,
+    /// then on to the next.
+    #[inline]
+    fn coast(&mut self, from: Waveform, to: Waveform, mix: f32) -> f32 {
+        let mut value = naive(from, self.phase) as f32;
+        if mix != 0.0 {
+            value += (naive(to, self.phase) as f32 - value) * mix;
+        }
+        self.phase += self.increment;
+        value
     }
 }
 
@@ -476,12 +505,17 @@ impl OversampledSync {
     ) -> f32 {
         let mut leader = leader.quartered();
         for _ in 0..OVERSAMPLE {
-            let step = self.synced.step(&leader);
-            let mut value = self.synced.value(from, &step);
-            if mix != 0.0 {
-                value += (self.synced.value(to, &step) - value) * mix;
-            }
-            self.synced.advance(&step);
+            let value = if self.synced.is_quiet(&leader) {
+                self.synced.coast(from, to, mix)
+            } else {
+                let step = self.synced.step(&leader);
+                let mut value = self.synced.value(from, &step);
+                if mix != 0.0 {
+                    value += (self.synced.value(to, &step) - value) * mix;
+                }
+                self.synced.advance(&step);
+                value
+            };
             leader.advance();
             self.history[self.position] = value;
             self.history[self.position + DECIMATOR_TAPS] = value;
