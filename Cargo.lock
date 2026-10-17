@@ -4205,6 +4205,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "uta-analysis"
+version = "0.1.0"
+
+[[package]]
 name = "uta-app"
 version = "0.1.0"
 dependencies = [
@@ -4248,6 +4252,7 @@ dependencies = [
  "rtrb",
  "rtsan-standalone",
  "serde_json",
+ "uta-analysis",
  "uta-core",
  "uuid",
 ]
