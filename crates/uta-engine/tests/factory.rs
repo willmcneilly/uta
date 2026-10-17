@@ -100,6 +100,7 @@ fn measure(sound: &FactorySound) -> Measured {
 /// `sound`'s audition, rendered from its first sound until it has died
 /// away, and measured.
 fn measure_alone(sound: &FactorySound) -> Measured {
+    // `render_drums` plays any project: the synth's too.
     let rendered = render_drums(
         &audition_project(sound),
         sound.audition.held_seconds + TAIL_SECONDS,
@@ -424,29 +425,40 @@ fn the_listening_renders_play_the_factory_sounds() {
     }
 }
 
-/// How often [`switching`] chooses the next sound: every 38 blocks of 128,
-/// about a tenth of a second.
-const SWITCH_SAMPLES: usize = 38 * 128;
+/// How often [`switching`] chooses the next sound: every 8th note at 120
+/// BPM, as often as [`struck_chords`] strikes the chord.
+const SWITCH_SAMPLES: usize = 12_000;
+
+/// How long after each strike the sound is switched: a tenth of a second,
+/// into the chord's hold (and the Pad's attack).
+const SWITCH_OFFSET: usize = 4_800;
 
 /// How long after a switch [`assert_switches_are_smooth`] looks for a
 /// click: longer than the synth's smoothing and crossfades.
 const SWITCH_WINDOW: usize = 2_400;
 
-/// A C major chord at 120 BPM, struck at the top of each bar and held
-/// almost to the next, as the sounds are switched over it: the Mono sounds
-/// play its top note.
+/// The peak a switch's window must reach to count as sounding: -60 dBFS,
+/// 35 dB or more under the factory sounds' peaks.
+const SOUNDING: f32 = 1e-3;
+
+/// A C major chord at 120 BPM, struck on every 8th note and held for most
+/// of it, as the sounds are switched over it: the Mono sounds play its top
+/// note. A change between Poly and Mono releases every note, and the new
+/// sound is silent until the next strike, so each switch comes
+/// [`SWITCH_OFFSET`] after one: something is always sounding.
 fn struck_chords() -> Project {
     let mut project = synth_project();
     let clip = project.tracks()[0].clips()[0].id();
-    let notes = (0..4u64)
-        .flat_map(|bar| [48u8, 52, 55].map(move |pitch| (bar, pitch)))
+    let eighth = TICKS_PER_QUARTER / 2;
+    let notes = (0..32u64)
+        .flat_map(|strike| [48u8, 52, 55].map(move |pitch| (strike, pitch)))
         .enumerate()
-        .map(|(i, (bar, pitch))| uta_core::Note {
+        .map(|(i, (strike, pitch))| uta_core::Note {
             id: NoteId::from_uuid(Uuid::from_u128(1000 + i as u128)),
             pitch,
             velocity: 100,
-            start: bar * 4 * TICKS_PER_QUARTER,
-            length: 4 * TICKS_PER_QUARTER - SIXTEENTH,
+            start: strike * eighth,
+            length: eighth - SIXTEENTH / 4,
         })
         .collect();
     for command in [
@@ -459,7 +471,8 @@ fn struck_chords() -> Project {
 }
 
 /// [`struck_chords`] played with `sounds` in turn, each chosen as the Sound
-/// menu chooses it, [`SWITCH_SAMPLES`] apart, the first from the start.
+/// menu chooses it, [`SWITCH_SAMPLES`] apart, the first from the start and
+/// the second [`SWITCH_OFFSET`] after the second strike.
 fn switching(sounds: &[FactorySound]) -> Vec<f32> {
     let mut project = struck_chords();
     let track = project.tracks()[0].id();
@@ -470,7 +483,7 @@ fn switching(sounds: &[FactorySound]) -> Vec<f32> {
     let mut renderer =
         uta_engine::offline::Renderer::new(config, uta_engine::Snapshot::from(&project), 128);
     renderer.controller.play().unwrap();
-    for sound in sounds {
+    for (k, sound) in sounds.iter().enumerate() {
         project
             .apply(&Command::SetSynthSettings {
                 track,
@@ -481,7 +494,7 @@ fn switching(sounds: &[FactorySound]) -> Vec<f32> {
             .controller
             .set_snapshot(uta_engine::Snapshot::from(&project))
             .unwrap();
-        renderer.render(SWITCH_SAMPLES);
+        renderer.render(SWITCH_SAMPLES + if k == 0 { SWITCH_OFFSET } else { 0 });
         renderer.controller.free_used_snapshots();
     }
     renderer.into_samples()
@@ -489,19 +502,36 @@ fn switching(sounds: &[FactorySound]) -> Vec<f32> {
 
 /// Fails if `switched`, which plays `sounds` in turn as [`switching`] does,
 /// clicks after a switch: in the window after each, its steepest step is
-/// more than either sound's own steepest at that moment, each played alone
-/// through the whole render (`alone`, by the sound's place in
-/// [`FactorySound::all`]), plus 10%. A saw's edge is a big step by nature,
-/// so a switch is held to the sounds' own steps rather than a sine's.
+/// more than the steepest either sound ever makes on these notes, each
+/// played alone through the whole render (`alone`, by the sound's place in
+/// [`FactorySound::all`]), plus 10%. It also fails if a window is silent,
+/// where a switch would be tested against nothing.
+///
+/// A saw's edge is a big step by nature, so a switch is held to the sounds'
+/// own steps rather than a sine's. And to their steepest on any note rather
+/// than at that moment: just after a switch the voice has the new sound's
+/// settings partway through the old one's envelopes (the Pad's saws at the
+/// Bell's struck level, say), which can be brighter or louder than either
+/// sound is at that moment, though not than either gets. So this catches a
+/// switch that skips its smoothing (a hard cut, or every setting jumping),
+/// not one control jumping: each control's glide is checked on its own in
+/// `tests/synth.rs`, `tests/mod_slots.rs` and the others.
 fn assert_switches_are_smooth(sounds: &[FactorySound], switched: &[f32], alone: &[Vec<f32>]) {
     let all = FactorySound::all();
     let index = |sound: &FactorySound| all.iter().position(|s| s.key == sound.key).unwrap();
     for (k, pair) in sounds.windows(2).enumerate() {
-        let at = (k + 1) * SWITCH_SAMPLES;
+        let at = (k + 1) * SWITCH_SAMPLES + SWITCH_OFFSET;
         // From the sample before, so the step into the switch counts.
         let window = at - 1..at + SWITCH_WINDOW;
-        let own = |sound: &FactorySound| max_jump(&alone[index(sound)][window.clone()]).0;
+        let own = |sound: &FactorySound| max_jump(&alone[index(sound)]).0;
         let limit = 1.1 * own(&pair[0]).max(own(&pair[1]));
+        let level = peak(&switched[window.clone()]);
+        assert!(
+            level > SOUNDING,
+            "{} to {}: silent after the switch (peak {level}), so it tests nothing",
+            pair[0].key,
+            pair[1].key
+        );
         let (jump, offset) = max_jump(&switched[window.clone()]);
         assert!(
             jump <= limit,
@@ -540,9 +570,9 @@ fn every_pair_once(n: usize) -> Vec<usize> {
 }
 
 /// Choosing factory sounds while chords sound doesn't click: from every
-/// sound to every other, a tenth of a second apart, over the chords'
-/// starts, holds and releases, the switch moves no faster than the sounds
-/// themselves do.
+/// sound to every other, an 8th note apart, each while the chord holds,
+/// the switch moves no faster than the sounds themselves do. Between Poly and Mono the notes are released, and that
+/// release is held to the same limit.
 #[test]
 fn switching_factory_sounds_while_notes_sound_stays_under_the_click_limit() {
     let all = FactorySound::all();
@@ -570,7 +600,7 @@ fn switching_test_catches_a_hard_cut() {
     let pad = all.iter().position(|s| s.key == "pad").unwrap();
     let bell = all.iter().position(|s| s.key == "bell").unwrap();
     let alone = every_sound_alone(8);
-    let at = 7 * SWITCH_SAMPLES;
+    let at = 7 * SWITCH_SAMPLES + SWITCH_OFFSET;
     let cut: Vec<f32> = alone[pad][..at]
         .iter()
         .chain(&alone[bell][at..])

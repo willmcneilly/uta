@@ -475,24 +475,20 @@ fn the_demo_song_matches_its_golden_wav() {
 /// mono Glide bass sliding between overlapping notes, the PWM strings'
 /// chords breathing, and the Sync lead tearing in on each fresh note.
 /// Regenerated the same way as the demo loop's, and approved the same way.
+/// The lists are read as the test runs, not built in, so after
+/// `UTA_GOLDEN=1` has rewritten them (`tests/factory.rs`), the goldens are
+/// rendered from the new ones.
 #[test]
 fn the_glide_bass_pwm_strings_and_sync_lead_match_their_golden_wavs() {
     let cases = [
-        (
-            "factory-glide-bass",
-            include_str!("../../../examples/listen/factory/02-glide-bass.json"),
-        ),
-        (
-            "factory-strings",
-            include_str!("../../../examples/listen/factory/05-strings.json"),
-        ),
-        (
-            "factory-sync-lead",
-            include_str!("../../../examples/listen/factory/07-sync-lead.json"),
-        ),
+        ("factory-glide-bass", "02-glide-bass.json"),
+        ("factory-strings", "05-strings.json"),
+        ("factory-sync-lead", "07-sync-lead.json"),
     ];
-    for (name, json) in cases {
-        let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/factory");
+    for (name, file) in cases {
+        let json = std::fs::read_to_string(folder.join(file)).unwrap();
+        let list: uta_core::CommandList = serde_json::from_str(&json).unwrap();
         check_golden(name, config(), &list.build().unwrap());
     }
 }

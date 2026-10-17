@@ -17,7 +17,7 @@ Every factory sound is made the same way:
 3. **Settings.** A first guess, from the table below.
 4. **Render and measure.** `cargo test --release -p uta-engine --test factory -- --nocapture` prints every sound's numbers against its targets, and fails on any miss. `UTA_AUDITIONS=<folder>` also writes each audition as a WAV, for `uta analyse` or for listening.
 5. **Listen.** `examples/listen/factory/` has a 2-bar phrase for each sound in the part it's for (see `examples/listen/README.md`).
-6. **Adjust,** and go round again. When a sound changes, `UTA_GOLDEN=1 cargo test -p uta-engine --test factory --test sound` rewrites its listening render, and the golden WAVs of the three that have one; a person approves every golden change.
+6. **Adjust,** and go round again. When a sound changes, rewrite its listening render with `UTA_GOLDEN=1 cargo test -p uta-engine --test factory`, then the golden WAVs of the three that have one with `UTA_GOLDEN=1 cargo test -p uta-engine --test sound`, in that order, since the goldens are rendered from the listening renders. A person approves every golden change.
 
 ## Which settings give which qualities
 

@@ -53,7 +53,8 @@ pub struct Targets {
     pub attack_ms: RangeInclusive<f64>,
     /// How long it lasts: from its first sound until it has faded for good
     /// to 40 dB under its loudest, in seconds. A pluck's is its own decay,
-    /// held or not; a held sound's is the time it's held and its release.
+    /// held or not; a held sound's is the time it's held and its release,
+    /// so its range starts far enough past the hold to need the release.
     pub fade_seconds: RangeInclusive<f64>,
     /// How loud it is while held, against the default sound (a new
     /// track's saw) playing middle C for a second, in dB: the K-weighted RMS
@@ -241,7 +242,7 @@ fn pad() -> FactorySound {
         targets: Targets {
             brightness_hz: 250.0..=800.0,
             attack_ms: 250.0..=900.0,
-            fade_seconds: 1.5..=3.5,
+            fade_seconds: 2.3..=3.5,
             loudness_db: LOUDNESS,
         },
         settings: SynthSettings {
@@ -286,7 +287,7 @@ fn strings() -> FactorySound {
         targets: Targets {
             brightness_hz: 600.0..=1600.0,
             attack_ms: 100.0..=450.0,
-            fade_seconds: 1.5..=3.0,
+            fade_seconds: 2.2..=3.0,
             loudness_db: LOUDNESS,
         },
         settings: SynthSettings {
