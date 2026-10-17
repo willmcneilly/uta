@@ -201,7 +201,6 @@ impl Voice {
     /// moves at once if `glide` is `None`), and the velocity moves to its
     /// own. Unless `legato`, both envelopes attack again from where they
     /// are.
-    #[allow(clippy::too_many_arguments)]
     fn follow_on(
         &mut self,
         note: NoteOn,

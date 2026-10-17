@@ -119,7 +119,7 @@ mod tests {
             key: NoteKey(key),
             pitch: key as u8,
             velocity: 100,
-            sequenced: key % 2 == 0,
+            sequenced: key.is_multiple_of(2),
         }
     }
 
