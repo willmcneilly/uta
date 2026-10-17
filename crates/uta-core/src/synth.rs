@@ -533,6 +533,18 @@ impl SynthSettings {
     /// destination can be moved.
     pub const MAX_MOD_AMOUNT: f32 = 1.0;
 
+    /// How long one cycle of the LFO lasts at `bpm`, in seconds: its
+    /// division's length when synced, as the engine works it out, or one
+    /// over its rate. The panel draws the LFO against the bar by it, so it
+    /// never works out what a division is.
+    pub fn lfo_cycle_seconds_at(&self, bpm: f32) -> f64 {
+        if self.lfo_sync {
+            self.lfo_division.seconds_at(bpm)
+        } else {
+            1.0 / f64::from(self.lfo_rate_hz)
+        }
+    }
+
     /// Every setting, as `SetSynthParam` carries them, in the order the
     /// sound flows through them.
     pub fn params(&self) -> [SynthParam; 46] {
@@ -1009,7 +1021,7 @@ impl SynthParam {
                 Linear,
             )
         };
-        match self {
+        let description = match self {
             Self::Osc1Wave(_) => Description::choice(
                 "Osc 1 wave",
                 "Oscillator 1's shape, where the sound starts before the filter \
@@ -1284,7 +1296,43 @@ impl SynthParam {
             Self::Mod3Source(_) => source("Mod 3 source", defaults.mod3_source),
             Self::Mod3Destination(_) => destination("Mod 3 destination"),
             Self::Mod3Amount(_) => amount("Mod 3 amount"),
+        };
+        match self.short_label() {
+            Some(short) => description.short(short),
+            None => description,
         }
+    }
+
+    /// What the panel calls the setting where its section already says
+    /// whose it is, or None where its label is short already: "Octave" in
+    /// oscillator 1's row, "Attack" in the filter envelope's.
+    fn short_label(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Osc1Octave(_) | Self::Osc2Octave(_) => "Octave",
+            Self::Osc1Width(_) | Self::LfoWidth(_) => "Width",
+            Self::Osc2PitchSemitones(_) => "Pitch",
+            Self::Osc2Sync(_) | Self::LfoSync(_) => "Sync",
+            Self::Osc1Level(_) => "Osc 1",
+            Self::Osc2Level(_) => "Osc 2",
+            Self::SubLevel(_) => "Sub",
+            Self::NoiseLevel(_) => "Noise",
+            Self::Resonance(_) => "Res",
+            Self::FilterEnvOctaves(_) => "Env",
+            Self::FilterLfoOctaves(_) => "LFO",
+            Self::FilterAttackSeconds(_) => "Attack",
+            Self::FilterDecaySeconds(_) => "Decay",
+            Self::FilterSustain(_) => "Sustain",
+            Self::FilterReleaseSeconds(_) => "Release",
+            Self::LfoRateHz(_) | Self::LfoDivision(_) => "Rate",
+            Self::LfoRetrigger(_) => "Retrig",
+            Self::OscRetrigger(_) => "Osc retrig",
+            Self::Mod1Source(_) | Self::Mod2Source(_) | Self::Mod3Source(_) => "Source",
+            Self::Mod1Destination(_) | Self::Mod2Destination(_) | Self::Mod3Destination(_) => {
+                "Destination"
+            }
+            Self::Mod1Amount(_) | Self::Mod2Amount(_) | Self::Mod3Amount(_) => "Amount",
+            _ => return None,
+        })
     }
 
     /// Whether the value is within the setting's range. NaN never is.
@@ -1353,6 +1401,30 @@ mod tests {
         assert!(!settings.legato);
         assert_eq!(settings.glide_seconds, 0.001);
         assert!(settings.osc_retrigger);
+    }
+
+    #[test]
+    fn an_lfo_cycle_is_its_division_when_synced_and_one_over_its_rate_when_not() {
+        let mut settings = SynthSettings {
+            lfo_rate_hz: 4.0,
+            lfo_division: NoteDivision::DOTTED_EIGHTH,
+            ..SynthSettings::default()
+        };
+        assert_eq!(settings.lfo_cycle_seconds_at(120.0), 0.25);
+        settings.lfo_sync = true;
+        // A dotted eighth is three quarters of a beat: 0.375 s at 120 BPM.
+        assert_eq!(settings.lfo_cycle_seconds_at(120.0), 0.375);
+    }
+
+    #[test]
+    fn a_short_label_only_where_the_section_says_whose_it_is() {
+        let short = |param: SynthParam| param.describe().short;
+        assert_eq!(short(SynthParam::Osc1Octave(0)), Some("Octave"));
+        assert_eq!(short(SynthParam::FilterAttackSeconds(0.1)), Some("Attack"));
+        assert_eq!(short(SynthParam::Mod2Amount(0.0)), Some("Amount"));
+        // Its label is short already.
+        assert_eq!(short(SynthParam::CutoffHz(1_000.0)), None);
+        assert_eq!(short(SynthParam::AttackSeconds(0.1)), None);
     }
 
     #[test]
