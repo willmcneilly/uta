@@ -712,6 +712,44 @@ mod tests {
     }
 
     #[test]
+    fn a_tone_that_crosses_zero_twice_a_cycle_reads_its_fundamental() {
+        // A 110 Hz sine with its second harmonic at 1.5 times its level:
+        // sin x (1 + 3 cos x) crosses zero going up twice a cycle, so zero
+        // crossings read it an octave or more up.
+        let tone: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let x = std::f64::consts::TAU * 110.0 * f64::from(i) / f64::from(RATE);
+                (0.3 * (x.sin() + 1.5 * (2.0 * x).sin())) as f32
+            })
+            .collect();
+        let crossings = crate::steady_pitch(&crate::pitch_over_time(&tone, RATE));
+        assert!(
+            crossings.is_none_or(|hz| hz > 200.0),
+            "zero crossings read {crossings:?}"
+        );
+        let report = Report::measure("tone", &Sound::new(&tone, 1, RATE));
+        assert_eq!(report.note, Some(Note(45)));
+        for key in ["pitch_cents", "pitch_drift_cents"] {
+            let cents = report.get(key).unwrap();
+            assert!(cents.abs() < 1.0, "{key} {cents}");
+        }
+    }
+
+    #[test]
+    fn a_quiet_tail_doesnt_count_towards_the_pitch() {
+        // A second of 110 Hz, then a second an octave up 50 dB down: the
+        // tail is below the 40 dB cut, so the pitch doesn't drift by the
+        // octave (1200 cents), only by a few where windows straddle the cut.
+        let mut tone = sine(110.0, 1.0);
+        tone.extend(sine(220.0, 1.0).iter().map(|s| s * 0.003_162));
+        let report = Report::measure("tail", &Sound::new(&tone, 1, RATE));
+        let drift = report.get("pitch_drift_cents").unwrap();
+        assert!(drift.abs() < 20.0, "drifts {drift} cents");
+        let end = report.get("pitch_end_hz").unwrap();
+        assert!((end - 110.0).abs() < 1.0, "ends at {end} Hz");
+    }
+
+    #[test]
     fn a_difference_that_rounds_to_nothing_is_0_and_a_value_has_no_minus_zero() {
         assert_eq!(show(Some(-0.01), 1, true), "0");
         assert_eq!(show(Some(6.02), 1, true), "+6.0");

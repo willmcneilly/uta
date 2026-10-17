@@ -60,14 +60,13 @@ fn upward_crossings(samples: &[f32]) -> Vec<f64> {
         .collect()
 }
 
-/// The pitch of a tone, in Hz, from its pitch track (as [`pitch_track`]
-/// or [`pitch_over_time`] gives it): how many there are over how long they last.
-/// `None` if there are fewer than two, or if their lengths jump about, as
-/// noise's do. "Jump about" is the median change from one cycle to the next
-/// being over 5%: a kick's pitch falls smoothly, by far less than that a
-/// cycle once it settles, but noise crosses zero at random. Zero crossings
-/// follow the fundamental of a clean tone; a tone with strong upper
-/// partials can cross more than once a cycle.
+/// The average pitch of a pitch track (as [`pitch_track`] or
+/// [`pitch_over_time`] gives it), in Hz: the harmonic mean of its points,
+/// which for zero-crossing cycles is how many there are over how long they
+/// last. `None` if there are fewer than two points, or if the pitch jumps
+/// about from one point to the next: if the median change is over 5%. A
+/// kick's pitch falls smoothly, by far less than that a point once it
+/// settles, but noise has no steady period.
 pub fn steady_pitch(cycles: &[(f64, f64)]) -> Option<f64> {
     if cycles.len() < 2 {
         return None;
@@ -167,13 +166,15 @@ pub const HIGHEST_PITCH_HZ: f64 = 2000.0;
 /// The pitch over time, with YIN (de Cheveigné and Kawahara, 2002): in
 /// windows of 2048 samples every 5 ms, the lag at which the sound best
 /// matches itself is its period. Unlike zero crossings, it follows the
-/// fundamental of a tone rich in harmonics, such as a saw. A window is
-/// 43 ms, so a sweep faster than that is smoothed: a kick's first few
-/// milliseconds read lower than they are, and [`pitch_over_time`] sees
-/// them better on a clean tone. Each point is a
-/// window's middle, in seconds, and its pitch in Hz, between
-/// [`LOWEST_PITCH_HZ`] and [`HIGHEST_PITCH_HZ`]; a window with no clear
-/// period, such as noise or silence, has no point.
+/// fundamental of a tone that crosses zero more than once a cycle, as one
+/// with strong upper harmonics or a chord can. A window is 43 ms, so a
+/// sweep faster than that is smoothed: a kick's first few milliseconds read
+/// lower than they are, and [`pitch_over_time`] sees them better on a clean
+/// tone. Each point is a window's middle, in seconds, and its pitch in Hz,
+/// between [`LOWEST_PITCH_HZ`] and [`HIGHEST_PITCH_HZ`]; a window with no
+/// clear period, such as noise or silence, has no point. A window needs
+/// 2048 samples and the longest period after it, so a file under about
+/// 76 ms has no points, and its last 55 ms or so has none either.
 pub fn pitch_track(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
     let rate = f64::from(sample_rate);
     let window = 2048;
@@ -330,12 +331,11 @@ pub fn pitch_over_time(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
 }
 
 /// A pitch track (as [`pitch_track`] or [`pitch_over_time`] gives it)
-/// with each cycle's frequency replaced by the median of it and the two
-/// cycles either side, so one or two odd cycles, such as one spanning the
-/// end of a note and the start of the next, don't count. Nearer the ends
-/// it takes as many either side as there are, so a steady glide, as a
-/// kick's, is kept; the first and last cycles take the median of the three
-/// at that end.
+/// with each point's pitch replaced by the median of it and the two points
+/// either side, so one or two odd points, such as where one note ends and
+/// the next starts, don't count. Nearer the ends it takes as many either
+/// side as there are, so a steady glide, as a kick's, is kept; the first
+/// and last points take the median of the three at that end.
 pub fn smoothed_pitch(cycles: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let n = cycles.len();
     (0..n)
