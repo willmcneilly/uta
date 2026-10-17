@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./design/tokens.css";
 import "./App.css";
@@ -76,7 +76,7 @@ import { DragSteps } from "./dragSteps";
 import { FrameLoop } from "./frameLoop";
 import { MasterHeader } from "./MasterHeader";
 import { MeterLevel, TrackLevels, clipLit } from "./meterLevel";
-import { type BarBeat, barBeat } from "./musicalTime";
+import { type BarBeat, barBeat, barSecondsAt, secondsOf } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
@@ -194,6 +194,18 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [frames] = useState(() => new FrameLoop(stats));
   // Every control's drags send their steps through it, one at a time, latest wins.
   const [drags] = useState(() => new DragSteps());
+  // Where the song is, in seconds, while it plays: the Delay's drawing lights
+  // its echoes by it.
+  const playing = status?.playing ?? false;
+  const bpm = project?.bpm;
+  const ticksPerQuarter = project?.ticksPerQuarter;
+  const songSeconds = useMemo(
+    () =>
+      playing && bpm !== undefined && ticksPerQuarter !== undefined
+        ? (now: number) => secondsOf(clock.at(now), ticksPerQuarter, bpm)
+        : null,
+    [playing, clock, bpm, ticksPerQuarter],
+  );
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
   const pianoRoll = useRef<PianoRollHandle>(null);
@@ -746,6 +758,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
               onMix={changeEffectMix}
               onSetting={changeEffectSetting}
+              barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
+              beatsPerBar={project.beatsPerBar}
+              songSeconds={songSeconds}
+              frames={frames}
               rowRef={chainRow}
             />
           ) : !track ? null : clip ? (

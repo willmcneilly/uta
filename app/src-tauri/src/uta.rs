@@ -154,17 +154,24 @@ pub enum MixParam {
 }
 
 /// An effect's kind, with its own settings described, in the order its
-/// command carries them: `"kind":"delay","settings":[…]`.
+/// command carries them: `"kind":"delay","settings":[…],"echoSeconds":0.375`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectKindView {
     Delay {
         settings: Vec<SettingView<DelayParam>>,
+        /// How far apart the echoes are at the project's tempo, in seconds:
+        /// the synced division's length, held at 5 s, or the time in
+        /// seconds. The panel's drawing spaces its echoes by it, so it never
+        /// works out what a division is.
+        #[serde(rename = "echoSeconds")]
+        echo_seconds: f64,
     },
 }
 
-impl From<&Effect> for EffectView {
-    fn from(effect: &Effect) -> Self {
+impl EffectView {
+    /// `effect` as the UI shows it, in a project at `bpm`.
+    fn new(effect: &Effect, bpm: f32) -> Self {
         Self {
             id: effect.id(),
             name: effect.kind().name(),
@@ -183,6 +190,7 @@ impl From<&Effect> for EffectView {
                             description: param.describe(),
                         })
                         .collect(),
+                    echo_seconds: settings.time_seconds_at(bpm),
                 },
             },
         }
@@ -1287,6 +1295,7 @@ impl Uta {
 fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C> {
     let project = session.project();
     let transport = project.transport();
+    let bpm = transport.tempo_map().bpm();
     Outline {
         volume_db: project.master_volume_db(),
         min_volume_db: VOLUME_RANGE_DB.0,
@@ -1295,11 +1304,11 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         master_effects: project
             .master_effects()
             .iter()
-            .map(EffectView::from)
+            .map(|effect| EffectView::new(effect, bpm))
             .collect(),
         can_undo: session.can_undo(),
         can_redo: session.can_redo(),
-        bpm: transport.tempo_map().bpm(),
+        bpm,
         min_bpm: Project::MIN_BPM,
         max_bpm: Project::MAX_BPM,
         default_bpm: Project::DEFAULT_BPM,
@@ -1328,7 +1337,11 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
                 name: track.name().to_owned(),
                 mixer: track.mixer().into(),
                 source: track.source().into(),
-                effects: track.effects().iter().map(EffectView::from).collect(),
+                effects: track
+                    .effects()
+                    .iter()
+                    .map(|effect| EffectView::new(effect, bpm))
+                    .collect(),
                 clips: track.clips().iter().map(&mut clip).collect(),
             })
             .collect(),
@@ -2040,6 +2053,41 @@ mod tests {
         assert_eq!(json(&uta)["mix"]["value"], 0.6_f32 as f64);
         uta.undo();
         assert_eq!(json(&uta)["mix"]["value"], 0.3_f32 as f64);
+    }
+
+    #[test]
+    fn a_delay_says_how_far_apart_its_echoes_are_at_the_tempo() {
+        let mut uta = offline();
+        let effect = EffectId::random();
+        uta.add_effect(Chain::Master, effect, EffectKind::Delay)
+            .unwrap();
+        let echo = |uta: &Uta| {
+            serde_json::to_value(&uta.project().master_effects[0]).unwrap()["echoSeconds"]
+                .as_f64()
+                .unwrap()
+        };
+        // A new Delay is synced to a dotted eighth: 0.375 s at 120 BPM.
+        assert!((echo(&uta) - 0.375).abs() < 1e-12);
+        uta.set_tempo(90.0, None).unwrap();
+        assert!((echo(&uta) - 0.5).abs() < 1e-12);
+        let quarter = uta_core::time::NoteDivision::from_value("1/4").unwrap();
+        uta.set_delay_param(effect, DelayParam::Division(quarter), None)
+            .unwrap();
+        assert!((echo(&uta) - 2.0 / 3.0).abs() < 1e-12);
+        // Unsynced, it's the time in seconds, whatever the tempo.
+        uta.set_delay_param(effect, DelayParam::TimeSeconds(0.25), None)
+            .unwrap();
+        uta.set_delay_param(effect, DelayParam::Sync(false), None)
+            .unwrap();
+        assert!((echo(&uta) - 0.25).abs() < 1e-12);
+        // A synced time longer than the tape is held at 5 s.
+        let whole = uta_core::time::NoteDivision::from_value("1/1d").unwrap();
+        uta.set_delay_param(effect, DelayParam::Division(whole), None)
+            .unwrap();
+        uta.set_delay_param(effect, DelayParam::Sync(true), None)
+            .unwrap();
+        uta.set_tempo(30.0, None).unwrap();
+        assert!((echo(&uta) - 5.0).abs() < 1e-12);
     }
 
     #[test]

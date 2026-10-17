@@ -9,8 +9,9 @@ import {
   useState,
 } from "react";
 import type { DelayParam, EffectKind, EffectKindChoice, EffectView } from "../backend";
+import type { FrameLoop } from "../frameLoop";
 import { dropIndex } from "../trackOrder";
-import { EffectControls } from "./EffectControls";
+import { DelayPanel } from "./DelayPanel";
 import "./ChainRow.css";
 
 // The Sound tab as a row: the source's panel, then each effect in the chain,
@@ -46,6 +47,13 @@ interface Props {
   /** `gesture` is the same for every change in one drag. */
   onMix: (effect: string, mix: number, gesture?: number) => void;
   onSetting: (effect: string, param: DelayParam, gesture?: number) => void;
+  /** One bar at the song's tempo, in seconds, for the Delay's drawing. */
+  barSeconds: number;
+  beatsPerBar: number;
+  /** Where the song is now, in seconds, while it plays; null when it's stopped. */
+  songSeconds: ((now: number) => number) | null;
+  /** The app's drawing loop, which moves the Delay's light. */
+  frames: FrameLoop;
   /** The scrolling row, for the chain map to scroll. */
   rowRef?: RefObject<HTMLDivElement | null>;
 }
@@ -268,6 +276,10 @@ export function ChainRow({
   onRemove,
   onMix,
   onSetting,
+  barSeconds,
+  beatsPerBar,
+  songSeconds,
+  frames,
   rowRef,
 }: Props) {
   // Folding a panel to its spine is the UI's own, kept while tracks change,
@@ -456,8 +468,12 @@ export function ChainRow({
           {!folded.includes(effect.id) && (
             <div className="wired-body">
               <Wire bypass={!effect.enabled} />
-              <EffectControls
+              <DelayPanel
                 effect={effect}
+                barSeconds={barSeconds}
+                beatsPerBar={beatsPerBar}
+                songSeconds={songSeconds}
+                frames={frames}
                 onSetting={(param, gesture) => onSetting(effect.id, param, gesture)}
                 onMix={(mix, gesture) => onMix(effect.id, mix, gesture)}
               />

@@ -1,0 +1,100 @@
+/* The Delay's panel: the drawing and Time, Sync and Mode on top, the knobs
+   in a row underneath. provisional: D-31 */
+.delay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--ink);
+  font: var(--font-text);
+}
+
+[data-off] .delay-panel {
+  opacity: 0.45;
+}
+
+.delay-top {
+  display: flex;
+  gap: var(--space-6);
+}
+
+.delay-beside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Time, then Sync on the line of the menu or the knob's dial. */
+.delay-time {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.delay-time-control.effect-menu select {
+  width: 112px;
+}
+
+.delay-mode label {
+  padding: 0 var(--space-4);
+}
+
+/* Each knob in a column wide enough for its label ("Feedback", "High cut"). */
+.delay-knobs {
+  display: grid;
+  grid-auto-columns: 56px;
+  grid-auto-flow: column;
+  justify-items: center;
+}
+
+/* The drawing: faint bar and beat lines, the echoes in ink, lit in the live
+   ink as they sound. */
+.echo-drawing {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.echo-drawing .bar {
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-grid);
+}
+
+.echo-drawing .beat,
+.echo-drawing .base {
+  stroke: var(--line-2);
+  stroke-width: var(--stroke-grid);
+}
+
+.echo-drawing .dry line {
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-curve);
+}
+
+.echo-drawing .echo line {
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+}
+
+.echo-drawing[data-off] .echo line {
+  stroke: var(--ink-3);
+}
+
+.echo-drawing .sounding line {
+  stroke: var(--live);
+}
+
+.echo-drawing .sweep line {
+  stroke: var(--live);
+  stroke-width: var(--stroke-playhead);
+}
+
+.echo-drawing .axis {
+  fill: var(--ink-2);
+  font: var(--font-label);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .echo-drawing .sweep {
+    display: none;
+  }
+}
