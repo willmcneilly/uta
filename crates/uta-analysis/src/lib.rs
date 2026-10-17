@@ -1197,6 +1197,27 @@ mod tests {
     }
 
     #[test]
+    fn the_loudest_stretch_is_the_loudest_tone_however_it_is_placed() {
+        // A quiet tone, silence, the loud tone, silence: the 500 ms picked
+        // is the loud tone's, wherever it is in the file. A file shorter
+        // than the stretch is all of it.
+        let mut samples = tones(RATE, &[(1.0, -30.0), (1.0, -200.0)]);
+        let loud = samples.len();
+        samples.extend(tones(RATE, &[(0.5, -6.0), (1.0, -200.0)]));
+        let stretch = loudest_stretch(&samples, RATE, 0.5);
+        assert_eq!(stretch.len(), RATE as usize / 2);
+        // Where it starts, give or take the tone's first sample, which is 0.
+        let start = stretch.as_ptr() as usize - samples.as_ptr() as usize;
+        let start = start / std::mem::size_of::<f32>();
+        assert!(
+            start.abs_diff(loud) <= 1,
+            "starts at {start}, the tone at {loud}"
+        );
+        let short = &samples[..1000];
+        assert_eq!(loudest_stretch(short, RATE, 0.5), short);
+    }
+
+    #[test]
     fn the_absolute_gate_leaves_out_what_is_nearly_silent() {
         // A tone at -75 LUFS is all under the -70 LUFS gate, so it has no
         // integrated loudness; at -65 it's all over it. The relative gate
