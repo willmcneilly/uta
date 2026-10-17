@@ -323,7 +323,8 @@ pub(crate) struct Delay {
     quiet: u32,
     #[cfg(test)]
     processed: u64,
-    /// Whether the level control has ever turned the loop down.
+    /// Whether the level control has ever acted: turned the loop down, or
+    /// (wrongly) up.
     #[cfg(test)]
     held: bool,
 }
@@ -556,7 +557,7 @@ impl Effect for Delay {
             };
             #[cfg(test)]
             {
-                self.held |= level < 1.0;
+                self.held |= level != 1.0;
             }
             let round = darkened.map(|sample| saturate(sample * level, drive));
             let input = [*left, *right];
