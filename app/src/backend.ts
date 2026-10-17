@@ -57,7 +57,7 @@ export interface TrackOutline extends TrackFields {
 
 /** What makes a track's sound, in the outline: its settings' values. */
 export type SourceOutline =
-  | { kind: "synth"; settings: SynthParam[] }
+  | { kind: "synth"; settings: SynthParam[]; lfoSeconds: number }
   | { kind: "drums"; kit: { rows: KitRowOutline[] } };
 
 /** A row of the kit in the outline: its settings' values. */
@@ -170,7 +170,16 @@ interface TrackFields {
 
 /** What makes a track's sound: the synth's settings, or the drum kit. */
 export type SourceView =
-  | { kind: "synth"; settings: SynthSettingView[] }
+  | {
+      kind: "synth";
+      settings: SynthSettingView[];
+      /**
+       * How long one cycle of the LFO lasts at the song's tempo, in seconds:
+       * the synced division's length, or one over its rate. Its drawing
+       * shows it against the bar by it.
+       */
+      lfoSeconds: number;
+    }
   | { kind: "drums"; kit: KitView };
 
 /**
@@ -182,6 +191,12 @@ interface Described<N extends string> {
   name: N;
   /** What the panel calls it: "Cutoff", "Tune". */
   label: string;
+  /**
+   * What the panel calls it where its section already says whose it is:
+   * "Octave" in oscillator 1's row for "Osc 1 octave". Absent where `label`
+   * is short already.
+   */
+  short?: string;
   /** How it sounds: what turning it does, and what its ends are good for. */
   sounds: string;
 }

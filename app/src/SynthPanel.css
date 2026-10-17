@@ -1,37 +1,115 @@
 /*
- * The synth panel: the waveform, then the filter and the envelope, each
- * drawn above a row of its knobs (provisional: D-10, D-22).
+ * The synth panel: its stages as tabs across the top, drawn like the
+ * editor's own (D-13), each with a small live drawing over its name and the
+ * chain's arrowheads between them; the chosen stage's page underneath. The
+ * panel is one width whatever the page, so the effects beside it don't move
+ * when you change stage. provisional: D-32
  */
 .synth {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-7);
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 448px;
   min-height: 0;
   overflow: auto;
   color: var(--ink);
   font: var(--font-text);
 }
 
-/* Each group keeps its width, so on a narrow window the panel scrolls
-   rather than squeezing the knobs or overlapping the drawings. */
-.synth > fieldset {
+/* ---- The tabs ---- */
+
+.synth .stages {
+  display: flex;
+  border-bottom: var(--stroke-grid) solid var(--line-2);
+}
+
+.synth .stage {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.synth .stage-arrow {
   flex: none;
+  margin: 0 1px;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-clip);
 }
 
-/* A group's knobs, in a row under its drawing, each in an equal column a
-   quarter of the drawing's width, so the envelope's attack, decay, sustain
-   and release sit left to right like its stages. provisional: D-22 */
-.synth .knobs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+.synth .stage-tab {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--rounded-md) var(--rounded-md) 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
 }
 
-/* The drawings. Structure is faint, the curve is ink, and the hatching
-   under it is the hatch ink. While a knob is dragged, a dashed line marks
-   the part of the drawing it moves. */
+.synth .stage-tab:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.synth .stage-tab:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+/* The chosen tab is ruled in ink where it meets its page. */
+.synth .stage-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.synth .stage-tab[aria-selected="true"]::after {
+  position: absolute;
+  right: var(--space-2);
+  bottom: calc(-1 * var(--stroke-grid));
+  left: var(--space-2);
+  border-bottom: var(--stroke-clip-selected) solid var(--ink);
+  content: "";
+}
+
+.synth .stage-name {
+  font: var(--font-label);
+  white-space: nowrap;
+}
+
+.synth .glance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+}
+
+/* A tab's drawing is its name's ink: the second, but for the chosen tab
+   and the one pointed at. */
+.synth .glance .curve,
+.synth .glance .level {
+  stroke: currentcolor;
+  stroke-width: var(--stroke-clip);
+}
+
+.synth .glance-word {
+  font: var(--font-number);
+}
+
+/* ---- The drawings ----
+   Structure is faint, the curve is ink, and the hatching under it is the
+   hatch ink. While a knob is dragged, a dashed line marks the part of the
+   drawing it moves. */
+
 .synth .drawing {
   display: block;
-  margin-bottom: var(--space-3);
+  flex: none;
   overflow: visible;
 }
 
@@ -67,8 +145,249 @@
   stroke-linejoin: round;
 }
 
+.drawing .curve.thin {
+  stroke-width: var(--stroke-clip);
+}
+
+.drawing .level {
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+}
+
 .drawing .dimension {
   stroke: var(--ink-2);
   stroke-width: var(--stroke-grid);
   stroke-dasharray: 2 3;
+}
+
+/* Where the filter envelope takes the cutoff: the curve at its peak, faint
+   and dashed, and a dimension line from the cutoff to it. provisional: D-33 */
+.drawing .reach {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-clip);
+  stroke-dasharray: 3 3;
+}
+
+.drawing .span {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: var(--stroke-clip);
+}
+
+/* ---- Controls ---- */
+
+/* A control that does nothing in the current settings (Width unless the
+   wave is Pulse, Glide and Legato in Poly) is in the third ink, and still
+   live. provisional: D-35 */
+.synth .cell[data-inactive] .knob-label,
+.synth .cell[data-inactive] .knob-value-text,
+.synth .toggle[data-inactive] {
+  color: var(--ink-3);
+}
+
+.synth .cell[data-inactive] .knob-value,
+.synth .cell[data-inactive] .knob-indicator {
+  stroke: var(--ink-3);
+}
+
+.synth .keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+/* A compact segmented choice: each option is only its drawing, its name
+   kept for assistive tech; the legend is left to the page. provisional: D-34 */
+.synth .segmented.compact .group-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.synth .segmented.compact label {
+  gap: 0;
+  padding: var(--space-2);
+  font-size: 0;
+}
+
+.synth .row-label,
+.synth .column-label {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.synth .column-label {
+  font: var(--font-label);
+  text-align: center;
+}
+
+.synth .menu-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.synth .stage-page {
+  min-height: 0;
+}
+
+/* ---- Osc: each oscillator a row, its drawing next to what changes it ---- */
+
+.page-osc .osc-rows {
+  display: grid;
+  grid-template-columns: repeat(6, auto);
+  align-items: end;
+  justify-content: start;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+}
+
+/* On the knobs' dials, not their values. */
+.osc-rows .row-label,
+.osc-rows .drawing,
+.osc-rows .segmented,
+.osc-rows .toggle {
+  margin-bottom: 20px;
+}
+
+/* ---- Mixer: four faders on end, the sub's octave beside them ---- */
+
+.page-mixer .mixer-page {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-7);
+}
+
+.mixer-page .levels {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mixer-page .level-fader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 40px;
+  color: var(--ink-2);
+}
+
+.mixer-page .level-fader .fader {
+  height: 96px;
+}
+
+/* ---- Filter and LFO: the choice over the drawing, the knobs beside both ---- */
+
+.beside-page {
+  display: grid;
+  grid-template-areas: "choice knobs" "drawing knobs";
+  grid-template-rows: auto 1fr;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  column-gap: var(--space-5);
+  row-gap: var(--space-3);
+}
+
+.beside-page > .segmented {
+  grid-area: choice;
+  justify-self: start;
+}
+
+.beside-page > .drawing {
+  grid-area: drawing;
+}
+
+.beside-page > .page-knobs {
+  grid-area: knobs;
+  display: grid;
+  align-content: start;
+}
+
+.page-knobs.three {
+  grid-template-columns: repeat(3, auto);
+}
+
+.page-knobs.two {
+  grid-template-columns: repeat(2, auto);
+}
+
+.page-lfo .rate {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 72px;
+  padding-bottom: var(--space-3);
+}
+
+/* ---- Env: both envelopes as rows, the stages labelled once over the columns ---- */
+
+.page-env .env-rows {
+  display: grid;
+  grid-template-columns: auto auto repeat(4, 44px);
+  align-items: center;
+  justify-content: start;
+  column-gap: var(--space-3);
+  row-gap: var(--space-2);
+}
+
+/* ---- Voice ---- */
+
+.page-voice .voice-page {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.voice-page .voice-mode .group-title {
+  display: none;
+}
+
+.voice-page .page-knobs {
+  display: flex;
+  align-items: flex-end;
+}
+
+/* ---- Mod: three slots, each Source → Destination and its Amount ---- */
+
+.page-mod .slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.slots .slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.slots .arrow {
+  color: var(--ink-3);
+}
+
+/* An empty slot is only its +. */
+.slots .slot-add {
+  width: var(--space-7);
+  height: var(--space-7);
+  border: var(--stroke-grid) dashed var(--ink-3);
+  border-radius: var(--rounded-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--font-text);
+  cursor: pointer;
+}
+
+.slots .slot-add:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.slots .slot-add:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
 }

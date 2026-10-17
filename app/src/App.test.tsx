@@ -36,7 +36,7 @@ import {
   SYNTH_FIELDS,
   recordingFactory,
   type SynthValues,
-  synthSettings,
+  synthSource,
   synthOf,
   trackView,
   withFirstClipNotes,
@@ -607,9 +607,9 @@ describe("App", () => {
         "synth cutoff",
         () => {
           fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
-          return within(screen.getByRole("region", { name: "Synth" })).getByRole("slider", {
-            name: /^Cutoff/,
-          });
+          const synth = within(screen.getByRole("region", { name: "Synth" }));
+          fireEvent.click(synth.getByRole("tab", { name: "Filter" }));
+          return synth.getByRole("slider", { name: /^Cutoff/ });
         },
         "set_synth_param",
         // The slider's position, from the cutoff it sent.
@@ -678,6 +678,11 @@ describe("App", () => {
     const slider = (name: string) =>
       synth().getByRole("slider", { name: new RegExp(`^${name}`) });
     const synthCalls = () => calls.filter((c) => c.cmd === "set_synth_param").map((c) => c.args);
+    /** Opens one of the synth's stages. */
+    const stage = (name: string) => fireEvent.click(synth().getByRole("tab", { name }));
+    /** Oscillator 1's waves. */
+    const wave = (name: string) =>
+      within(synth().getByRole("radiogroup", { name: "Osc 1 wave" })).getByRole("radio", { name });
 
     async function renderSound() {
       await renderApp();
@@ -686,10 +691,12 @@ describe("App", () => {
 
     it("shows the synth settings Rust sends", async () => {
       await renderSound();
-      expect(synth().getByRole("radio", { name: "Saw" })).toBeChecked();
+      expect(wave("Saw")).toBeChecked();
+      stage("Filter");
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "20.0 kHz");
       expect(knobAt(slider("Cutoff"))).toBeCloseTo(1, 6);
       expect(slider("Resonance")).toHaveAttribute("aria-valuetext", "0.00");
+      stage("Env");
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "5.0 ms");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "200 ms");
       expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "70%");
@@ -705,8 +712,8 @@ describe("App", () => {
         ["Pulse", "pulse"],
         ["Saw", "saw"],
       ]) {
-        fireEvent.click(synth().getByRole("radio", { name: label }));
-        await waitFor(() => expect(synth().getByRole("radio", { name: label })).toBeChecked());
+        fireEvent.click(wave(label));
+        await waitFor(() => expect(wave(label)).toBeChecked());
         expect(synthCalls().at(-1)).toEqual({
           track: "track-1",
           param: { name: "osc1_wave", value },
@@ -717,7 +724,7 @@ describe("App", () => {
 
     it("focuses a waveform when it's clicked, and moves with the arrow keys", async () => {
       await renderSound();
-      const radio = (name: string) => synth().getByRole("radio", { name });
+      const radio = wave;
       // Only the checked waveform is in the Tab order.
       expect(radio("Saw")).toHaveAttribute("tabindex", "0");
       expect(radio("Sine")).toHaveAttribute("tabindex", "-1");
@@ -746,15 +753,16 @@ describe("App", () => {
     it("sends each slider's setting to Rust and shows what comes back", async () => {
       await renderSound();
       // Halfway along each slider: log scales land on the geometric middle.
-      const cases: [string, SynthParam["name"], number, string][] = [
-        ["Cutoff", "cutoff_hz", 632.456, "632 Hz"],
-        ["Resonance", "resonance", 0.5, "0.50"],
-        ["Attack", "attack_seconds", 0.1, "100 ms"],
-        ["Decay", "decay_seconds", 0.1, "100 ms"],
-        ["Sustain", "sustain", 0.5, "50%"],
-        ["Release", "release_seconds", 0.1, "100 ms"],
+      const cases: [string, string, SynthParam["name"], number, string][] = [
+        ["Filter", "Cutoff", "cutoff_hz", 632.456, "632 Hz"],
+        ["Filter", "Resonance", "resonance", 0.5, "0.50"],
+        ["Env", "Attack", "attack_seconds", 0.1, "100 ms"],
+        ["Env", "Decay", "decay_seconds", 0.1, "100 ms"],
+        ["Env", "Sustain", "sustain", 0.5, "50%"],
+        ["Env", "Release", "release_seconds", 0.1, "100 ms"],
       ];
-      for (const [label, name, value, shown] of cases) {
+      for (const [page, label, name, value, shown] of cases) {
+        stage(page);
         slideKnob(slider(label), 0.5);
         await waitFor(() => expect(slider(label)).toHaveAttribute("aria-valuetext", shown));
         expect(knobAt(slider(label))).toBeCloseTo(0.5, 6);
@@ -769,7 +777,9 @@ describe("App", () => {
 
     it("sends the limits exactly at each end of a slider", async () => {
       await renderSound();
+      stage("Filter");
       slideKnob(slider("Cutoff"), 0);
+      stage("Env");
       slideKnob(slider("Release"), 1);
       await waitFor(() => expect(synthCalls()).toHaveLength(2));
       expect(synthCalls().map((args) => args.param)).toEqual([
@@ -780,7 +790,9 @@ describe("App", () => {
 
     it("marks every change in one drag with the same gesture", async () => {
       await renderSound();
+      stage("Filter");
       pressKnob(slider("Cutoff")).to(0.8).to(0.6).release();
+      stage("Env");
       slideKnob(slider("Sustain"), 0.3);
       fireEvent.keyDown(slider("Sustain"), { key: "Home" });
 
@@ -795,6 +807,7 @@ describe("App", () => {
 
     it("steps a hundredth of the way with an arrow key, and a tenth with Shift", async () => {
       await renderSound();
+      stage("Env");
       // Sustain is 70%: position 700 of 1000.
       fireEvent.keyDown(slider("Sustain"), { key: "ArrowRight" });
       await waitFor(() => expect(slider("Sustain")).toHaveAttribute("aria-valuetext", "71%"));
@@ -820,10 +833,12 @@ describe("App", () => {
       });
       project = undone;
       await announceChange();
-      expect(synth().getByRole("radio", { name: "Pulse" })).toBeChecked();
+      expect(wave("Pulse")).toBeChecked();
+      stage("Filter");
       expect(knobAt(slider("Cutoff"))).toBeCloseTo(0.333, 6);
       expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "200 Hz");
       expect(knobAt(slider("Resonance"))).toBeCloseTo(0.8, 6);
+      stage("Env");
       expect(knobAt(slider("Attack"))).toBeCloseTo(0.75, 6);
       expect(slider("Attack")).toHaveAttribute("aria-valuetext", "1.00 s");
       expect(slider("Decay")).toHaveAttribute("aria-valuetext", "10 ms");
@@ -853,7 +868,7 @@ describe("App", () => {
       mixerDefaults: { volumeDb: -3, pan: 0.2, mute: false, solo: false },
       tracks: project.tracks.map((track) => ({
         ...track,
-        source: { kind: "synth", settings: synthSettings(synthOf(track), synthDefaults) },
+        source: synthSource(synthOf(track), synthDefaults),
         mixer: { ...track.mixer, volumeDb: -6, pan: -0.5 },
       })),
     };
@@ -875,8 +890,14 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
     const synth = within(screen.getByRole("region", { name: "Synth" }));
-    for (const name of ["Cutoff", "Resonance", "Attack", "Decay", "Sustain", "Release"]) {
-      fireEvent.doubleClick(synth.getByRole("slider", { name: new RegExp(`^${name}`) }));
+    for (const [page, names] of [
+      ["Filter", ["Cutoff", "Resonance"]],
+      ["Env", ["Attack", "Decay", "Sustain", "Release"]],
+    ] as const) {
+      fireEvent.click(synth.getByRole("tab", { name: page }));
+      for (const name of names) {
+        fireEvent.doubleClick(synth.getByRole("slider", { name: new RegExp(`^${name}`) }));
+      }
     }
     await waitFor(() => expect(argsOf("set_synth_param")).toHaveLength(6));
     expect(argsOf("set_synth_param").map((args) => args.param)).toEqual([
@@ -1080,7 +1101,7 @@ describe("App", () => {
     const sent = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
     const openTab = (name: "Notes" | "Sound") => fireEvent.click(screen.getByRole("tab", { name }));
     const synthWaveform = () =>
-      within(screen.getByRole("region", { name: "Synth" }))
+      within(screen.getByRole("radiogroup", { name: "Osc 1 wave" }))
         .getAllByRole<HTMLInputElement>("radio")
         .find((radio) => radio.checked)
         ?.closest("label")?.textContent;
@@ -1420,7 +1441,9 @@ describe("App", () => {
       openTab("Sound");
       expect(synthWaveform()).toBe("Pulse");
       fireEvent.click(
-        within(screen.getByRole("region", { name: "Synth" })).getByRole("radio", { name: "Sine" }),
+        within(screen.getByRole("radiogroup", { name: "Osc 1 wave" })).getByRole("radio", {
+          name: "Sine",
+        }),
       );
       await waitFor(() => expect(sent("set_synth_param")).toHaveLength(1));
       expect(sent("set_synth_param")[0].track).toBe("track-2");

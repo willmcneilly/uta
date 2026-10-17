@@ -20,6 +20,11 @@ use serde::Serialize;
 pub struct Description {
     /// What the panel calls it: "Cutoff", "Tune".
     pub label: &'static str,
+    /// What the panel calls it where its section already says whose it is:
+    /// "Octave" in oscillator 1's row for "Osc 1 octave". Left out where
+    /// the label is short already.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short: Option<&'static str>,
     /// How it sounds, not just what it is: what turning it does to the
     /// sound, and what its ends are good for.
     pub sounds: &'static str,
@@ -119,6 +124,7 @@ impl Description {
     ) -> Self {
         Self {
             label,
+            short: None,
             sounds,
             kind: Kind::Number {
                 unit,
@@ -140,6 +146,7 @@ impl Description {
     ) -> Self {
         Self {
             label,
+            short: None,
             sounds,
             kind: Kind::Number {
                 unit,
@@ -160,6 +167,7 @@ impl Description {
     ) -> Self {
         Self {
             label,
+            short: None,
             sounds,
             kind: Kind::Choice { options, default },
         }
@@ -169,8 +177,17 @@ impl Description {
     pub(crate) const fn toggle(label: &'static str, sounds: &'static str, default: bool) -> Self {
         Self {
             label,
+            short: None,
             sounds,
             kind: Kind::Toggle { default },
+        }
+    }
+
+    /// The same, called `short` where its section already says whose it is.
+    pub(crate) const fn short(self, short: &'static str) -> Self {
+        Self {
+            short: Some(short),
+            ..self
         }
     }
 }
@@ -238,6 +255,17 @@ mod tests {
                 "sounds": "Whether it restarts.",
                 "kind": "toggle",
                 "default": true,
+            })
+        );
+        let short = Description::toggle("Osc 2 sync", "Whether it restarts.", false).short("Sync");
+        assert_eq!(
+            serde_json::to_value(short).unwrap(),
+            serde_json::json!({
+                "label": "Osc 2 sync",
+                "short": "Sync",
+                "sounds": "Whether it restarts.",
+                "kind": "toggle",
+                "default": false,
             })
         );
     }

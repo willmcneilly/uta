@@ -193,8 +193,8 @@ impl EffectView {
 }
 
 /// What makes a track's sound, as the UI shows it: the synth's settings, or
-/// the drum kit. Serialises as `{"kind":"synth","settings":[...]}` or
-/// `{"kind":"drums","kit":{...}}`.
+/// the drum kit. Serialises as `{"kind":"synth","settings":[...],
+/// "lfoSeconds":0.5}` or `{"kind":"drums","kit":{...}}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SourceView {
@@ -202,17 +202,25 @@ pub enum SourceView {
         /// Each of the synth's settings' values, in the order
         /// `SynthSettings::params` gives them.
         settings: Vec<SynthParam>,
+        /// How long one cycle of the LFO lasts at the project's tempo, in
+        /// seconds: the synced division's length, or one over its rate. The
+        /// panel draws the LFO against the bar by it, so it never works out
+        /// what a division is.
+        #[serde(rename = "lfoSeconds")]
+        lfo_seconds: f64,
     },
     Drums {
         kit: KitView,
     },
 }
 
-impl From<&Source> for SourceView {
-    fn from(source: &Source) -> Self {
+impl SourceView {
+    /// `source` as the UI shows it, in a project at `bpm`.
+    fn new(source: &Source, bpm: f32) -> Self {
         match source {
             Source::Synth(settings) => Self::Synth {
                 settings: settings.params().into(),
+                lfo_seconds: settings.lfo_cycle_seconds_at(bpm),
             },
             Source::Drums(kit) => Self::Drums { kit: kit.into() },
         }
@@ -1398,7 +1406,7 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
                 id: track.id(),
                 name: track.name().to_owned(),
                 mixer: track.mixer().into(),
-                source: track.source().into(),
+                source: SourceView::new(track.source(), bpm),
                 effects: track
                     .effects()
                     .iter()
@@ -1911,7 +1919,7 @@ mod tests {
     #[test]
     fn the_outline_describes_every_synth_setting() {
         let outline = offline().update().outline;
-        let SourceView::Synth { settings } = &outline.tracks[0].source else {
+        let SourceView::Synth { settings, .. } = &outline.tracks[0].source else {
             panic!("a new project's track is a synth");
         };
         assert_eq!(*settings, SynthSettings::default().params());
@@ -2377,6 +2385,25 @@ mod tests {
     }
 
     #[test]
+    fn a_synth_says_how_long_its_lfo_cycle_is_at_the_tempo() {
+        let mut uta = offline();
+        let track = uta.project().tracks[0].id;
+        let cycle = |uta: &Uta| {
+            serde_json::to_value(&uta.project().tracks[0].source).unwrap()["lfoSeconds"]
+                .as_f64()
+                .unwrap()
+        };
+        // A new synth's LFO runs at 5 Hz.
+        assert!((cycle(&uta) - 0.2).abs() < 1e-6);
+        // Synced, it's a quarter: 0.5 s at 120 BPM, and longer when slower.
+        uta.set_synth_param(track, SynthParam::LfoSync(true), None)
+            .unwrap();
+        assert!((cycle(&uta) - 0.5).abs() < 1e-12);
+        uta.set_tempo(90.0, None).unwrap();
+        assert!((cycle(&uta) - 2.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
     fn the_outline_carries_each_controls_default() {
         let json = serde_json::to_value(offline().update().outline).unwrap();
         assert_eq!(json["defaultVolumeDb"], -12.0);
@@ -2669,7 +2696,7 @@ mod tests {
     /// The synth settings of `track`, a synth track, put back together from
     /// the values the outline sends.
     fn synth_of<C>(track: &TrackOutline<C>) -> SynthSettings {
-        let SourceView::Synth { settings } = &track.source else {
+        let SourceView::Synth { settings, .. } = &track.source else {
             panic!("{} isn't a synth track", track.name);
         };
         // Each setting's name is its field's, so the values make the

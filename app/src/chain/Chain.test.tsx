@@ -219,7 +219,9 @@ describe("the Sound tab's chain", () => {
     expect(within(first).getByRole("slider", { name: "Delay mix" })).toBeInTheDocument();
     // The + comes after the last effect, and the line ends at the mixer.
     expect(second.compareDocumentPosition(addKey()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText("Mixer")).toBeInTheDocument();
+    // (The synth has a Mixer stage of its own.)
+    const synth = screen.getByRole("region", { name: "Synth" });
+    expect(screen.getAllByText("Mixer").filter((name) => !synth.contains(name))).toHaveLength(1);
     // The chain map names each panel in order.
     const map = screen.getByRole("navigation", { name: "Chain" });
     expect(within(map).getAllByRole("button").map((b) => b.textContent)).toEqual([
