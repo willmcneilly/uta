@@ -28,8 +28,8 @@ use std::fmt::Write;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::{
-    attack_seconds, crest_factor, decay_seconds, first_sound, hit_loudness_db, loud_cycles,
-    max_jump, peak, rms, share_above, spectral_centroid, steady_pitch,
+    attack_seconds, crest_factor, decay_seconds, first_sound, hit_loudness_db, max_jump, peak,
+    pitch_track, rms, share_above, smoothed_pitch, spectral_centroid, steady_pitch, while_loud,
 };
 
 /// One measurement in the report.
@@ -142,8 +142,9 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "pitch",
         unit: "Hz",
         decimals: 2,
-        about: "The average pitch while it's within 40 dB of its loudest, from zero \
-                crossings. `null` if it has no steady pitch, as noise doesn't.",
+        about: "The average pitch while it's within 40 dB of its loudest, from YIN's \
+                pitch track (43 ms windows, every 5 ms), each point the median of those \
+                around it. `null` if it has no steady pitch, as noise doesn't.",
         measure: Sound::pitch,
     },
     Measurement {
@@ -160,7 +161,7 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "pitch at the start",
         unit: "Hz",
         decimals: 2,
-        about: "The pitch of the first cycle within 40 dB of its loudest.",
+        about: "The pitch at the first point of the track within 40 dB of its loudest.",
         measure: |sound| sound.pitch_over_time().first().map(|&(_, hz)| hz),
     },
     Measurement {
@@ -168,7 +169,7 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "pitch at the end",
         unit: "Hz",
         decimals: 2,
-        about: "The pitch of the last cycle within 40 dB of its loudest.",
+        about: "The pitch at the last point of the track within 40 dB of its loudest.",
         measure: |sound| sound.pitch_over_time().last().map(|&(_, hz)| hz),
     },
     Measurement {
@@ -176,8 +177,8 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "largest pitch drift",
         unit: "cents",
         decimals: 1,
-        about: "The cycle furthest from the average pitch, in cents from it: above it if \
-                positive. A kick's falling pitch drifts by hundreds; a steady tone by a few.",
+        about: "Where the pitch track is furthest from the average pitch, in cents from \
+                it: above it if positive. In a file of several notes, it's the furthest note. A kick's falling pitch drifts by hundreds; a steady tone by a few.",
         measure: |sound| sound.largest_drift().map(|(_, cents)| cents),
     },
     Measurement {
@@ -185,7 +186,7 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "largest pitch drift at",
         unit: "s",
         decimals: 3,
-        about: "When that cycle is, from the start of the file.",
+        about: "When that is, from the start of the file.",
         measure: |sound| sound.largest_drift().map(|(seconds, _)| seconds),
     },
     Measurement {
@@ -220,6 +221,8 @@ pub struct Sound {
     channels: u16,
     note: Option<Note>,
     above_hz: f64,
+    /// Its pitch track within 40 dB of its loudest, from [`pitch_track`].
+    track: Vec<(f64, f64)>,
 }
 
 impl Sound {
@@ -230,13 +233,20 @@ impl Sound {
         let samples = interleaved
             .chunks(usize::from(channels.max(1)))
             .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
-            .collect();
+            .collect::<Vec<f32>>();
+        let track = while_loud(
+            pitch_track(&samples, sample_rate),
+            &samples,
+            sample_rate,
+            40.0,
+        );
         Self {
             samples,
             sample_rate,
             channels,
             note: None,
             above_hz: 5000.0,
+            track,
         }
     }
 
@@ -256,19 +266,23 @@ impl Sound {
         &self.samples[first_sound(&self.samples).unwrap_or(self.samples.len())..]
     }
 
-    /// Each cycle's pitch while it's within 40 dB of its loudest, with its
-    /// time from the start of the file, so the noise floor of a tail and the
-    /// gaps between notes don't count. Empty if it has no steady pitch.
+    /// The pitch over time while it's within 40 dB of its loudest, with
+    /// each point's time from the start of the file, so the noise floor of a
+    /// tail doesn't count. It's [`smoothed_pitch`], so one or two odd
+    /// points, such as where one note ends and the next starts, aren't read
+    /// as a drift. Empty if it has no steady pitch.
     fn pitch_over_time(&self) -> Vec<(f64, f64)> {
-        let cycles = loud_cycles(&self.samples, self.sample_rate, 40.0);
-        if steady_pitch(&cycles).is_none() {
+        if self.pitch().is_none() {
             return Vec::new();
         }
-        cycles
+        smoothed_pitch(&self.track)
     }
 
+    /// The average pitch, from [`smoothed_pitch`] so an odd point doesn't
+    /// move it, if the track as it is has a steady pitch.
     fn pitch(&self) -> Option<f64> {
-        steady_pitch(&loud_cycles(&self.samples, self.sample_rate, 40.0))
+        steady_pitch(&self.track)?;
+        steady_pitch(&smoothed_pitch(&self.track))
     }
 
     /// The note the pitch is measured from: the one it was given, or the
@@ -277,7 +291,8 @@ impl Sound {
         self.note.or_else(|| Some(Note::nearest(self.pitch()?)))
     }
 
-    /// The cycle furthest from the average pitch: when, and how far, in cents.
+    /// The point of the track furthest from the average pitch: when, and how
+    /// far, in cents.
     fn largest_drift(&self) -> Option<(f64, f64)> {
         let pitch = self.pitch()?;
         self.pitch_over_time()
@@ -529,6 +544,12 @@ fn show(value: Option<f64>, decimals: usize, difference: bool) -> String {
         } else {
             shown
         }
+    } else if shown
+        .trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
+        shown.trim_start_matches('-').to_string()
     } else {
         shown
     }
@@ -640,10 +661,62 @@ mod tests {
 
     #[test]
     fn stereo_is_measured_as_its_mid() {
-        let mono = sine(440.0, 0.5);
-        let stereo: Vec<f32> = mono.iter().flat_map(|&s| [s, s]).collect();
-        let a = Report::measure("mono", &Sound::new(&mono, 1, RATE));
+        // A tone on the left only: its mid is the tone at half the level.
+        let left = sine(440.0, 0.5);
+        let stereo: Vec<f32> = left.iter().flat_map(|&s| [s, 0.0]).collect();
+        let mid: Vec<f32> = left.iter().map(|s| s * 0.5).collect();
+        let a = Report::measure("mid", &Sound::new(&mid, 1, RATE));
         let b = Report::measure("stereo", &Sound::new(&stereo, 2, RATE));
         assert_eq!(a.values, b.values);
+        let peak = b.get("peak_dbfs").unwrap();
+        assert!((peak - 20.0 * 0.25f64.log10()).abs() < 1e-3, "{peak} dBFS");
+    }
+
+    #[test]
+    fn a_single_odd_cycle_isnt_a_drift() {
+        // 100 Hz, restarted from zero a quarter of a cycle after a crossing,
+        // as where one note stops and the next starts: from one zero
+        // crossing to the next, one cycle reads 80 Hz, 386 cents flat.
+        let mut tone = sine(100.0, 0.1025);
+        tone.extend(sine(100.0, 0.2));
+        let report = Report::measure("restarted", &Sound::new(&tone, 1, RATE));
+        let drift = report.get("pitch_drift_cents").unwrap();
+        assert!(drift.abs() < 1.0, "drifts {drift} cents");
+        for key in ["pitch_start_hz", "pitch_end_hz"] {
+            let hz = report.get(key).unwrap();
+            assert!((hz - 100.0).abs() < 0.01, "{key} {hz} Hz");
+        }
+    }
+
+    #[test]
+    fn a_saw_reads_its_fundamental() {
+        // A band-limited saw at 110 Hz (A2), with its harmonics up to
+        // 20 kHz: it reads its fundamental, not a harmonic.
+        let saw: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                let sum: f64 = (1..=180)
+                    .map(|k| {
+                        (std::f64::consts::TAU * 110.0 * f64::from(k) * t).sin() / f64::from(k)
+                    })
+                    .sum();
+                (0.3 * sum) as f32
+            })
+            .collect();
+        let report = Report::measure("saw", &Sound::new(&saw, 1, RATE));
+        assert_eq!(report.note, Some(Note(45)));
+        for key in ["pitch_cents", "pitch_drift_cents"] {
+            let cents = report.get(key).unwrap();
+            assert!(cents.abs() < 1.0, "{key} {cents}");
+        }
+    }
+
+    #[test]
+    fn a_difference_that_rounds_to_nothing_is_0_and_a_value_has_no_minus_zero() {
+        assert_eq!(show(Some(-0.01), 1, true), "0");
+        assert_eq!(show(Some(6.02), 1, true), "+6.0");
+        assert_eq!(show(Some(-6.02), 1, true), "-6.0");
+        assert_eq!(show(Some(-0.01), 1, false), "0.0");
+        assert_eq!(show(None, 1, false), "-");
     }
 }

@@ -60,8 +60,8 @@ fn upward_crossings(samples: &[f32]) -> Vec<f64> {
         .collect()
 }
 
-/// The pitch of a tone, in Hz, from its cycles (as [`pitch_over_time`] or
-/// [`loud_cycles`] gives them): how many there are over how long they last.
+/// The pitch of a tone, in Hz, from its pitch track (as [`pitch_track`]
+/// or [`pitch_over_time`] gives it): how many there are over how long they last.
 /// `None` if there are fewer than two, or if their lengths jump about, as
 /// noise's do. "Jump about" is the median change from one cycle to the next
 /// being over 5%: a kick's pitch falls smoothly, by far less than that a
@@ -134,15 +134,20 @@ pub fn attack_seconds(samples: &[f32], sample_rate: u32) -> Option<f64> {
     Some((reaches(0.9 * peak) - reaches(0.1 * peak)) / f64::from(sample_rate))
 }
 
-/// The cycles of [`pitch_over_time`] whose middle is within `within_db` of
-/// the sound's loudest, from its level over 5 ms windows: the tone, without
-/// its quiet tail or the gaps between notes, where a "cycle" from one zero
-/// crossing to the next can span a silence.
-pub fn loud_cycles(samples: &[f32], sample_rate: u32, within_db: f64) -> Vec<(f64, f64)> {
+/// The points of a pitch track (from [`pitch_track`] or
+/// [`pitch_over_time`]) whose time is within `within_db` of the sound's
+/// loudest, from its level over 5 ms windows: the tone, without its quiet
+/// tail or the gaps between notes.
+pub fn while_loud(
+    track: Vec<(f64, f64)>,
+    samples: &[f32],
+    sample_rate: u32,
+    within_db: f64,
+) -> Vec<(f64, f64)> {
     let envelope = envelope_db(samples, sample_rate, 0.005);
     let loudest = envelope.iter().fold(f64::MIN, |a, &(_, db)| a.max(db));
     let window = (0.005 * f64::from(sample_rate)) as usize;
-    pitch_over_time(samples, sample_rate)
+    track
         .into_iter()
         .filter(|&(seconds, _)| {
             let at = (seconds * f64::from(sample_rate)) as usize / window;
@@ -151,6 +156,108 @@ pub fn loud_cycles(samples: &[f32], sample_rate: u32, within_db: f64) -> Vec<(f6
                 .is_some_and(|&(_, db)| db >= loudest - within_db)
         })
         .collect()
+}
+
+/// The lowest pitch [`pitch_track`] looks for, in Hz: below a kick's.
+pub const LOWEST_PITCH_HZ: f64 = 30.0;
+
+/// The highest pitch [`pitch_track`] looks for, in Hz.
+pub const HIGHEST_PITCH_HZ: f64 = 2000.0;
+
+/// The pitch over time, with YIN (de Cheveigné and Kawahara, 2002): in
+/// windows of 2048 samples every 5 ms, the lag at which the sound best
+/// matches itself is its period. Unlike zero crossings, it follows the
+/// fundamental of a tone rich in harmonics, such as a saw. A window is
+/// 43 ms, so a sweep faster than that is smoothed: a kick's first few
+/// milliseconds read lower than they are, and [`pitch_over_time`] sees
+/// them better on a clean tone. Each point is a
+/// window's middle, in seconds, and its pitch in Hz, between
+/// [`LOWEST_PITCH_HZ`] and [`HIGHEST_PITCH_HZ`]; a window with no clear
+/// period, such as noise or silence, has no point.
+pub fn pitch_track(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
+    let rate = f64::from(sample_rate);
+    let window = 2048;
+    let longest = (rate / LOWEST_PITCH_HZ).ceil() as usize;
+    let shortest = (rate / HIGHEST_PITCH_HZ).floor() as usize;
+    let hop = (0.005 * rate) as usize;
+    let n = (2 * window + longest).next_power_of_two();
+    let mut track = Vec::new();
+    let mut start = 0;
+    while start + window + longest < samples.len() {
+        let frame = &samples[start..start + window + longest + 1];
+        if let Some(lag) = yin_period(frame, window, shortest, longest, n) {
+            track.push(((start + window / 2) as f64 / rate, rate / lag));
+        }
+        start += hop;
+    }
+    track
+}
+
+/// YIN's period of `frame`'s first `window` samples, in samples, searched
+/// between `shortest` and `longest`: the first dip in its cumulative mean
+/// normalised difference below 0.15, refined between lags with a parabola.
+/// `None` if there's no dip that deep. `frame` holds `window + longest + 1`
+/// samples, and `n` is a power of two at least `2 * window + longest`.
+fn yin_period(
+    frame: &[f32],
+    window: usize,
+    shortest: usize,
+    longest: usize,
+    n: usize,
+) -> Option<f64> {
+    let energy: Vec<f64> = std::iter::once(0.0)
+        .chain(frame.iter().scan(0.0, |sum, &s| {
+            *sum += f64::from(s) * f64::from(s);
+            Some(*sum)
+        }))
+        .collect();
+    let energy_at = |lag: usize| energy[lag + window] - energy[lag];
+    if energy_at(0) < 1e-12 {
+        return None;
+    }
+    // The difference at each lag is the energy of the window, plus that of
+    // the window that far on, minus twice their correlation, which comes
+    // from one FFT of each and an inverse.
+    let transform = |samples: &[f32]| {
+        let mut re: Vec<f64> = samples.iter().map(|&s| f64::from(s)).collect();
+        re.resize(n, 0.0);
+        let mut im = vec![0.0; n];
+        fft(&mut re, &mut im);
+        (re, im)
+    };
+    let (a_re, a_im) = transform(&frame[..window]);
+    let (b_re, b_im) = transform(frame);
+    // The inverse FFT of conj(A)·B, as the conjugate of the FFT of its
+    // conjugate.
+    let mut re: Vec<f64> = (0..n)
+        .map(|k| a_re[k] * b_re[k] + a_im[k] * b_im[k])
+        .collect();
+    let mut im: Vec<f64> = (0..n)
+        .map(|k| -(a_re[k] * b_im[k] - a_im[k] * b_re[k]))
+        .collect();
+    fft(&mut re, &mut im);
+    let correlation = |lag: usize| re[lag] / n as f64;
+
+    let difference = |lag: usize| (energy_at(0) + energy_at(lag) - 2.0 * correlation(lag)).max(0.0);
+    let mut normalised = vec![1.0; longest + 2];
+    let mut sum = 0.0;
+    for (lag, value) in normalised.iter_mut().enumerate().skip(1).take(longest + 1) {
+        let d = difference(lag);
+        sum += d;
+        *value = if sum > 0.0 { d * lag as f64 / sum } else { 1.0 };
+    }
+    let mut lag = (shortest..=longest).find(|&lag| normalised[lag] < 0.15)?;
+    while lag < longest && normalised[lag + 1] < normalised[lag] {
+        lag += 1;
+    }
+    let (a, b, c) = (normalised[lag - 1], normalised[lag], normalised[lag + 1]);
+    let curve = a - 2.0 * b + c;
+    let offset = if curve > 0.0 {
+        0.5 * (a - c) / curve
+    } else {
+        0.0
+    };
+    Some(lag as f64 + offset.clamp(-0.5, 0.5))
 }
 
 /// The biggest sample-to-sample jump, and where it happens.
@@ -219,6 +326,33 @@ pub fn pitch_over_time(samples: &[f32], sample_rate: u32) -> Vec<(f64, f64)> {
     upward_crossings(samples)
         .windows(2)
         .map(|pair| ((pair[0] + pair[1]) / 2.0 / rate, rate / (pair[1] - pair[0])))
+        .collect()
+}
+
+/// A pitch track (as [`pitch_track`] or [`pitch_over_time`] gives it)
+/// with each cycle's frequency replaced by the median of it and the two
+/// cycles either side, so one or two odd cycles, such as one spanning the
+/// end of a note and the start of the next, don't count. Nearer the ends
+/// it takes as many either side as there are, so a steady glide, as a
+/// kick's, is kept; the first and last cycles take the median of the three
+/// at that end.
+pub fn smoothed_pitch(cycles: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let n = cycles.len();
+    (0..n)
+        .map(|i| {
+            let around = match i {
+                _ if n < 3 => i..i + 1,
+                0 => 0..3,
+                _ if i == n - 1 => n - 3..n,
+                _ => {
+                    let half = 2.min(i).min(n - 1 - i);
+                    i - half..i + half + 1
+                }
+            };
+            let mut around: Vec<f64> = cycles[around].iter().map(|&(_, hz)| hz).collect();
+            around.sort_by(f64::total_cmp);
+            (cycles[i].0, around[around.len() / 2])
+        })
         .collect()
 }
 
@@ -424,9 +558,11 @@ fn fft(re: &mut [f64], im: &mut [f64]) {
     let mut len = 2;
     while len <= n {
         let angle = -std::f64::consts::TAU / len as f64;
+        let twiddles: Vec<(f64, f64)> = (0..len / 2)
+            .map(|k| ((angle * k as f64).cos(), (angle * k as f64).sin()))
+            .collect();
         for start in (0..n).step_by(len) {
-            for k in 0..len / 2 {
-                let (w_re, w_im) = ((angle * k as f64).cos(), (angle * k as f64).sin());
+            for (k, &(w_re, w_im)) in twiddles.iter().enumerate() {
                 let (a, b) = (start + k, start + k + len / 2);
                 let t_re = re[b] * w_re - im[b] * w_im;
                 let t_im = re[b] * w_im + im[b] * w_re;
@@ -612,7 +748,86 @@ mod tests {
     }
 
     #[test]
-    fn the_loud_cycles_leave_out_the_gap_between_two_tones() {
+    fn smoothing_drops_an_odd_cycle_and_keeps_a_glide() {
+        let glide: Vec<(f64, f64)> = (0..10)
+            .map(|i| (f64::from(i), 200.0 - 10.0 * f64::from(i)))
+            .collect();
+        assert_eq!(smoothed_pitch(&glide)[1..9], glide[1..9]);
+        let mut odd: Vec<(f64, f64)> = (0..10).map(|i| (f64::from(i), 100.0)).collect();
+        odd[4].1 = 400.0;
+        assert!(smoothed_pitch(&odd).iter().all(|&(_, hz)| hz == 100.0));
+    }
+
+    /// A band-limited saw at `frequency_hz`: its harmonics up to 20 kHz, each
+    /// at 1/k.
+    fn saw(frequency_hz: f64, seconds: f64) -> Vec<f32> {
+        let harmonics = (20_000.0 / frequency_hz) as usize;
+        (0..(seconds * f64::from(RATE)) as usize)
+            .map(|i| {
+                let t = i as f64 / f64::from(RATE);
+                let sum: f64 = (1..=harmonics)
+                    .map(|k| (std::f64::consts::TAU * frequency_hz * k as f64 * t).sin() / k as f64)
+                    .sum();
+                (0.3 * sum) as f32
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_pitch_track_reads_a_sine_and_a_saw() {
+        for (name, samples, hz) in [
+            ("sine", sine(440.0, 0.5), 440.0),
+            ("low sine", sine(45.0, 0.5), 45.0),
+            ("saw", saw(110.0, 0.5), 110.0),
+        ] {
+            let track = pitch_track(&samples, RATE);
+            assert!(track.len() > 50, "{name}: {} points", track.len());
+            for (time, frequency) in track {
+                let cents = 1200.0 * (frequency / hz).log2();
+                assert!(cents.abs() < 1.0, "{name}: {frequency} Hz at {time} s");
+            }
+        }
+    }
+
+    #[test]
+    fn the_pitch_track_follows_a_glide() {
+        // Falls from 200 Hz to 50 Hz over a second, exponentially.
+        let mut phase = 0.0;
+        let samples: Vec<f32> = (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                phase += std::f64::consts::TAU * 200.0 * 0.25f64.powf(t) / f64::from(RATE);
+                (0.5 * phase.sin()) as f32
+            })
+            .collect();
+        let track = pitch_track(&samples, RATE);
+        assert!(track.len() > 100);
+        for (time, frequency) in track {
+            let expected = 200.0 * 0.25f64.powf(time);
+            let cents = 1200.0 * (frequency / expected).log2();
+            assert!(
+                cents.abs() < 25.0,
+                "{frequency} Hz at {time} s, expected {expected} Hz"
+            );
+        }
+    }
+
+    #[test]
+    fn noise_has_no_pitch_track() {
+        let mut state = 1u32;
+        let noise: Vec<f32> = (0..RATE)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 8) as f32 / (1 << 24) as f32 - 0.5
+            })
+            .collect();
+        let track = pitch_track(&noise, RATE);
+        assert!(track.len() < 5, "noise has {} points", track.len());
+        assert_eq!(steady_pitch(&track), None);
+    }
+
+    #[test]
+    fn while_loud_leaves_out_the_gap_between_two_tones() {
         // 220 Hz, a gap, then 220 Hz again: a "cycle" across the gap would
         // read far lower.
         let mut samples = sine(220.0, 0.5)[..12_000].to_vec();
@@ -620,7 +835,7 @@ mod tests {
         samples.extend(&sine(220.0, 0.5)[..12_000]);
         let all = pitch_over_time(&samples, RATE);
         assert!(all.iter().any(|&(_, hz)| hz < 100.0), "the gap is a cycle");
-        let loud = loud_cycles(&samples, RATE, 40.0);
+        let loud = while_loud(all.clone(), &samples, RATE, 40.0);
         assert!(loud.iter().all(|&(_, hz)| (hz - 220.0).abs() < 0.1));
         let pitch = steady_pitch(&loud).expect("a steady tone");
         assert!((pitch - 220.0).abs() < 0.01, "{pitch} Hz");

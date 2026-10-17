@@ -39,6 +39,11 @@ const C3_SINE: &str = r#"{
   ]
 }"#;
 
+/// [`C3_SINE`] with its note moved to `pitch`.
+fn sine_at(pitch: u8) -> String {
+    C3_SINE.replace("\"pitch\": 48", &format!("\"pitch\": {pitch}"))
+}
+
 /// A folder of its own for each test, in Cargo's scratch space.
 fn folder(test: &str) -> PathBuf {
     let folder = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -64,9 +69,14 @@ fn uta(args: &[&str]) -> String {
 
 /// Renders the C3 sine to `sine.wav` in `folder`, with `uta render`.
 fn render_sine(folder: &Path) -> String {
-    let commands = folder.join("c3-sine.json");
-    std::fs::write(&commands, C3_SINE).unwrap();
-    let wav = folder.join("sine.wav");
+    render(folder, "sine", C3_SINE)
+}
+
+/// Renders a command list to `<name>.wav` in `folder`, with `uta render`.
+fn render(folder: &Path, name: &str, commands_json: &str) -> String {
+    let commands = folder.join(format!("{name}.json"));
+    std::fs::write(&commands, commands_json).unwrap();
+    let wav = folder.join(format!("{name}.wav"));
     uta(&[
         "render",
         wav.to_str().unwrap(),
@@ -236,6 +246,75 @@ fn a_quieter_copy_differs_only_in_level() {
             assert!(difference.abs() < 1e-6, "{key} differs by {difference}");
         }
     }
+
+    let text = uta(&["analyse", &wav, "--against", &quieter]);
+    let line = |label: &str| {
+        text.lines()
+            .find(|line| line.starts_with(label))
+            .unwrap()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(line("peak")[3], "+6.0", "{text}");
+    assert_eq!(line("crest factor")[4], "0", "{text}");
+}
+
+#[test]
+fn above_sets_the_frequency_the_share_is_measured_above() {
+    let wav = render_sine(&folder("above"));
+    // A C3 sine (131 Hz) is nearly all above 100 Hz, and nearly none of it
+    // is above 1 kHz.
+    let low = json(&["analyse", &wav, "--json", "--above", "100"]);
+    assert_eq!(low["above_hz"], 100.0);
+    let share = low["measurements"]["share_above_percent"].as_f64().unwrap();
+    assert!(share > 90.0, "{share}% above 100 Hz");
+    let high = json(&["analyse", &wav, "--json", "--above", "1000"]);
+    let share = high["measurements"]["share_above_percent"]
+        .as_f64()
+        .unwrap();
+    assert!(share < 1.0, "{share}% above 1 kHz");
+    assert!(uta(&["analyse", &wav, "--above", "1000"]).contains("share above 1000 Hz"));
+}
+
+#[test]
+fn an_integer_wav_reads_as_its_float_original() {
+    let wav = render_sine(&folder("integer"));
+    let (spec, samples) = read_wav(Path::new(&wav)).unwrap();
+    let integer = wav.replace(".wav", "-24-bit.wav");
+    let mut writer = hound::WavWriter::create(
+        &integer,
+        hound::WavSpec {
+            bits_per_sample: 24,
+            sample_format: hound::SampleFormat::Int,
+            ..spec
+        },
+    )
+    .unwrap();
+    for sample in samples {
+        writer
+            .write_sample((f64::from(sample) * f64::from(1 << 23)).round() as i32)
+            .unwrap();
+    }
+    writer.finalize().unwrap();
+    let both = json(&["analyse", &integer, "--against", &wav, "--json"]);
+    for key in ["peak_dbfs", "rms_dbfs", "pitch_hz"] {
+        let difference = both["difference"][key].as_f64().unwrap();
+        assert!(difference.abs() < 1e-3, "{key} differs by {difference}");
+    }
+}
+
+#[test]
+fn against_measures_both_pitches_from_the_first_ones_note() {
+    let folder = folder("against_note");
+    let c3 = render_sine(&folder);
+    let d3 = render(&folder, "d3-sine", &sine_at(50));
+    let both = json(&["analyse", &c3, "--against", &d3, "--json"]);
+    assert_eq!(both["this"]["note"], "C3");
+    assert_eq!(both["against"]["note"], "C3");
+    let cents = both["against"]["measurements"]["pitch_cents"]
+        .as_f64()
+        .unwrap();
+    assert!((cents - 200.0).abs() < 2.0, "D3 reads {cents} cents off C3");
 }
 
 #[test]
