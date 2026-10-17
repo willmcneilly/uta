@@ -229,8 +229,9 @@ impl Voice {
         self.filter_envelope.release(filter_times);
     }
 
-    /// Takes on `note` without a gap, in Mono: the oscillators and filter
-    /// carry on, the pitch glides to the note's over `glide` samples (or
+    /// Takes on `note` without a gap, in Mono: the oscillators, filter and
+    /// LFO carry on (the LFO's Retrigger restarts it only on a note after
+    /// silence), the pitch glides to the note's over `glide` samples (or
     /// moves at once if `glide` is `None`), and the velocity moves to its
     /// own. Unless `legato`, both envelopes attack again from where they
     /// are.
@@ -1739,6 +1740,29 @@ mod tests {
             (1.1..1.3).contains(&share),
             "{share} of the way at a quarter"
         );
+    }
+
+    /// A Mono note that follows on plays at its own velocity, which the
+    /// voice moves to over the take-over time rather than jumping to.
+    #[test]
+    fn a_note_that_follows_on_moves_to_its_own_velocity() {
+        let mut synth = mono_synth(0.01);
+        synth.note_on(NoteOn {
+            velocity: 127,
+            ..note(1)
+        });
+        run(&mut synth, 1_000);
+        synth.note_on(NoteOn {
+            velocity: 30,
+            ..note(2)
+        });
+        let fade = synth.take_over_samples as usize;
+        run(&mut synth, fade / 2);
+        let half = synth.voices[MONO_VOICE].velocity_gain;
+        let (from, to) = (velocity_to_gain(127), velocity_to_gain(30));
+        assert!((half - (from + to) / 2.0).abs() < 0.01, "{half} half way");
+        run(&mut synth, fade);
+        assert_eq!(synth.voices[MONO_VOICE].velocity_gain, to);
     }
 
     /// Switching the Voice mode releases every note, in either direction.
