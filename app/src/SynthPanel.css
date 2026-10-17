@@ -17,6 +17,13 @@
   font: var(--font-text);
 }
 
+/* ---- The Sound menu, above the tabs at their start. provisional: D-37 ---- */
+
+.synth .sound-row {
+  display: flex;
+  margin-bottom: calc(-1 * var(--space-2));
+}
+
 /* ---- The tabs ---- */
 
 .synth .stages {

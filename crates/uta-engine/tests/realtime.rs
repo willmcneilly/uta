@@ -309,6 +309,49 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
     );
 }
 
+/// Choosing factory sounds while a loop plays, as the Sound menu does: each
+/// one a whole new set of settings in a new snapshot, mid-loop, while
+/// chords and a line sound, every sound in turn, Poly and Mono, over and
+/// over. The processor never allocates or frees.
+#[test]
+fn switching_factory_sounds_mid_loop_does_not_allocate() {
+    rtsan_standalone::ensure_initialized();
+    // A 1-bar loop at 120 BPM: a held chord and a line of 8ths over it.
+    let chord = [48u8, 52, 55, 59]
+        .into_iter()
+        .enumerate()
+        .map(|(i, pitch)| note(i as u128, pitch, 0, 3840));
+    let line = (0..8u8).map(|i| note(10 + u128::from(i), 60 + 2 * i, u64::from(i) * 480, 600));
+    let mut project = project(120.0, 1, &[], chord.chain(line).collect());
+    let track = project.tracks()[0].id();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+
+    let sounds = uta_core::FactorySound::all();
+    // Three times round the menu, a sound every 41 blocks (about 0.11 s),
+    // so the switches land all over the loop.
+    for sound in sounds.iter().cycle().take(3 * sounds.len()) {
+        project
+            .apply(&Command::SetSynthSettings {
+                track,
+                settings: sound.settings,
+            })
+            .unwrap();
+        renderer
+            .controller
+            .set_snapshot(Snapshot::from(&project))
+            .unwrap();
+        for _ in 0..41 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        assert_eq!(renderer.controller.free_used_snapshots(), 1);
+    }
+    let status = renderer.controller.poll();
+    assert!(status.peak > 0.0, "the synth made no sound");
+    assert_eq!(status.dropped_note_events, 0);
+}
+
 /// Mixer changes while a loud chord plays: volume, pan and mute glide, the
 /// master clips, and the processor never allocates. In stereo, and in mono
 /// and on four channels, where the mix is folded down or padded out.

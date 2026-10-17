@@ -1,0 +1,139 @@
+{
+  "project": "00000000-0000-0000-0000-0000fac70003",
+  "commands": [
+    {
+      "format": 14,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_loop_length",
+        "bars": 2
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_synth_settings",
+        "track": "d613bb53-c50a-552f-a2bb-2458e0af4826",
+        "settings": {
+          "osc1_wave": "saw",
+          "osc1_octave": 0,
+          "osc1_width": 0.5,
+          "osc2_wave": "saw",
+          "osc2_octave": 0,
+          "osc2_pitch_semitones": 0.12,
+          "osc2_sync": false,
+          "sub_octave": -1,
+          "osc1_level": 0.45,
+          "osc2_level": 0.45,
+          "sub_level": 0.0,
+          "noise_level": 0.03,
+          "filter_mode": "low_pass",
+          "cutoff_hz": 650.0,
+          "resonance": 0.1,
+          "filter_env_octaves": 1.2,
+          "filter_key": 0.4,
+          "filter_lfo_octaves": 0.3,
+          "filter_attack_seconds": 0.8,
+          "filter_decay_seconds": 1.5,
+          "filter_sustain": 0.5,
+          "filter_release_seconds": 1.2,
+          "attack_seconds": 0.6,
+          "decay_seconds": 1.0,
+          "sustain": 0.85,
+          "release_seconds": 1.1,
+          "lfo_shape": "triangle",
+          "lfo_rate_hz": 0.25,
+          "lfo_sync": false,
+          "lfo_division": "1/4",
+          "lfo_retrigger": false,
+          "lfo_vibrato_semitones": 0.0,
+          "lfo_width": 0.0,
+          "voice_mode": "poly",
+          "legato": false,
+          "glide_seconds": 0.001,
+          "osc_retrigger": true,
+          "mod1_source": "velocity",
+          "mod1_destination": "off",
+          "mod1_amount": 0.0,
+          "mod2_source": "filter_env",
+          "mod2_destination": "off",
+          "mod2_amount": 0.0,
+          "mod3_source": "lfo",
+          "mod3_destination": "off",
+          "mod3_amount": 0.0
+        }
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "add_notes",
+        "clip": "eb1607af-53a2-57e4-ae31-d31d78982c9d",
+        "notes": [
+          {
+            "id": "00000000-0000-0000-0000-0000fac71000",
+            "pitch": 48,
+            "velocity": 100,
+            "start": 0,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71001",
+            "pitch": 52,
+            "velocity": 100,
+            "start": 0,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71002",
+            "pitch": 55,
+            "velocity": 100,
+            "start": 0,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71003",
+            "pitch": 59,
+            "velocity": 100,
+            "start": 0,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71004",
+            "pitch": 45,
+            "velocity": 100,
+            "start": 3840,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71005",
+            "pitch": 52,
+            "velocity": 100,
+            "start": 3840,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71006",
+            "pitch": 55,
+            "velocity": 100,
+            "start": 3840,
+            "length": 3840
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71007",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 3840,
+            "length": 3840
+          }
+        ]
+      }
+    }
+  ]
+}

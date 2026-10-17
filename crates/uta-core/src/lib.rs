@@ -25,6 +25,7 @@ mod command;
 mod command_list;
 mod drums;
 mod effect;
+mod factory;
 mod id;
 mod project;
 mod session;
@@ -48,6 +49,7 @@ pub use drums::{
 pub use effect::{
     Chain, DelayMode, DelayParam, DelaySettings, Effect, EffectKind, EffectSettings, MAX_EFFECTS,
 };
+pub use factory::{Audition, FactorySound, LOUDNESS_SPREAD_DB, Targets};
 pub use id::{ClipId, EffectId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};

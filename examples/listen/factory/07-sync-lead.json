@@ -1,0 +1,132 @@
+{
+  "project": "00000000-0000-0000-0000-0000fac70006",
+  "commands": [
+    {
+      "format": 14,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_loop_length",
+        "bars": 2
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_synth_settings",
+        "track": "0b8f7056-2bf6-53b4-b33f-f6e5c486f647",
+        "settings": {
+          "osc1_wave": "saw",
+          "osc1_octave": 0,
+          "osc1_width": 0.5,
+          "osc2_wave": "saw",
+          "osc2_octave": 0,
+          "osc2_pitch_semitones": 5.0,
+          "osc2_sync": true,
+          "sub_octave": -1,
+          "osc1_level": 0.2,
+          "osc2_level": 0.8,
+          "sub_level": 0.0,
+          "noise_level": 0.0,
+          "filter_mode": "low_pass",
+          "cutoff_hz": 4000.0,
+          "resonance": 0.1,
+          "filter_env_octaves": 0.0,
+          "filter_key": 0.5,
+          "filter_lfo_octaves": 0.0,
+          "filter_attack_seconds": 0.001,
+          "filter_decay_seconds": 0.5,
+          "filter_sustain": 0.1,
+          "filter_release_seconds": 0.2,
+          "attack_seconds": 0.004,
+          "decay_seconds": 0.4,
+          "sustain": 0.8,
+          "release_seconds": 0.15,
+          "lfo_shape": "sine",
+          "lfo_rate_hz": 5.0,
+          "lfo_sync": false,
+          "lfo_division": "1/4",
+          "lfo_retrigger": false,
+          "lfo_vibrato_semitones": 0.08,
+          "lfo_width": 0.0,
+          "voice_mode": "mono",
+          "legato": true,
+          "glide_seconds": 0.03,
+          "osc_retrigger": true,
+          "mod1_source": "velocity",
+          "mod1_destination": "off",
+          "mod1_amount": 0.0,
+          "mod2_source": "filter_env",
+          "mod2_destination": "osc2_pitch",
+          "mod2_amount": 0.75,
+          "mod3_source": "lfo",
+          "mod3_destination": "off",
+          "mod3_amount": 0.0
+        }
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "add_notes",
+        "clip": "80e45039-1641-5c5e-8d1c-bf2ca4523530",
+        "notes": [
+          {
+            "id": "00000000-0000-0000-0000-0000fac71000",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 0,
+            "length": 1440
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71001",
+            "pitch": 63,
+            "velocity": 100,
+            "start": 1920,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71002",
+            "pitch": 65,
+            "velocity": 100,
+            "start": 2880,
+            "length": 960
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71003",
+            "pitch": 67,
+            "velocity": 100,
+            "start": 3840,
+            "length": 1440
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71004",
+            "pitch": 65,
+            "velocity": 100,
+            "start": 5760,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71005",
+            "pitch": 63,
+            "velocity": 100,
+            "start": 6240,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71006",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 6720,
+            "length": 960
+          }
+        ]
+      }
+    }
+  ]
+}

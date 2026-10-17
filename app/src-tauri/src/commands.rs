@@ -166,6 +166,17 @@ pub fn set_synth_param<R: Runtime>(
     edit(&app, |uta| uta.set_synth_param(track, param, gesture))
 }
 
+/// Chooses a factory sound on a synth track, by its key from the outline's
+/// `synthSounds`: every setting at once, in one undo step.
+#[tauri::command]
+pub fn set_synth_sound<R: Runtime>(
+    app: AppHandle<R>,
+    track: TrackId,
+    sound: String,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_synth_sound(track, &sound))
+}
+
 /// Sets one setting of one sound on a drum track. Calls to the same
 /// setting of the same sound with the same `gesture` (one drag) undo as one
 /// step.

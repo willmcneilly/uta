@@ -133,6 +133,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
     synth: {},
     drums: { "808": {}, "909": {} },
     effects: { delay: {} },
+    synthSounds: [],
   };
   const strip = <V extends Value>(setting: V & Description, table: DescriptionTable): V => {
     const { name, value, ...description } = setting;
@@ -153,6 +154,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
   };
   const source = (view: SourceView): SourceOutline => {
     if (view.kind === "synth") {
+      descriptions.synthSounds = view.sounds;
       return {
         kind: "synth",
         settings: view.settings.map((setting) => strip<SynthParam>(setting, descriptions.synth)),
@@ -459,8 +461,16 @@ export function synthSource(
     kind: "synth",
     settings: synthSettings(values, defaults),
     lfoSeconds: values.lfoSync ? syncedSeconds : 1 / values.lfoRateHz,
+    sounds: SYNTH_SOUNDS,
   };
 }
+
+/** The factory sounds, as Rust lists them for the Sound menu. */
+export const SYNTH_SOUNDS = [
+  { value: "bass", label: "Bass" },
+  { value: "pluck", label: "Pluck" },
+  { value: "pad", label: "Pad" },
+];
 
 /**
  * The synth's settings with `values`, described as Rust describes them, in

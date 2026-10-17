@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::time::Ticks;
 use crate::{
     Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, MixerStrip, Note,
-    NoteId, SynthParam, Track, TrackId,
+    NoteId, SynthParam, SynthSettings, Track, TrackId,
 };
 
 /// The command format written by this version of Uta. Bump it when a saved
@@ -44,12 +44,14 @@ use crate::{
 /// - Format 13 adds the synth's three mod slots: each a Source, a
 ///   Destination and an Amount (RFC-008). Older synth settings still read,
 ///   with the slots empty.
-pub const COMMAND_FORMAT: u32 = 13;
+/// - Format 14 adds `set_synth_settings`, which sets every synth setting at
+///   once, as choosing a factory sound does (RFC-008).
+pub const COMMAND_FORMAT: u32 = 14;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":13,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":14,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -74,6 +76,12 @@ pub enum Command {
     SetLoopLength { bars: u32 },
     /// Set one of a synth track's settings.
     SetSynthParam { track: TrackId, param: SynthParam },
+    /// Set every one of a synth track's settings at once, as choosing a
+    /// factory sound does. Its inverse puts them all back.
+    SetSynthSettings {
+        track: TrackId,
+        settings: SynthSettings,
+    },
     /// Set one setting of one sound on a drum track.
     SetDrumParam {
         track: TrackId,
@@ -641,6 +649,11 @@ mod wire {
             effect: EffectId,
             enabled: bool,
         },
+        // Format 14.
+        SetSynthSettings {
+            track: TrackId,
+            settings: SynthSettings,
+        },
     }
 
     impl Body {
@@ -650,6 +663,7 @@ mod wire {
             match self {
                 Self::SetMasterVolume { .. } => 1,
                 Self::SetDelayParam { param, .. } => param.since_format(),
+                Self::SetSynthSettings { .. } => 14,
                 Self::MoveEffect { .. } | Self::SetEffectEnabled { .. } => 7,
                 Self::AddEffects { effects }
                     if effects.iter().any(|at| at.chain == Chain::Master) =>
@@ -858,6 +872,9 @@ mod wire {
                 Command::SetTempo { bpm } => Body::SetTempo { bpm },
                 Command::SetLoopLength { bars } => Body::SetLoopLength { bars },
                 Command::SetSynthParam { track, param } => Body::SetSynthParam { track, param },
+                Command::SetSynthSettings { track, settings } => {
+                    Body::SetSynthSettings { track, settings }
+                }
                 Command::SetDrumParam {
                     track,
                     sound,
@@ -942,6 +959,9 @@ mod wire {
                 Body::SetTempo { bpm } => Command::SetTempo { bpm },
                 Body::SetLoopLength { bars } => Command::SetLoopLength { bars },
                 Body::SetSynthParam { track, param } => Command::SetSynthParam { track, param },
+                Body::SetSynthSettings { track, settings } => {
+                    Command::SetSynthSettings { track, settings }
+                }
                 Body::SetDrumParam {
                     track,
                     sound,
@@ -1045,6 +1065,7 @@ mod tests {
             Command::SetMasterVolume { volume_db } => !volume_db.is_finite(),
             Command::SetTempo { bpm } => !bpm.is_finite(),
             Command::SetSynthParam { param: p, .. } => param(p),
+            Command::SetSynthSettings { settings, .. } => settings.params().iter().any(param),
             Command::SetTrackMixer { mixer: m, .. } => mixer(m),
             Command::SetDrumParam { param, .. } => param.value().is_some_and(|v| !v.is_finite()),
             Command::SetEffectMix { mix, .. } => !mix.is_finite(),
@@ -1095,7 +1116,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":13,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":14,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1161,7 +1182,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 2 to 6 lists still load.
@@ -1266,7 +1287,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 3 to 6 lists still load.
@@ -1341,7 +1362,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 4 to 6 lists still load.
@@ -1505,7 +1526,7 @@ mod tests {
             let command = Command::SetSynthParam { track, param };
             let body =
                 format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":{since},"command":{body}}}"#);
@@ -1564,7 +1585,7 @@ mod tests {
             let command = Command::SetSynthParam { track, param };
             let body =
                 format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":10,"command":{body}}}"#);
@@ -1642,7 +1663,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 5 to 8 lists still load, with the Delay as they wrote
@@ -1692,7 +1713,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 7, even in a format 6 command.
@@ -1700,6 +1721,37 @@ mod tests {
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
             assert!(error.to_string().contains("arrived in format 7"), "{error}");
         }
+    }
+
+    #[test]
+    fn the_format_14_command_serialises_like_this() {
+        let track = track();
+        let settings = SynthSettings {
+            cutoff_hz: 800.0,
+            ..SynthSettings::default()
+        };
+        let command = Command::SetSynthSettings { track, settings };
+        let json = serde_json::to_string(&command).unwrap();
+        let settings_json = serde_json::to_string(&settings).unwrap();
+        assert_eq!(
+            json,
+            format!(
+                r#"{{"format":14,"command":{{"type":"set_synth_settings","track":"{track}","settings":{settings_json}}}}}"#
+            )
+        );
+        assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+        // Settings it leaves out take their defaults, as `add_tracks`' do.
+        let partial = format!(
+            r#"{{"format":14,"command":{{"type":"set_synth_settings","track":"{track}","settings":{{"cutoff_hz":800.0}}}}}}"#
+        );
+        assert_eq!(serde_json::from_str::<Command>(&partial).unwrap(), command);
+        // It's new in format 14.
+        let old = partial.replace(r#""format":14"#, r#""format":13"#);
+        let error = serde_json::from_str::<Command>(&old).unwrap_err();
+        assert!(
+            error.to_string().contains("arrived in format 14"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1733,7 +1785,7 @@ mod tests {
             let command = Command::SetDelayParam { effect, param };
             let body =
                 format!(r#"{{"type":"set_delay_param","effect":"{effect}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":13,"command":{body}}}"#);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // New in format 9, even in a format 8 command.
@@ -1856,7 +1908,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 14, 99] {
+        for format in [0, 15, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );
