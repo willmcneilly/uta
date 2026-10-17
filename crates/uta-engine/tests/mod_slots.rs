@@ -14,7 +14,7 @@ use uta_core::time::Ticks;
 use uta_engine::offline::Renderer;
 use uta_engine::{
     EngineConfig, LfoShape, ModDestination, ModSlot, ModSource, NoteKey, SYNTH_SMOOTHING_SECONDS,
-    Snapshot, SynthSettings, VOICE_LEVEL, Waveform,
+    Snapshot, SynthSettings, VOICE_LEVEL, Waveform, velocity_to_gain,
 };
 
 const RATE: u32 = 48_000;
@@ -497,37 +497,188 @@ fn each_source_drives_the_slot() {
     near(at(0.6, 0.9), -6.0, "the LFO at its bottom");
 }
 
-/// The click limit for four sines a little over 110 Hz while the slots move
-/// their pitch up to two octaves and their level up to twice: the steepest
-/// a sine two octaves up moves, plus the steepest its level moves gliding
-/// over the synth's smoothing time, at twice the level.
+/// Four sines held at velocity 100 under `base`, with `turned` taking over
+/// at sample `at` if there is one, for `seconds`.
+fn four_held(
+    base: SynthSettings,
+    turned: Option<(usize, SynthSettings)>,
+    seconds: f64,
+) -> Vec<f32> {
+    let mut renderer = renderer(base, 128);
+    for key in 0..4u8 {
+        renderer
+            .controller
+            .note_on(0, NoteKey(u128::from(key)), 45 + 7 * key, 100)
+            .unwrap();
+    }
+    let total = self::seconds(seconds);
+    match turned {
+        Some((at, turned)) => {
+            renderer.render(at);
+            renderer.controller.set_synth_settings(0, turned).unwrap();
+            renderer.render(total - at);
+        }
+        None => renderer.render(total),
+    }
+    renderer.into_samples()
+}
+
+/// How turning a slot from `base` to `turned` while four notes sound
+/// changes them: the render with the turn minus the one without, from the
+/// turn on.
+fn turn_difference(base: SynthSettings, turned: SynthSettings) -> Vec<f32> {
+    let at = 128 * 100;
+    let without = four_held(base, None, 0.6);
+    let with = four_held(base, Some((at, turned)), 0.6);
+    assert_eq!(&with[..at], &without[..at], "the same until the turn");
+    with[at..]
+        .iter()
+        .zip(&without[at..])
+        .map(|(a, b)| a - b)
+        .collect()
+}
+
+/// A sine and a second sine, so both oscillators' pitch and level are heard.
+fn two_sines() -> SynthSettings {
+    SynthSettings {
+        osc2_wave: Waveform::Sine,
+        osc2_level: 0.5,
+        cutoff_hz: 3000.0,
+        resonance: 0.3,
+        ..sine()
+    }
+}
+
+/// Every new control glides in rather than jumping, so none can click:
+/// turning a slot's amount up, giving a slot a new destination, and giving
+/// it a new source each make their difference over the synth's smoothing
+/// time, not at once. The LFO's rate is left out: a new rate moves the
+/// LFO's phase on from where it is, so it can't jump, and changes the
+/// sound too slowly to show here.
+#[test]
+fn every_new_control_glides_in() {
+    let glide = (SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    // The width's glide is measured on its own, below.
+    let destinations = ModDestination::ALL.into_iter().filter(|&d| {
+        !matches!(
+            d,
+            ModDestination::Off | ModDestination::LfoRate | ModDestination::Osc1Width
+        )
+    });
+    for destination in destinations {
+        let base = two_sines();
+        // Down for what's already up: the cutoff, and both oscillators'
+        // levels.
+        let amount = match destination {
+            ModDestination::Cutoff => -0.3,
+            ModDestination::Osc1Level | ModDestination::Osc2Level => -0.4,
+            _ => 0.4,
+        };
+        let turned = routed(base, ModSource::Velocity, destination, amount);
+        assert_glides(
+            &turn_difference(base, turned),
+            glide,
+            &format!("{destination:?} turned up"),
+        );
+    }
+    let cutoff = routed(
+        two_sines(),
+        ModSource::Velocity,
+        ModDestination::Cutoff,
+        -0.3,
+    );
+    let pitch = routed(
+        two_sines(),
+        ModSource::Velocity,
+        ModDestination::Osc1Pitch,
+        0.4,
+    );
+    assert_glides(&turn_difference(cutoff, pitch), glide, "a new destination");
+    let key = routed(two_sines(), ModSource::Key, ModDestination::Osc1Pitch, 0.4);
+    assert_glides(&turn_difference(pitch, key), glide, "a new source");
+
+    // The width: a pulse at 220 Hz, whose cycle (218 samples) is a quarter
+    // of the glide. A cycle's width shows where its falling edge is, so the
+    // cycle after the turn, whose edge falls well inside the glide, is only
+    // part of the way to its new width, and one well after it all the way.
+    let pulse = SynthSettings {
+        osc1_wave: Waveform::Pulse,
+        ..sine()
+    };
+    let turned = routed(pulse, ModSource::Velocity, ModDestination::Osc1Width, 0.4);
+    let at = 128 * 100;
+    let mut renderer = renderer(pulse, 128);
+    renderer.controller.note_on(0, NoteKey(1), 57, 127).unwrap();
+    renderer.render(at);
+    renderer.controller.set_synth_settings(0, turned).unwrap();
+    renderer.render(seconds(0.3));
+    let samples = renderer.into_samples();
+    let cycle_after = |from: usize| {
+        let rise = (from..samples.len() - 1)
+            .find(|&i| samples[i] <= 0.0 && samples[i + 1] > 0.0)
+            .unwrap()
+            + 1;
+        let next = (rise..samples.len() - 1)
+            .find(|&i| samples[i] <= 0.0 && samples[i + 1] > 0.0)
+            .unwrap()
+            + 1;
+        let cycle = &samples[rise..next];
+        cycle.iter().filter(|&&s| s > 0.0).count() as f64 / cycle.len() as f64
+    };
+    let (first, settled) = (cycle_after(at), cycle_after(at + 4 * glide));
+    assert!(
+        (settled - 0.86).abs() < 0.01,
+        "the width settled at {settled}"
+    );
+    assert!(
+        first < 0.5 + 0.6 * (settled - 0.5),
+        "the cycle after the turn is already at {first}"
+    );
+}
+
+/// The click limit for the four sines of [`four_held`] at velocity 100,
+/// while the slots move their pitch up to an octave and their level up to
+/// twice: the steepest the highest of them moves an octave up, plus the
+/// steepest its level moves gliding over the synth's smoothing time, for
+/// each, at twice the level.
 fn click_limit() -> f32 {
     let smoothing = (SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as f32;
-    let per_voice = sine_max_step(4.0 * 123.5, RATE) + 2.0 / smoothing;
-    4.0 * VOICE_LEVEL * 2.0 * per_voice * 1.1
+    let highest = 440.0 * 2f64.powf((45.0 + 21.0 + 12.0 - 69.0) / 12.0);
+    let per_voice = sine_max_step(highest, RATE) + 2.0 / smoothing;
+    4.0 * VOICE_LEVEL * velocity_to_gain(100) * 2.0 * per_voice * 1.1
 }
 
 /// Turning each new control while notes sound doesn't click: four sines
 /// held while the first slot's source, destination and amount change every
-/// tenth of a second, through every destination, and the other two slots
-/// sweep their amounts.
+/// tenth of a second, through every destination that moves a sine, and the
+/// other two slots sweep their amounts.
 #[test]
 fn turning_the_slots_while_notes_sound_stays_under_the_click_limit() {
     let base = SynthSettings {
-        cutoff_hz: 3000.0,
         lfo_rate_hz: 3.0,
-        ..sine()
+        ..two_sines()
     };
+    // The sub (a square) and the noise jump by nature, and the width moves
+    // only a pulse.
+    let destinations: Vec<_> = ModDestination::ALL
+        .into_iter()
+        .filter(|&d| {
+            !matches!(
+                d,
+                ModDestination::SubLevel | ModDestination::NoiseLevel | ModDestination::Osc1Width
+            )
+        })
+        .collect();
     let mut renderer = renderer(base, 128);
-    for key in 0..4 {
+    for key in 0..4u8 {
         renderer
             .controller
-            .note_on(0, NoteKey(key), 45, 100)
+            .note_on(0, NoteKey(u128::from(key)), 45 + 7 * key, 100)
             .unwrap();
-        renderer.render(1000 + 77 * key as usize);
     }
+    renderer.render_seconds(0.1);
     let mut settings = base;
-    for (turn, destination) in ModDestination::ALL.into_iter().cycle().take(24).enumerate() {
+    for (turn, &destination) in destinations.iter().cycle().take(24).enumerate() {
         settings.mods[0] = ModSlot {
             source: ModSource::ALL[turn % ModSource::ALL.len()],
             destination,
@@ -549,6 +700,67 @@ fn turning_the_slots_while_notes_sound_stays_under_the_click_limit() {
     let samples = renderer.into_samples();
     assert!(peak(&samples) > 0.05, "the notes made no sound");
     assert_no_click(&samples, click_limit(), "the mod slots turning");
+}
+
+/// A slot moves a note from its first sample: with velocity moving
+/// oscillator 1 up an octave, the note starts exactly as one an octave up
+/// on its knob does, rather than gliding there over the first control
+/// point.
+#[test]
+fn a_slot_moves_a_note_from_its_first_sample() {
+    let slot = held_note(
+        routed(sine(), ModSource::Velocity, ModDestination::Osc1Pitch, 0.5),
+        57,
+        127,
+        0.01,
+    );
+    let knob = held_note(
+        SynthSettings {
+            osc1_octave: 1,
+            ..sine()
+        },
+        57,
+        127,
+        0.01,
+    );
+    let difference = max_difference(&slot[..64], &knob[..64]);
+    assert!(
+        difference < 1e-5,
+        "differs by {difference} in its first samples"
+    );
+}
+
+/// Turning Retrigger on after the notes shared an LFO moved by a slot
+/// gives each new note its own LFO at its own rate, not the shared one's
+/// rate on top: a 2 Hz vibrato an octave up is 4 Hz either way.
+#[test]
+fn retrigger_after_a_shared_lfo_keeps_each_notes_rate() {
+    let shared = routed(
+        SynthSettings {
+            lfo_rate_hz: 2.0,
+            lfo_vibrato_semitones: 1.0,
+            lfo_retrigger: false,
+            ..sine()
+        },
+        ModSource::Velocity,
+        ModDestination::LfoRate,
+        0.25,
+    );
+    let mut renderer = renderer(shared, 128);
+    renderer.controller.note_on(0, NoteKey(1), 69, 127).unwrap();
+    renderer.render_seconds(1.0);
+    let own = SynthSettings {
+        lfo_retrigger: true,
+        ..shared
+    };
+    renderer.controller.set_synth_settings(0, own).unwrap();
+    renderer.controller.note_off(0, NoteKey(1)).unwrap();
+    renderer.controller.note_on(0, NoteKey(2), 69, 127).unwrap();
+    renderer.render_seconds(3.0);
+    let samples = renderer.into_samples();
+    // From once the first note's release is over.
+    let rate = vibrato_rate(&samples[seconds(1.3)..]);
+    assert!((rate / 4.0 - 1.0).abs() < 0.01, "{rate} Hz, not 4 Hz");
 }
 
 /// The loop playing in Poly and then in Mono with every slot in use and
