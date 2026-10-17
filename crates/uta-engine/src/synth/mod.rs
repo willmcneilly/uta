@@ -1,6 +1,8 @@
 //! The built-in synth: 16 voices, each two oscillators, a sub-oscillator and
 //! noise, mixed into a filter with its own envelope, then the amp envelope.
 //! Oscillator 1's pulse has a width, and oscillator 2 can sync to the first.
+//! Each voice has an LFO, which moves its pitch, its pulse width and its
+//! cutoff.
 //! See RFC-002, "The synth is ours, small and fixed-size", and RFC-008, "In
 //! the engine".
 //!
@@ -11,15 +13,18 @@
 
 mod envelope;
 mod filter;
+mod lfo;
 pub(crate) mod oscillator;
 mod settings;
 #[cfg(test)]
 mod sync_ab;
 
-pub use settings::{FilterMode, SynthSettings, Waveform};
+pub use lfo::LFO_SMOOTHING_SECONDS;
+pub use settings::{FilterMode, LfoShape, SynthSettings, Waveform};
 
 use envelope::{Envelope, Stage, Times};
 use filter::{Coefficients, Filter, Outputs, Tuning};
+use lfo::Lfo;
 use oscillator::{Decimator, Oscillator, OversampledSync, SQUARE};
 
 use crate::noise::Noise;
@@ -107,6 +112,8 @@ struct Voice {
     osc1_cycle: u32,
     /// Its own white noise, from its own seed.
     noise: Noise,
+    /// Its LFO, whose sample-and-hold has its own seed too.
+    lfo: Lfo,
     filter: Filter,
     /// The filter envelope, which runs alongside the amp envelope whether
     /// or not anything listens to it, so turning its amount up mid-note
@@ -143,6 +150,7 @@ impl Voice {
             osc2_following: false,
             osc1_cycle: 0,
             noise: Noise::seeded(noise_seed(index)),
+            lfo: Lfo::seeded(lfo_seed(index)),
             filter: Filter::default(),
             filter_envelope: Envelope::default(),
             tuning: Tuning::default(),
@@ -193,6 +201,12 @@ fn output(outputs: Outputs, mode: FilterMode) -> f32 {
 fn noise_seed(index: usize) -> u32 {
     // An odd number times 1 to 16 is never zero, and never the same twice.
     (index as u32 + 1).wrapping_mul(0x85EB_CA6B)
+}
+
+/// Where voice `index`'s sample-and-hold starts: as [`noise_seed`], from a
+/// different odd number, so it never follows the voice's noise.
+fn lfo_seed(index: usize) -> u32 {
+    (index as u32 + 1).wrapping_mul(0xC2B2_AE35)
 }
 
 /// A stepped setting, such as a wave, changing while notes sound: it
@@ -329,6 +343,27 @@ pub(crate) struct Synth {
     ratios_for: (i8, i8, f32),
     /// Osc 1, Osc 2, Sub and Noise.
     levels: [Ramp; 4],
+
+    /// The LFO's rate in octaves (log2 of Hz), so it glides on a log scale,
+    /// and how far it moves in a sample at that rate, worked out again only
+    /// when the rate moves.
+    lfo_rate_octaves: Ramp,
+    lfo_increment: f64,
+    /// Its amounts: on the pitch, in semitones; on oscillator 1's width; and
+    /// on the cutoff, in octaves. While all three are zero, the LFO isn't
+    /// worked out.
+    lfo_vibrato: Ramp,
+    lfo_width: Ramp,
+    filter_lfo_octaves: Ramp,
+    /// The phase every voice shares with Retrigger and Sync off, from 0 to
+    /// 1, restarted on Play.
+    lfo_phase: f64,
+    /// How much of a step in the LFO is left after a sample.
+    lfo_decay: f32,
+    /// Where the song is, in samples, for a synced LFO's phase: the
+    /// playhead while playing, which the processor sets each run, and
+    /// counting on from where it was when not.
+    song_sample: u64,
     /// [`mix_gain`] for the levels in `gain_for`.
     gain: f32,
     gain_for: [f32; 4],
@@ -372,6 +407,14 @@ impl Synth {
             osc2_ratio: 1.0,
             ratios_for: (0, 0, 0.0),
             levels: [Ramp::new(0.0, 1); 4],
+            lfo_rate_octaves: Ramp::new(0.0, 1),
+            lfo_increment: 0.0,
+            lfo_vibrato: Ramp::new(0.0, 1),
+            lfo_width: Ramp::new(0.0, 1),
+            filter_lfo_octaves: Ramp::new(0.0, 1),
+            lfo_phase: 0.0,
+            lfo_decay: 0.0,
+            song_sample: 0,
             gain: 1.0,
             gain_for: [0.0; 4],
             take_over_samples: 1,
@@ -387,24 +430,36 @@ impl Synth {
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
         self.take_over_samples = samples(TAKE_OVER_SECONDS, sample_rate);
+        self.lfo_decay = lfo::decay(sample_rate);
         self.jump_to_settings();
         for (index, voice) in self.voices.iter_mut().enumerate() {
             *voice = Voice::new(index);
         }
         self.running = 0;
         self.filter_countdown = 0;
+        self.lfo_phase = 0.0;
     }
 
     /// Starts the free-running parts again from the same point: each voice's
-    /// noise from its seed, and the oscillators' place in their cycle when
-    /// Osc retrigger is off. On Play, so what you hear from a place is what
-    /// a render plays from there. See RFC-008, "In the engine".
+    /// noise and sample-and-hold from their seeds, the oscillators' place in
+    /// their cycle when Osc retrigger is off, and the LFO's shared phase.
+    /// On Play, so what you hear from a place is what a render plays from
+    /// there. See RFC-008, "In the engine".
     pub(crate) fn restart(&mut self) {
         self.running = 0;
         self.filter_countdown = 0;
+        self.lfo_phase = 0.0;
         for voice in self.voices.iter_mut() {
             voice.noise.restart();
+            voice.lfo.restart();
         }
+    }
+
+    /// Where the song is, in samples at the synth's rate: a synced LFO's
+    /// phase follows it. The processor sets it while playing; between times
+    /// it counts on by itself.
+    pub(crate) fn follow_song(&mut self, sample: u64) {
+        self.song_sample = sample;
     }
 
     /// Takes on new settings straight away, with no glide: for a synth that
@@ -438,6 +493,11 @@ impl Synth {
             settings.noise_level,
         ]
         .map(|level| Ramp::new(level, smoothing));
+        self.lfo_rate_octaves = Ramp::new(settings.lfo_rate_hz.log2(), smoothing);
+        self.lfo_vibrato = Ramp::new(settings.lfo_vibrato_semitones, smoothing);
+        self.lfo_width = Ramp::new(settings.lfo_width, smoothing);
+        self.filter_lfo_octaves = Ramp::new(settings.filter_lfo_octaves, smoothing);
+        self.update_lfo_increment();
         self.update_ratios(settings.osc2_pitch_semitones);
         self.update_gain(self.levels.map(|level| level.value()));
         self.update_coefficients();
@@ -474,6 +534,12 @@ impl Synth {
         for (ramp, level) in self.levels.iter_mut().zip(levels) {
             ramp.set_target(level);
         }
+        self.lfo_rate_octaves
+            .set_target(settings.lfo_rate_hz.log2());
+        self.lfo_vibrato.set_target(settings.lfo_vibrato_semitones);
+        self.lfo_width.set_target(settings.lfo_width);
+        self.filter_lfo_octaves
+            .set_target(settings.filter_lfo_octaves);
         self.update_times();
     }
 
@@ -606,8 +672,13 @@ impl Synth {
     /// until it's turned up: they cost nothing while they're off. So does
     /// whichever of oscillator 2, free or synced, isn't heard.
     ///
-    /// While the filter envelope's amount and key tracking are both zero,
-    /// every voice's filter shares one set of settings, worked out only when
+    /// Each voice's LFO moves its oscillators' pitch (Vibrato), oscillator
+    /// 1's width, and its cutoff at the control points. While all three
+    /// amounts are zero it isn't worked out, beyond moving its phase on.
+    ///
+    /// While the filter envelope's amount, key tracking and the LFO's
+    /// amount on the cutoff are all zero, every voice's filter shares one
+    /// set of settings, worked out only when
     /// the cutoff or resonance moves, as before either existed. Otherwise
     /// each voice works out its own every [`FILTER_CONTROL_SAMPLES`] (the
     /// control rate), from its filter envelope and its note, and glides to
@@ -630,7 +701,15 @@ impl Synth {
         let filter_sustain = f64::from(self.filter_sustain.next_value());
         let env_octaves = self.filter_env_octaves.next_value();
         let key = self.filter_key.next_value();
-        let per_voice_filter = env_octaves != 0.0 || key != 0.0;
+        let filter_lfo = self.filter_lfo_octaves.next_value();
+        let per_voice_filter = env_octaves != 0.0 || key != 0.0 || filter_lfo != 0.0;
+        let vibrato = self.lfo_vibrato.next_value();
+        let width_amount = f64::from(self.lfo_width.next_value());
+        let lfo_on = vibrato != 0.0 || width_amount != 0.0 || filter_lfo != 0.0;
+        let (lfo_increment, shared_phase) = self.next_lfo_phase();
+        let lfo_shape = self.settings.lfo_shape;
+        let lfo_retrigger = self.settings.lfo_retrigger;
+        let lfo_decay = self.lfo_decay;
         // Voices starting to have their own filter settings start from the
         // shared ones, and glide from there at the next control point.
         if per_voice_filter && !self.per_voice_filter {
@@ -673,13 +752,34 @@ impl Synth {
             if voice.is_free() {
                 continue;
             }
-            voice.osc1.set_increment(voice.increment * osc1_ratio);
+            let phase = if lfo_retrigger {
+                voice.lfo.advance_own(lfo_increment)
+            } else {
+                shared_phase
+            };
+            let lfo = if lfo_on {
+                voice.lfo.next(phase, lfo_shape, lfo_decay)
+            } else {
+                0.0
+            };
+            let increment = if vibrato != 0.0 {
+                voice.increment * f64::from((vibrato * lfo / 12.0).exp2())
+            } else {
+                voice.increment
+            };
+            let width = if width_amount != 0.0 {
+                let (min, max) = (SynthSettings::WIDTH.start(), SynthSettings::WIDTH.end());
+                (osc1_width + width_amount * f64::from(lfo)).clamp(f64::from(*min), f64::from(*max))
+            } else {
+                osc1_width
+            };
+            voice.osc1.set_increment(increment * osc1_ratio);
             let mut mix = 0.0;
             if osc1_level != 0.0 {
-                mix = osc1_level * osc1_wave.of(|wave| voice.osc1.value(wave, osc1_width));
+                mix = osc1_level * osc1_wave.of(|wave| voice.osc1.value(wave, width));
             }
             if osc2_level != 0.0 {
-                let increment = voice.increment * osc2_ratio;
+                let increment = increment * osc2_ratio;
                 let mut free_value = 0.0;
                 if free {
                     voice.osc2.set_increment(increment);
@@ -726,8 +826,14 @@ impl Synth {
                     .filter_envelope
                     .next_level(filter_sustain, &self.filter_times);
                 if per_voice_filter {
-                    let octaves =
-                        filter_octaves(base_octaves, env_octaves, filter_level, key, voice.pitch);
+                    let octaves = filter_octaves(
+                        base_octaves,
+                        env_octaves,
+                        filter_level,
+                        key,
+                        voice.pitch,
+                        filter_lfo * lfo,
+                    );
                     let target = Tuning::new(octaves.exp2(), resonance, sample_rate);
                     voice.tuning_step = voice.tuning.step_to(target, FILTER_CONTROL_SAMPLES);
                 }
@@ -803,6 +909,16 @@ impl Synth {
         }
         // Under sync, oscillator 2 starts from oscillator 1's phase.
         voice.osc2_following = false;
+        // With Retrigger, the LFO starts its cycle with the note; without,
+        // it joins the one the voices share.
+        let lfo_phase = if self.settings.lfo_retrigger {
+            0.0
+        } else if self.settings.lfo_sync {
+            lfo::wrap(self.song_sample as f64 * synced_increment(&self.settings, self.sample_rate))
+        } else {
+            self.lfo_phase
+        };
+        voice.lfo.start(lfo_phase, self.settings.lfo_shape);
         voice.filter.reset();
         voice.filter_envelope.start(&self.filter_times);
         // A note starting while the voices have their own filter settings
@@ -814,6 +930,7 @@ impl Synth {
             0.0,
             self.filter_key.value(),
             note.pitch,
+            self.filter_lfo_octaves.value() * voice.lfo.value(),
         );
         voice.tuning = Tuning::new(
             octaves.exp2(),
@@ -839,6 +956,34 @@ impl Synth {
         self.osc2_wave.follow(self.settings.osc2_wave);
         self.osc2_sync.follow(self.settings.osc2_sync);
         self.sub_octave.follow(self.settings.sub_octave);
+    }
+
+    /// Moves the LFO's rate's glide and its shared phases on by one sample.
+    /// Returns how far a voice's own phase moves this sample (a share of a
+    /// cycle), and the phase the voices share this sample: from the song's
+    /// position when synced, so its cycles line up with the bars, and from
+    /// Play when not.
+    #[inline]
+    fn next_lfo_phase(&mut self) -> (f64, f64) {
+        if self.lfo_rate_octaves.is_moving() {
+            self.lfo_rate_octaves.next_value();
+            self.update_lfo_increment();
+        }
+        let (increment, shared) = if self.settings.lfo_sync {
+            let increment = synced_increment(&self.settings, self.sample_rate);
+            // Worked out from the position itself, never by adding up
+            // steps, so it's the same whatever the blocks.
+            (increment, lfo::wrap(self.song_sample as f64 * increment))
+        } else {
+            (self.lfo_increment, self.lfo_phase)
+        };
+        self.lfo_phase = lfo::wrap(self.lfo_phase + self.lfo_increment);
+        self.song_sample += 1;
+        (increment, shared)
+    }
+
+    fn update_lfo_increment(&mut self) {
+        self.lfo_increment = f64::from(self.lfo_rate_octaves.value().exp2()) / self.sample_rate;
     }
 
     /// Works out each oscillator's frequency against the note's, from the
@@ -889,16 +1034,33 @@ impl Synth {
     }
 }
 
+/// How far a synced LFO moves in a sample: a cycle in each
+/// [`SynthSettings::lfo_synced_seconds`].
+#[inline]
+fn synced_increment(settings: &SynthSettings, sample_rate: f64) -> f64 {
+    1.0 / (settings.lfo_synced_seconds * sample_rate)
+}
+
 /// A voice's cutoff, in octaves (log2 of Hz): the shared cutoff in
 /// `base_octaves`, opened by the filter envelope at `level` (0 to 1) times
-/// its amount, and moved by `key` of the way an octave for each octave the
-/// note is from middle C. Kept to the lowest cutoff a knob can reach; the
-/// filter keeps it under half the sample rate itself.
+/// its amount, moved by `key` of the way an octave for each octave the
+/// note is from middle C, and by the LFO's `lfo_octaves`. Kept to the
+/// lowest cutoff a knob can reach; the filter keeps it under half the
+/// sample rate itself.
 #[inline]
-fn filter_octaves(base_octaves: f32, env_octaves: f32, level: f64, key: f32, pitch: u8) -> f64 {
+fn filter_octaves(
+    base_octaves: f32,
+    env_octaves: f32,
+    level: f64,
+    key: f32,
+    pitch: u8,
+    lfo_octaves: f32,
+) -> f64 {
     let from_centre = (f64::from(pitch) - f64::from(FILTER_KEY_CENTRE)) / 12.0;
-    let octaves =
-        f64::from(base_octaves) + f64::from(env_octaves) * level + f64::from(key) * from_centre;
+    let octaves = f64::from(base_octaves)
+        + f64::from(env_octaves) * level
+        + f64::from(key) * from_centre
+        + f64::from(lfo_octaves);
     octaves.max(f64::from(SynthSettings::CUTOFF_HZ.start().log2()))
 }
 

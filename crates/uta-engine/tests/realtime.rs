@@ -25,7 +25,7 @@ use uta_core::{
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, FilterMode, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor,
+    EngineConfig, FilterMode, LfoShape, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor,
     STATUS_CAPACITY, Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
 };
 
@@ -162,6 +162,9 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                     // filter settings and working out their own.
                     filter_env_octaves: [0.0, 6.0, -4.0, 0.0][usize::from(round) % 4],
                     filter_key: [0.0, 0.0, 1.0, 0.5][usize::from(round + 1) % 4],
+                    // On and off with the LFO's other amounts, so the LFO
+                    // runs and rests.
+                    filter_lfo_octaves: [0.0, 3.0, -2.0, 0.0][usize::from(round + 2) % 4],
                     filter_attack_seconds: 0.002 * f32::from(round + 1),
                     filter_decay_seconds: 0.03,
                     filter_sustain: 1.0 - step,
@@ -170,6 +173,13 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                     decay_seconds: 0.05,
                     sustain: step,
                     release_seconds: 0.01,
+                    lfo_shape: LfoShape::ALL[usize::from(round) % 5],
+                    lfo_rate_hz: 0.05 + 2.5 * f32::from(round),
+                    lfo_sync: round % 4 < 2,
+                    lfo_synced_seconds: 0.05 * f64::from(round + 1),
+                    lfo_retrigger: round % 3 == 0,
+                    lfo_vibrato_semitones: [0.0, 2.0, 0.5, 0.0][usize::from(round) % 4],
+                    lfo_width: [0.45, 0.0, 0.2, 0.0][usize::from(round) % 4],
                     osc_retrigger: round % 2 == 0,
                 },
             )
