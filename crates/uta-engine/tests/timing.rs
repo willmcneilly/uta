@@ -25,7 +25,11 @@ use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOI
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
-const BLOCKS: usize = 20_000;
+/// The audio each row times, in frames: 20,000 blocks of 32, 5,000 of 128 and
+/// 625 of 1024. The same audio, not the same number of blocks, so a large
+/// block doesn't cost 32 times a small one (a heavy load's 1024 row took two
+/// minutes at 20,000 blocks).
+const FRAMES: usize = 640_000;
 /// How many times Play is pressed to time the first block after it.
 const PLAYS: usize = 200;
 /// A bar of 4/4, in ticks.
@@ -381,7 +385,8 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
     }
     let mut renderer = Renderer::new(config(), snapshot, block_size);
     let mut buffer = vec![0.0; block_size * CHANNELS];
-    let mut times = Vec::with_capacity(BLOCKS);
+    let blocks = FRAMES / block_size;
+    let mut times = Vec::with_capacity(blocks);
     renderer.controller.play().unwrap();
     if let Load::Voices | Load::FilterVoices | Load::FullVoices = load {
         for i in 0..VOICES as u8 {
@@ -391,7 +396,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                 .unwrap();
         }
     }
-    for i in 0..BLOCKS {
+    for i in 0..blocks {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
             match load {
@@ -623,8 +628,10 @@ fn report_block_timing() {
     } else {
         read_baseline()
     };
-    let mut table =
-        format!("### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {BLOCKS} blocks)\n\n");
+    let seconds = FRAMES as f64 / f64::from(SAMPLE_RATE);
+    let mut table = format!(
+        "### Block timing ({SAMPLE_RATE} Hz, {CHANNELS} channels, {seconds:.1} s of audio per row)\n\n"
+    );
     if let Some(baseline) = &baseline {
         // Measured over four runs of the same code on 11 Oct, while other
         // sessions were building.
