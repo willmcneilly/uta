@@ -1,0 +1,399 @@
+{
+  "project": "7c8939a3-d24a-57a7-b0ed-7b4612f0dda0",
+  "commands": [
+    {
+      "format": 9,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "18e5c6bc-11ea-531e-9a56-61110cc4932d",
+              "name": "Drive 0.0",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "a4ee430e-a832-5f81-8502-4f6377d79db2",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "31f5884e-a5c7-53df-b485-d43e81e6d759",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "fe2ea69c-aff4-5264-9b4e-377c24b87c0f",
+                      "pitch": 57,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "98c2b10d-297f-572a-a5a3-7f31fef9eae2",
+                      "pitch": 60,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "0e8caaa6-eaa9-5132-9a58-6fac9de464b2",
+                      "pitch": 64,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "a1d1e704-ff33-59f2-8597-e819c1c0c96d",
+              "name": "Drive 0.25",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "80bdf5f0-219f-51b2-8beb-d091b5d55982",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.25,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "50b053ab-4b36-5ca6-bbc7-5022b9190aaf",
+                  "start": 7680,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "54c9cca1-d252-5e28-bc72-43f942520491",
+                      "pitch": 57,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "21ac3b8d-474a-5c88-847a-c1ad6495a821",
+                      "pitch": 60,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "96d440f3-698f-5220-be7e-6003fbe1c0e5",
+                      "pitch": 64,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "858b1d8a-a613-5f36-9215-75ae7203e62e",
+              "name": "Drive 0.5",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "1b9b0532-df2e-5e11-8949-b150a90f02ba",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.5,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "79dd9593-6bd5-5d4f-8c19-2056c47c916e",
+                  "start": 15360,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "5caabb6a-6ec9-5aa6-a84b-478a1bfa1742",
+                      "pitch": 57,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "9415848c-0a05-508f-8c56-ac6845d4e3cf",
+                      "pitch": 60,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "9174d83d-ccd6-5cab-95fc-9ce9e9f1d41a",
+                      "pitch": 64,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "eb5ebb47-ceba-5605-b649-38b305b083cc",
+              "name": "Drive 0.75",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "529a6e2d-a6a8-5468-8320-3bd5cbd0c2ff",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.75,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "25970d22-4e08-5df8-b226-826f3589c225",
+                  "start": 23040,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "d4d88f1f-9b8c-5e3e-bc1a-79e234223259",
+                      "pitch": 57,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "57b86a3b-435f-5d21-b174-92f546f80554",
+                      "pitch": 60,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "92cfb6ef-1e64-5a54-b5cf-b0e9feb963ba",
+                      "pitch": 64,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "3b5feeb2-c881-5704-9b24-a0669b3d815f",
+              "name": "Drive 1.0",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "261ceb38-61f8-5460-8aa9-c49d630c15ac",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 1.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "e6394c75-ebb7-5576-90d5-1cc2810aeff9",
+                  "start": 30720,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "bacb0fb5-1834-502e-81e8-d49362f7fe68",
+                      "pitch": 57,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "c4a54f74-a0ba-53c5-9399-f5b8d1873ca7",
+                      "pitch": 60,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "c150a200-7023-595b-94bc-28d51d31a4e8",
+                      "pitch": 64,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

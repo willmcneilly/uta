@@ -1,0 +1,472 @@
+{
+  "project": "228d675a-dd43-504e-be54-5700160757f9",
+  "commands": [
+    {
+      "format": 9,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "46e61d24-df7d-5c7e-bf75-7ba1ddf9ae48",
+              "name": "High cut 20000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "86589e03-d82e-5761-8439-a1e661df6b93",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c7e2f818-5e2b-53f1-abfa-fa13d0b71404",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "56416353-c78c-569a-84af-1cc188391dc0",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "78e28cbd-333b-5dc1-b2b7-cff05fed4f47",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "97ded323-6f7c-511b-a389-60794fc5620d",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "5120eb3e-c772-59c4-83a7-76ed380c06ee",
+              "name": "High cut 8000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "95c1d1fb-eb75-5949-a2fe-8d0e9850ca37",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 8000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "06899f48-41bb-5f38-ab8e-c04fdf6fa1f1",
+                  "start": 7680,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "91d9ae42-8991-5eab-99fb-674e5933847e",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "166ab30f-0ddf-5ec7-891e-c1a0ee7e4511",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "f75b81ba-b3d3-578c-9ee7-7073cdd24732",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "5f97c693-d53e-5e07-87ae-697fce7782b0",
+              "name": "High cut 4000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "45a87570-7ed0-59b3-b2d2-1f963625faeb",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 4000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "3428cfbe-727c-5e51-9d2b-6827441dff59",
+                  "start": 15360,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "8fa679f9-4b91-5b70-9f82-20d1ec5bff67",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "54a4d5b2-b796-58b2-82bc-06de633399e9",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "c35571a8-103f-522a-a6fe-6fb4824c1c44",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "6af7d10a-9661-5ad2-a609-75b896eff243",
+              "name": "High cut 2000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "61cea0c6-c66d-5678-9784-71bb9aecc617",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 2000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "56129f03-2d85-5b56-b3d6-f96a720ce1b3",
+                  "start": 23040,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "b1e51551-dcc5-50db-9e38-08cd138624a4",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "636262b0-f8c9-5c0a-bf40-09985cd43bec",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "b6274611-804e-58cb-bf6a-f0e495bd64bf",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "1b5c4b2f-f556-5d14-a52a-bb60c9d962d5",
+              "name": "High cut 1000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "817832a7-2ed4-5f8f-ab23-4093525546ee",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 1000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "dfda8956-6032-52e0-b746-10da7c8b4adc",
+                  "start": 30720,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "eb201504-7249-5f52-ba9b-10a4cdf74906",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "27896f02-51d9-5170-8100-1af3c78cbab1",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "e9409b1e-a41f-5280-9022-bba580c3894f",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 6,
+            "track": {
+              "id": "63ea1fcf-10a5-5399-ad6b-828e96adba5b",
+              "name": "High cut 500",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "c5f6806f-c28c-5591-bcf2-3329261c2eb1",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 500.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "07ff69e7-b8ec-577e-9f1c-a9ce20d7221f",
+                  "start": 38400,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "be6c5c3a-95c3-569b-930e-09624975c7d6",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "6f4ade20-deaa-5b5f-b0f0-dcdd13868542",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "781953e5-f9d3-5e2e-b36d-152fef97637a",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

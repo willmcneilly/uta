@@ -696,17 +696,19 @@ impl Processor {
     /// it, and for the song's end otherwise. See RFC-003, "Playing a song",
     /// and open question 1.
     ///
-    /// Each kit's and synth's free-running parts restart from the same
-    /// point, so what you hear from a place is what a render plays from
-    /// there. See RFC-006, resolved open question 3, and RFC-008, "In the
-    /// engine".
+    /// Each kit's, synth's and effect's free-running parts restart from the
+    /// same point, so what you hear from a place is what a render plays
+    /// from there. See RFC-006, resolved open question 3, RFC-008, "In the
+    /// engine", and RFC-007, open question 4.
     fn play_from(&mut self, playhead: u64) {
         let sequence = &self.snapshot.sequence;
         self.looping = sequence.loop_enabled() && playhead < sequence.loop_samples().end;
         for slot in self.slots.iter_mut() {
             slot.kit.restart();
             slot.synth.restart();
+            slot.chain.restart();
         }
+        self.master.chain.restart();
         self.start_from(playhead);
     }
 

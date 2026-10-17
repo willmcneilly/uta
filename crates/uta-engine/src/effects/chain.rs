@@ -411,6 +411,14 @@ impl Chain {
         quietest.is_some_and(|(index, _)| self.hand_back(index, used))
     }
 
+    /// Restarts every effect's free-running parts, on Play. Bounded by
+    /// [`CHAIN_CAPACITY`].
+    pub(crate) fn restart(&mut self) {
+        for held in self.held[..self.count].iter_mut().flatten() {
+            held.state.restart();
+        }
+    }
+
     /// Whether any effect that's in the sound is still ringing.
     pub(crate) fn is_ringing(&self) -> bool {
         self.held[..self.count].iter().flatten().any(|held| {
@@ -655,10 +663,7 @@ mod tests {
             id: id(n),
             enabled: true,
             mix,
-            settings: EffectSettings::Delay(DelaySettings {
-                time_seconds,
-                feedback,
-            }),
+            settings: EffectSettings::Delay(DelaySettings::plain(time_seconds, feedback)),
         }
     }
 

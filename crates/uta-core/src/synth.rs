@@ -412,7 +412,7 @@ impl SynthParam {
             | Self::FilterDecaySeconds(_)
             | Self::FilterSustain(_)
             | Self::FilterReleaseSeconds(_) => 8,
-            Self::Osc1Width(_) | Self::Osc2Sync(_) => 9,
+            Self::Osc1Width(_) | Self::Osc2Sync(_) => 10,
             _ => 6,
         }
     }

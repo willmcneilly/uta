@@ -1,0 +1,399 @@
+{
+  "project": "f51952df-002a-5f56-b9d0-9492f4d4ea0f",
+  "commands": [
+    {
+      "format": 9,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 9,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "6d008969-15ec-5440-88f2-4915d9613c11",
+              "name": "Low cut 20",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "4a0a7b23-1490-5ecb-95ee-f994a567d54b",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 20.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0c354f46-64be-573d-809c-a11495c3471f",
+                  "start": 0,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "1892cb7d-c556-5283-b7f6-4d3c0376b728",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "2e99484a-7e7c-5640-93e0-4e1a6eea9751",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "8949e833-1dbb-5f42-adf5-99256d307326",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "58e45873-6979-5875-a82f-031e40300751",
+              "name": "Low cut 100",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "179bb6fd-46a9-516a-be9c-c27610457a1e",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 100.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "6619d304-a7e4-5cb3-80ed-f1cbf26e2560",
+                  "start": 7680,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "1d13a03e-b635-534a-b6cb-3ffb165c5212",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "2d039f27-542c-5528-8e2d-af12a9d9c0e3",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "568daf58-6d6d-55f7-b84e-122a1474525b",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "3e7a8aba-c4ba-57d7-88f5-d42cc25d3449",
+              "name": "Low cut 300",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "435f2914-9eed-5f9c-bb0f-45ea80a298b4",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 300.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "ce1c69cf-91d4-5f75-93f7-ac706c57c726",
+                  "start": 15360,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "2b94a21f-3c0f-5cf0-ad2a-2bf3530809f2",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "22783850-c2ee-5dd1-a849-6d2a5444061b",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "1a006ab7-b5e4-5518-a9e1-83bf6bf7cce2",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "47a5d15f-3a3a-51a8-945c-0c661aa89445",
+              "name": "Low cut 800",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "9c39c778-3897-5de6-882a-39d8fea9f7fd",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 800.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "17b0f90c-654b-542f-9d7d-ec51a26ad78b",
+                  "start": 23040,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "cefd85b4-5a68-5d12-89ee-548bd03b7051",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "7e9d9747-38c9-5924-955c-98c974fd4be8",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "033399f2-aa37-57c3-90de-6359950d7b23",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "3fff8744-8a50-5357-9cd0-720a1ea441aa",
+              "name": "Low cut 2000",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.0,
+                  "release_seconds": 0.15
+                }
+              },
+              "effects": [
+                {
+                  "id": "ff80577d-10c7-5bd6-af57-18c5d29dfdfa",
+                  "settings": {
+                    "delay": {
+                      "sync": true,
+                      "division": "1/8d",
+                      "time_seconds": 0.375,
+                      "mode": "stereo",
+                      "feedback": 0.6,
+                      "low_cut_hz": 2000.0,
+                      "high_cut_hz": 20000.0,
+                      "drive": 0.0,
+                      "wobble": 0.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 0.5
+                }
+              ],
+              "mixer": {
+                "volume_db": -6.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "676b17f1-5b62-5ef9-ad01-4ca6c3241e9b",
+                  "start": 30720,
+                  "length": 7680,
+                  "notes": [
+                    {
+                      "id": "810c1941-6f0c-5e0c-9d74-34025a0104aa",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "7bd438ff-de27-5e9d-9c76-4fa05b058e74",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    },
+                    {
+                      "id": "72c146b9-3c84-5834-9b25-ccc97eecd24b",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

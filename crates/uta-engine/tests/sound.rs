@@ -448,6 +448,18 @@ fn the_demo_beat_matches_its_golden_wav() {
     check_golden("demo-beat", config(), &list.build().unwrap());
 }
 
+/// A bar of plucks with a Delay on its track and a ping-pong Delay on the
+/// master, as `uta render --commands examples/demo-delay.json` writes it
+/// but shorter, with every echo of it until they've died away. In stereo,
+/// so the master's echoes bounce. Regenerated the same way as the demo
+/// loop's, and approved the same way.
+#[test]
+fn the_demo_delay_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/demo-delay.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("demo-delay", stereo(), &list.build().unwrap());
+}
+
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.

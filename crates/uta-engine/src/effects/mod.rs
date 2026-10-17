@@ -14,7 +14,8 @@
 //!   gone it sends the state back through a fixed-size queue to be freed.
 //!   The audio thread owns a state it was handed, but never frees one.
 //!
-//! Every kind of effect does the same five things ([`Effect`]); the chain
+//! Every kind of effect does the same five things ([`Effect`]), and may
+//! restart its free-running parts on Play; the chain
 //! ([`chain::Chain`]) does the rest for all of them: on/off, Mix, the fades
 //! when one is added, removed, moved or switched, and sleeping.
 
@@ -22,7 +23,7 @@ pub(crate) mod chain;
 mod delay;
 
 pub use chain::{CHAIN_CAPACITY, EFFECT_FADE_SECONDS};
-pub use delay::{DELAY_TAPE_SECONDS, DelaySettings};
+pub use delay::{DELAY_TAPE_SECONDS, DelaySettings, WOBBLE_REACH_SECONDS};
 
 use uta_core::EffectId;
 
@@ -61,6 +62,12 @@ pub(crate) trait Effect {
     /// does once it has faded out, so switching it on starts from silence.
     /// Like everything here, it must be quick, whatever memory it has.
     fn clear(&mut self);
+
+    /// Starts its free-running parts again from the same point, on Play, so
+    /// what you hear from a place is what a render plays from there, as the
+    /// kit's and the synth's do: the Delay's wow and flutter. It mustn't
+    /// change anything else, or jump while it rings. Most effects have none.
+    fn restart(&mut self) {}
 }
 
 /// An effect's own settings as the engine plays them, which also say its
@@ -70,10 +77,12 @@ pub enum EffectSettings {
     Delay(DelaySettings),
 }
 
-impl From<&uta_core::EffectSettings> for EffectSettings {
-    fn from(settings: &uta_core::EffectSettings) -> Self {
+impl EffectSettings {
+    /// The core's settings, played at `bpm`, which a setting synced to the
+    /// tempo needs.
+    pub fn new(settings: &uta_core::EffectSettings, bpm: f32) -> Self {
         match settings {
-            uta_core::EffectSettings::Delay(delay) => Self::Delay(DelaySettings::from(delay)),
+            uta_core::EffectSettings::Delay(delay) => Self::Delay(DelaySettings::new(delay, bpm)),
         }
     }
 }
@@ -92,13 +101,14 @@ pub struct EffectSnapshot {
     pub settings: EffectSettings,
 }
 
-impl From<&uta_core::Effect> for EffectSnapshot {
-    fn from(effect: &uta_core::Effect) -> Self {
+impl EffectSnapshot {
+    /// The core's effect, played at `bpm`.
+    pub fn new(effect: &uta_core::Effect, bpm: f32) -> Self {
         Self {
             id: effect.id(),
             enabled: effect.enabled(),
             mix: effect.mix(),
-            settings: EffectSettings::from(effect.settings()),
+            settings: EffectSettings::new(effect.settings(), bpm),
         }
     }
 }
@@ -158,6 +168,12 @@ impl EffectState {
     pub(crate) fn clear(&mut self) {
         match &mut self.0 {
             Kind::Delay(delay) => delay.clear(),
+        }
+    }
+
+    pub(crate) fn restart(&mut self) {
+        match &mut self.0 {
+            Kind::Delay(delay) => delay.restart(),
         }
     }
 

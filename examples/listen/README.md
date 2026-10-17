@@ -254,3 +254,36 @@ What to listen for:
 - **Sync:** every bar plays the same notes at the same pitch: only the tone changes. As oscillator 2's Pitch rises the sound gets brighter, more nasal and vocal, with a resonant "wah" that moves up; that's the sync sound. Listen on the high chord notes for anything gritty, glassy or out of tune whistling under the tone (aliasing). Some edge is the character of sync; a whine that doesn't belong to the note isn't.
 - **Sync's waves:** the sine and triangle synced are softer and rounder than the saw and pulse, but still clearly a different tone from a plain sine or triangle. None should click or buzz on every cycle.
 - **Sync lead:** the free bar beats and sounds like two notes, an octave and a fifth apart; synced, it's one note with a bright, tearing edge. +3 is darker and +10 brighter, each the same note.
+
+## Delay
+
+The Delay's tape loop (RFC-007), in `delay/`. Each list is one synth track per setting, each with its own Delay and playing in its own two bars at 120 BPM: a plucked A minor stab, then the echoes. The track is at -6 dB and the master at 0 dB. Settings a list doesn't name are at the Delay's defaults: synced to a dotted eighth, 40% Feedback, Low cut 100 Hz, High cut 8 kHz, Drive 20% and Wobble 10%.
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | A two-bar phrase, twice, through the Delay at its defaults and a new Delay's Mix of 30%. |
+| `02-modes` | The stab through Stereo, then Ping-pong, at 50% Feedback and Mix 50%. |
+| `03-high-cut` | High cut 20, 8, 4, 2, 1 and 0.5 kHz, at 60% Feedback, with no Drive, no Wobble and the Low cut wide open. |
+| `04-low-cut` | Low cut 20, 100, 300, 800 and 2000 Hz, the same, with the High cut wide open. |
+| `05-drive` | Drive 0, 25, 50, 75 and 100% on an accented stab, at 60% Feedback, with no Wobble. |
+| `06-wobble` | Wobble 0, 25, 50 and 100% on a held chord, echoing on the quarter at 50% Feedback. |
+| `07-feedback-100` | One stab at 100% Feedback. It barely fades, so the render runs to its 30 s limit. |
+| `08-feedback-110` | One stab at 110%. The echoes swell, then the loop's level control holds them. Also to the 30 s limit. |
+
+A Delay on a synth track and one on the master is `examples/demo-delay.json`, which is also the Delay's golden WAV:
+
+```bash
+cargo run --release -p uta-cli -- render target/listen/demo-delay.wav --commands examples/demo-delay.json
+```
+
+What to listen for, against Ableton's Echo on the same sound:
+
+- **Defaults:** echoes on the dotted eighth, weaving between the stabs, each softer and a little darker than the last, like tape rather than a clean digital copy. They should sit behind the sound, not on top of it.
+- **Modes:** Stereo echoes in the middle, where the stab is. Ping-pong bounces them left, right, left, though the synth is mono, and they should sound about as loud as Stereo's.
+- **High cut:** at 20 kHz the echoes stay bright; at each step down they fade into murk sooner, until at 500 Hz the second echo is already a dull thud.
+- **Low cut:** each step thins the echoes, until at 2 kHz they're a tinny ghost of the stab. 100 Hz, the default, should barely change the sound, only keep the echoes off the bass.
+- **Drive:** 0 is clean. A little should round the echoes off and warm them; at full they're squashed and crunchy, and quieter than the stab, since the tape can't take them. Nothing should crackle or sound digital.
+- **Wobble:** at 0 the echoes are steady copies of the chord. A quarter should make them feel analogue without sounding out of tune; at full they sway and waver like a worn tape. The rates, how far they sway and how much is wow or flutter are first guesses, to be tuned in UTA-77.
+- **Feedback 100%:** the echoes go on and on, getting darker and thinner each time round (the cuts are still in the loop), but not quieter for a long while.
+- **Feedback 110%:** they swell for a few seconds, then hold about as loud as the first echoes, still separate echoes of the stab, slowly getting darker and rounder: never an ever louder blast, and never a wall of thuds. If it's still painful, the top of the range should come down (RFC-007 risk).
+- **No clicks anywhere,** and no zipper noise as echoes go round.

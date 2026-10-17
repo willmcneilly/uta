@@ -1865,8 +1865,34 @@ mod tests {
         assert_eq!(json["mix"]["limits"], serde_json::json!([0.0, 1.0]));
         let settings = json["settings"].as_array().unwrap();
         let names: Vec<_> = settings.iter().map(|s| s["name"].clone()).collect();
-        assert_eq!(names, ["time_seconds", "feedback"]);
-        let time = &settings[0];
+        assert_eq!(
+            names,
+            [
+                "sync",
+                "division",
+                "time_seconds",
+                "mode",
+                "feedback",
+                "low_cut_hz",
+                "high_cut_hz",
+                "drive",
+                "wobble"
+            ]
+        );
+        let sync = &settings[0];
+        assert_eq!(sync["value"], true);
+        assert_eq!(sync["kind"], "toggle");
+        let division = &settings[1];
+        assert_eq!(division["value"], "1/8d");
+        assert_eq!(division["label"], "Time");
+        assert_eq!(division["kind"], "choice");
+        assert_eq!(division["options"].as_array().unwrap().len(), 18);
+        assert_eq!(
+            division["options"][8],
+            serde_json::json!({"value": "1/8d", "label": "1/8 dotted"})
+        );
+        assert_eq!(settings[3]["value"], "stereo");
+        let time = &settings[2];
         assert_eq!(time["value"], 0.375);
         assert_eq!(time["label"], "Time");
         assert_eq!(time["unit"], "seconds");
@@ -1874,8 +1900,12 @@ mod tests {
         assert_eq!(time["limits"], serde_json::json!([0.001_f32 as f64, 5.0]));
         assert_eq!(time["default"], 0.375);
         assert!(time["sounds"].as_str().is_some_and(|s| s.ends_with('.')));
-        assert_eq!(settings[1]["label"], "Feedback");
-        assert_eq!(settings[1]["unit"], "fraction");
+        assert_eq!(settings[4]["label"], "Feedback");
+        assert_eq!(settings[4]["unit"], "fraction");
+        assert_eq!(
+            settings[4]["limits"],
+            serde_json::json!([0.0, 1.1_f32 as f64])
+        );
         // The other track's chain is still empty, and so is the master's.
         assert!(outline.tracks[1].effects.is_empty());
         assert!(outline.master_effects.is_empty());
@@ -2004,9 +2034,9 @@ mod tests {
         }
         let json = |uta: &Uta| serde_json::to_value(&uta.project().master_effects[0]).unwrap();
         assert_eq!(json(&uta)["mix"]["value"], 0.6_f32 as f64);
-        assert_eq!(json(&uta)["settings"][1]["value"], 0.7_f32 as f64);
+        assert_eq!(json(&uta)["settings"][4]["value"], 0.7_f32 as f64);
         uta.undo();
-        assert_eq!(json(&uta)["settings"][1]["value"], 0.4_f32 as f64);
+        assert_eq!(json(&uta)["settings"][4]["value"], 0.4_f32 as f64);
         assert_eq!(json(&uta)["mix"]["value"], 0.6_f32 as f64);
         uta.undo();
         assert_eq!(json(&uta)["mix"]["value"], 0.3_f32 as f64);

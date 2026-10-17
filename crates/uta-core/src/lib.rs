@@ -46,7 +46,7 @@ pub use drums::{
     LowTomSettings, MAX_LEVEL_DB, MIN_LEVEL_DB, OpenHatSettings, SnareSettings,
 };
 pub use effect::{
-    Chain, DelayParam, DelaySettings, Effect, EffectKind, EffectSettings, MAX_EFFECTS,
+    Chain, DelayMode, DelayParam, DelaySettings, Effect, EffectKind, EffectSettings, MAX_EFFECTS,
 };
 pub use id::{ClipId, EffectId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
