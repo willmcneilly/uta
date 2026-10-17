@@ -1265,8 +1265,8 @@ fn each_filter_mode_passes_and_cuts_where_it_should() {
 /// The loudest alias allowed in a sync sweep, for each wave, relative to the
 /// loudest harmonic: oscillator 2 synced to C7 (2093 Hz) and swept up two
 /// octaves. Measured here, with the synced oscillator taking four steps a
-/// sample, as the saw and pulse -46.0 dB, the triangle -55.6 and the sine
-/// -65.5. Taking one step a sample, PolyBLEP and PolyBLAMP alone, they
+/// sample, as the saw and pulse -46.0 dB, the triangle -55.5 and the sine
+/// -65.4. Taking one step a sample, PolyBLEP and PolyBLAMP alone, they
 /// measured -25.6, -24.3, -35.9 and -42.9: about 20 dB worse, and the
 /// difference the sync A/B heard. Uncorrected, as
 /// `sync_aliasing_measure_catches_a_naive_sync` checks, they're worse
