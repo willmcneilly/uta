@@ -24,6 +24,7 @@ import type {
   TrackView,
   Unit,
   Update,
+  VoiceMode,
   Waveform,
 } from "../backend";
 import type { PlacedNote } from "./notes";
@@ -121,6 +122,9 @@ export interface SynthValues {
   decaySeconds: number;
   sustain: number;
   releaseSeconds: number;
+  voiceMode: VoiceMode;
+  legato: boolean;
+  glideSeconds: number;
   oscRetrigger: boolean;
 }
 
@@ -151,6 +155,9 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   decay_seconds: "decaySeconds",
   sustain: "sustain",
   release_seconds: "releaseSeconds",
+  voice_mode: "voiceMode",
+  legato: "legato",
+  glide_seconds: "glideSeconds",
   osc_retrigger: "oscRetrigger",
 };
 
@@ -181,6 +188,9 @@ export const SYNTH_DEFAULTS: SynthValues = {
   decaySeconds: 0.2,
   sustain: 0.7,
   releaseSeconds: 0.2,
+  voiceMode: "poly",
+  legato: false,
+  glideSeconds: 0.001,
   oscRetrigger: true,
 };
 
@@ -200,6 +210,12 @@ const FILTER_MODES: ChoiceSettingView<string, FilterMode>["options"] = [
   { value: "low_pass", label: "Low-pass" },
   { value: "band_pass", label: "Band-pass" },
   { value: "high_pass", label: "High-pass" },
+];
+
+/** Every voice mode, as Rust offers them. */
+const VOICE_MODES: ChoiceSettingView<string, VoiceMode>["options"] = [
+  { value: "poly", label: "Poly" },
+  { value: "mono", label: "Mono" },
 ];
 
 /**
@@ -245,7 +261,7 @@ export function synthSettings(
     return step === undefined ? setting : { ...setting, step };
   };
   const toggle = (name: SynthToggle, label: string): SynthSettingView => {
-    const field = name === "osc2_sync" ? "osc2Sync" : "oscRetrigger";
+    const field = SYNTH_FIELDS[name] as "osc2Sync" | "legato" | "oscRetrigger";
     return {
       kind: "toggle",
       name,
@@ -304,6 +320,17 @@ export function synthSettings(
     number("decay_seconds", "Decay", "seconds", [0.001, 10]),
     number("sustain", "Sustain", "fraction", [0, 1]),
     number("release_seconds", "Release", "seconds", [0.001, 10]),
+    {
+      kind: "choice",
+      name: "voice_mode",
+      label: "Voice mode",
+      sounds: SOUNDS,
+      value: values.voiceMode,
+      options: VOICE_MODES,
+      default: defaults.voiceMode,
+    },
+    toggle("legato", "Legato"),
+    number("glide_seconds", "Glide", "seconds", [0.001, 5]),
     toggle("osc_retrigger", "Osc retrigger"),
   ];
 }

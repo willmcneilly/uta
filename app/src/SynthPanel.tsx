@@ -95,8 +95,8 @@ interface Dragged {
  * around its drawings. The filter and the envelope are drawn above their
  * knobs, from the values the knobs show, so the drawings follow a drag before
  * Rust replies. The settings it doesn't show yet (oscillator 1's Width,
- * oscillator 2 and its Sync, the sub, the mixer and Osc retrigger) wait for
- * the new panel (UTA-81).
+ * oscillator 2 and its Sync, the sub, the mixer, the Voice mode, Legato,
+ * Glide and Osc retrigger) wait for the new panel (UTA-81).
  */
 export function SynthPanel({ settings, sampleRate, onChange }: Props) {
   // The knob being dragged: gesture state, gone when the drag ends.

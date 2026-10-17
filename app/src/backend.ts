@@ -306,6 +306,9 @@ export type Waveform = "sine" | "triangle" | "saw" | "pulse";
 /** Which part of the sound the synth's filter lets through. */
 export type FilterMode = "low_pass" | "band_pass" | "high_pass";
 
+/** Whether the synth plays chords, or one note at a time. */
+export type VoiceMode = "poly" | "mono";
+
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
@@ -314,6 +317,7 @@ export type SynthSettingView =
   | ChoiceSettingView<"osc1_wave", Waveform>
   | ChoiceSettingView<"osc2_wave", Waveform>
   | ChoiceSettingView<"filter_mode", FilterMode>
+  | ChoiceSettingView<"voice_mode", VoiceMode>
   | NumberSettingView<SynthNumber["name"]>
   | ToggleSettingView<SynthToggle>;
 
@@ -321,11 +325,12 @@ export type SynthSettingView =
 export type SynthParam =
   | { name: "osc1_wave" | "osc2_wave"; value: Waveform }
   | { name: "filter_mode"; value: FilterMode }
+  | { name: "voice_mode"; value: VoiceMode }
   | SynthNumber
   | { name: SynthToggle; value: boolean };
 
 /** A synth setting that's on or off. */
-export type SynthToggle = "osc2_sync" | "osc_retrigger";
+export type SynthToggle = "osc2_sync" | "legato" | "osc_retrigger";
 
 /** A synth setting that's a number. */
 export interface SynthNumber {
@@ -350,7 +355,8 @@ export interface SynthNumber {
     | "attack_seconds"
     | "decay_seconds"
     | "sustain"
-    | "release_seconds";
+    | "release_seconds"
+    | "glide_seconds";
   value: number;
 }
 
