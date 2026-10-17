@@ -1888,6 +1888,7 @@ mod tests {
                 Some("semitones"),
                 Some("fraction"),
                 None,
+                None,
                 Some("seconds"),
                 None,
             ]
