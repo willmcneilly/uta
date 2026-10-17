@@ -211,7 +211,7 @@ What to listen for:
 
 ## Synth
 
-The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, the LFO, and Mono with Legato and Glide (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, the LFO, Mono with Legato and Glide, and the mod slots (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
 
 | Render | What it plays |
 |---|---|
@@ -242,6 +242,10 @@ The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, the
 | `25-glide` | The same line in Mono with Legato, at Glide 1 ms (off), 30 ms, 80 ms, 0.2 s and 0.5 s. |
 | `26-return` | A lead (a pulse and a detuned saw) holding A3 through the bar while E4, A4, C5 and E5 are stabbed over it and let go: in Poly, in Mono, then in Mono with Legato and a 60 ms Glide. |
 | `27-mono-bassline` | Two bars of an acid-style line in 16ths (cutoff 250 Hz, resonance 0.65, a snappy filter envelope), where three notes run into the next: in Poly, then in Mono with Legato and a 70 ms Glide. |
+| `28-velocity-cutoff` | Eighths played from soft (30) to hard (127) and back, a resonant pluck at cutoff 600 Hz: no slot, then Velocity to Cutoff at +30% and +50%, then at -30% from 4 kHz. |
+| `29-sync-sweep` | A lead on oscillator 2 alone, synced, a note a beat: no slot, then the filter envelope (0.35 s decay) on oscillator 2's pitch at +25%, +50% and +100%, then +50% without Sync. |
+| `30-tremolo` | A soft, detuned chord held for the bar: no slot, then the LFO on the volume at 30% and 60% at 5 Hz, at 100% as a square synced to 1/8, and at -100% as a saw synced to 1/16. |
+| `31-more-routes` | One route each: Key to Cutoff +50% (an octave for each octave from middle C) on an A in four octaves; Velocity to Volume +50% on the soft-to-hard eighths; the LFO on oscillator 1's width at 30% (0.7 Hz) on a pulse chord; the amp envelope on the resonance +70% on the phrase; Velocity to LFO rate +50% under a 3 Hz vibrato on the eighths. |
 
 What to listen for:
 
@@ -271,6 +275,10 @@ What to listen for:
 - **Mono:** in Poly each note's tail rings on under the next, so the overlaps smear into two-note chords. In Mono there's only ever one note: the line is clean and tight, and each note still plucks, as the envelopes start again from where they are. With Legato the line runs together into one phrase: only the first note plucks, and the rest change pitch under one long, closing filter. None of it should click as the notes change.
 - **Glide:** at 1 ms the pitch steps, as in `24-mono`. From 30 ms each note slides into the next, a slur at first; by 0.2 s you hear every slide as a swoop, and at 0.5 s the line barely arrives at a note before it leaves, a slow, drunken lead. Every slide takes the same time whatever the interval, and should land exactly in tune.
 - **Return:** in Poly the stabs sit on top of the held A as chords. In Mono each stab replaces the A, and letting go drops straight back to it, without a gap and without the A attacking again from silence. With Legato and Glide it slides up to each stab and back down, smoothly, like a trill played on one string.
+- **Velocity to cutoff:** with no slot every eighth has the same tone, only louder or softer. With the slot up, soft notes are darker and hard ones brighter, the way a played synth bass responds; +50% is a wide range, from muffled to biting. At -30% it's the other way round: the hardest notes are the darkest.
+- **Sync sweep:** with no slot each note is one steady, nasal tone. With the slot, each note starts with a bright tearing "yow" that sweeps down as the filter envelope closes, settling on the plain synced tone: subtle at +25%, the classic sync lead at +50%, a wild, screaming two-octave sweep at +100%. Every note stays the same pitch; only the tone sweeps. Without Sync the same slot is a pitch drop instead, a falling "pew".
+- **Tremolo:** 30% at 5 Hz is a gentle, vintage amp tremolo; 60% a deep, throbbing one. The synced square at 100% chops the chord into eighths, silent between, like a gate, and should land on the beat; the saw at -100% swells into each sixteenth and cuts off. None of the steps should click, and the 100% gate shouldn't be louder overall than the plain chord by more than a little.
+- **More routes:** with Key on the cutoff the As in every octave sound about equally bright, as the filter's own Key at full makes them, rather than the high ones dull. Velocity on the volume makes the hard eighths stand out much more against the soft ones. The width moving under the pulse chord is a slow shimmer, as the LFO's own Width gives. The resonance follows the amp envelope: each chord swells into a ringing, vocal "wah" as it attacks, and calms as it decays. The vibrato is faster on the hard notes and slower on the soft ones.
 - **Mono bassline:** in Poly the long notes smear into the next. In Mono the three notes that run into the next slide up or down to it without re-plucking: the squelchy, rubbery slide of an acid bass. The notes with a gap before them pluck afresh and don't slide, so it should be clear by ear which notes slide and which don't.
 
 ## Delay

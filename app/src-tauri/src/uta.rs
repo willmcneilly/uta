@@ -2090,8 +2090,28 @@ mod tests {
                 None,
                 Some("seconds"),
                 None,
+                // The three mod slots: a source, a destination and an
+                // amount each.
+                None,
+                None,
+                Some("fraction"),
+                None,
+                None,
+                Some("fraction"),
+                None,
+                None,
+                Some("fraction"),
             ]
         );
+        // Each slot's destination offers every destination, Off first, and
+        // its amount runs either side of zero.
+        let destination = &settings[37 + 1];
+        assert_eq!(destination["name"], "mod1_destination");
+        assert_eq!(destination["value"], "off");
+        assert_eq!(destination["options"][0]["value"], "off");
+        assert_eq!(destination["options"].as_array().unwrap().len(), 12);
+        let amount = &settings[37 + 2];
+        assert_eq!(amount["limits"], serde_json::json!([-1.0, 1.0]));
         // The synth's limits and defaults travel with each setting now.
         let outline = serde_json::to_value(&outline).unwrap();
         assert!(outline.get("synthLimits").is_none());
@@ -2487,6 +2507,18 @@ mod tests {
             (
                 serde_json::json!({"name": "lfo_shape", "value": "square"}),
                 SynthParam::LfoShape(uta_core::LfoShape::Square),
+            ),
+            (
+                serde_json::json!({"name": "mod1_source", "value": "amp_env"}),
+                SynthParam::Mod1Source(uta_core::ModSource::AmpEnv),
+            ),
+            (
+                serde_json::json!({"name": "mod2_destination", "value": "lfo_rate"}),
+                SynthParam::Mod2Destination(uta_core::ModDestination::LfoRate),
+            ),
+            (
+                serde_json::json!({"name": "mod3_amount", "value": -0.75}),
+                SynthParam::Mod3Amount(-0.75),
             ),
             (
                 serde_json::json!({"name": "lfo_division", "value": "1/16t"}),

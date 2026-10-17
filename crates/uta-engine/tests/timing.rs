@@ -157,11 +157,14 @@ fn check_7() -> Project {
 /// running free, some resonance, the filter envelope and key tracking, so
 /// each voice works out its own filter settings, and each voice's own LFO,
 /// a sine (the dearest shape), moving the pitch, the width and the cutoff,
-/// at full sustain. The
+/// at full sustain, and all three mod slots in use: the LFO on oscillator
+/// 2's pitch (worked out every sample), velocity on the resonance (so the
+/// filter's settings are each voice's own) and the amp envelope on the
+/// volume. The
 /// full-voice loads play it, so they measure the most a voice costs. Each
 /// Synth features ticket adds its features here (RFC-008, "How we'll verify
 /// it", Timing report).
-const FULL_VOICE: [SynthParam; 20] = [
+const FULL_VOICE: [SynthParam; 29] = [
     SynthParam::Osc1Wave(Waveform::Pulse),
     SynthParam::Osc1Width(0.3),
     SynthParam::Osc2Wave(Waveform::Pulse),
@@ -182,6 +185,15 @@ const FULL_VOICE: [SynthParam; 20] = [
     SynthParam::LfoWidth(0.2),
     SynthParam::FilterLfoOctaves(1.0),
     SynthParam::Sustain(1.0),
+    SynthParam::Mod1Source(uta_core::ModSource::Lfo),
+    SynthParam::Mod1Destination(uta_core::ModDestination::Osc2Pitch),
+    SynthParam::Mod1Amount(0.05),
+    SynthParam::Mod2Source(uta_core::ModSource::Velocity),
+    SynthParam::Mod2Destination(uta_core::ModDestination::Resonance),
+    SynthParam::Mod2Amount(0.2),
+    SynthParam::Mod3Source(uta_core::ModSource::AmpEnv),
+    SynthParam::Mod3Destination(uta_core::ModDestination::Volume),
+    SynthParam::Mod3Amount(-0.2),
 ];
 
 /// 32 tracks, each holding the same 8-note saw chord through the whole
@@ -477,13 +489,16 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         .unwrap()
                 }
                 // The cutoff, oscillator 1's Width, oscillator 2's Pitch and
-                // its level, and the LFO's rate, on every full voice.
+                // its level, the LFO's rate and a mod slot's amount, on every
+                // full voice.
                 Load::FullVoices => {
                     let TrackSound::Synth(full) = renderer.controller.snapshot().tracks()[0].sound
                     else {
                         unreachable!("the full voices are a synth track's")
                     };
                     let step = ((i / 64) % 50) as f32;
+                    let mut mods = full.mods;
+                    mods[0].amount = 0.05 + step / 1000.0;
                     renderer
                         .controller
                         .set_synth_settings(
@@ -494,6 +509,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                                 osc2_pitch_semitones: 7.07 + step / 50.0,
                                 osc2_level: 0.5 + step / 100.0,
                                 lfo_rate_hz: 2.0 + step / 10.0,
+                                mods,
                                 ..full
                             },
                         )

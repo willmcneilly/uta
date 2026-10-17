@@ -1,0 +1,391 @@
+{
+  "project": "ed052445-b32c-55d4-a8cf-f34c1f3485ba",
+  "commands": [
+    {
+      "format": 13,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 13,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 13,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 13,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "4b4f58c6-2ff4-5308-9e1e-6352093c69c5",
+              "name": "No slot",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 600.0,
+                  "resonance": 0.3,
+                  "decay_seconds": 0.25,
+                  "sustain": 0.5,
+                  "release_seconds": 0.1
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0a9cd764-65ab-5167-9dc8-2a4ae3226279",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "82b1a041-1b07-5ee8-8a9a-8f821766bd52",
+                      "pitch": 45,
+                      "velocity": 30,
+                      "start": 0,
+                      "length": 400
+                    },
+                    {
+                      "id": "22897048-7217-57c7-af79-aed42128fa2b",
+                      "pitch": 52,
+                      "velocity": 55,
+                      "start": 480,
+                      "length": 400
+                    },
+                    {
+                      "id": "34e2f203-4aa0-57f1-82fb-217cc1c3f1d5",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 960,
+                      "length": 400
+                    },
+                    {
+                      "id": "b34505c5-1480-5a38-93c9-04b16429f1c2",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 1440,
+                      "length": 400
+                    },
+                    {
+                      "id": "c5709454-bebe-5243-9edf-fce32ca4b768",
+                      "pitch": 48,
+                      "velocity": 127,
+                      "start": 1920,
+                      "length": 400
+                    },
+                    {
+                      "id": "281c4e00-058b-5b62-90d8-d6c594960cbc",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 2400,
+                      "length": 400
+                    },
+                    {
+                      "id": "3ec8aac9-c26a-58c3-b856-808602ac89d5",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 2880,
+                      "length": 400
+                    },
+                    {
+                      "id": "9a247424-8e9d-55de-8113-15fa72dfe814",
+                      "pitch": 60,
+                      "velocity": 55,
+                      "start": 3360,
+                      "length": 400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "9cc58a43-8399-571c-82a2-c0aa81493a02",
+              "name": "Velocity to cutoff +30%",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 600.0,
+                  "resonance": 0.3,
+                  "decay_seconds": 0.25,
+                  "sustain": 0.5,
+                  "release_seconds": 0.1,
+                  "mod1_source": "velocity",
+                  "mod1_destination": "cutoff",
+                  "mod1_amount": 0.3
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a9e889cb-0dab-5658-b637-bd3780de6180",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "f007af68-ddf9-5491-bb4a-423c1b818a46",
+                      "pitch": 45,
+                      "velocity": 30,
+                      "start": 0,
+                      "length": 400
+                    },
+                    {
+                      "id": "6a5a1ab3-af0c-5d72-a4d6-3ad4ab2076d6",
+                      "pitch": 52,
+                      "velocity": 55,
+                      "start": 480,
+                      "length": 400
+                    },
+                    {
+                      "id": "1ac6e420-02dd-5bcd-8096-bb7806a4e22f",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 960,
+                      "length": 400
+                    },
+                    {
+                      "id": "98667717-fcb1-5183-9b47-eed110f93ca4",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 1440,
+                      "length": 400
+                    },
+                    {
+                      "id": "d3402c13-68d8-5354-885e-664819bf0f1f",
+                      "pitch": 48,
+                      "velocity": 127,
+                      "start": 1920,
+                      "length": 400
+                    },
+                    {
+                      "id": "06086b34-347a-5d83-9900-3d056a3a1271",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 2400,
+                      "length": 400
+                    },
+                    {
+                      "id": "5bb3f4f1-ee88-5a5b-a741-11590e2c649b",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 2880,
+                      "length": 400
+                    },
+                    {
+                      "id": "1ddcdf95-2eb9-5476-a736-5b3050bec5e2",
+                      "pitch": 60,
+                      "velocity": 55,
+                      "start": 3360,
+                      "length": 400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "0ebf4538-d308-5dde-a50d-43398be2d232",
+              "name": "Velocity to cutoff +50%",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 600.0,
+                  "resonance": 0.3,
+                  "decay_seconds": 0.25,
+                  "sustain": 0.5,
+                  "release_seconds": 0.1,
+                  "mod1_source": "velocity",
+                  "mod1_destination": "cutoff",
+                  "mod1_amount": 0.5
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "54b59e52-8d83-5de9-b21c-3900333da2f2",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "d08a2dd9-563c-525e-97e8-692da76f1ed6",
+                      "pitch": 45,
+                      "velocity": 30,
+                      "start": 0,
+                      "length": 400
+                    },
+                    {
+                      "id": "a2a5ba49-3126-55dd-a0da-ec2fe1d4846f",
+                      "pitch": 52,
+                      "velocity": 55,
+                      "start": 480,
+                      "length": 400
+                    },
+                    {
+                      "id": "d30d5f13-3c0f-5f79-a870-ce2bb1270560",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 960,
+                      "length": 400
+                    },
+                    {
+                      "id": "04bb240f-6c91-573f-b989-53476e5a1d08",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 1440,
+                      "length": 400
+                    },
+                    {
+                      "id": "71e656c1-daf7-5252-ab15-aebf6204896f",
+                      "pitch": 48,
+                      "velocity": 127,
+                      "start": 1920,
+                      "length": 400
+                    },
+                    {
+                      "id": "c946ed4f-0ae4-5aaa-bccf-48029a0453ac",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 2400,
+                      "length": 400
+                    },
+                    {
+                      "id": "0114ada2-a130-52d8-80c8-22c565cbc17d",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 2880,
+                      "length": 400
+                    },
+                    {
+                      "id": "952f7081-e009-5931-b91a-ca7f70c33b7e",
+                      "pitch": 60,
+                      "velocity": 55,
+                      "start": 3360,
+                      "length": 400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "02f13a77-767a-5d40-a0b8-ea2932752a08",
+              "name": "Velocity to cutoff -30%",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 4000.0,
+                  "resonance": 0.3,
+                  "decay_seconds": 0.25,
+                  "sustain": 0.5,
+                  "release_seconds": 0.1,
+                  "mod1_source": "velocity",
+                  "mod1_destination": "cutoff",
+                  "mod1_amount": -0.3
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c31d5b3c-cf3f-503e-bf7b-332c2a0fe34b",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "c65afbc1-9c28-5b7a-8532-76c94217a0a1",
+                      "pitch": 45,
+                      "velocity": 30,
+                      "start": 0,
+                      "length": 400
+                    },
+                    {
+                      "id": "5d44d91c-1729-5db3-9bec-828b8c6cfacd",
+                      "pitch": 52,
+                      "velocity": 55,
+                      "start": 480,
+                      "length": 400
+                    },
+                    {
+                      "id": "08214dca-56a5-5d6e-b980-2ad389c060c5",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 960,
+                      "length": 400
+                    },
+                    {
+                      "id": "13a16257-4b5c-5f1e-bea0-4c3ccab99384",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 1440,
+                      "length": 400
+                    },
+                    {
+                      "id": "e42ce374-5f53-5646-a101-6a677ef4185d",
+                      "pitch": 48,
+                      "velocity": 127,
+                      "start": 1920,
+                      "length": 400
+                    },
+                    {
+                      "id": "dbe4ae41-70ea-5725-8625-dc1e3aec1444",
+                      "pitch": 52,
+                      "velocity": 105,
+                      "start": 2400,
+                      "length": 400
+                    },
+                    {
+                      "id": "adc81cfb-af28-5c20-b075-1b495d70a849",
+                      "pitch": 57,
+                      "velocity": 80,
+                      "start": 2880,
+                      "length": 400
+                    },
+                    {
+                      "id": "d14976d1-9c51-533a-9ece-1d303d8f7c91",
+                      "pitch": 60,
+                      "velocity": 55,
+                      "start": 3360,
+                      "length": 400
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

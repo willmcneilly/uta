@@ -1506,10 +1506,25 @@ mod tests {
             SynthParam::LfoRetrigger(true),
             SynthParam::LfoVibratoSemitones(0.25),
             SynthParam::LfoWidth(0.3),
+            SynthParam::Mod1Source(crate::ModSource::Key),
+            SynthParam::Mod1Destination(crate::ModDestination::Cutoff),
+            SynthParam::Mod1Amount(0.5),
+            SynthParam::Mod2Source(crate::ModSource::AmpEnv),
+            SynthParam::Mod2Destination(crate::ModDestination::Volume),
+            SynthParam::Mod2Amount(-1.0),
+            SynthParam::Mod3Source(crate::ModSource::Velocity),
+            SynthParam::Mod3Destination(crate::ModDestination::LfoRate),
+            SynthParam::Mod3Amount(1.0),
         ] {
             apply_and_check_undo(&project, Command::SetSynthParam { track, param });
         }
 
+        let param = SynthParam::Mod2Amount(1.5);
+        assert_rejected(
+            &project,
+            Command::SetSynthParam { track, param },
+            CommandError::SynthParamOutOfRange(param),
+        );
         let param = SynthParam::Resonance(2.0);
         assert_rejected(
             &project,

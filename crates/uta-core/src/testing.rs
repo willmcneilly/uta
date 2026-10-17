@@ -8,8 +8,8 @@ use crate::time::NoteDivision;
 use crate::{
     Chain, Clip, ClipId, ClipPosition, Command, DelayMode, DelayParam, DelaySettings, DrumParam,
     DrumSound, Effect, EffectId, EffectSettings, FilterMode, KIT, KitSettings, LfoShape,
-    MixerStrip, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, Source,
-    SynthParam, SynthSettings, Track, TrackId, VoiceMode, Waveform,
+    MixerStrip, ModDestination, ModSource, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack,
+    Project, ProjectId, Source, SynthParam, SynthSettings, Track, TrackId, VoiceMode, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -278,7 +278,26 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
         any::<bool>().prop_map(SynthParam::LfoRetrigger),
         (-0.1f32..2.2).prop_map(SynthParam::LfoVibratoSemitones),
         (-0.1f32..0.5).prop_map(SynthParam::LfoWidth),
+        any_mod_param(),
         Just(SynthParam::CutoffHz(f32::NAN)),
+    ]
+}
+
+/// A setting of any of the three mod slots.
+fn any_mod_param() -> impl Strategy<Value = SynthParam> {
+    let source = || prop::sample::select(ModSource::ALL.to_vec());
+    let destination = || prop::sample::select(ModDestination::ALL.to_vec());
+    let amount = || -1.1f32..1.1;
+    prop_oneof![
+        source().prop_map(SynthParam::Mod1Source),
+        destination().prop_map(SynthParam::Mod1Destination),
+        amount().prop_map(SynthParam::Mod1Amount),
+        source().prop_map(SynthParam::Mod2Source),
+        destination().prop_map(SynthParam::Mod2Destination),
+        amount().prop_map(SynthParam::Mod2Amount),
+        source().prop_map(SynthParam::Mod3Source),
+        destination().prop_map(SynthParam::Mod3Destination),
+        amount().prop_map(SynthParam::Mod3Amount),
     ]
 }
 

@@ -7,8 +7,8 @@ use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
-    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip, NoteKey,
-    SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
+    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip,
+    ModDestination, ModSlot, ModSource, NoteKey, SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
 };
 
 /// Everything the audio thread needs to know about what to play.
@@ -818,6 +818,56 @@ fn synth_settings(settings: &uta_core::SynthSettings, bpm: f32) -> SynthSettings
         legato: settings.legato,
         glide_seconds: settings.glide_seconds,
         osc_retrigger: settings.osc_retrigger,
+        mods: [
+            (
+                settings.mod1_source,
+                settings.mod1_destination,
+                settings.mod1_amount,
+            ),
+            (
+                settings.mod2_source,
+                settings.mod2_destination,
+                settings.mod2_amount,
+            ),
+            (
+                settings.mod3_source,
+                settings.mod3_destination,
+                settings.mod3_amount,
+            ),
+        ]
+        .map(|(source, destination, amount)| ModSlot {
+            source: mod_source(source),
+            destination: mod_destination(destination),
+            amount,
+        }),
+    }
+}
+
+fn mod_source(source: uta_core::ModSource) -> ModSource {
+    match source {
+        uta_core::ModSource::FilterEnv => ModSource::FilterEnv,
+        uta_core::ModSource::AmpEnv => ModSource::AmpEnv,
+        uta_core::ModSource::Lfo => ModSource::Lfo,
+        uta_core::ModSource::Velocity => ModSource::Velocity,
+        uta_core::ModSource::Key => ModSource::Key,
+    }
+}
+
+fn mod_destination(destination: uta_core::ModDestination) -> ModDestination {
+    use uta_core::ModDestination as D;
+    match destination {
+        D::Off => ModDestination::Off,
+        D::Osc1Pitch => ModDestination::Osc1Pitch,
+        D::Osc2Pitch => ModDestination::Osc2Pitch,
+        D::Osc1Level => ModDestination::Osc1Level,
+        D::Osc2Level => ModDestination::Osc2Level,
+        D::SubLevel => ModDestination::SubLevel,
+        D::NoiseLevel => ModDestination::NoiseLevel,
+        D::Osc1Width => ModDestination::Osc1Width,
+        D::Cutoff => ModDestination::Cutoff,
+        D::Resonance => ModDestination::Resonance,
+        D::LfoRate => ModDestination::LfoRate,
+        D::Volume => ModDestination::Volume,
     }
 }
 
@@ -943,6 +993,43 @@ mod tests {
         assert_eq!(snapshot.clone().with_volume_db(0.0).gain, 1.0);
         assert_eq!(snapshot.clone().with_volume_db(f32::NAN).gain, 0.0);
         assert_eq!(snapshot.with_volume_db(-6.0).gain, db_to_gain(-6.0));
+    }
+
+    #[test]
+    fn the_snapshot_carries_each_mod_slot() {
+        let mut project = project();
+        let track = project.tracks()[0].id();
+        let synth = |project: &Project| match Snapshot::from(project).tracks()[0].sound {
+            TrackSound::Synth(synth) => synth,
+            TrackSound::Drums(_) => panic!("a synth track"),
+        };
+        let set = |project: &mut Project, param| {
+            project
+                .apply(&Command::SetSynthParam { track, param })
+                .unwrap()
+        };
+        set(&mut project, SynthParam::Mod2Amount(-0.5));
+        set(&mut project, SynthParam::Mod3Amount(0.25));
+        // Every destination and source reaches the engine as itself: the
+        // two lists are in the same order.
+        for (core, engine) in uta_core::ModDestination::ALL
+            .into_iter()
+            .zip(ModDestination::ALL)
+        {
+            set(&mut project, SynthParam::Mod2Destination(core));
+            assert_eq!(synth(&project).mods[1].destination, engine, "{core:?}");
+        }
+        for (core, engine) in uta_core::ModSource::ALL.into_iter().zip(ModSource::ALL) {
+            set(&mut project, SynthParam::Mod3Source(core));
+            assert_eq!(synth(&project).mods[2].source, engine, "{core:?}");
+        }
+        let mods = synth(&project).mods;
+        assert_eq!(
+            mods.map(|slot| slot.amount),
+            [0.0, -0.5, 0.25],
+            "each slot's amount is its own"
+        );
+        assert_eq!(mods[0], SynthSettings::default().mods[0]);
     }
 
     #[test]

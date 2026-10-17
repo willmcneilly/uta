@@ -4,6 +4,10 @@
 import { act } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
 import type {
+  ModDestination,
+  ModDestinationName,
+  ModSource,
+  ModSourceName,
   DelayParam,
   Description,
   DescriptionTable,
@@ -223,6 +227,15 @@ export interface SynthValues {
   legato: boolean;
   glideSeconds: number;
   oscRetrigger: boolean;
+  mod1Source: ModSource;
+  mod1Destination: ModDestination;
+  mod1Amount: number;
+  mod2Source: ModSource;
+  mod2Destination: ModDestination;
+  mod2Amount: number;
+  mod3Source: ModSource;
+  mod3Destination: ModDestination;
+  mod3Amount: number;
 }
 
 /** Each synth setting's field in {@link SynthValues}. */
@@ -264,6 +277,15 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   legato: "legato",
   glide_seconds: "glideSeconds",
   osc_retrigger: "oscRetrigger",
+  mod1_source: "mod1Source",
+  mod1_destination: "mod1Destination",
+  mod1_amount: "mod1Amount",
+  mod2_source: "mod2Source",
+  mod2_destination: "mod2Destination",
+  mod2_amount: "mod2Amount",
+  mod3_source: "mod3Source",
+  mod3_destination: "mod3Destination",
+  mod3_amount: "mod3Amount",
 };
 
 /** A new track's synth settings, as Rust's defaults have them. */
@@ -305,6 +327,15 @@ export const SYNTH_DEFAULTS: SynthValues = {
   legato: false,
   glideSeconds: 0.001,
   oscRetrigger: true,
+  mod1Source: "velocity",
+  mod1Destination: "off",
+  mod1Amount: 0,
+  mod2Source: "filter_env",
+  mod2Destination: "off",
+  mod2Amount: 0,
+  mod3Source: "lfo",
+  mod3Destination: "off",
+  mod3Amount: 0,
 };
 
 /** A stand-in for the sentence Rust sends on how a setting sounds. */
@@ -338,6 +369,31 @@ const LFO_SHAPES: ChoiceSettingView<string, LfoShape>["options"] = [
 const VOICE_MODES: ChoiceSettingView<string, VoiceMode>["options"] = [
   { value: "poly", label: "Poly" },
   { value: "mono", label: "Mono" },
+];
+
+/** Every mod source, as Rust offers them. */
+const MOD_SOURCES: ChoiceSettingView<string, ModSource>["options"] = [
+  { value: "filter_env", label: "Filter env" },
+  { value: "amp_env", label: "Amp env" },
+  { value: "lfo", label: "LFO" },
+  { value: "velocity", label: "Velocity" },
+  { value: "key", label: "Key" },
+];
+
+/** Every mod destination, as Rust offers them, the empty slot first. */
+const MOD_DESTINATIONS: ChoiceSettingView<string, ModDestination>["options"] = [
+  { value: "off", label: "Off" },
+  { value: "osc1_pitch", label: "Osc 1 pitch" },
+  { value: "osc2_pitch", label: "Osc 2 pitch" },
+  { value: "osc1_level", label: "Osc 1 level" },
+  { value: "osc2_level", label: "Osc 2 level" },
+  { value: "sub_level", label: "Sub level" },
+  { value: "noise_level", label: "Noise level" },
+  { value: "osc1_width", label: "Osc 1 width" },
+  { value: "cutoff", label: "Cutoff" },
+  { value: "resonance", label: "Resonance" },
+  { value: "lfo_rate", label: "LFO rate" },
+  { value: "volume", label: "Volume" },
 ];
 
 /**
@@ -488,6 +544,31 @@ export function synthSettings(
     toggle("legato", "Legato"),
     number("glide_seconds", "Glide", "seconds", [0.001, 5]),
     toggle("osc_retrigger", "Osc retrigger"),
+    ...([1, 2, 3] as const).flatMap((slot) => {
+      const source = SYNTH_FIELDS[`mod${slot}_source`] as "mod1Source";
+      const destination = SYNTH_FIELDS[`mod${slot}_destination`] as "mod1Destination";
+      return [
+        {
+          kind: "choice",
+          name: `mod${slot}_source`,
+          label: `Mod ${slot} source`,
+          sounds: SOUNDS,
+          value: values[source],
+          options: MOD_SOURCES,
+          default: defaults[source],
+        } satisfies ChoiceSettingView<ModSourceName, ModSource>,
+        {
+          kind: "choice",
+          name: `mod${slot}_destination`,
+          label: `Mod ${slot} destination`,
+          sounds: SOUNDS,
+          value: values[destination],
+          options: MOD_DESTINATIONS,
+          default: defaults[destination],
+        } satisfies ChoiceSettingView<ModDestinationName, ModDestination>,
+        number(`mod${slot}_amount`, `Mod ${slot} amount`, "fraction", [-1, 1]),
+      ];
+    }),
   ];
 }
 
