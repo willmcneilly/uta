@@ -16,8 +16,9 @@ use common::synth_project;
 
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, Command, DrumParam, DrumSound, FilterMode, KIT, KickModel, Note, NoteId,
-    PlacedClip, PlacedTrack, Project, SynthParam, TrackId, Waveform,
+    Chain, Clip, ClipId, Command, DelayMode, DelaySettings, DrumParam, DrumSound, Effect, EffectId,
+    EffectSettings, FilterMode, KIT, KickModel, Note, NoteId, PlacedClip, PlacedEffect,
+    PlacedTrack, Project, SynthParam, TrackId, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -55,6 +56,11 @@ enum Load {
     /// [`Load::Tracks`] with every synth feature on ([`FULL_VOICE`]). See
     /// RFC-008, "Risks & unknowns" (CPU per voice goes up).
     FullTracks,
+    /// [`Load::Tracks`] with a Delay on every track and on the master, at
+    /// its defaults but in ping-pong and with more Wobble, so every part of
+    /// its tape loop is working, and never asleep. See RFC-007, "Risks &
+    /// unknowns" (CPU).
+    Delays,
     /// Make a song's manual check 7, the stress ceiling: 7 tracks × 28
     /// one-bar clips × 3,000 stress notes, 588,000 notes in all, with the
     /// volume gliding. See RFC-004, "What we measured".
@@ -84,6 +90,7 @@ impl Load {
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
             Self::FullTracks => "32 tracks × 8 full voices",
+            Self::Delays => "32 tracks × 8 voices, a Delay on each and the master",
             Self::Check7 => "Check 7 (588k notes)",
             Self::Drums => "32 drum tracks × every sound",
             Self::Drums909 => "32 drum tracks × every sound, 909 kick",
@@ -195,6 +202,29 @@ fn many_tracks(params: &[SynthParam]) -> Project {
     project
         .apply(&Command::AddTracks { tracks: copies })
         .unwrap();
+    project
+}
+
+/// `project` with a Delay on every track's chain and on the master's: the
+/// defaults, in ping-pong and with Wobble at half.
+fn with_delays(mut project: Project) -> Project {
+    let settings = DelaySettings {
+        mode: DelayMode::PingPong,
+        wobble: 0.5,
+        ..DelaySettings::default()
+    };
+    let effects = project
+        .tracks()
+        .iter()
+        .map(|track| Chain::Track(track.id()))
+        .chain([Chain::Master])
+        .map(|chain| PlacedEffect {
+            chain,
+            index: 0,
+            effect: Effect::new(EffectId::random(), EffectSettings::Delay(settings)),
+        })
+        .collect();
+    project.apply(&Command::AddEffects { effects }).unwrap();
     project
 }
 
@@ -314,6 +344,7 @@ fn snapshot(load: Load) -> Snapshot {
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks(&[])),
         Load::FullTracks => Snapshot::from(&many_tracks(&FULL_VOICE)),
+        Load::Delays => Snapshot::from(&with_delays(many_tracks(&[]))),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
         Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
         Load::Drums909 => Snapshot::from(&drum_tracks(KickModel::Tr909)),
@@ -360,12 +391,15 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
         // Keep the smoothing busy, as a user dragging the volume would.
         if i % 64 == 0 {
             match load {
-                Load::Loop | Load::Song | Load::Tracks | Load::FullTracks | Load::Check7 => {
-                    renderer
-                        .controller
-                        .set_volume_db(-(((i / 64) % 24) as f32))
-                        .unwrap()
-                }
+                Load::Loop
+                | Load::Song
+                | Load::Tracks
+                | Load::FullTracks
+                | Load::Delays
+                | Load::Check7 => renderer
+                    .controller
+                    .set_volume_db(-(((i / 64) % 24) as f32))
+                    .unwrap(),
                 // Sustain 1, so the voices never fade to silence.
                 Load::Voices | Load::FilterVoices => {
                     let own_filter = matches!(load, Load::FilterVoices);
@@ -562,6 +596,7 @@ fn report_block_timing() {
         Load::Song,
         Load::Tracks,
         Load::FullTracks,
+        Load::Delays,
         Load::Check7,
         Load::Check7FirstBlock,
         Load::Drums,

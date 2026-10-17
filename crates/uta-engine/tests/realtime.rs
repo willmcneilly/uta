@@ -1139,7 +1139,9 @@ fn fade_blocks(sample_rate: u32) -> usize {
 /// back to be freed once it has faded out.
 #[test]
 fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_comes_back() {
-    use uta_core::{Chain, DelayParam, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect};
+    use uta_core::{
+        Chain, DelayMode, DelayParam, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect,
+    };
 
     rtsan_standalone::ensure_initialized();
     let mut project = demo_song();
@@ -1210,18 +1212,24 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             "the processor made no sound in round {round}: {status:?}"
         );
 
-        // Turn every Delay's time, feedback and Mix, a snapshot each.
+        // Turn every Delay's settings and Mix, a snapshot each, so its
+        // time, Feedback, Mode, cuts, Drive and Wobble all glide.
         for (n, effect) in effects(&project).into_iter().enumerate() {
             let f = n as f32 / 32.0;
+            let set = |param| Command::SetDelayParam { effect, param };
             for command in [
-                Command::SetDelayParam {
-                    effect,
-                    param: DelayParam::TimeSeconds(0.01 + f),
-                },
-                Command::SetDelayParam {
-                    effect,
-                    param: DelayParam::Feedback(f.min(1.0)),
-                },
+                set(DelayParam::Sync(n % 2 == 0)),
+                set(DelayParam::TimeSeconds(0.01 + f)),
+                set(DelayParam::Feedback(f.min(1.1))),
+                set(DelayParam::Mode(if n % 3 == 0 {
+                    DelayMode::PingPong
+                } else {
+                    DelayMode::Stereo
+                })),
+                set(DelayParam::LowCutHz(20.0 + 100.0 * f)),
+                set(DelayParam::HighCutHz(20_000.0 - 1000.0 * f)),
+                set(DelayParam::Drive(f.min(1.0))),
+                set(DelayParam::Wobble(1.0 - f.min(1.0))),
                 Command::SetEffectMix {
                     effect,
                     mix: 1.0 - f.min(1.0),
@@ -1229,6 +1237,18 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             ] {
                 change(&mut project, &mut renderer, command);
             }
+            process_block(renderer.processor(), &mut buffer);
+        }
+        // Stop and Play again while the echoes ring: the Delays' wobble
+        // restarts, gliding from where it was. Only in the last round, as
+        // Play goes back to the top, where the next round's blocks wouldn't
+        // reach a note.
+        if rate == 48_000 {
+            renderer.controller.stop().unwrap();
+            process_block(renderer.processor(), &mut buffer);
+            assert!(renderer.controller.poll().ringing_chains != 0);
+            renderer.controller.play().unwrap();
+            process_block(renderer.processor(), &mut buffer);
             process_block(renderer.processor(), &mut buffer);
         }
 

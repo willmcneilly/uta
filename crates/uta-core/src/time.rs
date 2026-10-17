@@ -154,6 +154,141 @@ fn section_samples_to_ticks(samples: u64, bpm: f32, sample_rate: u32) -> Ticks {
     (numerator / denominator).round() as Ticks
 }
 
+/// A note length that a setting syncs to the tempo with: 1/32 to 1/1, each
+/// straight, dotted or triplet, eighteen in all. Defined once here for
+/// every setting that syncs: the Delay's time, and the synth's LFO rate to
+/// come. See RFC-007, "Shared with RFC-008", and open question 1.
+///
+/// Serialises as its [`value`](Self::value): `"1/8"`, `"1/8d"` (dotted) or
+/// `"1/8t"` (triplet).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NoteDivision {
+    /// The note: how many go to a whole note, from 1 to 32.
+    note: u8,
+    feel: Feel,
+}
+
+/// Whether a division is played straight, dotted (half as long again) or
+/// as a triplet (three in the time of two).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Feel {
+    Straight,
+    Dotted,
+    Triplet,
+}
+
+impl NoteDivision {
+    pub const DOTTED_EIGHTH: Self = Self::new(8, Feel::Dotted);
+
+    /// Every division, in a menu's order: from the shortest note to the
+    /// longest, each as a triplet, straight, then dotted.
+    pub const ALL: [Self; 18] = {
+        const NOTES: [u8; 6] = [32, 16, 8, 4, 2, 1];
+        const FEELS: [Feel; 3] = [Feel::Triplet, Feel::Straight, Feel::Dotted];
+        let mut all = [Self::new(1, Feel::Straight); 18];
+        let mut index = 0;
+        while index < 18 {
+            all[index] = Self::new(NOTES[index / 3], FEELS[index % 3]);
+            index += 1;
+        }
+        all
+    };
+
+    const fn new(note: u8, feel: Feel) -> Self {
+        Self { note, feel }
+    }
+
+    /// Its length in ticks. Every division lands exactly on a tick: a
+    /// triplet 1/32 is 80.
+    pub const fn ticks(self) -> Ticks {
+        let straight = TICKS_PER_QUARTER * 4 / self.note as Ticks;
+        match self.feel {
+            Feel::Straight => straight,
+            Feel::Dotted => straight * 3 / 2,
+            Feel::Triplet => straight * 2 / 3,
+        }
+    }
+
+    /// Its length in seconds at `bpm` quarter notes a minute.
+    pub fn seconds_at(self, bpm: f32) -> f64 {
+        self.ticks() as f64 / TICKS_PER_QUARTER as f64 * 60.0 / f64::from(bpm)
+    }
+
+    /// The division as a command carries it: `"1/8d"`.
+    pub const fn value(self) -> &'static str {
+        DIVISION_NAMES[self.index()].0
+    }
+
+    /// What a menu calls it: "1/8 dotted".
+    pub const fn label(self) -> &'static str {
+        DIVISION_NAMES[self.index()].1
+    }
+
+    /// Its place in [`Self::ALL`].
+    const fn index(self) -> usize {
+        let note = match self.note {
+            32 => 0,
+            16 => 1,
+            8 => 2,
+            4 => 3,
+            2 => 4,
+            _ => 5,
+        };
+        let feel = match self.feel {
+            Feel::Triplet => 0,
+            Feel::Straight => 1,
+            Feel::Dotted => 2,
+        };
+        note * 3 + feel
+    }
+
+    /// The division a command's value names, if any.
+    pub fn from_value(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|division| division.value() == value)
+    }
+}
+
+/// Each division's value and label, in the order of [`NoteDivision::ALL`].
+const DIVISION_NAMES: [(&str, &str); 18] = [
+    ("1/32t", "1/32 triplet"),
+    ("1/32", "1/32"),
+    ("1/32d", "1/32 dotted"),
+    ("1/16t", "1/16 triplet"),
+    ("1/16", "1/16"),
+    ("1/16d", "1/16 dotted"),
+    ("1/8t", "1/8 triplet"),
+    ("1/8", "1/8"),
+    ("1/8d", "1/8 dotted"),
+    ("1/4t", "1/4 triplet"),
+    ("1/4", "1/4"),
+    ("1/4d", "1/4 dotted"),
+    ("1/2t", "1/2 triplet"),
+    ("1/2", "1/2"),
+    ("1/2d", "1/2 dotted"),
+    ("1/1t", "1/1 triplet"),
+    ("1/1", "1/1"),
+    ("1/1d", "1/1 dotted"),
+];
+
+impl Serialize for NoteDivision {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.value())
+    }
+}
+
+impl<'de> Deserialize<'de> for NoteDivision {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Self::from_value(&value).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "{value:?} isn't a note division (1/32 to 1/1, with d for dotted or t for triplet)"
+            ))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +395,63 @@ mod tests {
                 let samples = map.ticks_to_samples(ticks, sample_rate);
                 assert_eq!(map.samples_to_ticks(samples, sample_rate), ticks);
             }
+        }
+    }
+
+    #[test]
+    fn there_are_eighteen_divisions_each_exactly_on_a_tick() {
+        let ticks: Vec<Ticks> = NoteDivision::ALL.iter().map(|d| d.ticks()).collect();
+        assert_eq!(
+            ticks,
+            [
+                80, 120, 180, 160, 240, 360, 320, 480, 720, 640, 960, 1440, 1280, 1920, 2880, 2560,
+                3840, 5760
+            ]
+        );
+        let values: Vec<&str> = NoteDivision::ALL.iter().map(|d| d.value()).collect();
+        assert_eq!(values.len(), 18);
+        for (index, value) in values.iter().enumerate() {
+            assert!(!values[..index].contains(value), "{value} twice");
+        }
+        assert_eq!(NoteDivision::DOTTED_EIGHTH.value(), "1/8d");
+        assert_eq!(NoteDivision::DOTTED_EIGHTH.label(), "1/8 dotted");
+        assert_eq!(NoteDivision::ALL[0].label(), "1/32 triplet");
+    }
+
+    #[test]
+    fn a_divisions_length_follows_the_tempo() {
+        let quarter = NoteDivision::from_value("1/4").unwrap();
+        assert_eq!(quarter.seconds_at(120.0), 0.5);
+        assert_eq!(quarter.seconds_at(60.0), 1.0);
+        assert_eq!(NoteDivision::DOTTED_EIGHTH.seconds_at(120.0), 0.375);
+        // A half note at 40 BPM is 3 s; a whole note at 60 BPM, 4 s.
+        assert_eq!(
+            NoteDivision::from_value("1/2").unwrap().seconds_at(40.0),
+            3.0
+        );
+        assert_eq!(
+            NoteDivision::from_value("1/1").unwrap().seconds_at(60.0),
+            4.0
+        );
+        let triplet = NoteDivision::from_value("1/8t").unwrap();
+        assert!((triplet.seconds_at(120.0) - 1.0 / 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_division_serialises_as_its_value_and_reads_back() {
+        for division in NoteDivision::ALL {
+            let json = serde_json::to_string(&division).unwrap();
+            assert_eq!(json, format!("\"{}\"", division.value()));
+            assert_eq!(
+                serde_json::from_str::<NoteDivision>(&json).unwrap(),
+                division
+            );
+        }
+        for wrong in [r#""1/64""#, r#""3/8""#, r#""1/8x""#, "8"] {
+            assert!(
+                serde_json::from_str::<NoteDivision>(wrong).is_err(),
+                "{wrong}"
+            );
         }
     }
 }

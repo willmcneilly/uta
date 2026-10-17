@@ -29,7 +29,7 @@ pub use drums::{
 };
 pub use effects::{
     CHAIN_CAPACITY, DELAY_TAPE_SECONDS, DelaySettings, EFFECT_FADE_SECONDS, EffectSettings,
-    EffectSnapshot, EffectState,
+    EffectSnapshot, EffectState, WOBBLE_REACH_SECONDS,
 };
 pub use mixer::MixerStrip;
 pub use processor::{

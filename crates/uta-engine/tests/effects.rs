@@ -11,8 +11,8 @@ mod common;
 
 use common::{PLAIN_SINE, assert_no_click, demo_loop, note, peak, project, sine_max_step};
 use uta_core::{
-    Chain, Command, DelaySettings, Effect, EffectId, EffectKind, EffectSettings, PlacedEffect,
-    Project,
+    Chain, Command, DelayMode, DelaySettings, Effect, EffectId, EffectKind, EffectSettings,
+    PlacedEffect, Project,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EFFECT_FADE_SECONDS, EngineConfig, Snapshot};
@@ -26,9 +26,15 @@ fn kit_effect(kind: EffectKind, n: u128) -> Effect {
     match kind {
         EffectKind::Delay => Effect::new(
             id,
+            // Every part of the tape loop at work: ping-pong, both cuts,
+            // Drive and Wobble.
             EffectSettings::Delay(DelaySettings {
-                time_seconds: 0.05,
-                feedback: 0.6,
+                mode: DelayMode::PingPong,
+                low_cut_hz: 150.0,
+                high_cut_hz: 6000.0,
+                drive: 0.5,
+                wobble: 0.5,
+                ..DelaySettings::plain(0.05, 0.6)
             }),
         )
         .with_mix(0.5),

@@ -132,6 +132,9 @@ impl Snapshot {
 
     fn build(project: &Project, sample_rate: u32, previous: Option<&Snapshot>, avoid: u32) -> Self {
         let sequence = Sequence::new(project, sample_rate);
+        // A synced effect's time is worked out at the tempo.
+        let bpm = project.transport().tempo_map().bpm();
+        let effect = |effect| EffectSnapshot::new(effect, bpm);
         let same_timing = previous.is_some_and(|previous| previous.sequence.same_timing(&sequence));
         let previous_clips: HashMap<ClipId, &Arc<ClipNotes>> = previous
             .iter()
@@ -177,17 +180,13 @@ impl Snapshot {
                     id: track.id(),
                     slot,
                     sound,
-                    effects: track.effects().iter().map(EffectSnapshot::from).collect(),
+                    effects: track.effects().iter().map(effect).collect(),
                     mixer: MixerStrip::from(track.mixer()),
                     notes,
                 }
             })
             .collect();
-        let effects = project
-            .master_effects()
-            .iter()
-            .map(EffectSnapshot::from)
-            .collect();
+        let effects = project.master_effects().iter().map(effect).collect();
         Self::with_tracks(1.0, sequence, effects, tracks).with_volume_db(project.master_volume_db())
     }
 
