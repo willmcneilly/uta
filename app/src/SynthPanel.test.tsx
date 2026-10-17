@@ -183,7 +183,7 @@ describe("SynthPanel's controls", () => {
   it("draws each control from the setting Rust describes: its label, choices, limits, scale and default", async () => {
     // A description unlike today's, so a panel that kept its own would show it.
     const settings = synthSettings(SYNTH).map((setting): SynthSettingView => {
-      if (setting.kind === "choice" && setting.name !== "filter_mode") {
+      if (setting.kind === "choice" && (setting.name === "osc1_wave" || setting.name === "osc2_wave")) {
         return { ...setting, label: "Shape", options: setting.options.slice(0, 2), value: "sine" };
       }
       if (setting.name !== "resonance") return setting;
