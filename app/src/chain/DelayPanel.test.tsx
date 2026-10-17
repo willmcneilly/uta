@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EffectView } from "../backend";
 import { slideKnob } from "../design/knobTesting";
+import { FrameLoop } from "../frameLoop";
+import { FrameStats } from "../pianoRoll/frameStats";
 import { DelayPanel } from "./DelayPanel";
 import { ECHO_WIDTH } from "./EchoDrawing";
 import { DIVISIONS, type DelayValues, delayView } from "./delayTesting";
@@ -39,12 +41,14 @@ interface Options {
 function renderPanel(values: Partial<DelayValues> = {}, options: Options = {}) {
   const onSetting = vi.fn();
   const onMix = vi.fn();
+  const loop = new FrameLoop(new FrameStats());
   const panel = (effect: EffectView) => (
     <DelayPanel
       effect={effect}
       barSeconds={BAR}
       beatsPerBar={4}
       songSeconds={options.songSeconds ?? null}
+      frames={loop}
       onSetting={onSetting}
       onMix={onMix}
     />
@@ -55,6 +59,11 @@ function renderPanel(values: Partial<DelayValues> = {}, options: Options = {}) {
 }
 
 const drawing = () => screen.getByRole("img", { name: "The echoes" });
+/** When each lit mark sounds, in seconds after the note. */
+const lit = () =>
+  Array.from(drawing().querySelectorAll<SVGGElement>(".sounding"))
+    .filter((mark) => Number(mark.style.opacity) > 0)
+    .map((mark) => Number(mark.dataset.at));
 /** Each echo the drawing shows: its side, level and where it is across. */
 const echoes = () =>
   Array.from(drawing().querySelectorAll<SVGGElement>(".echo:not(.sounding)")).map((echo) => ({
@@ -180,8 +189,8 @@ describe("the echo drawing", () => {
     renderPanel({}, { songSeconds: () => 0.375 });
     frame(0);
     expect(drawing()).toHaveAttribute("data-lighting", "playing");
-    expect(drawing().querySelectorAll(".echo.sounding")).toHaveLength(1);
-    expect(drawing().querySelector(".sweep")).toBeInTheDocument();
+    expect(lit()).toEqual([0.375]);
+    expect(drawing().querySelector<SVGGElement>(".sweep")?.style.visibility).toBe("");
   });
 
   it("when stopped, plays its echoes while you point at the panel or focus a control", () => {

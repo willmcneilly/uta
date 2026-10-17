@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { DelayParam, EffectKind, EffectKindChoice, EffectView } from "../backend";
+import type { FrameLoop } from "../frameLoop";
 import { dropIndex } from "../trackOrder";
 import { DelayPanel } from "./DelayPanel";
 import "./ChainRow.css";
@@ -51,6 +52,8 @@ interface Props {
   beatsPerBar: number;
   /** Where the song is now, in seconds, while it plays; null when it's stopped. */
   songSeconds: ((now: number) => number) | null;
+  /** The app's drawing loop, which moves the Delay's light. */
+  frames: FrameLoop;
   /** The scrolling row, for the chain map to scroll. */
   rowRef?: RefObject<HTMLDivElement | null>;
 }
@@ -276,6 +279,7 @@ export function ChainRow({
   barSeconds,
   beatsPerBar,
   songSeconds,
+  frames,
   rowRef,
 }: Props) {
   // Folding a panel to its spine is the UI's own, kept while tracks change,
@@ -469,6 +473,7 @@ export function ChainRow({
                 barSeconds={barSeconds}
                 beatsPerBar={beatsPerBar}
                 songSeconds={songSeconds}
+                frames={frames}
                 onSetting={(param, gesture) => onSetting(effect.id, param, gesture)}
                 onMix={(mix, gesture) => onMix(effect.id, mix, gesture)}
               />

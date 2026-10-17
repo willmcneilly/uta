@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DelayParam, EffectSettingView, EffectView } from "../backend";
+import type { FrameLoop } from "../frameLoop";
 import { EchoDrawing } from "./EchoDrawing";
 import { SettingControl } from "./SettingControl";
 import "./DelayPanel.css";
@@ -18,6 +19,8 @@ interface Props {
   beatsPerBar: number;
   /** Where the song is now, in seconds, while it plays; null when it's stopped. */
   songSeconds: ((now: number) => number) | null;
+  /** The app's drawing loop, which moves the drawing's light. */
+  frames: FrameLoop;
   /** `gesture` is the same for every change in one drag. */
   onSetting: (param: DelayParam, gesture?: number) => void;
   onMix: (mix: number, gesture?: number) => void;
@@ -26,7 +29,15 @@ interface Props {
 /** The settings placed beside the drawing. Every other one is a knob in the row. */
 const BESIDE = ["sync", "division", "time_seconds", "mode"];
 
-export function DelayPanel({ effect, barSeconds, beatsPerBar, songSeconds, onSetting, onMix }: Props) {
+export function DelayPanel({
+  effect,
+  barSeconds,
+  beatsPerBar,
+  songSeconds,
+  frames,
+  onSetting,
+  onMix,
+}: Props) {
   // Pointing at the panel, or a control in it focused (as it is while a knob
   // is dragged): with the song stopped, the drawing plays its echoes.
   const [pointing, setPointing] = useState(false);
@@ -76,6 +87,7 @@ export function DelayPanel({ effect, barSeconds, beatsPerBar, songSeconds, onSet
           beatsPerBar={beatsPerBar}
           songSeconds={songSeconds}
           preview={pointing || focused}
+          frames={frames}
         />
         <div className="delay-beside">
           <div className="delay-time">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barBeat, formatBarBeat } from "./musicalTime";
+import { barBeat, barSecondsAt, formatBarBeat, secondsOf } from "./musicalTime";
 
 describe("barBeat", () => {
   it("counts bars and beats from 1", () => {
@@ -13,5 +13,14 @@ describe("barBeat", () => {
 
   it("formats as bar.beat", () => {
     expect(formatBarBeat({ bar: 3, beat: 2 })).toBe("3.2");
+  });
+});
+
+describe("secondsOf and barSecondsAt", () => {
+  it("turns ticks and bars into seconds at the tempo", () => {
+    expect(secondsOf(960, 960, 120)).toBe(0.5);
+    expect(secondsOf(3 * 960, 960, 90)).toBe(2);
+    expect(barSecondsAt(4, 120)).toBe(2);
+    expect(barSecondsAt(4, 60)).toBe(4);
   });
 });

@@ -21,6 +21,7 @@ import {
   trackView,
 } from "../pianoRoll/testing";
 import { delayView } from "./delayTesting";
+import { ECHO_WIDTH } from "./EchoDrawing";
 
 // The Sound tab's chain against Tauri's mocked back end, which keeps its own
 // project and its own undo, so the tests check the UI draws what Rust sends
@@ -218,6 +219,20 @@ describe("the Sound tab's chain", () => {
       "Delay",
       "Delay",
     ]);
+  });
+
+  it("draws a Delay's echoes over bars at the project's tempo", async () => {
+    // One echo a second after the note: half a bar at 120 BPM, a quarter at 60.
+    const lone = delayView("d-1", { feedback: 0, wobble: 0, echoSeconds: 1 });
+    const echoX = () =>
+      Number(within(panels()[0]).getByRole("img", { name: "The echoes" }).querySelector<SVGGElement>(".echo")?.dataset.x);
+    project = { ...project, bpm: 120 };
+    await openSound([synthWith(lone)]);
+    expect(echoX()).toBeCloseTo(0.5 + (ECHO_WIDTH - 1) / 2, 1);
+    cleanup();
+    project = { ...project, bpm: 60 };
+    await openSound([synthWith(lone)]);
+    expect(echoX()).toBeCloseTo(0.5 + (ECHO_WIDTH - 1) / 4, 1);
   });
 
   it("shows a drum track's kit before its chain", async () => {

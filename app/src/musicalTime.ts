@@ -18,3 +18,13 @@ export function barBeat(ticks: number, ticksPerQuarter: number, beatsPerBar: num
 export function formatBarBeat({ bar, beat }: BarBeat): string {
   return `${bar}.${beat}`;
 }
+
+/** `ticks` as seconds at `bpm` quarter notes a minute. */
+export function secondsOf(ticks: number, ticksPerQuarter: number, bpm: number): number {
+  return (ticks / ticksPerQuarter) * (60 / bpm);
+}
+
+/** One bar in seconds at `bpm`, its beats quarter notes (4/4 for now). */
+export function barSecondsAt(beatsPerBar: number, bpm: number): number {
+  return beatsPerBar * (60 / bpm);
+}

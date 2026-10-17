@@ -76,7 +76,7 @@ import { DragSteps } from "./dragSteps";
 import { FrameLoop } from "./frameLoop";
 import { MasterHeader } from "./MasterHeader";
 import { MeterLevel, TrackLevels, clipLit } from "./meterLevel";
-import { type BarBeat, barBeat } from "./musicalTime";
+import { type BarBeat, barBeat, barSecondsAt, secondsOf } from "./musicalTime";
 import { Output } from "./Output";
 import { FrameTime } from "./pianoRoll/FrameTime";
 import { FrameStats } from "./pianoRoll/frameStats";
@@ -197,10 +197,13 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   // Where the song is, in seconds, while it plays: the Delay's drawing lights
   // its echoes by it.
   const playing = status?.playing ?? false;
-  const bpm = project?.bpm ?? 120;
-  const ticksPerQuarter = project?.ticksPerQuarter ?? 960;
+  const bpm = project?.bpm;
+  const ticksPerQuarter = project?.ticksPerQuarter;
   const songSeconds = useMemo(
-    () => (playing ? (now: number) => (clock.at(now) / ticksPerQuarter) * (60 / bpm) : null),
+    () =>
+      playing && bpm !== undefined && ticksPerQuarter !== undefined
+        ? (now: number) => secondsOf(clock.at(now), ticksPerQuarter, bpm)
+        : null,
     [playing, clock, bpm, ticksPerQuarter],
   );
   // The frame stream reads the latest project without re-subscribing.
@@ -755,9 +758,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
               onMix={changeEffectMix}
               onSetting={changeEffectSetting}
-              barSeconds={(project.beatsPerBar * 60) / project.bpm}
+              barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
               beatsPerBar={project.beatsPerBar}
               songSeconds={songSeconds}
+              frames={frames}
               rowRef={chainRow}
             />
           ) : !track ? null : clip ? (
