@@ -41,10 +41,11 @@ pub const TAKE_OVER_SECONDS: f64 = 0.005;
 /// An octave changes at once: the oscillators carry on from where they are
 /// in their cycle, so the wave doesn't jump.
 pub const SYNTH_SMOOTHING_SECONDS: f64 = 0.02;
-/// How often a voice whose cutoff moves on its own (by the filter envelope or
-/// key tracking) works out its filter settings again, in samples. In
-/// between, it glides to them in a straight line. See RFC-008, "In the
-/// engine" (the filter's settings become per voice).
+/// How often a voice whose cutoff moves on its own (by the filter envelope,
+/// key tracking or the LFO) works out its filter settings again, in samples,
+/// and how often its LFO works out its shape. In between, each glides in a
+/// straight line. See RFC-008, "In the engine" (the filter's settings become
+/// per voice).
 pub const FILTER_CONTROL_SAMPLES: u32 = 16;
 /// The note the cutoff is set for when it follows the key: middle C. Key
 /// tracking moves it from here.
@@ -358,7 +359,8 @@ pub(crate) struct Synth {
     /// The phase every voice shares with Retrigger and Sync off, from 0 to
     /// 1, restarted on Play.
     lfo_phase: f64,
-    /// How much of a step in the LFO is left after a sample.
+    /// How much of a step in the LFO is left from one control point to the
+    /// next.
     lfo_decay: f32,
     /// Where the song is, in samples, for a synced LFO's phase: the
     /// playhead while playing, which the processor sets each run, and
@@ -430,7 +432,7 @@ impl Synth {
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
         self.take_over_samples = samples(TAKE_OVER_SECONDS, sample_rate);
-        self.lfo_decay = lfo::decay(sample_rate);
+        self.lfo_decay = lfo::decay(FILTER_CONTROL_SAMPLES, sample_rate);
         self.jump_to_settings();
         for (index, voice) in self.voices.iter_mut().enumerate() {
             *voice = Voice::new(index);
@@ -710,6 +712,7 @@ impl Synth {
         let lfo_shape = self.settings.lfo_shape;
         let lfo_retrigger = self.settings.lfo_retrigger;
         let lfo_decay = self.lfo_decay;
+        let lfo_ahead = lfo_increment * f64::from(FILTER_CONTROL_SAMPLES);
         // Voices starting to have their own filter settings start from the
         // shared ones, and glide from there at the next control point.
         if per_voice_filter && !self.per_voice_filter {
@@ -758,12 +761,19 @@ impl Synth {
                 shared_phase
             };
             let lfo = if lfo_on {
-                voice.lfo.next(phase, lfo_shape, lfo_decay)
+                if control {
+                    // Where it will be at the next control point.
+                    let ahead = lfo::wrap(phase + lfo_ahead);
+                    voice
+                        .lfo
+                        .control(ahead, lfo_shape, lfo_decay, FILTER_CONTROL_SAMPLES);
+                }
+                voice.lfo.next_sample()
             } else {
                 0.0
             };
             let increment = if vibrato != 0.0 {
-                voice.increment * f64::from((vibrato * lfo / 12.0).exp2())
+                voice.increment * lfo::exp2_small(f64::from(vibrato * lfo) / 12.0)
             } else {
                 voice.increment
             };
