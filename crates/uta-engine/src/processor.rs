@@ -587,6 +587,11 @@ impl Processor {
             let sequencing = self.playing && timed;
             if sequencing {
                 run = run.min(self.frames_to_next_event());
+                // A synced LFO's phase is the song's position. Bounded by
+                // TRACK_SLOTS.
+                for slot in self.slots.iter_mut() {
+                    slot.synth.follow_song(self.playhead);
+                }
             }
             let channels = self.channels;
             self.render(&mut output[done * channels..(done + run) * channels]);
@@ -722,6 +727,9 @@ impl Processor {
         self.playhead = playhead;
         for slot in self.slots.iter_mut() {
             slot.synth.release_sequenced_unless(|_, _| false);
+            // So the notes chased here start a synced LFO where the song
+            // is.
+            slot.synth.follow_song(playhead);
         }
         self.find_bookmarks();
         for track in self.snapshot.tracks() {

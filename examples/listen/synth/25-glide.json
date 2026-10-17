@@ -1,36 +1,36 @@
 {
-  "project": "55b7cf1f-a72a-5010-8bcd-2d929eae4e0d",
+  "project": "02903913-d904-5794-99c3-e2e0627e1c32",
   "commands": [
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_master_volume",
         "volume_db": 0.0
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_tempo",
         "bpm": 120.0
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_loop_enabled",
         "enabled": false
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "add_tracks",
         "tracks": [
           {
             "index": 1,
             "track": {
-              "id": "2fe1eb07-2551-5174-b625-d9f398267745",
+              "id": "01a0fa2b-7aba-50df-92d6-60ed88ce2034",
               "name": "Glide 0.001",
               "source": {
                 "synth": {
@@ -58,54 +58,54 @@
               },
               "clips": [
                 {
-                  "id": "ea2d58fb-3273-5a52-a0b1-91fdcde5f23d",
+                  "id": "eee41e12-b825-5a04-a199-d5ed22a9e3bd",
                   "start": 0,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "62ef4554-4f74-510c-8e2f-c019c2965407",
+                      "id": "e2ef1844-a425-555b-ad5e-4be942afae5f",
                       "pitch": 45,
                       "velocity": 100,
                       "start": 0,
                       "length": 720
                     },
                     {
-                      "id": "06122f24-a2c3-5a7b-92f4-aebb1c0557f0",
+                      "id": "6f303d16-54b5-5f8e-941f-7ee01911b0bc",
                       "pitch": 52,
                       "velocity": 90,
                       "start": 480,
                       "length": 720
                     },
                     {
-                      "id": "059046c0-b2a9-5314-82b7-1bde5dcf3aad",
+                      "id": "08dadcc2-d011-5bb4-95c1-0cf9ce47ad8b",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 960,
                       "length": 720
                     },
                     {
-                      "id": "a0ff5c2b-4172-50c1-98fe-74e956872a56",
+                      "id": "c5edcc57-994e-5036-b4ea-8083057bba36",
                       "pitch": 55,
                       "velocity": 90,
                       "start": 1440,
                       "length": 720
                     },
                     {
-                      "id": "2e4c3b1e-34e7-544f-9f89-688fceba1240",
+                      "id": "f8e56026-3fc7-50f1-b52c-ac5ed1b45234",
                       "pitch": 52,
                       "velocity": 100,
                       "start": 1920,
                       "length": 720
                     },
                     {
-                      "id": "2db84215-0f2f-5aca-b46d-514045515f00",
+                      "id": "451f1275-c4c6-55a8-abb0-7fc9f28ac974",
                       "pitch": 48,
                       "velocity": 90,
                       "start": 2400,
                       "length": 720
                     },
                     {
-                      "id": "a4b2bbda-0c14-5ff4-b680-241dd9c9ad06",
+                      "id": "fd4ca59c-b3ad-590c-9af0-9bafdc4c6d88",
                       "pitch": 50,
                       "velocity": 100,
                       "start": 2880,
@@ -119,7 +119,7 @@
           {
             "index": 2,
             "track": {
-              "id": "93cb22c5-959d-5466-b9a6-981623fd0a9c",
+              "id": "ab0bc293-3e34-518e-b420-ffb06c161acd",
               "name": "Glide 0.03",
               "source": {
                 "synth": {
@@ -147,54 +147,54 @@
               },
               "clips": [
                 {
-                  "id": "848c5691-568d-5dfa-b032-2a09bf6131d4",
+                  "id": "0a5b55c7-d68d-5212-ac9c-8d26558722ca",
                   "start": 3840,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "3584f5c8-f20b-57e3-81ed-d36cc520b61e",
+                      "id": "0b54f7e9-0826-5acb-a9f9-e90b080820c4",
                       "pitch": 45,
                       "velocity": 100,
                       "start": 0,
                       "length": 720
                     },
                     {
-                      "id": "41b2a27d-c0f7-5653-8b90-89eb4aaefa58",
+                      "id": "23577467-3130-58d8-8636-3c4eef62ebc3",
                       "pitch": 52,
                       "velocity": 90,
                       "start": 480,
                       "length": 720
                     },
                     {
-                      "id": "09cd701f-3b22-5d7e-816b-cef41f8c4c1f",
+                      "id": "8f58293d-228c-5603-96e0-363e9570d17e",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 960,
                       "length": 720
                     },
                     {
-                      "id": "0991b9ac-fb43-5b4e-8b1f-8966cd18c82e",
+                      "id": "883f6d14-8f77-5b97-9bbd-1ae336813e21",
                       "pitch": 55,
                       "velocity": 90,
                       "start": 1440,
                       "length": 720
                     },
                     {
-                      "id": "54973355-6e0a-566b-b48c-4b8f9ec51efe",
+                      "id": "39321017-f621-5e47-b66e-95608ecfa3e8",
                       "pitch": 52,
                       "velocity": 100,
                       "start": 1920,
                       "length": 720
                     },
                     {
-                      "id": "d3f6d124-f315-517f-acbd-a7138bed17a7",
+                      "id": "89c7b286-fdc2-5bf4-bb42-f29bb1fbf715",
                       "pitch": 48,
                       "velocity": 90,
                       "start": 2400,
                       "length": 720
                     },
                     {
-                      "id": "ece05cc5-17a6-52d1-acb3-a03849ddc05c",
+                      "id": "2cd7a73a-8f3f-573a-bec7-45f62ea743ae",
                       "pitch": 50,
                       "velocity": 100,
                       "start": 2880,
@@ -208,7 +208,7 @@
           {
             "index": 3,
             "track": {
-              "id": "509cf306-c5b5-57f5-ae88-a4777f72ecf8",
+              "id": "f7ba4ce7-84cc-5615-94ab-b17790d03b24",
               "name": "Glide 0.08",
               "source": {
                 "synth": {
@@ -236,54 +236,54 @@
               },
               "clips": [
                 {
-                  "id": "58dc3419-1d7c-5d66-b02c-f4af82d7afee",
+                  "id": "0b977d2a-28c0-593c-bd51-fff2341a8d49",
                   "start": 7680,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "f42d6cc0-5f21-5121-9d34-dce042615fc8",
+                      "id": "34e89580-2272-550d-a76c-f78cd3bfccf6",
                       "pitch": 45,
                       "velocity": 100,
                       "start": 0,
                       "length": 720
                     },
                     {
-                      "id": "486ddf02-b5fc-5b8d-bd58-21f113888f5a",
+                      "id": "cc6601cd-d746-56cc-ba05-477ad2f3c86b",
                       "pitch": 52,
                       "velocity": 90,
                       "start": 480,
                       "length": 720
                     },
                     {
-                      "id": "27cec1ef-f14b-5d31-a554-c680656463a3",
+                      "id": "e0034c46-197d-5369-b874-9f99f25fa7f4",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 960,
                       "length": 720
                     },
                     {
-                      "id": "b45e408b-59ef-50f7-8d6d-862065fc1109",
+                      "id": "d44398de-3118-5594-a2de-66bc17b340ba",
                       "pitch": 55,
                       "velocity": 90,
                       "start": 1440,
                       "length": 720
                     },
                     {
-                      "id": "680ece8e-dbcf-5ef5-a9d4-81cac873e0f6",
+                      "id": "2cf12f7a-9eb5-5ed4-9016-4c35ecba2615",
                       "pitch": 52,
                       "velocity": 100,
                       "start": 1920,
                       "length": 720
                     },
                     {
-                      "id": "b7a181d9-ccfa-57dd-bf7c-94c9dffb4403",
+                      "id": "ef4dffff-6509-5de4-8a38-1ab43d63d571",
                       "pitch": 48,
                       "velocity": 90,
                       "start": 2400,
                       "length": 720
                     },
                     {
-                      "id": "0b72522d-fbea-5472-805c-8660a3911f05",
+                      "id": "11e0affd-4e7b-510c-baaa-76a118731386",
                       "pitch": 50,
                       "velocity": 100,
                       "start": 2880,
@@ -297,7 +297,7 @@
           {
             "index": 4,
             "track": {
-              "id": "6d294de2-bfaa-5e6d-bd58-442b91183e7c",
+              "id": "11d8ec2a-88c4-54de-807b-d237394e08f3",
               "name": "Glide 0.2",
               "source": {
                 "synth": {
@@ -325,54 +325,54 @@
               },
               "clips": [
                 {
-                  "id": "7e492c89-91f8-5f68-9b63-9db98c31117c",
+                  "id": "0408a3da-e890-5bae-9519-cf66372b6031",
                   "start": 11520,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "fa2db4c2-7f5a-5463-bd73-938e08dba130",
+                      "id": "3119653e-5aea-5d27-a39c-8392cff8e025",
                       "pitch": 45,
                       "velocity": 100,
                       "start": 0,
                       "length": 720
                     },
                     {
-                      "id": "05476a55-427e-58d1-8bbd-4fa77f975921",
+                      "id": "f1439649-562e-554d-b9f7-fd3f25737ca0",
                       "pitch": 52,
                       "velocity": 90,
                       "start": 480,
                       "length": 720
                     },
                     {
-                      "id": "70e4994f-7d06-5d67-8a03-db200fe9166c",
+                      "id": "1b264e2d-083c-53c2-a3d5-cdf07acfa1a3",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 960,
                       "length": 720
                     },
                     {
-                      "id": "419b9433-df50-5593-88bf-cc33883eace2",
+                      "id": "e5bc5cbf-42e8-55fd-9185-b4b397b3368a",
                       "pitch": 55,
                       "velocity": 90,
                       "start": 1440,
                       "length": 720
                     },
                     {
-                      "id": "f16a7d8a-fb62-5732-a273-3bc19e1e8500",
+                      "id": "cb93a017-c154-5391-900d-678ad52127dd",
                       "pitch": 52,
                       "velocity": 100,
                       "start": 1920,
                       "length": 720
                     },
                     {
-                      "id": "4b263d24-6bb4-514e-9e2a-57530e6c8896",
+                      "id": "0e324cd8-1bb6-5cdb-af26-1b6af382a17b",
                       "pitch": 48,
                       "velocity": 90,
                       "start": 2400,
                       "length": 720
                     },
                     {
-                      "id": "47b901a9-8f4a-55ac-b46b-af648b0e1a15",
+                      "id": "b250fb57-0ae8-5168-8887-3645a7b5c05c",
                       "pitch": 50,
                       "velocity": 100,
                       "start": 2880,
@@ -386,7 +386,7 @@
           {
             "index": 5,
             "track": {
-              "id": "42c2cfe2-db79-5b5c-9e13-f8ccc7363da8",
+              "id": "fddd7848-da04-5d60-9d16-768f85065463",
               "name": "Glide 0.5",
               "source": {
                 "synth": {
@@ -414,54 +414,54 @@
               },
               "clips": [
                 {
-                  "id": "73fe7dde-8a67-5f43-b4c5-dc7c073ce7bd",
+                  "id": "829c9222-a2d3-587c-9ec4-5afc7877dfae",
                   "start": 15360,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "7e350a62-dac3-596a-8fe7-278e5708884f",
+                      "id": "ff716284-525c-5bb6-a2eb-2a7be67befb3",
                       "pitch": 45,
                       "velocity": 100,
                       "start": 0,
                       "length": 720
                     },
                     {
-                      "id": "c03fd6ed-2e35-524b-8283-189b79babd78",
+                      "id": "f04dcd27-8367-5b40-aaf3-bdd2b1bdb14a",
                       "pitch": 52,
                       "velocity": 90,
                       "start": 480,
                       "length": 720
                     },
                     {
-                      "id": "dbc950ef-4a97-5a49-b399-8488ad7f3eb6",
+                      "id": "c57deead-0a81-552e-8dc6-b9a6f60aa424",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 960,
                       "length": 720
                     },
                     {
-                      "id": "cdf5a890-d2f5-54a0-9e55-cafbaa41d889",
+                      "id": "fac786d4-8727-56fc-880c-8fcc08a1a761",
                       "pitch": 55,
                       "velocity": 90,
                       "start": 1440,
                       "length": 720
                     },
                     {
-                      "id": "3c17af13-d765-56a8-a63b-3a62baeaf1a1",
+                      "id": "77c05bde-d2dc-5841-af07-3992bff91a7b",
                       "pitch": 52,
                       "velocity": 100,
                       "start": 1920,
                       "length": 720
                     },
                     {
-                      "id": "fb3ed840-a07a-5d41-8a7c-1d5515ac0cb4",
+                      "id": "fd3d9bb4-d46c-50c1-a243-904e1b643f49",
                       "pitch": 48,
                       "velocity": 90,
                       "start": 2400,
                       "length": 720
                     },
                     {
-                      "id": "3231e677-75ee-5b6e-b0c5-19ec4f284039",
+                      "id": "5b0f3128-9edc-5891-be1f-6fa383e8a87f",
                       "pitch": 50,
                       "velocity": 100,
                       "start": 2880,

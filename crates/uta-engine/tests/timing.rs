@@ -154,12 +154,14 @@ fn check_7() -> Project {
 
 /// Every synth feature so far, on: oscillator 1 a narrow pulse, oscillator 2
 /// synced to it a fifth up, the sub and noise in the mix, the oscillators
-/// running free, some resonance, and the filter envelope and key tracking,
-/// so each voice works out its own filter settings, at full sustain. The
+/// running free, some resonance, the filter envelope and key tracking, so
+/// each voice works out its own filter settings, and each voice's own LFO,
+/// a sine (the dearest shape), moving the pitch, the width and the cutoff,
+/// at full sustain. The
 /// full-voice loads play it, so they measure the most a voice costs. Each
 /// Synth features ticket adds its features here (RFC-008, "How we'll verify
 /// it", Timing report).
-const FULL_VOICE: [SynthParam; 16] = [
+const FULL_VOICE: [SynthParam; 20] = [
     SynthParam::Osc1Wave(Waveform::Pulse),
     SynthParam::Osc1Width(0.3),
     SynthParam::Osc2Wave(Waveform::Pulse),
@@ -175,6 +177,10 @@ const FULL_VOICE: [SynthParam; 16] = [
     SynthParam::FilterEnvOctaves(3.0),
     SynthParam::FilterKey(0.5),
     SynthParam::FilterSustain(0.5),
+    SynthParam::LfoRetrigger(true),
+    SynthParam::LfoVibratoSemitones(0.3),
+    SynthParam::LfoWidth(0.2),
+    SynthParam::FilterLfoOctaves(1.0),
     SynthParam::Sustain(1.0),
 ];
 
@@ -471,7 +477,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                         .unwrap()
                 }
                 // The cutoff, oscillator 1's Width, oscillator 2's Pitch and
-                // its level, on every full voice.
+                // its level, and the LFO's rate, on every full voice.
                 Load::FullVoices => {
                     let TrackSound::Synth(full) = renderer.controller.snapshot().tracks()[0].sound
                     else {
@@ -487,6 +493,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                                 osc1_width: 0.3 + step / 100.0,
                                 osc2_pitch_semitones: 7.07 + step / 50.0,
                                 osc2_level: 0.5 + step / 100.0,
+                                lfo_rate_hz: 2.0 + step / 10.0,
                                 ..full
                             },
                         )

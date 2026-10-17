@@ -35,14 +35,18 @@ use crate::{
 ///   Wobble.
 /// - Format 10 adds oscillator 1's Width and oscillator 2's Sync
 ///   (RFC-008).
-/// - Format 11 adds the synth's Voice mode (Poly or Mono), Legato and Glide
+/// - Format 11 adds the synth's LFO: its Shape, Rate, Sync, synced rate (a
+///   note division), Retrigger, Vibrato and Width, and the filter's LFO
+///   amount (RFC-008). Older synth settings still read, with the LFO
+///   moving nothing.
+/// - Format 12 adds the synth's Voice mode (Poly or Mono), Legato and Glide
 ///   (RFC-008).
-pub const COMMAND_FORMAT: u32 = 11;
+pub const COMMAND_FORMAT: u32 = 12;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":11,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":12,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -1072,8 +1076,11 @@ mod tests {
         r#""osc2_pitch_semitones":0.0,"osc2_sync":false,"sub_octave":-1,"osc1_level":1.0,"#,
         r#""osc2_level":0.0,"sub_level":0.0,"noise_level":0.0,"filter_mode":"low_pass","#,
         r#""cutoff_hz":20000.0,"resonance":0.0,"filter_env_octaves":0.0,"filter_key":0.0,"#,
+        r#""filter_lfo_octaves":0.0,"#,
         r#""filter_attack_seconds":0.001,"filter_decay_seconds":0.3,"filter_sustain":0.0,"#,
         r#""filter_release_seconds":0.2,"attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2,"#,
+        r#""lfo_shape":"sine","lfo_rate_hz":5.0,"lfo_sync":false,"lfo_division":"1/4","#,
+        r#""lfo_retrigger":false,"lfo_vibrato_semitones":0.0,"lfo_width":0.0,"#,
         r#""voice_mode":"poly","legato":false,"glide_seconds":0.001,"osc_retrigger":true}"#,
     );
 
@@ -1082,7 +1089,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":11,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":12,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1148,7 +1155,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 2 to 6 lists still load.
@@ -1253,7 +1260,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 3 to 6 lists still load.
@@ -1328,7 +1335,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 4 to 6 lists still load.
@@ -1441,9 +1448,9 @@ mod tests {
 
     /// Settings new in a format: an older `set_synth_param` that sets one is
     /// refused. Oscillator 1's Width and oscillator 2's Sync are new in
-    /// format 10; the Voice mode, Legato and Glide in format 11.
+    /// format 10; the Voice mode, Legato and Glide in format 12.
     #[test]
-    fn the_format_10_and_11_synth_settings_serialise_like_this() {
+    fn the_format_10_and_12_synth_settings_serialise_like_this() {
         let track = track();
         let cases = [
             (
@@ -1459,24 +1466,24 @@ mod tests {
             (
                 SynthParam::VoiceMode(VoiceMode::Mono),
                 r#"{"name":"voice_mode","value":"mono"}"#,
-                11,
+                12,
             ),
             (
                 SynthParam::Legato(true),
                 r#"{"name":"legato","value":true}"#,
-                11,
+                12,
             ),
             (
                 SynthParam::GlideSeconds(0.25),
                 r#"{"name":"glide_seconds","value":0.25}"#,
-                11,
+                12,
             ),
         ];
         for (param, param_json, since) in cases {
             let command = Command::SetSynthParam { track, param };
             let body =
                 format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":{since},"command":{body}}}"#);
@@ -1487,6 +1494,61 @@ mod tests {
                 error
                     .to_string()
                     .contains(&format!("arrived in format {since}")),
+                "{error}"
+            );
+        }
+    }
+
+    /// The LFO's settings are new in format 11: an older `set_synth_param`
+    /// that sets one is refused.
+    #[test]
+    fn the_format_11_synth_settings_serialise_like_this() {
+        let track = track();
+        let cases = [
+            (
+                SynthParam::FilterLfoOctaves(-1.5),
+                r#"{"name":"filter_lfo_octaves","value":-1.5}"#,
+            ),
+            (
+                SynthParam::LfoShape(crate::LfoShape::SampleAndHold),
+                r#"{"name":"lfo_shape","value":"sample_and_hold"}"#,
+            ),
+            (
+                SynthParam::LfoRateHz(0.5),
+                r#"{"name":"lfo_rate_hz","value":0.5}"#,
+            ),
+            (
+                SynthParam::LfoSync(true),
+                r#"{"name":"lfo_sync","value":true}"#,
+            ),
+            (
+                SynthParam::LfoDivision(crate::time::NoteDivision::DOTTED_EIGHTH),
+                r#"{"name":"lfo_division","value":"1/8d"}"#,
+            ),
+            (
+                SynthParam::LfoRetrigger(true),
+                r#"{"name":"lfo_retrigger","value":true}"#,
+            ),
+            (
+                SynthParam::LfoVibratoSemitones(0.25),
+                r#"{"name":"lfo_vibrato_semitones","value":0.25}"#,
+            ),
+            (
+                SynthParam::LfoWidth(0.3),
+                r#"{"name":"lfo_width","value":0.3}"#,
+            ),
+        ];
+        for (param, param_json) in cases {
+            let command = Command::SetSynthParam { track, param };
+            let body =
+                format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            let json = format!(r#"{{"format":10,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(
+                error.to_string().contains("arrived in format 11"),
                 "{error}"
             );
         }
@@ -1558,7 +1620,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 5 to 8 lists still load, with the Delay as they wrote
@@ -1608,7 +1670,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 7, even in a format 6 command.
@@ -1649,7 +1711,7 @@ mod tests {
             let command = Command::SetDelayParam { effect, param };
             let body =
                 format!(r#"{{"type":"set_delay_param","effect":"{effect}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":11,"command":{body}}}"#);
+            let json = format!(r#"{{"format":12,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // New in format 9, even in a format 8 command.
@@ -1772,7 +1834,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 12, 99] {
+        for format in [0, 13, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

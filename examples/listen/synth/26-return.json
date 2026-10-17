@@ -1,36 +1,36 @@
 {
-  "project": "dbc14131-f63c-5a03-9a44-e33140a48915",
+  "project": "05bfbf0f-c391-562a-9bd0-ad1303688e65",
   "commands": [
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_master_volume",
         "volume_db": 0.0
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_tempo",
         "bpm": 120.0
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "set_loop_enabled",
         "enabled": false
       }
     },
     {
-      "format": 11,
+      "format": 12,
       "command": {
         "type": "add_tracks",
         "tracks": [
           {
             "index": 1,
             "track": {
-              "id": "bd6e3ff5-ec8c-578d-a145-a6dcdd1e6444",
+              "id": "ca3ab6ba-396f-5f9c-a590-7a93fe1f07ee",
               "name": "Poly",
               "source": {
                 "synth": {
@@ -52,40 +52,40 @@
               },
               "clips": [
                 {
-                  "id": "7af3720b-6463-548d-82d6-404e9c642278",
+                  "id": "82577c28-635e-5226-b742-e34c1fa5edde",
                   "start": 0,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "149801de-983c-5054-a99c-edfd67e05a5c",
+                      "id": "631b563a-2b65-5afc-938d-b408b4577f51",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 0,
                       "length": 3360
                     },
                     {
-                      "id": "f3d2d78b-0488-576b-a334-64e5a68bc694",
+                      "id": "fbf64301-c04a-5693-9e06-0ed746c935e0",
                       "pitch": 64,
                       "velocity": 100,
                       "start": 960,
                       "length": 480
                     },
                     {
-                      "id": "7ed82ce8-d92d-5d6c-bf49-311c94fcb18a",
+                      "id": "0b3d51f5-5b84-5fa6-8b54-2c850c66d328",
                       "pitch": 69,
                       "velocity": 100,
                       "start": 1920,
                       "length": 480
                     },
                     {
-                      "id": "b261ad2a-f964-5b66-9ee1-bf03d0ddc63c",
+                      "id": "caed66bf-1882-59a5-bf18-57684016a6cb",
                       "pitch": 72,
                       "velocity": 100,
                       "start": 2880,
                       "length": 240
                     },
                     {
-                      "id": "ba22127b-f10c-5143-b574-b7e0579f1c9a",
+                      "id": "ae1c84f4-ee4d-5b77-b061-0a6a5c93e80e",
                       "pitch": 76,
                       "velocity": 100,
                       "start": 3360,
@@ -99,7 +99,7 @@
           {
             "index": 2,
             "track": {
-              "id": "77516cd0-6f5d-54e0-980e-d97e6d8e4da6",
+              "id": "952a32b1-a58e-5aa4-b14d-0b6a90da3d5a",
               "name": "Mono",
               "source": {
                 "synth": {
@@ -122,40 +122,40 @@
               },
               "clips": [
                 {
-                  "id": "ed4519de-c792-54b8-ac15-a4a3f19511d3",
+                  "id": "9cf8a5ba-d37e-552a-84cf-2429ee7ee224",
                   "start": 3840,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "bdef73ed-81e5-57fb-95df-67a9c29e196a",
+                      "id": "dd001c3e-7107-5b0d-bc82-adf82125e3a0",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 0,
                       "length": 3360
                     },
                     {
-                      "id": "948154f9-2355-52dd-8a4f-e9f126f54fed",
+                      "id": "267c83e2-54a4-5247-8fc4-1c93ac44811e",
                       "pitch": 64,
                       "velocity": 100,
                       "start": 960,
                       "length": 480
                     },
                     {
-                      "id": "b4fac78c-3574-56dc-87e3-5e1573eaaa09",
+                      "id": "758e8eb3-704a-5c6f-ba13-892fa7ae06dd",
                       "pitch": 69,
                       "velocity": 100,
                       "start": 1920,
                       "length": 480
                     },
                     {
-                      "id": "c94e99c6-46b2-5d0a-abd4-89a811ef3a2f",
+                      "id": "ac19220d-8daf-5688-be43-4aa81484af6a",
                       "pitch": 72,
                       "velocity": 100,
                       "start": 2880,
                       "length": 240
                     },
                     {
-                      "id": "a9243dde-60d1-500e-9015-6ab93d353214",
+                      "id": "f19fe1ac-e76e-5c8e-9f8a-2d18e37d5825",
                       "pitch": 76,
                       "velocity": 100,
                       "start": 3360,
@@ -169,7 +169,7 @@
           {
             "index": 3,
             "track": {
-              "id": "05e4d55d-fdb9-581a-ac57-2d3bb5753457",
+              "id": "383c1114-af53-5001-af12-97dc6dcded2c",
               "name": "Mono, Legato, Glide",
               "source": {
                 "synth": {
@@ -194,40 +194,40 @@
               },
               "clips": [
                 {
-                  "id": "3e498018-b96a-5802-86b9-4a00bd73800c",
+                  "id": "6b9aede9-3c11-5128-8c61-633cacaa902e",
                   "start": 7680,
                   "length": 3840,
                   "notes": [
                     {
-                      "id": "8ef56711-fdc1-56fa-9fce-5a8b04e76b63",
+                      "id": "efed1339-fb34-5736-a5b3-64872323b395",
                       "pitch": 57,
                       "velocity": 100,
                       "start": 0,
                       "length": 3360
                     },
                     {
-                      "id": "7d62ae6c-75bb-5d55-8eab-a2e4a08bd5b1",
+                      "id": "48aaa6cf-ce8f-5b53-b708-b57292f06e63",
                       "pitch": 64,
                       "velocity": 100,
                       "start": 960,
                       "length": 480
                     },
                     {
-                      "id": "19368baa-02e9-54e9-ac75-9d072e70b47c",
+                      "id": "a4140794-f89c-50dd-985e-8d8f775ad939",
                       "pitch": 69,
                       "velocity": 100,
                       "start": 1920,
                       "length": 480
                     },
                     {
-                      "id": "8469da21-2e24-5756-9f6f-7affc51541c4",
+                      "id": "75f93950-f0ee-5b27-bb32-34ecc025b91f",
                       "pitch": 72,
                       "velocity": 100,
                       "start": 2880,
                       "length": 240
                     },
                     {
-                      "id": "318b35d6-a61c-5551-b3c7-aa4bba9ebd22",
+                      "id": "e51b0b56-875f-54f2-b206-b3cf1cdf922a",
                       "pitch": 76,
                       "velocity": 100,
                       "start": 3360,

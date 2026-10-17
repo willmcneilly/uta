@@ -7,7 +7,7 @@ use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
-    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, MixerStrip, NoteKey,
+    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip, NoteKey,
     SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
 };
 
@@ -173,7 +173,7 @@ impl Snapshot {
                     _ => Arc::new(TrackNotes::new(clips, &sequence)),
                 };
                 let sound = match track.source() {
-                    Source::Synth(settings) => TrackSound::Synth(synth_settings(settings)),
+                    Source::Synth(settings) => TrackSound::Synth(synth_settings(settings, bpm)),
                     Source::Drums(kit) => TrackSound::Drums(KitSettings::from(kit)),
                 };
                 TrackSnapshot {
@@ -759,8 +759,8 @@ pub(crate) fn busy_loop() -> Snapshot {
 }
 
 /// The core's synth settings as the engine plays them: the same fields,
-/// units and ranges.
-fn synth_settings(settings: &uta_core::SynthSettings) -> SynthSettings {
+/// units and ranges, with the LFO's synced rate worked out at `bpm`.
+fn synth_settings(settings: &uta_core::SynthSettings, bpm: f32) -> SynthSettings {
     let wave = |wave| match wave {
         uta_core::Waveform::Sine => Waveform::Sine,
         uta_core::Waveform::Triangle => Waveform::Triangle,
@@ -789,6 +789,7 @@ fn synth_settings(settings: &uta_core::SynthSettings) -> SynthSettings {
         resonance: settings.resonance,
         filter_env_octaves: settings.filter_env_octaves,
         filter_key: settings.filter_key,
+        filter_lfo_octaves: settings.filter_lfo_octaves,
         filter_attack_seconds: settings.filter_attack_seconds,
         filter_decay_seconds: settings.filter_decay_seconds,
         filter_sustain: settings.filter_sustain,
@@ -797,6 +798,19 @@ fn synth_settings(settings: &uta_core::SynthSettings) -> SynthSettings {
         decay_seconds: settings.decay_seconds,
         sustain: settings.sustain,
         release_seconds: settings.release_seconds,
+        lfo_shape: match settings.lfo_shape {
+            uta_core::LfoShape::Sine => LfoShape::Sine,
+            uta_core::LfoShape::Triangle => LfoShape::Triangle,
+            uta_core::LfoShape::Saw => LfoShape::Saw,
+            uta_core::LfoShape::Square => LfoShape::Square,
+            uta_core::LfoShape::SampleAndHold => LfoShape::SampleAndHold,
+        },
+        lfo_rate_hz: settings.lfo_rate_hz,
+        lfo_sync: settings.lfo_sync,
+        lfo_synced_seconds: settings.lfo_division.seconds_at(bpm),
+        lfo_retrigger: settings.lfo_retrigger,
+        lfo_vibrato_semitones: settings.lfo_vibrato_semitones,
+        lfo_width: settings.lfo_width,
         voice_mode: match settings.voice_mode {
             uta_core::VoiceMode::Poly => VoiceMode::Poly,
             uta_core::VoiceMode::Mono => VoiceMode::Mono,
@@ -968,6 +982,14 @@ mod tests {
             SynthParam::FilterDecaySeconds(0.4),
             SynthParam::FilterSustain(0.3),
             SynthParam::FilterReleaseSeconds(0.6),
+            SynthParam::FilterLfoOctaves(1.5),
+            SynthParam::LfoShape(uta_core::LfoShape::Triangle),
+            SynthParam::LfoRateHz(0.7),
+            SynthParam::LfoSync(true),
+            SynthParam::LfoDivision(uta_core::time::NoteDivision::DOTTED_EIGHTH),
+            SynthParam::LfoRetrigger(true),
+            SynthParam::LfoVibratoSemitones(0.2),
+            SynthParam::LfoWidth(0.1),
         ] {
             project
                 .apply(&Command::SetSynthParam { track, param })
@@ -1001,6 +1023,15 @@ mod tests {
                 filter_decay_seconds: 0.4,
                 filter_sustain: 0.3,
                 filter_release_seconds: 0.6,
+                filter_lfo_octaves: 1.5,
+                lfo_shape: LfoShape::Triangle,
+                lfo_rate_hz: 0.7,
+                lfo_sync: true,
+                // A dotted eighth at 120 BPM.
+                lfo_synced_seconds: 0.375,
+                lfo_retrigger: true,
+                lfo_vibrato_semitones: 0.2,
+                lfo_width: 0.1,
                 voice_mode: VoiceMode::Mono,
                 legato: true,
                 glide_seconds: 0.25,
@@ -1052,7 +1083,33 @@ mod tests {
     #[test]
     fn the_synth_settings_copy_across_field_by_field() {
         let core = uta_core::SynthSettings::default();
-        assert_eq!(synth_settings(&core), SynthSettings::default());
+        assert_eq!(synth_settings(&core, 120.0), SynthSettings::default());
+    }
+
+    /// A synced LFO's cycle is its division at the tempo, worked out again
+    /// when the tempo changes.
+    #[test]
+    fn a_synced_lfos_cycle_follows_the_tempo() {
+        let mut project = project();
+        let track = project.tracks()[0].id();
+        project.apply(&Command::SetTempo { bpm: 90.0 }).unwrap();
+        let cycle = |project: &Project| {
+            let TrackSound::Synth(synth) = Snapshot::from(project).tracks()[0].sound else {
+                panic!("a synth track")
+            };
+            synth.lfo_synced_seconds
+        };
+        // A quarter at 90 BPM is two thirds of a second.
+        assert!((cycle(&project) - 2.0 / 3.0).abs() < 1e-12);
+        project
+            .apply(&Command::SetSynthParam {
+                track,
+                param: SynthParam::LfoDivision(
+                    uta_core::time::NoteDivision::from_value("1/1").unwrap(),
+                ),
+            })
+            .unwrap();
+        assert!((cycle(&project) - 8.0 / 3.0).abs() < 1e-12);
     }
 
     #[test]

@@ -1776,7 +1776,34 @@ mod tests {
         assert_eq!(env["unit"], "octaves");
         assert_eq!(env["limits"], serde_json::json!([-10.0, 10.0]));
         assert!(env.get("step").is_none());
-        let voice_mode = &json["settings"][25];
+        let filter_lfo = &json["settings"][17];
+        assert_eq!(filter_lfo["name"], "filter_lfo_octaves");
+        assert_eq!(filter_lfo["unit"], "octaves");
+        assert_eq!(filter_lfo["limits"], serde_json::json!([-5.0, 5.0]));
+        let shape = &json["settings"][26];
+        assert_eq!(shape["name"], "lfo_shape");
+        assert_eq!(shape["value"], "sine");
+        assert_eq!(shape["kind"], "choice");
+        assert_eq!(
+            shape["options"][4],
+            serde_json::json!({"value": "sample_and_hold", "label": "Sample & hold"})
+        );
+        let rate = &json["settings"][27];
+        assert_eq!(rate["name"], "lfo_rate_hz");
+        assert_eq!(rate["unit"], "hz");
+        assert_eq!(rate["scale"], "log");
+        let lfo_sync = &json["settings"][28];
+        assert_eq!(lfo_sync["name"], "lfo_sync");
+        assert_eq!(lfo_sync["kind"], "toggle");
+        let division = &json["settings"][29];
+        assert_eq!(division["name"], "lfo_division");
+        assert_eq!(division["value"], "1/4");
+        assert_eq!(division["kind"], "choice");
+        assert_eq!(
+            division["options"][8],
+            serde_json::json!({"value": "1/8d", "label": "1/8 dotted"})
+        );
+        let voice_mode = &json["settings"][33];
         assert_eq!(voice_mode["name"], "voice_mode");
         assert_eq!(voice_mode["value"], "poly");
         assert_eq!(voice_mode["kind"], "choice");
@@ -1784,17 +1811,17 @@ mod tests {
             voice_mode["options"][1],
             serde_json::json!({"value": "mono", "label": "Mono"})
         );
-        let legato = &json["settings"][26];
+        let legato = &json["settings"][34];
         assert_eq!(legato["name"], "legato");
         assert_eq!(legato["value"], false);
         assert_eq!(legato["kind"], "toggle");
-        let glide = &json["settings"][27];
+        let glide = &json["settings"][35];
         assert_eq!(glide["name"], "glide_seconds");
         assert_eq!(glide["unit"], "seconds");
         assert_eq!(glide["scale"], "log");
         let limits: (f32, f32) = serde_json::from_value(glide["limits"].clone()).unwrap();
         assert_eq!(limits, (0.001, 5.0));
-        let retrigger = &json["settings"][28];
+        let retrigger = &json["settings"][36];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
@@ -1844,6 +1871,7 @@ mod tests {
                 Some("amount"),
                 Some("octaves"),
                 Some("fraction"),
+                Some("octaves"),
                 Some("seconds"),
                 Some("seconds"),
                 Some("fraction"),
@@ -1853,6 +1881,12 @@ mod tests {
                 Some("fraction"),
                 Some("seconds"),
                 None,
+                Some("hz"),
+                None,
+                None,
+                None,
+                Some("semitones"),
+                Some("fraction"),
                 None,
                 Some("seconds"),
                 None,
@@ -2246,6 +2280,18 @@ mod tests {
             (
                 serde_json::json!({"name": "osc2_sync", "value": true}),
                 SynthParam::Osc2Sync(true),
+            ),
+            (
+                serde_json::json!({"name": "lfo_shape", "value": "square"}),
+                SynthParam::LfoShape(uta_core::LfoShape::Square),
+            ),
+            (
+                serde_json::json!({"name": "lfo_division", "value": "1/16t"}),
+                SynthParam::LfoDivision(uta_core::time::NoteDivision::from_value("1/16t").unwrap()),
+            ),
+            (
+                serde_json::json!({"name": "lfo_vibrato_semitones", "value": 0.25}),
+                SynthParam::LfoVibratoSemitones(0.25),
             ),
             (
                 serde_json::json!({"name": "noise_level", "value": 0.25}),

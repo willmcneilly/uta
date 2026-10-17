@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::setting::{Choice, Description, Scale, Unit};
+use crate::time::NoteDivision;
 
 /// An oscillator's wave shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +101,70 @@ const FILTER_MODES: [Choice; 3] = [
     },
 ];
 
+/// The LFO's wave shape. Each runs from -1 to 1 over a cycle, starting
+/// where a cycle starts: on the bar, when synced.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LfoShape {
+    /// Starts at zero, rising.
+    #[default]
+    Sine,
+    /// Starts at zero, rising.
+    Triangle,
+    /// Rises from -1 to 1, then falls back at once.
+    Saw,
+    /// High for the first half of the cycle, low for the second.
+    Square,
+    /// A new random level at the start of each cycle, held until the next.
+    SampleAndHold,
+}
+
+impl LfoShape {
+    /// Every shape, in the panel's order.
+    pub const ALL: [LfoShape; 5] = [
+        Self::Sine,
+        Self::Triangle,
+        Self::Saw,
+        Self::Square,
+        Self::SampleAndHold,
+    ];
+
+    /// The shape as `SetSynthParam` carries it: `"sample_and_hold"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::Sine => "sine",
+            Self::Triangle => "triangle",
+            Self::Saw => "saw",
+            Self::Square => "square",
+            Self::SampleAndHold => "sample_and_hold",
+        }
+    }
+}
+
+/// Every LFO shape, as the panel offers them.
+const LFO_SHAPES: [Choice; 5] = [
+    Choice {
+        value: "sine",
+        label: "Sine",
+    },
+    Choice {
+        value: "triangle",
+        label: "Triangle",
+    },
+    Choice {
+        value: "saw",
+        label: "Saw",
+    },
+    Choice {
+        value: "square",
+        label: "Square",
+    },
+    Choice {
+        value: "sample_and_hold",
+        label: "Sample & hold",
+    },
+];
+
 /// How many notes a synth track plays at once.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -182,6 +247,9 @@ pub struct SynthSettings {
     /// How closely the cutoff follows the note, from 0 to 1: at 1 it moves
     /// an octave for each octave the note is above or below middle C.
     pub filter_key: f32,
+    /// How far the LFO moves the cutoff at its peak, in octaves: -5 to 5.
+    /// Below zero it moves it the other way.
+    pub filter_lfo_octaves: f32,
     /// The filter envelope, in the same units and ranges as the amp
     /// envelope below.
     pub filter_attack_seconds: f32,
@@ -194,6 +262,24 @@ pub struct SynthSettings {
     /// The level held after the decay, from 0 to 1 (linear, not dB).
     pub sustain: f32,
     pub release_seconds: f32,
+    pub lfo_shape: LfoShape,
+    /// The LFO's rate when it isn't synced, in Hz: 0.05 to 20. Controls
+    /// move it on a log scale.
+    pub lfo_rate_hz: f32,
+    /// Whether the LFO's rate follows the tempo, as [`Self::lfo_division`],
+    /// with its cycles lined up with the bars.
+    pub lfo_sync: bool,
+    /// The length of one of the LFO's cycles, when synced.
+    pub lfo_division: NoteDivision,
+    /// Whether each note starts the LFO's cycle afresh. Off, every voice
+    /// shares one.
+    pub lfo_retrigger: bool,
+    /// How far the LFO moves both oscillators' pitch at its peak, in
+    /// semitones: 0 to 2.
+    pub lfo_vibrato_semitones: f32,
+    /// How far the LFO moves oscillator 1's pulse width at its peak, from
+    /// 0 to 0.45, either side of its Width (and never past its limits).
+    pub lfo_width: f32,
     /// Whether the synth plays chords, or one note at a time.
     pub voice_mode: VoiceMode,
     /// In Mono, whether a note that overlaps the one before carries its
@@ -231,19 +317,32 @@ impl SynthSettings {
     pub const MAX_FILTER_ENV_OCTAVES: f32 = 10.0;
     pub const MIN_FILTER_KEY: f32 = 0.0;
     pub const MAX_FILTER_KEY: f32 = 1.0;
+    /// The LFO's amount on the cutoff either side of zero, in octaves:
+    /// enough for a wah from a few hundred Hz to a few kHz.
+    pub const MAX_FILTER_LFO_OCTAVES: f32 = 5.0;
     /// The shortest attack, decay or release: 1 ms.
     pub const MIN_ENVELOPE_SECONDS: f32 = 0.001;
     /// The longest attack, decay or release.
     pub const MAX_ENVELOPE_SECONDS: f32 = 10.0;
     pub const MIN_SUSTAIN: f32 = 0.0;
     pub const MAX_SUSTAIN: f32 = 1.0;
+    /// The slowest LFO, a cycle every 20 seconds, for a pad that drifts, and
+    /// the fastest, where it starts to buzz rather than move.
+    pub const MIN_LFO_RATE_HZ: f32 = 0.05;
+    pub const MAX_LFO_RATE_HZ: f32 = 20.0;
+    /// The deepest vibrato: a tone either side, as wide as a singer's gets.
+    /// Deeper pitch movement is a mod slot's job.
+    pub const MAX_LFO_VIBRATO_SEMITONES: f32 = 2.0;
+    /// The furthest the LFO moves the pulse width: from a square (0.5) to
+    /// either limit.
+    pub const MAX_LFO_WIDTH: f32 = 0.45;
     /// The shortest Glide, which is off, and the longest.
     pub const MIN_GLIDE_SECONDS: f32 = 0.001;
     pub const MAX_GLIDE_SECONDS: f32 = 5.0;
 
     /// Every setting, as `SetSynthParam` carries them, in the order the
     /// sound flows through them.
-    pub fn params(&self) -> [SynthParam; 29] {
+    pub fn params(&self) -> [SynthParam; 37] {
         [
             SynthParam::Osc1Wave(self.osc1_wave),
             SynthParam::Osc1Octave(self.osc1_octave),
@@ -262,6 +361,7 @@ impl SynthSettings {
             SynthParam::Resonance(self.resonance),
             SynthParam::FilterEnvOctaves(self.filter_env_octaves),
             SynthParam::FilterKey(self.filter_key),
+            SynthParam::FilterLfoOctaves(self.filter_lfo_octaves),
             SynthParam::FilterAttackSeconds(self.filter_attack_seconds),
             SynthParam::FilterDecaySeconds(self.filter_decay_seconds),
             SynthParam::FilterSustain(self.filter_sustain),
@@ -270,6 +370,13 @@ impl SynthSettings {
             SynthParam::DecaySeconds(self.decay_seconds),
             SynthParam::Sustain(self.sustain),
             SynthParam::ReleaseSeconds(self.release_seconds),
+            SynthParam::LfoShape(self.lfo_shape),
+            SynthParam::LfoRateHz(self.lfo_rate_hz),
+            SynthParam::LfoSync(self.lfo_sync),
+            SynthParam::LfoDivision(self.lfo_division),
+            SynthParam::LfoRetrigger(self.lfo_retrigger),
+            SynthParam::LfoVibratoSemitones(self.lfo_vibrato_semitones),
+            SynthParam::LfoWidth(self.lfo_width),
             SynthParam::VoiceMode(self.voice_mode),
             SynthParam::Legato(self.legato),
             SynthParam::GlideSeconds(self.glide_seconds),
@@ -338,6 +445,9 @@ impl SynthSettings {
             SynthParam::FilterKey(value) => {
                 SynthParam::FilterKey(replace(&mut self.filter_key, value))
             }
+            SynthParam::FilterLfoOctaves(value) => {
+                SynthParam::FilterLfoOctaves(replace(&mut self.filter_lfo_octaves, value))
+            }
             SynthParam::FilterAttackSeconds(value) => {
                 SynthParam::FilterAttackSeconds(replace(&mut self.filter_attack_seconds, value))
             }
@@ -360,6 +470,23 @@ impl SynthSettings {
             SynthParam::ReleaseSeconds(value) => {
                 SynthParam::ReleaseSeconds(replace(&mut self.release_seconds, value))
             }
+            SynthParam::LfoShape(shape) => {
+                SynthParam::LfoShape(replace(&mut self.lfo_shape, shape))
+            }
+            SynthParam::LfoRateHz(hz) => SynthParam::LfoRateHz(replace(&mut self.lfo_rate_hz, hz)),
+            SynthParam::LfoSync(on) => SynthParam::LfoSync(replace(&mut self.lfo_sync, on)),
+            SynthParam::LfoDivision(division) => {
+                SynthParam::LfoDivision(replace(&mut self.lfo_division, division))
+            }
+            SynthParam::LfoRetrigger(on) => {
+                SynthParam::LfoRetrigger(replace(&mut self.lfo_retrigger, on))
+            }
+            SynthParam::LfoVibratoSemitones(value) => {
+                SynthParam::LfoVibratoSemitones(replace(&mut self.lfo_vibrato_semitones, value))
+            }
+            SynthParam::LfoWidth(value) => {
+                SynthParam::LfoWidth(replace(&mut self.lfo_width, value))
+            }
             SynthParam::VoiceMode(mode) => {
                 SynthParam::VoiceMode(replace(&mut self.voice_mode, mode))
             }
@@ -378,8 +505,10 @@ impl Default for SynthSettings {
     /// Today's sound, from before RFC-008: oscillator 1 a saw at the note's
     /// pitch and full level, everything else in the mixer at zero, oscillator
     /// 2 free of oscillator 1, a low-pass filter that nothing moves, and the
-    /// oscillators restarting on each note, in Poly. The filter envelope is
-    /// set for a pluck, so turning up its amount alone makes one.
+    /// oscillators restarting on each note. The filter envelope is set for a
+    /// pluck, so turning up its amount alone makes one, and the LFO for a
+    /// vibrato, so turning up Vibrato alone makes one; it moves nothing
+    /// until an amount is turned up.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -399,6 +528,7 @@ impl Default for SynthSettings {
             resonance: 0.0,
             filter_env_octaves: 0.0,
             filter_key: 0.0,
+            filter_lfo_octaves: 0.0,
             filter_attack_seconds: 0.001,
             filter_decay_seconds: 0.3,
             filter_sustain: 0.0,
@@ -407,6 +537,13 @@ impl Default for SynthSettings {
             decay_seconds: 0.2,
             sustain: 0.7,
             release_seconds: 0.2,
+            lfo_shape: LfoShape::Sine,
+            lfo_rate_hz: 5.0,
+            lfo_sync: false,
+            lfo_division: NoteDivision::QUARTER,
+            lfo_retrigger: false,
+            lfo_vibrato_semitones: 0.0,
+            lfo_width: 0.0,
             voice_mode: VoiceMode::Poly,
             legato: false,
             glide_seconds: Self::MIN_GLIDE_SECONDS,
@@ -440,6 +577,7 @@ pub enum SynthParam {
     Resonance(f32),
     FilterEnvOctaves(f32),
     FilterKey(f32),
+    FilterLfoOctaves(f32),
     FilterAttackSeconds(f32),
     FilterDecaySeconds(f32),
     FilterSustain(f32),
@@ -448,6 +586,13 @@ pub enum SynthParam {
     DecaySeconds(f32),
     Sustain(f32),
     ReleaseSeconds(f32),
+    LfoShape(LfoShape),
+    LfoRateHz(f32),
+    LfoSync(bool),
+    LfoDivision(NoteDivision),
+    LfoRetrigger(bool),
+    LfoVibratoSemitones(f32),
+    LfoWidth(f32),
     VoiceMode(VoiceMode),
     Legato(bool),
     GlideSeconds(f32),
@@ -478,13 +623,21 @@ impl SynthParam {
             | Self::FilterSustain(_)
             | Self::FilterReleaseSeconds(_) => 8,
             Self::Osc1Width(_) | Self::Osc2Sync(_) => 10,
-            Self::VoiceMode(_) | Self::Legato(_) | Self::GlideSeconds(_) => 11,
+            Self::FilterLfoOctaves(_)
+            | Self::LfoShape(_)
+            | Self::LfoRateHz(_)
+            | Self::LfoSync(_)
+            | Self::LfoDivision(_)
+            | Self::LfoRetrigger(_)
+            | Self::LfoVibratoSemitones(_)
+            | Self::LfoWidth(_) => 11,
+            Self::VoiceMode(_) | Self::Legato(_) | Self::GlideSeconds(_) => 12,
             _ => 6,
         }
     }
 
     /// The setting's value and its limits (inclusive), or `None` for a
-    /// wave, a mode or a switch, which have no range.
+    /// wave, a mode, a division or a switch, which have no range.
     pub fn range(&self) -> Option<(f32, f32, f32)> {
         use SynthSettings as S;
         let octave = |octave: i8, min: i8, max: i8| {
@@ -495,6 +648,10 @@ impl SynthParam {
             | Self::Osc2Wave(_)
             | Self::Osc2Sync(_)
             | Self::FilterMode(_)
+            | Self::LfoShape(_)
+            | Self::LfoSync(_)
+            | Self::LfoDivision(_)
+            | Self::LfoRetrigger(_)
             | Self::VoiceMode(_)
             | Self::Legato(_)
             | Self::OscRetrigger(_) => None,
@@ -516,6 +673,12 @@ impl SynthParam {
                 Some((value, -S::MAX_FILTER_ENV_OCTAVES, S::MAX_FILTER_ENV_OCTAVES))
             }
             Self::FilterKey(value) => Some((value, S::MIN_FILTER_KEY, S::MAX_FILTER_KEY)),
+            Self::FilterLfoOctaves(value) => {
+                Some((value, -S::MAX_FILTER_LFO_OCTAVES, S::MAX_FILTER_LFO_OCTAVES))
+            }
+            Self::LfoRateHz(hz) => Some((hz, S::MIN_LFO_RATE_HZ, S::MAX_LFO_RATE_HZ)),
+            Self::LfoVibratoSemitones(value) => Some((value, 0.0, S::MAX_LFO_VIBRATO_SEMITONES)),
+            Self::LfoWidth(value) => Some((value, 0.0, S::MAX_LFO_WIDTH)),
             Self::AttackSeconds(seconds)
             | Self::DecaySeconds(seconds)
             | Self::ReleaseSeconds(seconds)
@@ -683,6 +846,13 @@ impl SynthParam {
                 Unit::Fraction,
                 Linear,
             ),
+            Self::FilterLfoOctaves(_) => number(
+                "Filter LFO",
+                "How far the LFO moves the cutoff, in octaves. Slow and small, a pad \
+                 breathes; a few Hz is a wah. Below zero it moves the other way.",
+                Unit::Octaves,
+                Linear,
+            ),
             Self::FilterAttackSeconds(_) => number(
                 "Filter attack",
                 "How quickly the filter opens to its peak at the start of each \
@@ -745,30 +915,71 @@ impl SynthParam {
                 Unit::Seconds,
                 Log,
             ),
+            Self::LfoShape(_) => Description::choice(
+                "LFO shape",
+                "How the LFO moves. Sine and triangle sway; saw rises and drops; \
+                 square flips; sample-and-hold jumps somewhere random each cycle.",
+                &LFO_SHAPES,
+                defaults.lfo_shape.value(),
+            ),
+            Self::LfoRateHz(_) => number(
+                "LFO rate",
+                "How fast the LFO moves. Under 1 Hz is a slow sweep; about 5 Hz a \
+                 singer's vibrato; faster a flutter.",
+                Unit::Hz,
+                Log,
+            ),
+            Self::LfoSync(_) => Description::toggle(
+                "LFO sync",
+                "Whether the LFO's rate is a note length, with its cycles on the \
+                 bars, rather than in Hz.",
+                defaults.lfo_sync,
+            ),
+            Self::LfoDivision(_) => Description::choice(
+                "LFO rate (synced)",
+                "One cycle as a note length: a bar is a slow sweep, a quarter \
+                 pulses with the beat.",
+                &NoteDivision::CHOICES,
+                defaults.lfo_division.value(),
+            ),
+            Self::LfoRetrigger(_) => Description::toggle(
+                "LFO retrigger",
+                "On, each note starts the LFO afresh, so every note moves alike; \
+                 off, the notes share one, and a chord moves together.",
+                defaults.lfo_retrigger,
+            ),
+            Self::LfoVibratoSemitones(_) => number(
+                "Vibrato",
+                "How far the LFO bends the pitch, in semitones. A tenth or two is a \
+                 warm vibrato; more is a wobble.",
+                Unit::Semitones,
+                Linear,
+            ),
+            Self::LfoWidth(_) => number(
+                "LFO width",
+                "How far the LFO moves oscillator 1's pulse width: the shimmer of a \
+                 string machine. Only the pulse has a width.",
+                Unit::Fraction,
+                Linear,
+            ),
             Self::VoiceMode(_) => Description::choice(
                 "Voice mode",
-                "How many notes play at once. Poly plays chords and lets \
-                 overlapping notes ring together; Mono plays one at a time, \
-                 the latest winning, and goes back to a note still held when \
-                 you let go: the way a classic bass or lead synth plays a line.",
+                "Poly plays chords; Mono plays one note at a time, the latest \
+                 winning, and goes back to a note still held when you let go: \
+                 a classic bass or lead line.",
                 &VOICE_MODES,
                 defaults.voice_mode.value(),
             ),
             Self::Legato(_) => Description::toggle(
                 "Legato",
-                "In Mono, whether a note that overlaps the last carries on \
-                 from it. On, only the pitch changes, so a line of overlapping \
-                 notes sounds as one smooth, connected phrase; off, each note \
-                 attacks again, for a line where every note speaks. A note \
-                 after a gap always attacks afresh.",
+                "In Mono, a note that overlaps the last only changes the pitch, \
+                 so the line sounds as one phrase; off, each note attacks again.",
                 defaults.legato,
             ),
             Self::GlideSeconds(_) => number(
                 "Glide",
-                "In Mono, how long the pitch takes to slide from one note to \
-                 the next when they overlap. A touch is the slur of a fretless \
-                 bass; long is a slow, swooping lead. At its shortest it's \
-                 off, and a note after a gap never slides.",
+                "In Mono, how long the pitch slides from one overlapping note to \
+                 the next: a slur, or a slow swoop. At its shortest it's off.",
                 Unit::Seconds,
                 Log,
             ),
@@ -836,6 +1047,16 @@ mod tests {
         assert_eq!(settings.decay_seconds, 0.2);
         assert_eq!(settings.sustain, 0.7);
         assert_eq!(settings.release_seconds, 0.2);
+        assert_eq!(settings.filter_lfo_octaves, 0.0);
+        assert_eq!(settings.lfo_shape, LfoShape::Sine);
+        assert_eq!(settings.lfo_rate_hz, 5.0);
+        assert!(!settings.lfo_sync);
+        assert_eq!(settings.lfo_division.value(), "1/4");
+        assert!(!settings.lfo_retrigger);
+        assert_eq!(
+            (settings.lfo_vibrato_semitones, settings.lfo_width),
+            (0.0, 0.0)
+        );
         assert_eq!(settings.voice_mode, VoiceMode::Poly);
         assert!(!settings.legato);
         assert_eq!(settings.glide_seconds, 0.001);
@@ -877,6 +1098,26 @@ mod tests {
         );
         assert_eq!((settings.osc1_width, settings.osc2_sync), (0.25, true));
         assert_eq!(
+            settings.set(SynthParam::LfoShape(LfoShape::SampleAndHold)),
+            Ok(SynthParam::LfoShape(LfoShape::Sine))
+        );
+        assert_eq!(
+            settings.set(SynthParam::LfoDivision(NoteDivision::DOTTED_EIGHTH)),
+            Ok(SynthParam::LfoDivision(NoteDivision::QUARTER))
+        );
+        assert_eq!(
+            settings.set(SynthParam::LfoVibratoSemitones(0.3)),
+            Ok(SynthParam::LfoVibratoSemitones(0.0))
+        );
+        assert_eq!(
+            (
+                settings.lfo_shape,
+                settings.lfo_division,
+                settings.lfo_vibrato_semitones
+            ),
+            (LfoShape::SampleAndHold, NoteDivision::DOTTED_EIGHTH, 0.3)
+        );
+        assert_eq!(
             (
                 settings.sub_octave,
                 settings.osc_retrigger,
@@ -907,6 +1148,7 @@ mod tests {
             resonance: 1.0,
             filter_env_octaves: -10.0,
             filter_key: 0.5,
+            filter_lfo_octaves: -5.0,
             filter_attack_seconds: 2.0,
             filter_decay_seconds: 0.01,
             filter_sustain: 1.0,
@@ -915,6 +1157,13 @@ mod tests {
             decay_seconds: 0.001,
             sustain: 0.0,
             release_seconds: 3.0,
+            lfo_shape: LfoShape::Square,
+            lfo_rate_hz: 0.05,
+            lfo_sync: true,
+            lfo_division: NoteDivision::DOTTED_EIGHTH,
+            lfo_retrigger: true,
+            lfo_vibrato_semitones: 2.0,
+            lfo_width: 0.45,
             voice_mode: VoiceMode::Mono,
             legato: true,
             glide_seconds: 0.5,
@@ -972,6 +1221,14 @@ mod tests {
             SynthParam::Sustain(0.0),
             SynthParam::Sustain(1.0),
             SynthParam::ReleaseSeconds(0.001),
+            SynthParam::FilterLfoOctaves(-5.0),
+            SynthParam::FilterLfoOctaves(5.0),
+            SynthParam::LfoRateHz(0.05),
+            SynthParam::LfoRateHz(20.0),
+            SynthParam::LfoVibratoSemitones(0.0),
+            SynthParam::LfoVibratoSemitones(2.0),
+            SynthParam::LfoWidth(0.0),
+            SynthParam::LfoWidth(0.45),
             SynthParam::GlideSeconds(0.001),
             SynthParam::GlideSeconds(5.0),
         ] {
@@ -1003,6 +1260,8 @@ mod tests {
                     let value = match param {
                         SynthParam::Osc1Wave(wave) | SynthParam::Osc2Wave(wave) => wave.value(),
                         SynthParam::FilterMode(mode) => mode.value(),
+                        SynthParam::LfoShape(shape) => shape.value(),
+                        SynthParam::LfoDivision(division) => division.value(),
                         SynthParam::VoiceMode(mode) => mode.value(),
                         _ => panic!("{param:?} is a choice"),
                     };
@@ -1011,6 +1270,8 @@ mod tests {
                 (Kind::Toggle { default }, None) => {
                     let on = match param {
                         SynthParam::Osc2Sync(on)
+                        | SynthParam::LfoSync(on)
+                        | SynthParam::LfoRetrigger(on)
                         | SynthParam::Legato(on)
                         | SynthParam::OscRetrigger(on) => on,
                         _ => panic!("{param:?} is a toggle"),
@@ -1057,6 +1318,7 @@ mod tests {
                 (Amount, Linear, None),
                 (Octaves, Linear, None),
                 (Fraction, Linear, None),
+                (Octaves, Linear, None),
                 (Seconds, Log, None),
                 (Seconds, Log, None),
                 (Fraction, Linear, None),
@@ -1065,9 +1327,31 @@ mod tests {
                 (Seconds, Log, None),
                 (Fraction, Linear, None),
                 (Seconds, Log, None),
+                (Hz, Log, None),
+                (Semitones, Linear, None),
+                (Fraction, Linear, None),
                 (Seconds, Log, None),
             ]
         );
+    }
+
+    #[test]
+    fn the_voice_modes_choices_are_its_values_in_order() {
+        let Kind::Choice { options, .. } = SynthParam::VoiceMode(VoiceMode::Poly).describe().kind
+        else {
+            panic!("the voice mode is a choice");
+        };
+        let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = VoiceMode::ALL
+            .iter()
+            .map(|mode| serde_json::to_value(mode).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = VoiceMode::ALL.iter().map(|mode| mode.value()).collect();
+        assert_eq!(values, names);
     }
 
     #[test]
@@ -1110,22 +1394,45 @@ mod tests {
     }
 
     #[test]
-    fn the_voice_modes_choices_are_its_values_in_order() {
-        let Kind::Choice { options, .. } = SynthParam::VoiceMode(VoiceMode::Poly).describe().kind
+    fn the_lfo_shapes_choices_are_its_values_in_order() {
+        let Kind::Choice { options, .. } = SynthParam::LfoShape(LfoShape::Sine).describe().kind
         else {
-            panic!("the voice mode is a choice");
+            panic!("the LFO shape is a choice");
         };
         let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
-        let serialised: Vec<_> = VoiceMode::ALL
+        let serialised: Vec<_> = LfoShape::ALL
             .iter()
-            .map(|mode| serde_json::to_value(mode).unwrap())
+            .map(|shape| serde_json::to_value(shape).unwrap())
             .collect();
         assert_eq!(
             serde_json::to_value(&values).unwrap(),
             serde_json::Value::Array(serialised)
         );
-        let names: Vec<_> = VoiceMode::ALL.iter().map(|mode| mode.value()).collect();
+        let names: Vec<_> = LfoShape::ALL.iter().map(|shape| shape.value()).collect();
         assert_eq!(values, names);
+    }
+
+    /// The synced rate's menu is every division, as the Delay's synced time
+    /// has, and it carries one as the Delay does.
+    #[test]
+    fn the_lfos_synced_rate_is_a_note_division() {
+        let Kind::Choice { options, default } = SynthParam::LfoDivision(NoteDivision::QUARTER)
+            .describe()
+            .kind
+        else {
+            panic!("the synced rate is a choice");
+        };
+        let all: Vec<_> = NoteDivision::ALL.iter().map(|d| d.value()).collect();
+        let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+        assert_eq!(values, all);
+        assert_eq!(default, "1/4");
+        let param = SynthParam::LfoDivision(NoteDivision::DOTTED_EIGHTH);
+        let json = serde_json::to_value(param).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"name": "lfo_division", "value": "1/8d"})
+        );
+        assert_eq!(serde_json::from_value::<SynthParam>(json).unwrap(), param);
     }
 
     #[test]
@@ -1162,6 +1469,14 @@ mod tests {
             SynthParam::DecaySeconds(10.5),
             SynthParam::Sustain(f32::INFINITY),
             SynthParam::ReleaseSeconds(-1.0),
+            SynthParam::FilterLfoOctaves(5.01),
+            SynthParam::FilterLfoOctaves(f32::NAN),
+            SynthParam::LfoRateHz(0.049),
+            SynthParam::LfoRateHz(20.01),
+            SynthParam::LfoVibratoSemitones(-0.01),
+            SynthParam::LfoVibratoSemitones(2.01),
+            SynthParam::LfoWidth(-0.01),
+            SynthParam::LfoWidth(0.46),
             SynthParam::GlideSeconds(0.0),
             SynthParam::GlideSeconds(5.01),
             SynthParam::GlideSeconds(f32::NAN),
@@ -1209,6 +1524,8 @@ mod tests {
         assert_eq!(json["osc2_sync"], false);
         assert_eq!(json["voice_mode"], "poly");
         assert_eq!(json["legato"], false);
+        assert_eq!(json["lfo_shape"], "sine");
+        assert_eq!(json["lfo_division"], "1/4");
         assert!(serde_json::from_str::<SynthSettings>(r#"{"wave":"saw"}"#).is_err());
     }
 }

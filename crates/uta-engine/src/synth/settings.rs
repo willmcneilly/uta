@@ -32,6 +32,28 @@ pub enum FilterMode {
     HighPass,
 }
 
+/// The LFO's wave shape. See `uta_core::LfoShape`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LfoShape {
+    #[default]
+    Sine,
+    Triangle,
+    Saw,
+    Square,
+    SampleAndHold,
+}
+
+impl LfoShape {
+    /// Every shape, in order.
+    pub const ALL: [LfoShape; 5] = [
+        Self::Sine,
+        Self::Triangle,
+        Self::Saw,
+        Self::Square,
+        Self::SampleAndHold,
+    ];
+}
+
 /// How many notes the synth plays at once.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum VoiceMode {
@@ -86,6 +108,9 @@ pub struct SynthSettings {
     /// How far the cutoff follows the note, [`Self::FILTER_KEY`]: at 1, an
     /// octave for each octave from middle C. It glides.
     pub filter_key: f32,
+    /// How far the LFO moves the cutoff at its peak, in octaves,
+    /// [`Self::FILTER_LFO_OCTAVES`]. It glides.
+    pub filter_lfo_octaves: f32,
     /// The filter envelope, in the same units and ranges as the amp
     /// envelope's settings below.
     pub filter_attack_seconds: f32,
@@ -103,6 +128,26 @@ pub struct SynthSettings {
     /// Seconds to fall to silence once the note is released,
     /// [`Self::TIME_SECONDS`].
     pub release_seconds: f32,
+    pub lfo_shape: LfoShape,
+    /// The LFO's rate when it isn't synced, in Hz, [`Self::LFO_RATE_HZ`]. It
+    /// glides on a log scale.
+    pub lfo_rate_hz: f32,
+    /// Whether the LFO is synced: its cycle is [`Self::lfo_synced_seconds`]
+    /// long, and with Retrigger off its phase is the song's position.
+    pub lfo_sync: bool,
+    /// One of the LFO's cycles when synced, in seconds: the project's note
+    /// division at the tempo, worked out on the control side as the
+    /// Delay's synced time is, [`Self::LFO_SYNCED_SECONDS`].
+    pub lfo_synced_seconds: f64,
+    /// Whether each note starts the LFO's cycle afresh. Off, the voices
+    /// share one.
+    pub lfo_retrigger: bool,
+    /// How far the LFO moves both oscillators' pitch at its peak, in
+    /// semitones, [`Self::LFO_VIBRATO_SEMITONES`]. It glides.
+    pub lfo_vibrato_semitones: f32,
+    /// How far the LFO moves oscillator 1's pulse width at its peak,
+    /// [`Self::LFO_WIDTH`]. It glides.
+    pub lfo_width: f32,
     /// Poly or Mono. Switching releases every note.
     pub voice_mode: VoiceMode,
     /// In Mono, whether a note that overlaps the one before carries its
@@ -127,6 +172,13 @@ impl SynthSettings {
     pub const RESONANCE: RangeInclusive<f32> = 0.0..=1.0;
     pub const FILTER_ENV_OCTAVES: RangeInclusive<f32> = -10.0..=10.0;
     pub const FILTER_KEY: RangeInclusive<f32> = 0.0..=1.0;
+    pub const FILTER_LFO_OCTAVES: RangeInclusive<f32> = -5.0..=5.0;
+    pub const LFO_RATE_HZ: RangeInclusive<f32> = 0.05..=20.0;
+    /// Every division at every tempo fits: a triplet 1/32 at 300 BPM is
+    /// 17 ms, and a dotted bar at 20 BPM 18 s.
+    pub const LFO_SYNCED_SECONDS: RangeInclusive<f64> = 0.01..=60.0;
+    pub const LFO_VIBRATO_SEMITONES: RangeInclusive<f32> = 0.0..=2.0;
+    pub const LFO_WIDTH: RangeInclusive<f32> = 0.0..=0.45;
     pub const TIME_SECONDS: RangeInclusive<f32> = 0.001..=10.0;
     pub const SUSTAIN: RangeInclusive<f32> = 0.0..=1.0;
     pub const GLIDE_SECONDS: RangeInclusive<f32> = 0.001..=5.0;
@@ -171,6 +223,11 @@ impl SynthSettings {
                 default.filter_env_octaves,
             ),
             filter_key: clamp(self.filter_key, Self::FILTER_KEY, default.filter_key),
+            filter_lfo_octaves: clamp(
+                self.filter_lfo_octaves,
+                Self::FILTER_LFO_OCTAVES,
+                default.filter_lfo_octaves,
+            ),
             filter_attack_seconds: clamp(
                 self.filter_attack_seconds,
                 Self::TIME_SECONDS,
@@ -203,6 +260,24 @@ impl SynthSettings {
                 Self::TIME_SECONDS,
                 default.release_seconds,
             ),
+            lfo_shape: self.lfo_shape,
+            lfo_rate_hz: clamp(self.lfo_rate_hz, Self::LFO_RATE_HZ, default.lfo_rate_hz),
+            lfo_sync: self.lfo_sync,
+            lfo_synced_seconds: if self.lfo_synced_seconds.is_nan() {
+                default.lfo_synced_seconds
+            } else {
+                self.lfo_synced_seconds.clamp(
+                    *Self::LFO_SYNCED_SECONDS.start(),
+                    *Self::LFO_SYNCED_SECONDS.end(),
+                )
+            },
+            lfo_retrigger: self.lfo_retrigger,
+            lfo_vibrato_semitones: clamp(
+                self.lfo_vibrato_semitones,
+                Self::LFO_VIBRATO_SEMITONES,
+                default.lfo_vibrato_semitones,
+            ),
+            lfo_width: clamp(self.lfo_width, Self::LFO_WIDTH, default.lfo_width),
             voice_mode: self.voice_mode,
             legato: self.legato,
             glide_seconds: clamp(
@@ -218,8 +293,8 @@ impl SynthSettings {
 impl Default for SynthSettings {
     /// Today's sound: oscillator 1 a saw at full level, the rest of the
     /// mixer at zero, oscillator 2 free of oscillator 1, a low-pass filter
-    /// that nothing moves, and the oscillators restarting on each note, in
-    /// Poly.
+    /// that nothing moves, the oscillators restarting on each note, and an
+    /// LFO that moves nothing, in Poly.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -239,6 +314,7 @@ impl Default for SynthSettings {
             resonance: 0.0,
             filter_env_octaves: 0.0,
             filter_key: 0.0,
+            filter_lfo_octaves: 0.0,
             filter_attack_seconds: 0.001,
             filter_decay_seconds: 0.3,
             filter_sustain: 0.0,
@@ -247,6 +323,14 @@ impl Default for SynthSettings {
             decay_seconds: 0.2,
             sustain: 0.7,
             release_seconds: 0.2,
+            lfo_shape: LfoShape::Sine,
+            lfo_rate_hz: 5.0,
+            lfo_sync: false,
+            // A quarter note at 120 BPM.
+            lfo_synced_seconds: 0.5,
+            lfo_retrigger: false,
+            lfo_vibrato_semitones: 0.0,
+            lfo_width: 0.0,
             voice_mode: VoiceMode::Poly,
             legato: false,
             glide_seconds: 0.001,
@@ -298,6 +382,15 @@ mod tests {
         assert_eq!(settings.decay_seconds, 0.2);
         assert_eq!(settings.sustain, 0.7);
         assert_eq!(settings.release_seconds, 0.2);
+        assert_eq!(settings.filter_lfo_octaves, 0.0);
+        assert_eq!(settings.lfo_shape, LfoShape::Sine);
+        assert_eq!(settings.lfo_rate_hz, 5.0);
+        assert!(!settings.lfo_sync && !settings.lfo_retrigger);
+        assert_eq!(settings.lfo_synced_seconds, 0.5);
+        assert_eq!(
+            (settings.lfo_vibrato_semitones, settings.lfo_width),
+            (0.0, 0.0)
+        );
         assert_eq!(settings.voice_mode, VoiceMode::Poly);
         assert!(!settings.legato);
         assert_eq!(settings.glide_seconds, 0.001);
@@ -325,6 +418,7 @@ mod tests {
             resonance: -3.0,
             filter_env_octaves: -40.0,
             filter_key: f32::NAN,
+            filter_lfo_octaves: 9.0,
             filter_attack_seconds: 0.0,
             filter_decay_seconds: 1.0e6,
             filter_sustain: 2.0,
@@ -333,6 +427,13 @@ mod tests {
             decay_seconds: f32::INFINITY,
             sustain: f32::NAN,
             release_seconds: -1.0,
+            lfo_shape: LfoShape::SampleAndHold,
+            lfo_rate_hz: 0.0,
+            lfo_sync: true,
+            lfo_synced_seconds: f64::NAN,
+            lfo_retrigger: true,
+            lfo_vibrato_semitones: f32::INFINITY,
+            lfo_width: -1.0,
             voice_mode: VoiceMode::Mono,
             legato: true,
             glide_seconds: 60.0,
@@ -372,6 +473,12 @@ mod tests {
         assert_eq!(wild.decay_seconds, 10.0);
         assert_eq!(wild.sustain, 0.7);
         assert_eq!(wild.release_seconds, 0.001);
+        assert_eq!(wild.filter_lfo_octaves, 5.0);
+        assert_eq!(wild.lfo_shape, LfoShape::SampleAndHold);
+        assert_eq!(wild.lfo_rate_hz, 0.05);
+        assert!(wild.lfo_sync && wild.lfo_retrigger);
+        assert_eq!(wild.lfo_synced_seconds, 0.5);
+        assert_eq!((wild.lfo_vibrato_semitones, wild.lfo_width), (2.0, 0.0));
         assert_eq!(wild.voice_mode, VoiceMode::Mono);
         assert!(wild.legato);
         assert_eq!(wild.glide_seconds, 5.0);
