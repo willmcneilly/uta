@@ -44,6 +44,7 @@ export function describeSource(source: SourceOutline, descriptions: Descriptions
         described<SynthSettingView>(descriptions.synth, setting),
       ),
       lfoSeconds: source.lfoSeconds,
+      sounds: descriptions.synthSounds,
     };
   }
   // The kick's settings, and so their descriptions, are its model's.

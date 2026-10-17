@@ -13,10 +13,10 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Chain, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description, DrumParam,
-    DrumSound, Effect, EffectId, EffectKind, EffectSettings, KIT, KickModel, KitSettings,
-    MAX_EFFECTS, MixerStrip, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, Session,
-    Source, SynthParam, SynthSettings, Track, TrackId,
+    Chain, Choice, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description,
+    DrumParam, DrumSound, Effect, EffectId, EffectKind, EffectSettings, FactorySound, KIT,
+    KickModel, KitSettings, MAX_EFFECTS, MixerStrip, Note, NoteId, PlacedClip, PlacedEffect,
+    PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -236,7 +236,8 @@ impl SourceView {
 ///
 /// Serialises as `{"synth":{"cutoff_hz":{"label":"Cutoff",…},…},"drums":
 /// {"808":{"kick":{"tune_hz":{…},…},…},"909":{…}},"effects":{"delay":
-/// {"mix":{…},"sync":{…},…}}}`.
+/// {"mix":{…},"sync":{…},…}},"synthSounds":[{"value":"bass","label":"Bass"},
+/// …]}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Descriptions {
     /// The synth's settings.
@@ -246,6 +247,10 @@ pub struct Descriptions {
     pub drums: BTreeMap<&'static str, BTreeMap<String, BTreeMap<String, Description>>>,
     /// Each kind of effect's settings, with its Mix as `mix`.
     pub effects: BTreeMap<String, BTreeMap<String, Description>>,
+    /// The synth's factory sounds, in the Sound menu's order: each one's
+    /// key, as `set_synth_sound` takes it, and its name.
+    #[serde(rename = "synthSounds")]
+    pub synth_sounds: Vec<Choice>,
 }
 
 impl Descriptions {
@@ -295,10 +300,18 @@ impl Descriptions {
                 (key_of(&kind), [mix].into_iter().chain(settings).collect())
             })
             .collect();
+        let synth_sounds = FactorySound::all()
+            .iter()
+            .map(|sound| Choice {
+                value: sound.key,
+                label: sound.name,
+            })
+            .collect();
         Self {
             synth,
             drums,
             effects,
+            synth_sounds,
         }
     }
 }
@@ -722,6 +735,20 @@ impl Uta {
         gesture: Option<u32>,
     ) -> Result<(), String> {
         self.change(Command::SetSynthParam { track, param }, gesture)
+    }
+
+    /// Chooses the factory sound called `sound` on a synth track: every
+    /// setting at once, in one undo step.
+    pub fn set_synth_sound(&mut self, track: TrackId, sound: &str) -> Result<(), String> {
+        let sound =
+            FactorySound::find(sound).ok_or_else(|| format!("there's no factory sound {sound}"))?;
+        self.change(
+            Command::SetSynthSettings {
+                track,
+                settings: sound.settings,
+            },
+            None,
+        )
     }
 
     /// Sets one setting of one sound on a drum track. Changes to the same
@@ -2454,6 +2481,46 @@ mod tests {
         assert_eq!(engine_synth(&uta).cutoff_hz, 20_000.0);
         uta.redo();
         assert_eq!(synth_of(&uta.project().tracks[0]).cutoff_hz, 800.0);
+    }
+
+    #[test]
+    fn choosing_a_factory_sound_sets_every_setting_in_one_undo_step() {
+        let mut uta = offline();
+        let track = uta.project().tracks[0].id;
+        uta.set_synth_param(track, SynthParam::CutoffHz(800.0), None)
+            .unwrap();
+        let before = uta.session.project().tracks()[0].source().clone();
+        uta.set_synth_sound(track, "pluck").unwrap();
+        let pluck = FactorySound::find("pluck").unwrap().settings;
+        assert_eq!(
+            uta.session.project().tracks()[0].source(),
+            &Source::Synth(pluck)
+        );
+        let engine = match uta.controller.snapshot().tracks()[0].sound {
+            uta_engine::TrackSound::Synth(synth) => synth,
+            uta_engine::TrackSound::Drums(_) => panic!("a synth track"),
+        };
+        assert_eq!(engine.cutoff_hz, pluck.cutoff_hz);
+
+        uta.undo();
+        assert_eq!(uta.session.project().tracks()[0].source(), &before);
+        uta.undo();
+        assert!(!uta.project().can_undo, "the cutoff, then the sound");
+
+        assert!(uta.set_synth_sound(track, "kazoo").is_err());
+        let drums = uta.project().tracks[1].id;
+        assert!(uta.set_synth_sound(drums, "pluck").is_err());
+    }
+
+    #[test]
+    fn the_sound_menu_lists_the_factory_sounds_from_rust() {
+        let json = serde_json::to_value(offline().update().outline).unwrap();
+        let listed = json["descriptions"]["synthSounds"].as_array().unwrap();
+        let expected: Vec<_> = FactorySound::all()
+            .iter()
+            .map(|sound| serde_json::json!({"value": sound.key, "label": sound.name}))
+            .collect();
+        assert_eq!(listed, &expected);
     }
 
     #[test]

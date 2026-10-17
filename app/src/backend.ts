@@ -94,6 +94,14 @@ export interface Descriptions {
   drums: Record<KickModel, Partial<Record<DrumSound, DescriptionTable>>>;
   /** Each kind of effect's, with its Mix as `mix`. */
   effects: Record<EffectKind, DescriptionTable>;
+  /** The synth's factory sounds, in the Sound menu's order. */
+  synthSounds: SoundChoice[];
+}
+
+/** A factory sound in the Sound menu: its key, as `setSynthSound` takes it, and its name. */
+export interface SoundChoice {
+  value: string;
+  label: string;
 }
 
 /** A clip in the outline: where it is, and the revision of its notes. */
@@ -179,6 +187,8 @@ export type SourceView =
        * shows it against the bar by it.
        */
       lfoSeconds: number;
+      /** The factory sounds the Sound menu offers, as Rust lists them. */
+      sounds: SoundChoice[];
     }
   | { kind: "drums"; kit: KitView };
 
@@ -598,6 +608,14 @@ export function setSynthParam(
   gesture?: number,
 ): Promise<Update> {
   return invoke<Update>("set_synth_param", { track, param, gesture: gesture ?? null });
+}
+
+/**
+ * Chooses a factory sound on a synth track, by its key: every setting at
+ * once, in one undo step.
+ */
+export function setSynthSound(track: string, sound: string): Promise<Update> {
+  return invoke<Update>("set_synth_sound", { track, sound });
 }
 
 /**
