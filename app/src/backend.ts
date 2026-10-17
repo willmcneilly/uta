@@ -361,6 +361,27 @@ export type LfoShape = "sine" | "triangle" | "saw" | "square" | "sample_and_hold
 /** Whether the synth plays chords, or one note at a time. */
 export type VoiceMode = "poly" | "mono";
 
+/** What drives one of the synth's mod slots. */
+export type ModSource = "filter_env" | "amp_env" | "lfo" | "velocity" | "key";
+/** What one of the synth's mod slots moves; "off" is an empty slot. */
+export type ModDestination =
+  | "off"
+  | "osc1_pitch"
+  | "osc2_pitch"
+  | "osc1_level"
+  | "osc2_level"
+  | "sub_level"
+  | "noise_level"
+  | "osc1_width"
+  | "cutoff"
+  | "resonance"
+  | "lfo_rate"
+  | "volume";
+/** A mod slot's source setting, by slot. */
+export type ModSourceName = "mod1_source" | "mod2_source" | "mod3_source";
+/** A mod slot's destination setting, by slot. */
+export type ModDestinationName = "mod1_destination" | "mod2_destination" | "mod3_destination";
+
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
@@ -372,6 +393,8 @@ export type SynthSettingView =
   | ChoiceSettingView<"lfo_shape", LfoShape>
   | ChoiceSettingView<"lfo_division">
   | ChoiceSettingView<"voice_mode", VoiceMode>
+  | ChoiceSettingView<ModSourceName, ModSource>
+  | ChoiceSettingView<ModDestinationName, ModDestination>
   | NumberSettingView<SynthNumber["name"]>
   | ToggleSettingView<SynthToggle>;
 
@@ -383,6 +406,8 @@ export type SynthParam =
   /** A note length, as Rust's options for it name it: `"1/8d"`. */
   | { name: "lfo_division"; value: string }
   | { name: "voice_mode"; value: VoiceMode }
+  | { name: ModSourceName; value: ModSource }
+  | { name: ModDestinationName; value: ModDestination }
   | SynthNumber
   | { name: SynthToggle; value: boolean };
 
@@ -417,7 +442,11 @@ export interface SynthNumber {
     | "lfo_rate_hz"
     | "lfo_vibrato_semitones"
     | "lfo_width"
-    | "glide_seconds";
+    | "glide_seconds"
+    /** A mod slot's amount, from -1 to 1. */
+    | "mod1_amount"
+    | "mod2_amount"
+    | "mod3_amount";
   value: number;
 }
 
