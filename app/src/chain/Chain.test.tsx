@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { Channel } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +9,7 @@ import type {
   DelayParam,
   EffectKind,
   EffectView,
+  Frame,
   ProjectView,
   TrackView,
 } from "../backend";
@@ -37,6 +39,8 @@ let project: ProjectView;
 // The projects before each change, for the mock's undo.
 let history: ProjectView[];
 let updates: Updates;
+// The frame stream, once the app subscribes.
+let frames: Channel<Frame> | null;
 
 /** Every chain in `project`, with `change` made to each effect. */
 function eachEffect(change: (effect: EffectView) => EffectView): ProjectView {
@@ -96,6 +100,7 @@ class FixedSizeObserver {
 
 beforeEach(() => {
   calls = [];
+  frames = null;
   history = [];
   updates = new Updates();
   project = projectView();
@@ -107,6 +112,9 @@ beforeEach(() => {
       switch (cmd) {
         case "get_project":
           return updates.send(project);
+        case "subscribe":
+          frames = args.onFrame as Channel<Frame>;
+          return null;
         case "get_notes":
           return updates.notes(project, args.clip as string);
         case "add_effect": {
@@ -233,6 +241,43 @@ describe("the Sound tab's chain", () => {
     project = { ...project, bpm: 60 };
     await openSound([synthWith(lone)]);
     expect(echoX()).toBeCloseTo(0.5 + (ECHO_WIDTH - 1) / 4, 1);
+  });
+
+  it("lights a Delay's echoes where the song is while it plays, at the project's tempo", async () => {
+    const waiting: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => waiting.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    // A quarter note apart at 60 BPM: one echo a second.
+    project = { ...project, bpm: 60 };
+    await openSound([synthWith(delayView("d-1", { echoSeconds: 1 }))]);
+    // The song is one beat in: a second, so the first echo has just sounded.
+    act(() =>
+      frames?.onmessage({
+        playing: true,
+        playhead: project.ticksPerQuarter,
+        peak: 0,
+        trackPeaks: {},
+        clips: 0,
+        dropouts: 0,
+        slowestBlock: 0,
+        output: {
+          state: "running",
+          device: "Test",
+          sampleRate: 48000,
+          bufferSize: 128,
+          requestedBufferSize: 128,
+          bufferSizes: [128],
+        },
+      }),
+    );
+    const now = performance.now();
+    act(() => waiting.splice(0).forEach((callback) => callback(now)));
+    const drawing = within(panels()[0]).getByRole("img", { name: "The echoes" });
+    expect(drawing).toHaveAttribute("data-lighting", "playing");
+    const lit = Array.from(drawing.querySelectorAll<SVGGElement>(".sounding"))
+      .filter((mark) => Number(mark.style.opacity) > 0)
+      .map((mark) => Number(mark.dataset.at));
+    expect(lit).toEqual([1]);
   });
 
   it("shows a drum track's kit before its chain", async () => {

@@ -42,12 +42,12 @@ function renderPanel(values: Partial<DelayValues> = {}, options: Options = {}) {
   const onSetting = vi.fn();
   const onMix = vi.fn();
   const loop = new FrameLoop(new FrameStats());
-  const panel = (effect: EffectView) => (
+  const panel = (effect: EffectView, songSeconds = options.songSeconds ?? null) => (
     <DelayPanel
       effect={effect}
       barSeconds={BAR}
       beatsPerBar={4}
-      songSeconds={options.songSeconds ?? null}
+      songSeconds={songSeconds}
       frames={loop}
       onSetting={onSetting}
       onMix={onMix}
@@ -55,7 +55,9 @@ function renderPanel(values: Partial<DelayValues> = {}, options: Options = {}) {
   );
   const view = render(panel(delayView("d-1", values)));
   const rerender = (next: Partial<DelayValues>) => view.rerender(panel(delayView("d-1", { ...values, ...next })));
-  return { onSetting, onMix, rerender, container: view.container };
+  /** The song stops. */
+  const stop = () => view.rerender(panel(delayView("d-1", values), null));
+  return { onSetting, onMix, rerender, stop, container: view.container };
 }
 
 const drawing = () => screen.getByRole("img", { name: "The echoes" });
@@ -191,6 +193,22 @@ describe("the echo drawing", () => {
     expect(drawing()).toHaveAttribute("data-lighting", "playing");
     expect(lit()).toEqual([0.375]);
     expect(drawing().querySelector<SVGGElement>(".sweep")?.style.visibility).toBe("");
+  });
+
+  it("places the sweep where the song is, wrapped to the drawing, and hides it when the song stops", () => {
+    const sweepX = () => Number(drawing().querySelector(".sweep line")?.getAttribute("x1"));
+    // A bar and a half in, over a one-bar drawing: half way across.
+    const { stop } = renderPanel({ feedback: 0.2 }, { songSeconds: () => BAR * 1.5 });
+    frame(0);
+    expect(drawing()).toHaveAttribute("data-bars", "1");
+    expect(sweepX()).toBeCloseTo(0.5 + (ECHO_WIDTH - 1) / 2, 1);
+    const sweep = drawing().querySelector<SVGGElement>(".sweep");
+    expect(sweep?.style.visibility).toBe("");
+
+    stop();
+    expect(sweep?.style.visibility).toBe("hidden");
+    expect(lit()).toEqual([]);
+    expect(drawing()).not.toHaveAttribute("data-lighting");
   });
 
   it("when stopped, plays its echoes while you point at the panel or focus a control", () => {
