@@ -61,6 +61,10 @@ pub struct NoteKey(pub u128);
 /// The voice Mono plays its notes in.
 const MONO_VOICE: usize = 0;
 
+// In Mono the held notes stand for the busy voices (`Synth::busy_voices`),
+// so there must be no more of them than voices.
+const _: () = assert!(held::HELD_NOTES <= VOICES);
+
 /// A note's frequency in Hz, from its MIDI note number (A4, 69, is 440 Hz).
 pub fn pitch_to_hz(pitch: u8) -> f64 {
     semitones_to_hz(f64::from(pitch))
@@ -855,8 +859,13 @@ impl Synth {
                     .filter_envelope
                     .next_level(filter_sustain, &self.filter_times);
                 if per_voice_filter {
-                    let octaves =
-                        filter_octaves(base_octaves, env_octaves, filter_level, key, voice.pitch);
+                    let octaves = filter_octaves(
+                        base_octaves,
+                        env_octaves,
+                        filter_level,
+                        key,
+                        voice.glide.value(),
+                    );
                     let target = Tuning::new(octaves.exp2(), resonance, sample_rate);
                     voice.tuning_step = voice.tuning.step_to(target, FILTER_CONTROL_SAMPLES);
                 }
@@ -943,7 +952,7 @@ impl Synth {
             self.filter_env_octaves.value(),
             0.0,
             self.filter_key.value(),
-            note.pitch,
+            f32::from(note.pitch),
         );
         voice.tuning = Tuning::new(
             octaves.exp2(),
@@ -1090,11 +1099,12 @@ impl Synth {
 
 /// A voice's cutoff, in octaves (log2 of Hz): the shared cutoff in
 /// `base_octaves`, opened by the filter envelope at `level` (0 to 1) times
-/// its amount, and moved by `key` of the way an octave for each octave the
-/// note is from middle C. Kept to the lowest cutoff a knob can reach; the
+/// its amount, and moved by `key` of the way an octave for each octave
+/// `pitch` (in semitones, between notes while it glides) is from middle C.
+/// Kept to the lowest cutoff a knob can reach; the
 /// filter keeps it under half the sample rate itself.
 #[inline]
-fn filter_octaves(base_octaves: f32, env_octaves: f32, level: f64, key: f32, pitch: u8) -> f64 {
+fn filter_octaves(base_octaves: f32, env_octaves: f32, level: f64, key: f32, pitch: f32) -> f64 {
     let from_centre = (f64::from(pitch) - f64::from(FILTER_KEY_CENTRE)) / 12.0;
     let octaves =
         f64::from(base_octaves) + f64::from(env_octaves) * level + f64::from(key) * from_centre;
@@ -1495,6 +1505,48 @@ mod tests {
         }
         run(&mut synth, 10);
         assert_eq!(synth.voices[MONO_VOICE].increment, target);
+    }
+
+    /// With Key on, the cutoff follows the pitch as it glides, not the note
+    /// it's gliding to: a quarter of the way through an octave's glide up,
+    /// the filter is still well under where it ends.
+    #[test]
+    fn key_tracking_follows_the_glide() {
+        let mut synth = Synth::new(
+            SynthSettings {
+                voice_mode: VoiceMode::Mono,
+                glide_seconds: 0.1,
+                cutoff_hz: 200.0,
+                filter_key: 1.0,
+                ..SynthSettings::default()
+            },
+            RATE,
+        );
+        synth.note_on(NoteOn {
+            pitch: 48,
+            ..note(1)
+        });
+        run(&mut synth, 1_000);
+        let start = synth.voices[MONO_VOICE].tuning;
+        synth.note_on(NoteOn {
+            pitch: 60,
+            ..note(2)
+        });
+        let glide = samples(0.1, RATE) as usize;
+        run(&mut synth, glide / 4);
+        let quarter = synth.voices[MONO_VOICE].tuning;
+        run(&mut synth, glide);
+        let end = synth.voices[MONO_VOICE].tuning;
+        assert!(
+            end.cutoff_share() > 1.9 * start.cutoff_share(),
+            "an octave up"
+        );
+        // A quarter of an octave up is 2^0.25, about 1.19 times.
+        let share = quarter.cutoff_share() / start.cutoff_share();
+        assert!(
+            (1.1..1.3).contains(&share),
+            "{share} of the way at a quarter"
+        );
     }
 
     /// Switching the Voice mode releases every note, in either direction.

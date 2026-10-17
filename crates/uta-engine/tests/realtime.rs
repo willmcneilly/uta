@@ -207,8 +207,9 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
 
 /// The loop playing: notes starting and ending mid-block, the loop going
 /// back to its start mid-block, more notes at once than voices so voices are
-/// taken over, and edits arriving as whole new snapshots, which switch it to
-/// Mono, with Glide and Legato, and back. None of it
+/// taken over, a jump that chases the notes under way, and edits arriving
+/// as whole new snapshots, which switch it to Mono, with Glide and Legato,
+/// and back. None of it
 /// allocates or frees on the audio thread.
 ///
 /// Each edit's snapshot is built afresh from the project, so it shares no
@@ -241,11 +242,20 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
     for pass in 0..passes {
         for block in 0..blocks_per_pass {
             process_block(renderer.processor(), &mut buffer);
+            if block == blocks_per_pass / 4 {
+                // A jump into the middle of the overlapping notes, which
+                // chases a dozen of them: in Mono, into the held notes,
+                // latest start first.
+                renderer
+                    .controller
+                    .locate(1_700 + 100 * pass as u64)
+                    .unwrap();
+            }
             if block == blocks_per_pass / 2 {
                 // An edit: the same notes, a new cutoff, in a new snapshot.
                 // From the second pass the track is in Mono, gliding, then
-                // with Legato, and in Poly again for the last: going round
-                // the loop chases the notes into Mono's held notes.
+                // with Legato, and in Poly again for the last: the next
+                // pass's jump chases the notes into Mono's held notes.
                 let voice = [
                     SynthParam::GlideSeconds(0.03),
                     SynthParam::VoiceMode(uta_core::VoiceMode::Mono),
