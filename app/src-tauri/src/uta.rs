@@ -3310,8 +3310,7 @@ mod tests {
                 .filter(|(sound, _)| *sound == row.sound)
                 .map(|(_, param)| param)
                 .collect();
-            let shown: Vec<_> = row.settings.iter().copied().collect();
-            assert_eq!(shown, params, "{}", row.name);
+            assert_eq!(row.settings, params, "{}", row.name);
         }
 
         let json = serde_json::to_value(uta.update().outline).unwrap();
