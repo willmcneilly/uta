@@ -443,6 +443,12 @@ describe("SynthPanel's Mod section", () => {
     stage("Mod");
     expect(screen.queryByRole("group", { name: "Mod 3" })).toBeNull();
     expect(screen.getByRole("group", { name: "Mod 1" })).toBeInTheDocument();
+ 
+    // And when it's left with the arrow keys.
+    fireEvent.click(screen.getByRole("button", { name: "Add mod 3" }));
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Mod" }), { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Voice" }), { key: "ArrowRight" });
+    expect(screen.queryByRole("group", { name: "Mod 3" })).toBeNull();
   });
 });
 
@@ -572,9 +578,8 @@ describe("SynthPanel's drawings", () => {
     expectCurve(lfo(), lfoPoints("triangle", BAR * hz, width, height));
     drag.release();
 
-    // Synced, the cycle is Rust's: a dotted eighth at 120 BPM.
+    // Synced, the cycle is Rust's: synthSource sends a quarter (0.5 s), four a bar.
     rerender({ ...SYNTH, lfoSync: true });
-    // synthSource sends a quarter (0.5 s) for a synced LFO: four a bar.
     expectCurve(lfo(), lfoPoints("triangle", 4, width, height));
   });
 

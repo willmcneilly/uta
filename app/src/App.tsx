@@ -732,6 +732,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                       panel:
                         track.source.kind === "synth" ? (
                           <SynthPanel
+                            // Its page and opened slots are this track's.
+                            key={track.id}
                             settings={track.source.settings}
                             lfoSeconds={track.source.lfoSeconds}
                             barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}

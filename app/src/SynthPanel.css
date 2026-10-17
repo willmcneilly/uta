@@ -198,12 +198,6 @@
   padding: 0 var(--space-2) var(--space-3);
 }
 
-.synth .toggle {
-  height: 20px;
-  padding: 0 var(--space-3);
-  font: var(--font-label);
-}
-
 /* A compact segmented choice: each option is only its drawing, its name
    kept for assistive tech; the legend is left to the page. provisional: D-34 */
 .synth .segmented.compact .group-title {
@@ -371,20 +365,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 36px;
 }
 
 .slots .arrow {
   color: var(--ink-3);
-}
-
-.slots .knob-control {
-  flex-direction: row;
-  gap: var(--space-2);
-}
-
-.slots .knob-value-text {
-  min-width: 4ch;
 }
 
 /* An empty slot is only its +. */

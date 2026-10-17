@@ -465,13 +465,19 @@ export function SynthPanel({
     ),
   };
 
+  /** Opens `next`'s page. Leaving Mod shuts the slots opened with no destination. */
+  const choose = (next: Stage) => {
+    setStage(next);
+    if (next !== "mod") setOpened(new Set());
+  };
+
   /** Arrow keys move along the tabs, as the editor's do. */
   const onTabKey = (event: KeyboardEvent, index: number) => {
     const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
     if (step === undefined) return;
     event.preventDefault();
     const [next] = STAGES[(index + step + STAGES.length) % STAGES.length];
-    setStage(next);
+    choose(next);
     tabs.current.get(next)?.focus();
   };
 
@@ -497,11 +503,7 @@ export function SynthPanel({
               aria-selected={stage === name}
               tabIndex={stage === name ? 0 : -1}
               className="stage-tab"
-              onClick={() => {
-                setStage(name);
-                // Leaving Mod closes the slots opened with no destination.
-                if (name !== "mod") setOpened(new Set());
-              }}
+              onClick={() => choose(name)}
               onKeyDown={(event) => onTabKey(event, index)}
             >
               <span className="glance" aria-hidden="true">
