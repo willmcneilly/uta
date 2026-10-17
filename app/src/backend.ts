@@ -33,17 +33,67 @@ export interface ClipNotes {
 
 /**
  * The project without its notes: tracks, mixer and synth settings, clip
- * positions and the transport.
+ * positions and the transport. Each track and effect carries only its
+ * settings' names and values; what each setting is (its label, range,
+ * default or choices) comes once, in `descriptions`.
  */
 export interface Outline extends ProjectFields {
+  /** The master's chain: the effects after the sum of the tracks, in order. */
+  masterEffects: EffectOutline[];
+  /** Every setting's description, once for the whole project. */
+  descriptions: Descriptions;
   /** Every track, in order from the top. */
   tracks: TrackOutline[];
 }
 
 /** A track in the outline. */
 export interface TrackOutline extends TrackFields {
+  source: SourceOutline;
+  /** Its chain: the effects after the source, in order. */
+  effects: EffectOutline[];
   /** In order of start, then ID. They may overlap. */
   clips: ClipOutline[];
+}
+
+/** What makes a track's sound, in the outline: its settings' values. */
+export type SourceOutline =
+  | { kind: "synth"; settings: SynthParam[] }
+  | { kind: "drums"; kit: { rows: KitRowOutline[] } };
+
+/** A row of the kit in the outline: its settings' values. */
+export interface KitRowOutline extends Omit<KitRowView, "settings" | "model"> {
+  settings: DrumNumber[];
+  model: { name: "model"; value: KickModel } | null;
+}
+
+/** An effect in the outline: its Mix's and its settings' values. */
+export interface EffectOutline extends Omit<EffectView, "mix" | "settings"> {
+  mix: { name: "mix"; value: number };
+  settings: DelayParam[];
+}
+
+/** A setting's description: everything about it but its name and value. */
+export type Description =
+  | Omit<NumberSettingView, "name" | "value">
+  | Omit<ChoiceSettingView, "name" | "value">
+  | Omit<ToggleSettingView, "name" | "value">;
+
+/** Descriptions by the setting's name, as its command carries it. */
+export type DescriptionTable = Record<string, Description>;
+
+/**
+ * Every setting's description, as Rust sends it once in the outline, so a
+ * panel keeps no label, range or default of its own.
+ */
+export interface Descriptions {
+  synth: DescriptionTable;
+  /**
+   * The kit's, by the kick's model, then the sound: the kick's are that
+   * model's, and include its `model`.
+   */
+  drums: Record<KickModel, Partial<Record<DrumSound, DescriptionTable>>>;
+  /** Each kind of effect's, with its Mix as `mix`. */
+  effects: Record<EffectKind, DescriptionTable>;
 }
 
 /** A clip in the outline: where it is, and the revision of its notes. */
@@ -57,6 +107,8 @@ export interface ClipOutline extends ClipFields {
  * UI holds.
  */
 export interface ProjectView extends ProjectFields {
+  /** The master's chain: the effects after the sum of the tracks, in order. */
+  masterEffects: EffectView[];
   /** Every track, in order from the top. */
   tracks: TrackView[];
 }
@@ -93,16 +145,17 @@ interface ProjectFields {
   mixerDefaults: MixerView;
   /** The most tracks a project can have. */
   maxTracks: number;
-  /** The master's chain: the effects after the sum of the tracks, in order. */
-  masterEffects: EffectView[];
   /** Every kind of effect, in the order the **+** menu lists them. */
   effectKinds: EffectKindChoice[];
   /** The most effects a chain holds. */
   maxEffects: number;
 }
 
-/** A track: its name, mixer strip, sound and clips. */
+/** A track: its name, mixer strip, sound, chain and clips. */
 export interface TrackView extends TrackFields {
+  source: SourceView;
+  /** Its chain: the effects after the source, in order. */
+  effects: EffectView[];
   /** In order of start, then ID. They may overlap. */
   clips: ClipView[];
 }
@@ -113,9 +166,6 @@ interface TrackFields {
   /** Such as "Synth 2" or "Drums 1". It stays the same when tracks move or go. */
   name: string;
   mixer: MixerView;
-  source: SourceView;
-  /** Its chain: the effects after the source, in order. */
-  effects: EffectView[];
 }
 
 /** What makes a track's sound: the synth's settings, or the drum kit. */
@@ -124,9 +174,9 @@ export type SourceView =
   | { kind: "drums"; kit: KitView };
 
 /**
- * What every setting carries from Rust's description of it: what the panel
- * calls it, and how it sounds. A panel draws a setting it has never seen from
- * its description alone.
+ * What every setting carries from Rust's description of it, joined with its
+ * value: what the panel calls it, and how it sounds. A panel draws a setting
+ * it has never seen from its description alone.
  */
 interface Described<N extends string> {
   name: N;

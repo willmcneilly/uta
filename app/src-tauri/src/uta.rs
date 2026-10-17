@@ -4,6 +4,7 @@
 //! audio thread.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use crate::pieces::{PieceId, Pieces};
@@ -13,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
     Chain, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description, DrumParam,
-    DrumSound, Effect, EffectId, EffectKind, EffectSettings, KIT, KitSettings, MAX_EFFECTS,
-    MixerStrip, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, Session, Source,
-    SynthParam, SynthSettings, Track, TrackId,
+    DrumSound, Effect, EffectId, EffectKind, EffectSettings, KIT, KickModel, KitSettings,
+    MAX_EFFECTS, MixerStrip, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, Session,
+    Source, SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -100,6 +101,9 @@ pub struct Outline<C = ClipOutline> {
     pub effect_kinds: Vec<EffectKindChoice>,
     /// The most effects a chain holds.
     pub max_effects: usize,
+    /// Every setting's description, once: each track and effect carries
+    /// only its settings' values.
+    pub descriptions: &'static Descriptions,
     /// Every track, in order from the top.
     pub tracks: Vec<TrackOutline<C>>,
 }
@@ -128,12 +132,13 @@ pub struct TrackOutline<C = ClipOutline> {
 }
 
 /// One effect in a chain, as the UI shows it: its ID, its name, whether
-/// it's on, its Mix, and its kind with its own settings, each described
-/// from the core, so a panel keeps no range or default itself. See RFC-007,
+/// it's on, its Mix, and its kind with its own settings' values. Each
+/// setting's description is in the outline's [`Descriptions`], under the
+/// effect's kind, so a panel keeps no range or default itself. See RFC-007,
 /// "Patterns for every effect after this one", point 2.
 ///
 /// Serialises as `{"id":"…","name":"Delay","enabled":true,"mix":{"name":
-/// "mix","value":0.3,"label":"Mix",…},"kind":"delay","settings":[…]}`.
+/// "mix","value":0.3},"kind":"delay","settings":[…]}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectView {
@@ -141,7 +146,7 @@ pub struct EffectView {
     /// What the panel calls it: "Delay".
     pub name: &'static str,
     pub enabled: bool,
-    pub mix: SettingView<MixParam>,
+    pub mix: MixParam,
     #[serde(flatten)]
     pub kind: EffectKindView,
 }
@@ -153,13 +158,13 @@ pub enum MixParam {
     Mix(f32),
 }
 
-/// An effect's kind, with its own settings described, in the order its
+/// An effect's kind, with its own settings' values, in the order its
 /// command carries them: `"kind":"delay","settings":[…],"echoSeconds":0.375`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectKindView {
     Delay {
-        settings: Vec<SettingView<DelayParam>>,
+        settings: Vec<DelayParam>,
         /// How far apart the echoes are at the project's tempo, in seconds:
         /// the synced division's length, held at 5 s, or the time in
         /// seconds. The panel's drawing spaces its echoes by it, so it never
@@ -176,20 +181,10 @@ impl EffectView {
             id: effect.id(),
             name: effect.kind().name(),
             enabled: effect.enabled(),
-            mix: SettingView {
-                param: MixParam::Mix(effect.mix()),
-                description: effect.describe_mix(),
-            },
+            mix: MixParam::Mix(effect.mix()),
             kind: match effect.settings() {
                 EffectSettings::Delay(settings) => EffectKindView::Delay {
-                    settings: settings
-                        .params()
-                        .into_iter()
-                        .map(|param| SettingView {
-                            param,
-                            description: param.describe(),
-                        })
-                        .collect(),
+                    settings: settings.params().into(),
                     echo_seconds: settings.time_seconds_at(bpm),
                 },
             },
@@ -204,9 +199,9 @@ impl EffectView {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SourceView {
     Synth {
-        /// Each of the synth's settings, described, in the order
+        /// Each of the synth's settings' values, in the order
         /// `SynthSettings::params` gives them.
-        settings: Vec<SettingView<SynthParam>>,
+        settings: Vec<SynthParam>,
     },
     Drums {
         kit: KitView,
@@ -217,35 +212,107 @@ impl From<&Source> for SourceView {
     fn from(source: &Source) -> Self {
         match source {
             Source::Synth(settings) => Self::Synth {
-                settings: settings
-                    .params()
-                    .into_iter()
-                    .map(|param| SettingView {
-                        param,
-                        description: param.describe(),
-                    })
-                    .collect(),
+                settings: settings.params().into(),
             },
             Source::Drums(kit) => Self::Drums { kit: kit.into() },
         }
     }
 }
 
-/// One setting with its value, as its command carries them, and its
-/// description from the core: label, how it sounds, and its unit, limits,
-/// scale and default, or its choices: everything a panel needs to draw the
-/// setting's control, so it keeps none of it itself.
+/// Every setting's description from the core, sent once in the outline
+/// rather than with each track's values: label, how it sounds, and its
+/// unit, limits, scale and default, or its choices. It's everything a panel
+/// needs to draw a setting's control, so it keeps none of it itself. Each
+/// table is by the setting's name, as its command carries it. See RFC-004,
+/// part 2, "Growing later".
 ///
-/// Serialises flat: `{"name":"cutoff_hz","value":20000.0,"label":"Cutoff",
-/// "sounds":"…","kind":"number","unit":"hz","scale":"log",...}`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct SettingView<P> {
-    /// The setting and its value, as `SetSynthParam` or `SetDrumParam`
-    /// carries them: `"name":"tune_hz","value":49.0`.
-    #[serde(flatten)]
-    pub param: P,
-    #[serde(flatten)]
-    pub description: Description,
+/// Serialises as `{"synth":{"cutoff_hz":{"label":"Cutoff",…},…},"drums":
+/// {"808":{"kick":{"tune_hz":{…},…},…},"909":{…}},"effects":{"delay":
+/// {"mix":{…},"sync":{…},…}}}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Descriptions {
+    /// The synth's settings.
+    pub synth: BTreeMap<String, Description>,
+    /// The kit's settings with each kick model chosen, by the model, then
+    /// the sound: the kick's are that model's, and include its `model`.
+    pub drums: BTreeMap<&'static str, BTreeMap<String, BTreeMap<String, Description>>>,
+    /// Each kind of effect's settings, with its Mix as `mix`.
+    pub effects: BTreeMap<String, BTreeMap<String, Description>>,
+}
+
+impl Descriptions {
+    /// The table, made the first time it's asked for: descriptions never
+    /// change while the app runs.
+    pub fn all() -> &'static Self {
+        static ALL: LazyLock<Descriptions> = LazyLock::new(Descriptions::new);
+        &ALL
+    }
+
+    fn new() -> Self {
+        let synth = SynthSettings::default()
+            .params()
+            .into_iter()
+            .map(|param| (name_of(&param), param.describe()))
+            .collect();
+        let drums = KickModel::ALL
+            .into_iter()
+            .map(|model| {
+                let kit = KitSettings::default().with_kick_model(model);
+                let mut sounds: BTreeMap<_, BTreeMap<_, _>> = BTreeMap::new();
+                let choice = (DrumSound::Kick, DrumParam::Model(model));
+                for (sound, param) in kit.params().into_iter().chain([choice]) {
+                    let description = kit
+                        .describe(sound, &param)
+                        .expect("every setting a kit has is described");
+                    sounds
+                        .entry(key_of(&sound))
+                        .or_default()
+                        .insert(name_of(&param), description);
+                }
+                (model.value(), sounds)
+            })
+            .collect();
+        let effects = EffectKind::ALL
+            .into_iter()
+            .map(|kind| {
+                let effect = Effect::default_of(EffectId::random(), kind);
+                let mix = (name_of(&MixParam::Mix(0.0)), effect.describe_mix());
+                let settings: Vec<_> = match effect.settings() {
+                    EffectSettings::Delay(settings) => settings
+                        .params()
+                        .into_iter()
+                        .map(|param| (name_of(&param), param.describe()))
+                        .collect(),
+                };
+                (key_of(&kind), [mix].into_iter().chain(settings).collect())
+            })
+            .collect();
+        Self {
+            synth,
+            drums,
+            effects,
+        }
+    }
+}
+
+/// A sound's or a kind's name, as it serialises: `"closed_hat"`, `"delay"`.
+fn key_of(value: &impl Serialize) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(key)) => key,
+        other => panic!("it serialises as a string: {other:?}"),
+    }
+}
+
+/// A setting's name as its command carries it, `"cutoff_hz"`: the `"name"`
+/// it serialises with, so the table can't call it anything else.
+fn name_of(param: &impl Serialize) -> String {
+    match serde_json::to_value(param) {
+        Ok(serde_json::Value::Object(mut fields)) => match fields.remove("name") {
+            Some(serde_json::Value::String(name)) => name,
+            other => panic!("a setting serialises with its name: {other:?}"),
+        },
+        other => panic!("a setting serialises as an object: {other:?}"),
+    }
 }
 
 /// A drum track's kit, as the UI shows it: its rows, so the UI never has to
@@ -268,12 +335,12 @@ pub struct KitRowView {
     pub pitch: u8,
     /// Each of the sound's settings that's a number, in the order of its
     /// panel. Empty for a sound that has none yet.
-    pub settings: Vec<SettingView<DrumParam>>,
+    pub settings: Vec<DrumParam>,
     /// Settings it takes from another sound, which its panel says, if any.
     pub shares: Option<SharedSettingsView>,
     /// Its choice of model, for a sound that has one: the kick. `settings`
     /// are the chosen model's.
-    pub model: Option<SettingView<DrumParam>>,
+    pub model: Option<DrumParam>,
 }
 
 /// Settings one sound takes from another: the open hat plays with the
@@ -313,12 +380,6 @@ impl SharedSettingsView {
 impl From<&KitSettings> for KitView {
     fn from(kit: &KitSettings) -> Self {
         let params = kit.params();
-        let describe = |sound, param: DrumParam| SettingView {
-            param,
-            description: kit
-                .describe(sound, &param)
-                .expect("every setting a kit has is described"),
-        };
         Self {
             rows: KIT
                 .iter()
@@ -329,11 +390,11 @@ impl From<&KitSettings> for KitView {
                     settings: params
                         .iter()
                         .filter(|(sound, _)| *sound == row.sound)
-                        .map(|&(sound, param)| describe(sound, param))
+                        .map(|&(_, param)| param)
                         .collect(),
                     shares: SharedSettingsView::of(kit, row.sound),
                     model: (row.sound == DrumSound::Kick)
-                        .then(|| describe(row.sound, DrumParam::Model(kit.kick.model))),
+                        .then_some(DrumParam::Model(kit.kick.model)),
                 })
                 .collect(),
         }
@@ -1329,6 +1390,7 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
             })
             .collect(),
         max_effects: MAX_EFFECTS,
+        descriptions: Descriptions::all(),
         tracks: project
             .tracks()
             .iter()
@@ -1388,7 +1450,7 @@ pub const FRAME_INTERVAL: Duration = Duration::from_micros(16_667);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uta_core::{KickModel, SettingKind, Unit};
+    use uta_core::{DelaySettings, SettingKind, Unit};
 
     fn offline() -> Uta {
         Uta::offline()
@@ -1716,25 +1778,164 @@ mod tests {
         assert!(!uta.frame().playing);
     }
 
-    /// The outline describes each synth setting, as it does each drum
+    /// `setting`, a name and value from the outline's JSON, with its
+    /// description from `table`, as the UI puts them together.
+    fn described(table: &serde_json::Value, setting: &serde_json::Value) -> serde_json::Value {
+        let name = setting["name"].as_str().expect("a setting has a name");
+        let mut joined = table[name]
+            .as_object()
+            .unwrap_or_else(|| panic!("{name} is described"))
+            .clone();
+        joined.extend(setting.as_object().unwrap().clone());
+        serde_json::Value::Object(joined)
+    }
+
+    /// Every setting a track or an effect has is described once, in the
+    /// outline's table, and each track and effect carries only the
+    /// settings' names and values: never a description of its own.
+    #[test]
+    fn each_setting_is_described_once_and_tracks_carry_only_values() {
+        let mut uta = offline();
+        let track = uta.project().tracks[0].id;
+        let delay = |chain| PlacedEffect {
+            chain,
+            index: 0,
+            effect: Effect::default_of(EffectId::random(), EffectKind::Delay),
+        };
+        uta.change(
+            Command::AddEffects {
+                effects: vec![delay(Chain::Track(track)), delay(Chain::Master)],
+            },
+            None,
+        )
+        .unwrap();
+        let json = serde_json::to_value(uta.update().outline).unwrap();
+        let table = &json["descriptions"];
+
+        // A track's and an effect's settings are a name and a value, and
+        // the table describes each by that name.
+        let values_only = |setting: &serde_json::Value, table: &serde_json::Value| {
+            let fields: Vec<_> = setting.as_object().unwrap().keys().collect();
+            assert_eq!(fields, ["name", "value"], "{setting}");
+            described(table, setting);
+        };
+        let effects = |chain: &serde_json::Value| {
+            for effect in chain.as_array().unwrap() {
+                let kind = &table["effects"][effect["kind"].as_str().unwrap()];
+                values_only(&effect["mix"], kind);
+                for setting in effect["settings"].as_array().unwrap() {
+                    values_only(setting, kind);
+                }
+            }
+        };
+        let mut seen = 0;
+        for track in json["tracks"].as_array().unwrap() {
+            let source = &track["source"];
+            match source["kind"].as_str() {
+                Some("synth") => {
+                    for setting in source["settings"].as_array().unwrap() {
+                        values_only(setting, &table["synth"]);
+                        seen += 1;
+                    }
+                }
+                Some("drums") => {
+                    let rows = source["kit"]["rows"].as_array().unwrap();
+                    let model = rows[0]["model"]["value"].as_str().unwrap();
+                    for row in rows {
+                        let sound = &table["drums"][model][row["sound"].as_str().unwrap()];
+                        for setting in row["settings"].as_array().unwrap() {
+                            values_only(setting, sound);
+                            seen += 1;
+                        }
+                        if !row["model"].is_null() {
+                            values_only(&row["model"], sound);
+                        }
+                    }
+                }
+                kind => panic!("{kind:?}"),
+            }
+            effects(&track["effects"]);
+        }
+        effects(&json["masterEffects"]);
+        assert!(seen > 0, "the default project has a synth and a drum track");
+
+        // The table has every setting there is, and nothing else.
+        let names =
+            |params: Vec<String>| -> std::collections::BTreeSet<_> { params.into_iter().collect() };
+        let described = Descriptions::all();
+        assert_eq!(
+            names(described.synth.keys().cloned().collect()),
+            names(
+                SynthSettings::default()
+                    .params()
+                    .iter()
+                    .map(name_of)
+                    .collect()
+            )
+        );
+        for model in KickModel::ALL {
+            let kit = KitSettings::default().with_kick_model(model);
+            let mut expected: Vec<_> = kit
+                .params()
+                .iter()
+                .map(|(sound, param)| (key_of(sound), name_of(param)))
+                .collect();
+            expected.push(("kick".into(), "model".into()));
+            let table: Vec<_> = described.drums[model.value()]
+                .iter()
+                .flat_map(|(sound, settings)| {
+                    settings.keys().map(|name| (sound.clone(), name.clone()))
+                })
+                .collect();
+            expected.sort();
+            assert_eq!(table, expected, "{model:?}");
+        }
+        let delay = DelaySettings::default().params();
+        assert_eq!(
+            names(described.effects["delay"].keys().cloned().collect()),
+            names(
+                delay
+                    .iter()
+                    .map(name_of)
+                    .chain(["mix".to_owned()])
+                    .collect()
+            )
+        );
+        assert_eq!(described.effects.len(), EffectKind::ALL.len());
+    }
+
+    /// The outline describes each synth setting once, as it does each drum
     /// setting: its label, how it sounds, its unit, limits, scale and
     /// default, or its choices. Every setting the synth has is there, in
-    /// order, with its value.
+    /// order, with its value and nothing else.
     #[test]
     fn the_outline_describes_every_synth_setting() {
         let outline = offline().update().outline;
         let SourceView::Synth { settings } = &outline.tracks[0].source else {
             panic!("a new project's track is a synth");
         };
-        let params: Vec<_> = settings.iter().map(|setting| setting.param).collect();
-        assert_eq!(params, SynthSettings::default().params());
+        assert_eq!(*settings, SynthSettings::default().params());
+        let table = &outline.descriptions.synth;
+        assert_eq!(table.len(), settings.len());
         for setting in settings {
-            assert_eq!(setting.description, setting.param.describe());
+            assert_eq!(table[&name_of(setting)], setting.describe());
         }
 
-        let json = serde_json::to_value(&outline.tracks[0].source).unwrap();
+        let outline = serde_json::to_value(&outline).unwrap();
+        let json = &outline["tracks"][0]["source"];
         assert_eq!(json["kind"], "synth");
-        let wave = &json["settings"][0];
+        assert_eq!(
+            json["settings"][0],
+            serde_json::json!({"name": "osc1_wave", "value": "saw"}),
+            "a track's setting carries no description"
+        );
+        let settings: Vec<_> = json["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|setting| described(&outline["descriptions"]["synth"], setting))
+            .collect();
+        let wave = &settings[0];
         assert_eq!(wave["name"], "osc1_wave");
         assert_eq!(wave["value"], "saw");
         assert_eq!(wave["kind"], "choice");
@@ -1743,27 +1944,27 @@ mod tests {
             wave["options"][3],
             serde_json::json!({"value": "pulse", "label": "Pulse"})
         );
-        let octave = &json["settings"][1];
+        let octave = &settings[1];
         assert_eq!(octave["name"], "osc1_octave");
         assert_eq!(octave["value"], 0);
         assert_eq!(octave["unit"], "octaves");
         assert_eq!(octave["step"], 1.0);
-        let width = &json["settings"][2];
+        let width = &settings[2];
         assert_eq!(width["name"], "osc1_width");
         assert_eq!(width["value"], 0.5);
         assert_eq!(width["unit"], "fraction");
         let limits: (f32, f32) = serde_json::from_value(width["limits"].clone()).unwrap();
         assert_eq!(limits, (0.05, 0.95));
-        let pitch = &json["settings"][5];
+        let pitch = &settings[5];
         assert_eq!(pitch["name"], "osc2_pitch_semitones");
         assert_eq!(pitch["unit"], "semitones");
         assert_eq!(pitch["scale"], "cubic");
         assert_eq!(pitch["limits"], serde_json::json!([-12.0, 12.0]));
-        let sync = &json["settings"][6];
+        let sync = &settings[6];
         assert_eq!(sync["name"], "osc2_sync");
         assert_eq!(sync["value"], false);
         assert_eq!(sync["kind"], "toggle");
-        let mode = &json["settings"][12];
+        let mode = &settings[12];
         assert_eq!(mode["name"], "filter_mode");
         assert_eq!(mode["value"], "low_pass");
         assert_eq!(mode["kind"], "choice");
@@ -1771,16 +1972,16 @@ mod tests {
             mode["options"][2],
             serde_json::json!({"value": "high_pass", "label": "High-pass"})
         );
-        let env = &json["settings"][15];
+        let env = &settings[15];
         assert_eq!(env["name"], "filter_env_octaves");
         assert_eq!(env["unit"], "octaves");
         assert_eq!(env["limits"], serde_json::json!([-10.0, 10.0]));
         assert!(env.get("step").is_none());
-        let filter_lfo = &json["settings"][17];
+        let filter_lfo = &settings[17];
         assert_eq!(filter_lfo["name"], "filter_lfo_octaves");
         assert_eq!(filter_lfo["unit"], "octaves");
         assert_eq!(filter_lfo["limits"], serde_json::json!([-5.0, 5.0]));
-        let shape = &json["settings"][26];
+        let shape = &settings[26];
         assert_eq!(shape["name"], "lfo_shape");
         assert_eq!(shape["value"], "sine");
         assert_eq!(shape["kind"], "choice");
@@ -1788,14 +1989,14 @@ mod tests {
             shape["options"][4],
             serde_json::json!({"value": "sample_and_hold", "label": "Sample & hold"})
         );
-        let rate = &json["settings"][27];
+        let rate = &settings[27];
         assert_eq!(rate["name"], "lfo_rate_hz");
         assert_eq!(rate["unit"], "hz");
         assert_eq!(rate["scale"], "log");
-        let lfo_sync = &json["settings"][28];
+        let lfo_sync = &settings[28];
         assert_eq!(lfo_sync["name"], "lfo_sync");
         assert_eq!(lfo_sync["kind"], "toggle");
-        let division = &json["settings"][29];
+        let division = &settings[29];
         assert_eq!(division["name"], "lfo_division");
         assert_eq!(division["value"], "1/4");
         assert_eq!(division["kind"], "choice");
@@ -1803,7 +2004,7 @@ mod tests {
             division["options"][8],
             serde_json::json!({"value": "1/8d", "label": "1/8 dotted"})
         );
-        let voice_mode = &json["settings"][33];
+        let voice_mode = &settings[33];
         assert_eq!(voice_mode["name"], "voice_mode");
         assert_eq!(voice_mode["value"], "poly");
         assert_eq!(voice_mode["kind"], "choice");
@@ -1811,22 +2012,22 @@ mod tests {
             voice_mode["options"][1],
             serde_json::json!({"value": "mono", "label": "Mono"})
         );
-        let legato = &json["settings"][34];
+        let legato = &settings[34];
         assert_eq!(legato["name"], "legato");
         assert_eq!(legato["value"], false);
         assert_eq!(legato["kind"], "toggle");
-        let glide = &json["settings"][35];
+        let glide = &settings[35];
         assert_eq!(glide["name"], "glide_seconds");
         assert_eq!(glide["unit"], "seconds");
         assert_eq!(glide["scale"], "log");
         let limits: (f32, f32) = serde_json::from_value(glide["limits"].clone()).unwrap();
         assert_eq!(limits, (0.001, 5.0));
-        let retrigger = &json["settings"][36];
+        let retrigger = &settings[36];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
         assert_eq!(retrigger["default"], true);
-        let cutoff = &json["settings"][13];
+        let cutoff = &settings[13];
         assert_eq!(cutoff["name"], "cutoff_hz");
         assert_eq!(cutoff["value"], 20_000.0);
         assert_eq!(cutoff["label"], "Cutoff");
@@ -1836,7 +2037,7 @@ mod tests {
         assert_eq!(cutoff["limits"], serde_json::json!([20.0, 20_000.0]));
         assert_eq!(cutoff["default"], 20_000.0);
         // Each setting has a unit or choices, and says how it sounds.
-        for setting in json["settings"].as_array().unwrap() {
+        for setting in &settings {
             assert!(setting["sounds"].as_str().is_some_and(|s| !s.is_empty()));
             match setting["kind"].as_str() {
                 Some("number") => assert!(setting["unit"].is_string(), "{setting}"),
@@ -1845,9 +2046,7 @@ mod tests {
                 kind => panic!("{kind:?}"),
             }
         }
-        let units: Vec<_> = json["settings"]
-            .as_array()
-            .unwrap()
+        let units: Vec<_> = settings
             .iter()
             .map(|setting| setting["unit"].as_str())
             .collect();
@@ -1923,7 +2122,18 @@ mod tests {
             panic!("one effect: {:?}", outline.tracks[0].effects);
         };
         assert_eq!(effect.id, id);
-        let json = serde_json::to_value(effect).unwrap();
+        let table = serde_json::to_value(outline.descriptions).unwrap()["effects"]["delay"].clone();
+        let mut json = serde_json::to_value(effect).unwrap();
+        assert_eq!(
+            json["mix"],
+            serde_json::json!({"name": "mix", "value": 0.5}),
+            "an effect's setting carries no description"
+        );
+        json["mix"] = described(&table, &json["mix"]);
+        for setting in json["settings"].as_array_mut().unwrap() {
+            assert_eq!(setting.as_object().unwrap().len(), 2, "{setting}");
+            *setting = described(&table, setting);
+        }
         assert_eq!(json["name"], "Delay");
         assert_eq!(json["kind"], "delay");
         assert_eq!(json["enabled"], true);
@@ -2155,16 +2365,8 @@ mod tests {
             json["mixerDefaults"],
             serde_json::json!({"volumeDb": 0.0, "pan": 0.0, "mute": false, "solo": false})
         );
-        let synth = &json["tracks"][0]["source"]["settings"];
-        let default = |name: &str| {
-            synth
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|setting| setting["name"] == name)
-                .unwrap()["default"]
-                .clone()
-        };
+        let synth = &json["descriptions"]["synth"];
+        let default = |name: &str| synth[name]["default"].clone();
         assert_eq!(default("osc1_wave"), "saw");
         assert_eq!(default("cutoff_hz"), 20_000.0);
         assert_eq!(default("resonance"), 0.0);
@@ -2443,7 +2645,7 @@ mod tests {
         let fields = settings
             .iter()
             .map(|setting| {
-                let param = serde_json::to_value(setting.param).unwrap();
+                let param = serde_json::to_value(setting).unwrap();
                 (
                     param["name"].as_str().unwrap().to_owned(),
                     param["value"].clone(),
@@ -3094,9 +3296,9 @@ mod tests {
         // sounds without a circuit yet have none.
         let kick = &kit.rows[0];
         assert_eq!(kick.settings.len(), 4);
-        assert_eq!(kick.settings[0].param, DrumParam::TuneHz(49.0));
+        assert_eq!(kick.settings[0], DrumParam::TuneHz(49.0));
         assert_eq!(
-            kick.settings[0].description,
+            uta.project().descriptions.drums["808"]["kick"]["tune_hz"],
             KitSettings::default()
                 .describe(DrumSound::Kick, &DrumParam::TuneHz(49.0))
                 .unwrap()
@@ -3108,18 +3310,29 @@ mod tests {
                 .filter(|(sound, _)| *sound == row.sound)
                 .map(|(_, param)| param)
                 .collect();
-            let shown: Vec<_> = row.settings.iter().map(|setting| setting.param).collect();
+            let shown: Vec<_> = row.settings.iter().copied().collect();
             assert_eq!(shown, params, "{}", row.name);
         }
 
         let json = serde_json::to_value(uta.update().outline).unwrap();
         let source = &json["tracks"][1]["source"];
         assert_eq!(source["kind"], "drums");
+        let table = &json["descriptions"]["drums"]["808"];
         let row = &source["kit"]["rows"][0];
         assert_eq!(row["sound"], "kick");
         assert_eq!(row["name"], "Kick");
         assert_eq!(row["pitch"], 36);
-        let tune = row["settings"][0].as_object().unwrap();
+        assert_eq!(
+            row["settings"][0],
+            serde_json::json!({"name": "tune_hz", "value": 49.0}),
+            "a kit's setting carries no description"
+        );
+        assert_eq!(
+            row["model"],
+            serde_json::json!({"name": "model", "value": "808"})
+        );
+        let tune = described(&table["kick"], &row["settings"][0]);
+        let tune = tune.as_object().unwrap();
         assert!(tune["sounds"].as_str().is_some_and(|s| !s.is_empty()));
         let without_sounds: serde_json::Map<_, _> = tune
             .iter()
@@ -3142,15 +3355,15 @@ mod tests {
         // Every setting of every sound has a unit and says how it sounds.
         for row in source["kit"]["rows"].as_array().unwrap() {
             for setting in row["settings"].as_array().unwrap() {
+                let setting = described(&table[row["sound"].as_str().unwrap()], setting);
                 assert!(setting["unit"].is_string(), "{setting}");
                 assert!(setting["sounds"].is_string(), "{setting}");
             }
         }
         // Tone is in a different unit on each sound that has it.
         let tone_unit = |row: usize| {
-            let settings = source["kit"]["rows"][row]["settings"].as_array().unwrap();
-            let tone = settings.iter().find(|s| s["name"] == "tone").unwrap();
-            tone["unit"].clone()
+            let row = &source["kit"]["rows"][row];
+            table[row["sound"].as_str().unwrap()]["tone"]["unit"].clone()
         };
         assert_eq!(
             [tone_unit(0), tone_unit(1), tone_unit(2), tone_unit(7)],
@@ -3181,7 +3394,7 @@ mod tests {
             let SourceView::Drums { kit } = &uta.project().tracks[1].source else {
                 panic!("Drums 1 is a drum track");
             };
-            kit.rows[1].settings[2].param
+            kit.rows[1].settings[2]
         };
         assert_eq!(snappy(&uta), DrumParam::Snappy(0.8));
         let engine_kit = |uta: &Uta| match uta.controller.snapshot().tracks()[1].sound {
@@ -3209,7 +3422,10 @@ mod tests {
             kit.rows[0].clone()
         };
         let json = serde_json::to_value(uta.update().outline).unwrap();
-        let model = &json["tracks"][1]["source"]["kit"]["rows"][0]["model"];
+        let model = &described(
+            &json["descriptions"]["drums"]["808"]["kick"],
+            &json["tracks"][1]["source"]["kit"]["rows"][0]["model"],
+        );
         assert_eq!(model["name"], "model");
         assert_eq!(model["label"], "Model");
         assert_eq!(model["value"], "808");
@@ -3234,14 +3450,17 @@ mod tests {
         )
         .unwrap();
         let row = kick(&uta);
-        assert_eq!(row.model.unwrap().param, DrumParam::Model(KickModel::Tr909));
+        assert_eq!(row.model.unwrap(), DrumParam::Model(KickModel::Tr909));
+        // The 909's settings are described in the 909's table.
+        let describe =
+            |setting: &DrumParam| Descriptions::all().drums["909"]["kick"][&name_of(setting)];
         let labels: Vec<_> = row
             .settings
             .iter()
-            .map(|setting| setting.description.label)
+            .map(|setting| describe(setting).label)
             .collect();
         assert_eq!(labels, ["Tune", "Sweep", "Attack", "Decay", "Level"]);
-        let number = |setting: &SettingView<DrumParam>| match setting.description.kind {
+        let number = |setting: &DrumParam| match describe(setting).kind {
             SettingKind::Number {
                 unit,
                 limits,
@@ -3250,7 +3469,7 @@ mod tests {
             } => (unit, limits, default),
             _ => panic!("{setting:?} is a number"),
         };
-        assert_eq!(row.settings[0].param, DrumParam::TuneHz(55.0));
+        assert_eq!(row.settings[0], DrumParam::TuneHz(55.0));
         assert_eq!(number(&row.settings[0]), (Unit::Hz, (45.0, 70.0), 55.0));
         assert_eq!(number(&row.settings[1]).0, Unit::Fraction);
         assert_eq!(number(&row.settings[3]).1, (0.1, 1.5));
@@ -3262,6 +3481,7 @@ mod tests {
             .unwrap();
         assert_eq!(settings.len(), 5);
         for setting in settings {
+            let setting = described(&json["descriptions"]["drums"]["909"]["kick"], setting);
             assert!(setting["unit"].is_string(), "{setting}");
             assert!(
                 setting["sounds"].as_str().is_some_and(|s| !s.is_empty()),
@@ -3276,13 +3496,13 @@ mod tests {
         // The kick's Tune is now the 909's.
         uta.set_drum_param(drums, DrumSound::Kick, DrumParam::TuneHz(62.0), None)
             .unwrap();
-        assert_eq!(kick(&uta).settings[0].param, DrumParam::TuneHz(62.0));
+        assert_eq!(kick(&uta).settings[0], DrumParam::TuneHz(62.0));
 
         uta.undo();
         uta.undo();
         let row = kick(&uta);
-        assert_eq!(row.model.unwrap().param, DrumParam::Model(KickModel::Tr808));
-        assert_eq!(row.settings[0].param, DrumParam::TuneHz(49.0));
+        assert_eq!(row.model.unwrap(), DrumParam::Model(KickModel::Tr808));
+        assert_eq!(row.settings[0], DrumParam::TuneHz(49.0));
         assert_eq!(engine_model(&uta), KickModel::Tr808);
     }
 
@@ -3316,7 +3536,7 @@ mod tests {
                 panic!("Drums 1 is a drum track");
             };
             let settings = &kit.rows[0].settings;
-            (settings[0].param, settings[3].param)
+            (settings[0], settings[3])
         };
 
         uta.undo();

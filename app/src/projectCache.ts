@@ -16,6 +16,7 @@ import type {
   ProjectView,
   Update,
 } from "./backend";
+import { describeEffect, describeSource } from "./describe";
 
 export interface ProjectCache {
   /** The sequence number of the latest update taken, or -1 before the first. */
@@ -24,8 +25,8 @@ export interface ProjectCache {
   /** The notes held for each clip in the outline, by clip ID, at the revision they were sent. */
   notes: ReadonlyMap<string, ClipNotes>;
   /**
-   * What the UI draws: the outline, with each clip's notes if they're held
-   * at its revision. A clip that's the same as in the last one keeps its
+   * What the UI draws: the outline, with each setting's description and
+   * each clip's notes if they're held at its revision. A clip that's the same as in the last one keeps its
    * object, and a track whose clips are all the same keeps its list, so
    * views can skip them.
    */
@@ -110,9 +111,11 @@ function build(
 ): ProjectCache {
   const before = new Map(previous?.tracks.map((track) => [track.id, track.clips]));
   const missing: ClipOutline[] = [];
+  const { descriptions, masterEffects, tracks, ...fields } = outline;
   const project: ProjectView = {
-    ...outline,
-    tracks: outline.tracks.map((track) => {
+    ...fields,
+    masterEffects: masterEffects.map((effect) => describeEffect(effect, descriptions)),
+    tracks: tracks.map((track) => {
       const was = before.get(track.id);
       let same = was !== undefined && was.length === track.clips.length;
       const clips = track.clips.map((clip, i): ClipView => {
@@ -132,7 +135,12 @@ function build(
         same = false;
         return { id: clip.id, start: clip.start, length: clip.length, notes: drawn };
       });
-      return { ...track, clips: same && was ? was : clips };
+      return {
+        ...track,
+        source: describeSource(track.source, descriptions),
+        effects: track.effects.map((effect) => describeEffect(effect, descriptions)),
+        clips: same && was ? was : clips,
+      };
     }),
   };
   return { sequence, outline, notes, project, missing };
