@@ -31,14 +31,14 @@
             "index": 1,
             "track": {
               "id": "cad07084-0e09-5a6b-b567-65e06a9526b7",
-              "name": "Key to cutoff +10%",
+              "name": "Key to cutoff +50%",
               "source": {
                 "synth": {
                   "cutoff_hz": 500.0,
                   "sustain": 0.8,
                   "mod1_source": "key",
                   "mod1_destination": "cutoff",
-                  "mod1_amount": 0.1
+                  "mod1_amount": 0.5
                 }
               },
               "mixer": {
