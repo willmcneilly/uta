@@ -391,24 +391,6 @@ const DELAY_MODES: [Choice; 2] = [
     },
 ];
 
-/// Every note division, as a synced time's menu offers them.
-const DIVISIONS: [Choice; 18] = {
-    let mut choices = [Choice {
-        value: "",
-        label: "",
-    }; 18];
-    let mut index = 0;
-    while index < 18 {
-        let division = NoteDivision::ALL[index];
-        choices[index] = Choice {
-            value: division.value(),
-            label: division.label(),
-        };
-        index += 1;
-    }
-    choices
-};
-
 /// One Delay setting with its new value, as `SetDelayParam` carries it.
 ///
 /// Serialises as `{"name":"feedback","value":0.5}`, `{"name":"sync",
@@ -486,7 +468,7 @@ impl DelayParam {
                 "How far apart the echoes are, as a note length. A dotted \
                  eighth weaves between the beats; a triplet swings against \
                  them; a quarter or longer is a separate, rhythmic repeat.",
-                &DIVISIONS,
+                &NoteDivision::CHOICES,
                 defaults.division.value(),
             ),
             Self::TimeSeconds(_) => number(

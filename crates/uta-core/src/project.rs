@@ -1495,6 +1495,14 @@ mod tests {
             SynthParam::DecaySeconds(0.001),
             SynthParam::Sustain(0.2),
             SynthParam::ReleaseSeconds(10.0),
+            SynthParam::FilterLfoOctaves(-2.0),
+            SynthParam::LfoShape(crate::LfoShape::SampleAndHold),
+            SynthParam::LfoRateHz(0.5),
+            SynthParam::LfoSync(true),
+            SynthParam::LfoDivision(crate::time::NoteDivision::DOTTED_EIGHTH),
+            SynthParam::LfoRetrigger(true),
+            SynthParam::LfoVibratoSemitones(0.25),
+            SynthParam::LfoWidth(0.3),
         ] {
             apply_and_check_undo(&project, Command::SetSynthParam { track, param });
         }

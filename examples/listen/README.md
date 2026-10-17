@@ -211,7 +211,7 @@ What to listen for:
 
 ## Synth
 
-The synth's oscillators, sub, noise, mixer and filter, pulse width and sync (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, and the LFO (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
 
 | Render | What it plays |
 |---|---|
@@ -233,6 +233,11 @@ The synth's oscillators, sub, noise, mixer and filter, pulse width and sync (RFC
 | `16-sync` | Oscillator 2 alone, a saw synced to oscillator 1, at Pitch 0, +3, +7 and +10, then an octave up at +3, +7 and +11. |
 | `17-sync-waves` | Oscillator 2 alone, synced an octave and a fifth up, as a sine, triangle, saw and pulse. |
 | `18-sync-lead` | A lead line (cutoff 5 kHz, a little resonance) with oscillator 2 an octave and a fifth over oscillator 1: free, synced, then synced at +3 and +10 instead of +7. |
+| `19-vibrato` | The phrase on a triangle: no vibrato, then Vibrato 0.15 semitones at 5 Hz, 0.3 at 5.5 Hz, 1 at 6 Hz and 2 at 2 Hz. |
+| `20-lfo-shapes` | A chord held for the bar (cutoff 700 Hz, resonance 0.4) with the filter's LFO amount at 2.5 octaves, the LFO at 3 Hz: sine, triangle, saw, square and sample-and-hold. |
+| `21-synced` | The same chord with the LFO synced at 120 BPM: a sine at 1/4, a saw at 1/8, a square at 1/8 dotted and at 1/4 triplet, and sample-and-hold at 1/16. |
+| `22-pwm` | A chord held on a pulse (attack 0.15 s): still, then the LFO's Width at 0.3 at 0.5 Hz and 1.5 Hz, 0.45 at 4 Hz, and a string pad: 0.3 at 0.5 Hz with oscillator 2, a second pulse 10 cents sharp. |
+| `23-lfo-retrigger` | Four notes entering an eighth apart and held to the bar's end: vibrato at 3 Hz with Retrigger off and on, then a sample-and-hold on the filter at 6 Hz, off and on. |
 
 What to listen for:
 
@@ -254,6 +259,11 @@ What to listen for:
 - **Sync:** every bar plays the same notes at the same pitch: only the tone changes. As oscillator 2's Pitch rises the sound gets brighter, more nasal and vocal, with a resonant "wah" that moves up; that's the sync sound. Listen on the high chord notes for anything gritty, glassy or out of tune whistling under the tone (aliasing). Some edge is the character of sync; a whine that doesn't belong to the note isn't.
 - **Sync's waves:** the sine and triangle synced are softer and rounder than the saw and pulse, but still clearly a different tone from a plain sine or triangle. None should click or buzz on every cycle.
 - **Sync lead:** the free bar beats and sounds like two notes, an octave and a fifth apart; synced, it's one note with a bright, tearing edge. +3 is darker and +10 brighter, each the same note.
+- **Vibrato:** 0.15 is a gentle, singer's vibrato you notice more as warmth than as wobble; 0.3 clearly sings; 1 is a wide, theatrical wobble, and 2 at 2 Hz a slow siren. The notes should stay centred on their pitch, no flatter or sharper on average, and the chord should wobble together.
+- **LFO shapes:** the sine and triangle a smooth "wah-wah" back and forth (the triangle a little more even); the saw a repeated rising "wow" that drops back; the square a two-step flip between dark and bright, a trill of tone; sample-and-hold a random, bubbling, robot-like stepping, each note of the chord on its own path. The square and sample-and-hold steps should be crisp but never click or tick.
+- **Synced:** every movement lands on the beat: the sine swells once a beat, the saw twice, the dotted square weaves against the beat, the triplet square gallops in threes, and the sample-and-hold steps on every sixteenth. Clap along: the steps should fall exactly on the grid.
+- **PWM:** the still pulse is hollow and plain. With the Width moving it shimmers, a gentle chorus at 0.5 Hz and a faster, rolling movement at 1.5 Hz; 0.45 at 4 Hz is a strong, almost seasick warble. The string pad should sound like an old string machine: lush, wide and moving, with no beating that sounds out of tune.
+- **LFO retrigger:** with vibrato, off the four notes wobble together as one; on, each starts its wobble as it enters, so they wobble against each other. With the sample-and-hold, off the notes step at the same moments; on, each steps in its own time from when it entered.
 
 ## Delay
 

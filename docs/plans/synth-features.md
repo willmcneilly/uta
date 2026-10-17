@@ -217,6 +217,23 @@ Checked against `main` at `2560c2d`. Drums is Done, and no ticket is open.
 
 **Will can try it:** the whole project.
 
+### 12. [UTA-84] Send each setting's description once, not on every track (Chore)
+
+Added during 6 (UTA-78), whose settings took the Wide test song's outline past RFC-004's 1 MB early warning: each synth track carried 12.5 KB of descriptions that are the same on every track. UTA-78 trimmed its descriptions to get back under the line, at 987 KB.
+
+**Goal:** Each setting's description reaches the UI once, not on every track, so the outline carries only each track's values, and the synth's remaining settings and every effect's fit under the 1 MB line.
+
+**Acceptance criteria**
+- [ ] The outline carries each synth, drum and effect setting as its name and value only, and the descriptions travel once: a table by kind of sound or effect, sent where the UI can keep it (in the outline once, or fetched with a call), never once per track.
+- [ ] The UI keeps the descriptions as it was sent them and draws every panel from them as today: the synth, drum and Delay panels look and behave as before. No label, range or default in TypeScript.
+- [ ] Tests: the outline test checks a track's settings carry no descriptions and the table has every setting described; `the_outline_stays_under_1_mb_at_the_target_loads` passes with a wide margin, and the PR reports the Wide song's outline size before and after; the UI tests for the three panels pass against the new outline.
+
+**Out of scope:** Any new setting. Splitting anything else out of the outline.
+
+**Depends on:** Nothing. It should land before 5 (UTA-74) or 7 (UTA-79) merges, as either would cross the line again.
+
+**Context:** RFC-004, part 2, "Growing later". RFC-008, "In the project". Ticket 1 made the descriptions.
+
 ## Order and checkpoints
 
 ```
@@ -229,6 +246,7 @@ Checked against `main` at `2560c2d`. Drums is Done, and no ticket is open.
 
 - **Start in parallel:** 1 here, with Effect chain 1 and 5. Ticket 1 unblocks Effect chain 2 as well as 2 here, so it goes first.
 - **After 2:** 3, 4 and 5 in parallel.
+- **12 can start any time,** and lands before 5 or 7 merges.
 - **The listening checkpoint** comes once 3, 4 and 5 have merged, before 6 starts (RFC-008 open question 4).
 - **8 can be sketched any time** after Effect chain 5, so the panel design is ready when 7 merges.
 - **Checkpoints for Will:**

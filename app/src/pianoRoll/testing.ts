@@ -8,6 +8,7 @@ import type {
   ClipView,
   ChoiceSettingView,
   FilterMode,
+  LfoShape,
   DrumSettingView,
   KickModel,
   KitRowView,
@@ -17,6 +18,7 @@ import type {
   NumberSettingView,
   Outline,
   ProjectView,
+  Scale,
   SynthNumber,
   SynthParam,
   SynthSettingView,
@@ -26,6 +28,7 @@ import type {
   Update,
   Waveform,
 } from "../backend";
+import { DIVISIONS } from "../chain/delayTesting";
 import type { PlacedNote } from "./notes";
 import type { GridScene, NotesScene, PianoRollRenderer, RendererFactory, TopMarks } from "./renderer";
 import type { Rect, Viewport } from "./viewport";
@@ -113,6 +116,7 @@ export interface SynthValues {
   resonance: number;
   filterEnvOctaves: number;
   filterKey: number;
+  filterLfoOctaves: number;
   filterAttackSeconds: number;
   filterDecaySeconds: number;
   filterSustain: number;
@@ -121,6 +125,13 @@ export interface SynthValues {
   decaySeconds: number;
   sustain: number;
   releaseSeconds: number;
+  lfoShape: LfoShape;
+  lfoRateHz: number;
+  lfoSync: boolean;
+  lfoDivision: string;
+  lfoRetrigger: boolean;
+  lfoVibratoSemitones: number;
+  lfoWidth: number;
   oscRetrigger: boolean;
 }
 
@@ -143,6 +154,7 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   resonance: "resonance",
   filter_env_octaves: "filterEnvOctaves",
   filter_key: "filterKey",
+  filter_lfo_octaves: "filterLfoOctaves",
   filter_attack_seconds: "filterAttackSeconds",
   filter_decay_seconds: "filterDecaySeconds",
   filter_sustain: "filterSustain",
@@ -151,6 +163,13 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   decay_seconds: "decaySeconds",
   sustain: "sustain",
   release_seconds: "releaseSeconds",
+  lfo_shape: "lfoShape",
+  lfo_rate_hz: "lfoRateHz",
+  lfo_sync: "lfoSync",
+  lfo_division: "lfoDivision",
+  lfo_retrigger: "lfoRetrigger",
+  lfo_vibrato_semitones: "lfoVibratoSemitones",
+  lfo_width: "lfoWidth",
   osc_retrigger: "oscRetrigger",
 };
 
@@ -173,6 +192,7 @@ export const SYNTH_DEFAULTS: SynthValues = {
   resonance: 0,
   filterEnvOctaves: 0,
   filterKey: 0,
+  filterLfoOctaves: 0,
   filterAttackSeconds: 0.001,
   filterDecaySeconds: 0.3,
   filterSustain: 0,
@@ -181,6 +201,13 @@ export const SYNTH_DEFAULTS: SynthValues = {
   decaySeconds: 0.2,
   sustain: 0.7,
   releaseSeconds: 0.2,
+  lfoShape: "sine",
+  lfoRateHz: 5,
+  lfoSync: false,
+  lfoDivision: "1/4",
+  lfoRetrigger: false,
+  lfoVibratoSemitones: 0,
+  lfoWidth: 0,
   oscRetrigger: true,
 };
 
@@ -200,6 +227,15 @@ const FILTER_MODES: ChoiceSettingView<string, FilterMode>["options"] = [
   { value: "low_pass", label: "Low-pass" },
   { value: "band_pass", label: "Band-pass" },
   { value: "high_pass", label: "High-pass" },
+];
+
+/** Every LFO shape, as Rust offers them. */
+const LFO_SHAPES: ChoiceSettingView<string, LfoShape>["options"] = [
+  { value: "sine", label: "Sine" },
+  { value: "triangle", label: "Triangle" },
+  { value: "saw", label: "Saw" },
+  { value: "square", label: "Square" },
+  { value: "sample_and_hold", label: "Sample & hold" },
 ];
 
 /**
@@ -229,6 +265,7 @@ export function synthSettings(
     unit: Unit,
     limits: Limits,
     step?: number,
+    scale: Scale = scaleOf(unit),
   ): SynthSettingView => {
     const field = SYNTH_FIELDS[name] as NumberField;
     const setting: NumberSettingView<SynthNumber["name"]> = {
@@ -238,14 +275,21 @@ export function synthSettings(
       sounds: SOUNDS,
       value: values[field],
       unit,
-      scale: scaleOf(unit),
+      scale,
       limits,
       default: defaults[field],
     };
     return step === undefined ? setting : { ...setting, step };
   };
   const toggle = (name: SynthToggle, label: string): SynthSettingView => {
-    const field = name === "osc2_sync" ? "osc2Sync" : "oscRetrigger";
+    const field = (
+      {
+        osc2_sync: "osc2Sync",
+        lfo_sync: "lfoSync",
+        lfo_retrigger: "lfoRetrigger",
+        osc_retrigger: "oscRetrigger",
+      } as const
+    )[name];
     return {
       kind: "toggle",
       name,
@@ -296,6 +340,7 @@ export function synthSettings(
     number("resonance", "Resonance", "amount", [0, 1]),
     number("filter_env_octaves", "Env amount", "octaves", [-10, 10]),
     number("filter_key", "Key", "fraction", [0, 1]),
+    number("filter_lfo_octaves", "Filter LFO", "octaves", [-5, 5]),
     number("filter_attack_seconds", "Filter attack", "seconds", [0.001, 10]),
     number("filter_decay_seconds", "Filter decay", "seconds", [0.001, 10]),
     number("filter_sustain", "Filter sustain", "fraction", [0, 1]),
@@ -304,6 +349,30 @@ export function synthSettings(
     number("decay_seconds", "Decay", "seconds", [0.001, 10]),
     number("sustain", "Sustain", "fraction", [0, 1]),
     number("release_seconds", "Release", "seconds", [0.001, 10]),
+    {
+      kind: "choice",
+      name: "lfo_shape",
+      label: "LFO shape",
+      sounds: SOUNDS,
+      value: values.lfoShape,
+      options: LFO_SHAPES,
+      default: defaults.lfoShape,
+    },
+    number("lfo_rate_hz", "LFO rate", "hz", [0.05, 20]),
+    toggle("lfo_sync", "LFO sync"),
+    {
+      kind: "choice",
+      name: "lfo_division",
+      label: "LFO rate (synced)",
+      sounds: SOUNDS,
+      value: values.lfoDivision,
+      options: DIVISIONS,
+      default: defaults.lfoDivision,
+    },
+    toggle("lfo_retrigger", "LFO retrigger"),
+    // Vibrato is in semitones, but moves linearly, from zero.
+    number("lfo_vibrato_semitones", "Vibrato", "semitones", [0, 2], undefined, "linear"),
+    number("lfo_width", "LFO width", "fraction", [0, 0.45]),
     toggle("osc_retrigger", "Osc retrigger"),
   ];
 }
