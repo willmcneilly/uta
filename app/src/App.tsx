@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./design/tokens.css";
 import "./App.css";
@@ -194,6 +194,15 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [frames] = useState(() => new FrameLoop(stats));
   // Every control's drags send their steps through it, one at a time, latest wins.
   const [drags] = useState(() => new DragSteps());
+  // Where the song is, in seconds, while it plays: the Delay's drawing lights
+  // its echoes by it.
+  const playing = status?.playing ?? false;
+  const bpm = project?.bpm ?? 120;
+  const ticksPerQuarter = project?.ticksPerQuarter ?? 960;
+  const songSeconds = useMemo(
+    () => (playing ? (now: number) => (clock.at(now) / ticksPerQuarter) * (60 / bpm) : null),
+    [playing, clock, bpm, ticksPerQuarter],
+  );
   // The frame stream reads the latest project without re-subscribing.
   const projectRef = useRef<ProjectView | null>(null);
   const pianoRoll = useRef<PianoRollHandle>(null);
@@ -746,6 +755,9 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
               onMix={changeEffectMix}
               onSetting={changeEffectSetting}
+              barSeconds={(project.beatsPerBar * 60) / project.bpm}
+              beatsPerBar={project.beatsPerBar}
+              songSeconds={songSeconds}
               rowRef={chainRow}
             />
           ) : !track ? null : clip ? (

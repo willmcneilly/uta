@@ -219,6 +219,12 @@ export interface EffectView {
   kind: EffectKind;
   /** Its own settings, in the order its panel shows them. */
   settings: EffectSettingView[];
+  /**
+   * How far apart the Delay's echoes are at the song's tempo, in seconds:
+   * the synced note length's, or the time in seconds. Its drawing spaces the
+   * echoes by it.
+   */
+  echoSeconds: number;
 }
 
 /** One Delay setting and its new value, as `set_delay_param` takes it. */

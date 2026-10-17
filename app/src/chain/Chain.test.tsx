@@ -20,6 +20,7 @@ import {
   recordingFactory,
   trackView,
 } from "../pianoRoll/testing";
+import { delayView } from "./delayTesting";
 
 // The Sound tab's chain against Tauri's mocked back end, which keeps its own
 // project and its own undo, so the tests check the UI draws what Rust sends
@@ -35,51 +36,6 @@ let project: ProjectView;
 // The projects before each change, for the mock's undo.
 let history: ProjectView[];
 let updates: Updates;
-
-/** A Delay as Rust describes it: Time and Feedback, then Mix. */
-function delayView(id: string, values: { enabled?: boolean; mix?: number; feedback?: number } = {}): EffectView {
-  return {
-    id,
-    name: "Delay",
-    enabled: values.enabled ?? true,
-    kind: "delay",
-    mix: {
-      name: "mix",
-      kind: "number",
-      label: "Mix",
-      sounds: "How much of the effect you hear.",
-      value: values.mix ?? 0.3,
-      unit: "fraction",
-      scale: "linear",
-      limits: [0, 1],
-      default: 0.3,
-    },
-    settings: [
-      {
-        name: "time_seconds",
-        kind: "number",
-        label: "Time",
-        sounds: "How far apart the echoes are.",
-        value: 0.375,
-        unit: "seconds",
-        scale: "log",
-        limits: [0.001, 5],
-        default: 0.375,
-      },
-      {
-        name: "feedback",
-        kind: "number",
-        label: "Feedback",
-        sounds: "How much of each echo comes round again.",
-        value: values.feedback ?? 0.4,
-        unit: "fraction",
-        scale: "linear",
-        limits: [0, 1],
-        default: 0.4,
-      },
-    ],
-  };
-}
 
 /** Every chain in `project`, with `change` made to each effect. */
 function eachEffect(change: (effect: EffectView) => EffectView): ProjectView {
@@ -250,10 +206,7 @@ describe("the Sound tab's chain", () => {
       "aria-valuetext",
       "50%",
     );
-    expect(within(first).getByRole("slider", { name: "Delay time" })).toHaveAttribute(
-      "aria-valuetext",
-      "375 ms",
-    );
+    expect(within(first).getByRole("combobox", { name: "Delay time" })).toHaveValue("1/8d");
     expect(within(first).getByRole("slider", { name: "Delay mix" })).toBeInTheDocument();
     // The + comes after the last effect, and the line ends at the mixer.
     expect(second.compareDocumentPosition(addKey()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -470,7 +423,8 @@ describe("the Sound tab's chain", () => {
     slideKnob(within(panels()[0]).getByRole("slider", { name: "Delay feedback" }), 0.9);
     await waitFor(() => expect(sent("set_delay_param").at(-1)?.param).toMatchObject({ name: "feedback" }));
     const feedback = sent("set_delay_param").at(-1)?.param as DelayParam;
-    expect(feedback.value).toBeCloseTo(0.9, 2);
+    // 90% of the way round Feedback's range, which goes to 110%.
+    expect(feedback.value).toBeCloseTo(0.99, 2);
   });
 
   it("folds a panel to its spine when its name is clicked", async () => {

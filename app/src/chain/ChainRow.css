@@ -265,10 +265,6 @@
   stroke-dasharray: 3 3;
 }
 
-[data-off] .effect-controls {
-  opacity: 0.45;
-}
-
 .wire-arrow {
   position: absolute;
   z-index: 1;
@@ -285,20 +281,7 @@
   background: transparent;
 }
 
-/* An effect's controls, until its own panel lays them out (UTA-76). */
-.effect-controls {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: flex-start;
-  gap: var(--space-4);
-  color: var(--ink);
-  font: var(--font-text);
-}
-
-.effect-controls .knob {
-  min-width: 56px;
-}
-
+/* A choice with more than five options: a menu under its label. */
 .effect-menu {
   display: flex;
   flex-direction: column;
