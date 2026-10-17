@@ -407,9 +407,16 @@ mod tests {
     }
 
     #[test]
-    fn a_440_hz_sine_is_the_strongest_partial_at_440_hz() {
-        let frequency = strongest_frequency(&sine(440.0, 0.5), RATE, 100.0, 1000.0);
-        assert!((frequency - 440.0).abs() < 0.5, "{frequency} Hz");
+    fn a_sine_between_two_bins_is_the_strongest_partial_at_its_frequency() {
+        // One second pads to 65 536 samples, so bins are 0.73 Hz apart, and
+        // this is halfway between two: the parabola has to find it.
+        let bin_hz = f64::from(RATE) / 65_536.0;
+        let between = 601.5 * bin_hz;
+        let frequency = strongest_frequency(&sine(between, 0.5), RATE, 100.0, 1000.0);
+        assert!(
+            (frequency - between).abs() < 0.05,
+            "{frequency} Hz, expected {between} Hz"
+        );
     }
 
     #[test]
@@ -439,9 +446,9 @@ mod tests {
         for drop_db in [20.0, 40.0] {
             let seconds = decay_seconds(&samples, RATE, drop_db).expect("it decays");
             let expected = drop_db / db_per_second;
-            // The envelope is in 5 ms windows, so it's good to within one.
+            // Interpolated between 5 ms windows, so far closer than one.
             assert!(
-                (seconds - expected).abs() < 0.005,
+                (seconds - expected).abs() < 1e-4,
                 "{drop_db} dB in {seconds} s, expected {expected} s"
             );
         }
