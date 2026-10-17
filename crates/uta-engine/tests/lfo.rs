@@ -167,7 +167,9 @@ fn a_synced_lfos_cycle_is_the_note_length_and_lines_up_with_the_bar() {
         let project = synced_project(bpm, division);
         // Short of the song's end at 137 BPM, where the loop goes round.
         let samples = play_from(&project, from, 2.5, 128);
-        let wobble = semitones_over_time(&samples, 440.0, 0.02);
+        // From the note's first cycle: it starts at the song's phase, with
+        // nothing for the smoothing to pull into line.
+        let wobble = semitones_over_time(&samples, 440.0, 0.0);
         let beats_per_second = f64::from(bpm) / 60.0;
         let start = from as f64 / TICKS_PER_QUARTER as f64;
         let error = worst_error(&wobble, |t| {
@@ -268,8 +270,9 @@ fn retrigger_starts_each_notes_lfo_and_off_the_voices_share_one() {
 }
 
 /// With Retrigger and Sync off, the LFO the voices share starts again on
-/// Play: a note played on Play after a while stopped sounds as one played on
-/// Play straight away.
+/// Play, and so do the sample-and-hold's levels: a note played on Play after
+/// a while stopped, with a note drawing levels from the same voice's
+/// generator meanwhile, sounds as one played on Play straight away.
 #[test]
 fn the_shared_lfo_restarts_on_play() {
     let render = |wait: usize| {
@@ -282,7 +285,13 @@ fn the_shared_lfo_restarts_on_play() {
             },
             128,
         );
-        renderer.render(wait);
+        if wait > 0 {
+            // In voice 0, which is free again by Play: its release is over.
+            renderer.controller.note_on(0, NoteKey(2), 57, 127).unwrap();
+            renderer.render(wait / 2);
+            renderer.controller.note_off(0, NoteKey(2)).unwrap();
+            renderer.render(wait - wait / 2);
+        }
         renderer.controller.play().unwrap();
         renderer.controller.note_on(0, NoteKey(1), 69, 127).unwrap();
         renderer.render_seconds(1.0);
@@ -290,7 +299,7 @@ fn the_shared_lfo_restarts_on_play() {
     };
     let straight_away = render(0);
     assert!(peak(&straight_away) > 0.1);
-    assert_eq!(render(128 * 150), straight_away);
+    assert_eq!(render(128 * 300), straight_away);
 }
 
 /// The share of each cycle a pulse spends above zero, at the time of each
