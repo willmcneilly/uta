@@ -471,6 +471,32 @@ fn the_demo_song_matches_its_golden_wav() {
     check_golden("demo-song", stereo(), &project);
 }
 
+/// The factory sounds' golden WAVs, each from its listening render: the
+/// mono Glide bass sliding between overlapping notes, the PWM strings'
+/// chords breathing, and the Sync lead tearing in on each fresh note.
+/// Regenerated the same way as the demo loop's, and approved the same way.
+#[test]
+fn the_glide_bass_pwm_strings_and_sync_lead_match_their_golden_wavs() {
+    let cases = [
+        (
+            "factory-glide-bass",
+            include_str!("../../../examples/listen/factory/02-glide-bass.json"),
+        ),
+        (
+            "factory-strings",
+            include_str!("../../../examples/listen/factory/05-strings.json"),
+        ),
+        (
+            "factory-sync-lead",
+            include_str!("../../../examples/listen/factory/07-sync-lead.json"),
+        ),
+    ];
+    for (name, json) in cases {
+        let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+        check_golden(name, config(), &list.build().unwrap());
+    }
+}
+
 #[test]
 fn a_render_ends_in_silence() {
     let rendered = offline::render_song(config(), Snapshot::from(&demo_loop()), 1.0).samples;

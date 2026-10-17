@@ -1,0 +1,195 @@
+{
+  "project": "00000000-0000-0000-0000-0000fac70002",
+  "commands": [
+    {
+      "format": 14,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_loop_length",
+        "bars": 2
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_synth_settings",
+        "track": "5bf4ce5d-4bb7-5f7b-aab1-13df46d3b802",
+        "settings": {
+          "osc1_wave": "saw",
+          "osc1_octave": 0,
+          "osc1_width": 0.5,
+          "osc2_wave": "saw",
+          "osc2_octave": 0,
+          "osc2_pitch_semitones": 0.1,
+          "osc2_sync": false,
+          "sub_octave": -1,
+          "osc1_level": 1.0,
+          "osc2_level": 1.0,
+          "sub_level": 0.6,
+          "noise_level": 0.0,
+          "filter_mode": "low_pass",
+          "cutoff_hz": 250.0,
+          "resonance": 0.2,
+          "filter_env_octaves": 4.0,
+          "filter_key": 0.6,
+          "filter_lfo_octaves": 0.0,
+          "filter_attack_seconds": 0.001,
+          "filter_decay_seconds": 0.15,
+          "filter_sustain": 0.0,
+          "filter_release_seconds": 0.15,
+          "attack_seconds": 0.002,
+          "decay_seconds": 1.2,
+          "sustain": 0.0,
+          "release_seconds": 0.35,
+          "lfo_shape": "sine",
+          "lfo_rate_hz": 5.0,
+          "lfo_sync": false,
+          "lfo_division": "1/4",
+          "lfo_retrigger": false,
+          "lfo_vibrato_semitones": 0.0,
+          "lfo_width": 0.0,
+          "voice_mode": "poly",
+          "legato": false,
+          "glide_seconds": 0.001,
+          "osc_retrigger": true,
+          "mod1_source": "velocity",
+          "mod1_destination": "off",
+          "mod1_amount": 0.0,
+          "mod2_source": "filter_env",
+          "mod2_destination": "off",
+          "mod2_amount": 0.0,
+          "mod3_source": "lfo",
+          "mod3_destination": "off",
+          "mod3_amount": 0.0
+        }
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "add_notes",
+        "clip": "fe537f8f-5779-528e-9bcf-410b0bc8da57",
+        "notes": [
+          {
+            "id": "00000000-0000-0000-0000-0000fac71000",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 0,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71001",
+            "pitch": 64,
+            "velocity": 100,
+            "start": 480,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71002",
+            "pitch": 67,
+            "velocity": 100,
+            "start": 960,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71003",
+            "pitch": 71,
+            "velocity": 100,
+            "start": 1440,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71004",
+            "pitch": 72,
+            "velocity": 100,
+            "start": 1920,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71005",
+            "pitch": 71,
+            "velocity": 100,
+            "start": 2400,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71006",
+            "pitch": 67,
+            "velocity": 100,
+            "start": 2880,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71007",
+            "pitch": 64,
+            "velocity": 100,
+            "start": 3360,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71008",
+            "pitch": 57,
+            "velocity": 100,
+            "start": 3840,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71009",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 4320,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100a",
+            "pitch": 64,
+            "velocity": 100,
+            "start": 4800,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100b",
+            "pitch": 67,
+            "velocity": 100,
+            "start": 5280,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100c",
+            "pitch": 69,
+            "velocity": 100,
+            "start": 5760,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100d",
+            "pitch": 67,
+            "velocity": 100,
+            "start": 6240,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100e",
+            "pitch": 64,
+            "velocity": 100,
+            "start": 6720,
+            "length": 240
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100f",
+            "pitch": 60,
+            "velocity": 100,
+            "start": 7200,
+            "length": 240
+          }
+        ]
+      }
+    }
+  ]
+}
