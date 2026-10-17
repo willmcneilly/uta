@@ -1400,7 +1400,8 @@ fn width_glide_check_catches_a_jump() {
 }
 
 /// Oscillator 1's Width glides, switching Sync on or off crossfades between
-/// oscillator 2 free and synced, and a synced oscillator's Pitch glides:
+/// oscillator 2 free and synced, a synced oscillator's wave crossfades, and
+/// its Pitch glides:
 /// each changes the sound over the glide, not at once, so turning them
 /// while a note plays doesn't click. The width and the synced pitch are
 /// turned at A5, so many of their cycles fall in the glide.
@@ -1452,10 +1453,35 @@ fn width_and_sync_glide_when_turned() {
     let turns = [
         ("sync switched on", free, with_sync),
         ("sync switched off", with_sync, free),
+        (
+            "oscillator 2's wave under sync",
+            with_sync,
+            SynthSettings {
+                osc2_wave: Waveform::Pulse,
+                ..with_sync
+            },
+        ),
     ];
     for (what, from, to) in turns {
         assert_glides(&turn_difference(from, to, at), glide, what);
     }
+    // And the wave under sync is half way across in the middle of the
+    // crossfade, not held back and switched at its end.
+    let difference = turn_difference(
+        with_sync,
+        SynthSettings {
+            osc2_wave: Waveform::Pulse,
+            ..with_sync
+        },
+        at,
+    );
+    let middle = peak(&difference[glide * 2 / 5..glide * 3 / 5]);
+    let full = peak(&difference[glide..2 * glide]);
+    assert!(
+        middle > 0.3 * full,
+        "the wave under sync is {:.0}% across half way",
+        100.0 * middle / full
+    );
 }
 
 /// How bright a held saw is from each of `starts` (in seconds): the
@@ -1851,4 +1877,41 @@ fn filter_release_closes_the_filter_after_the_note() {
         long > 2.0 * short,
         "brightness {long:.2} with a long filter release, {short:.2} with a short one"
     );
+}
+
+/// Oscillator 1 and oscillator 2 at unison, both saws at full level, with
+/// oscillator 2 synced or free: at unison a synced oscillator restarts just
+/// where it would start a cycle anyway, so the two mixes sound the same.
+/// Every harmonic up to 8 kHz is within half a dB. Were the synced
+/// oscillator late against oscillator 1 (as its decimator makes it, unless
+/// it reads oscillator 1 ahead), the mix would be comb-filtered, with
+/// harmonics notched by tens of dB.
+#[test]
+fn synced_at_unison_mixes_with_oscillator_1_as_a_free_one_does() {
+    let note = 45; // 110 Hz
+    let frequency = pitch_to_hz(note);
+    let free = SynthSettings {
+        osc2_level: 1.0,
+        sustain: 1.0,
+        ..SynthSettings::default()
+    };
+    let synced = SynthSettings {
+        osc2_sync: true,
+        ..free
+    };
+    let levels = |settings: SynthSettings| {
+        let samples = held_note(settings, note, 127, 1.2)[seconds(0.4)..].to_vec();
+        let spectrum = spectrum(&samples[..FFT_LEN]);
+        (1..=72)
+            .map(|harmonic| harmonic_db(&spectrum, frequency, harmonic, FFT_LEN))
+            .collect::<Vec<_>>()
+    };
+    let (free, synced) = (levels(free), levels(synced));
+    for (index, (a, b)) in free.iter().zip(&synced).enumerate() {
+        assert!(
+            (a - b).abs() < 0.5,
+            "harmonic {}: {a:.2} dB free, {b:.2} dB synced",
+            index + 1
+        );
+    }
 }

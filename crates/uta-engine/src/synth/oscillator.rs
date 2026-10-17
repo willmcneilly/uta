@@ -92,13 +92,15 @@ impl Oscillator {
         square(t, self.increment / divide) as f32
     }
 
-    /// The same oscillator moving a quarter as far each step: its pace at
-    /// four steps a sample.
+    /// The same oscillator moving a quarter as far each step, its pace at
+    /// four steps a sample, read [`LEAD`] steps ahead: the leader an
+    /// [`OversampledSync`] follows.
     #[inline]
-    fn quartered(&self) -> Self {
+    fn quartered_ahead(&self) -> Self {
+        let increment = self.increment / OVERSAMPLE as f64;
         Self {
-            phase: self.phase,
-            increment: self.increment / OVERSAMPLE as f64,
+            phase: (self.phase + LEAD as f64 * increment).fract(),
+            increment,
         }
     }
 
@@ -404,14 +406,26 @@ fn slope(waveform: Waveform, t: f64) -> f64 {
 /// How many steps a synced oscillator takes each sample.
 pub(crate) const OVERSAMPLE: usize = 4;
 
-/// How many taps the [`Decimator`] has: enough for its pass band to run
-/// flat to 20 kHz at 48 kHz and its stop band, from 28 kHz, to be 80 dB
-/// down, so nothing above the sample rate's half folds back audibly.
+/// How many taps the [`Decimator`] holds: 127 that shape it, enough for its
+/// pass band to run flat to 20 kHz at 48 kHz and its stop band, from 28 kHz,
+/// to be 80 dB down, so nothing above the sample rate's half folds back
+/// audibly, and a zero first, so they work out eight at a time.
 const DECIMATOR_TAPS: usize = 128;
+
+/// How many steps late the [`Decimator`] plays what goes in: its middle tap,
+/// as it's symmetric.
+const DECIMATOR_DELAY: usize = (DECIMATOR_TAPS - 2) / 2;
+
+/// How many steps ahead an [`OversampledSync`] reads its leader, so what
+/// comes out of the decimator lines up with the leader: the decimator's
+/// delay, less the three steps by which a sample's last step is later than
+/// the sample.
+const LEAD: usize = DECIMATOR_DELAY - (OVERSAMPLE - 1);
 
 /// The low-pass a synced oscillator's four steps a sample go through before
 /// one in four is kept: a windowed sinc, cutting at half the sample rate,
-/// under a Kaiser window. Made on the control side, with the synth.
+/// under a Kaiser window, [`DECIMATOR_DELAY`] steps long either side of its
+/// middle. Made on the control side, with the synth.
 #[derive(Debug, Clone)]
 pub(crate) struct Decimator {
     taps: [f32; DECIMATOR_TAPS],
@@ -423,10 +437,11 @@ impl Decimator {
         // the rate, and 80 dB down in the stop band (Kaiser's beta for it).
         let cutoff = 0.5 / OVERSAMPLE as f64;
         let beta = 0.1102 * (80.0 - 8.7);
-        let middle = (DECIMATOR_TAPS - 1) as f64 / 2.0;
+        let middle = DECIMATOR_DELAY as f64;
         let mut taps = [0.0f64; DECIMATOR_TAPS];
-        for (n, tap) in taps.iter_mut().enumerate() {
-            let x = n as f64 - middle;
+        // Tap 0 stays zero: the oldest step in the history.
+        for (n, tap) in taps.iter_mut().enumerate().skip(1) {
+            let x = (n - 1) as f64 - middle;
             let sinc = if x == 0.0 {
                 2.0 * cutoff
             } else {
@@ -477,11 +492,12 @@ impl Default for OversampledSync {
 }
 
 impl OversampledSync {
-    /// Starts where it would be had it followed `leader` since the leader's
-    /// last restart, at `increment` cycles a sample, with nothing before.
+    /// Starts where it would be had it followed `leader` (read ahead by the
+    /// decimator's delay) since the leader's last restart, at `increment`
+    /// cycles a sample, with nothing before.
     pub(crate) fn start_with(&mut self, leader: &Oscillator, increment: f64) {
         self.synced
-            .start_with(&leader.quartered(), increment / OVERSAMPLE as f64);
+            .start_with(&leader.quartered_ahead(), increment / OVERSAMPLE as f64);
         self.history = [0.0; 2 * DECIMATOR_TAPS];
         self.position = 0;
     }
@@ -492,8 +508,9 @@ impl OversampledSync {
         self.synced.set_increment(increment / OVERSAMPLE as f64);
     }
 
-    /// The next sample: four steps behind `leader` at this sample, each
-    /// `from` crossfaded `mix` of the way to `to`, through `decimator`.
+    /// The next sample: four steps behind `leader` at this sample, read
+    /// ahead by the decimator's delay, each `from` crossfaded `mix` of the
+    /// way to `to`, through `decimator`, so it lines up with `leader`.
     #[inline]
     pub(crate) fn next(
         &mut self,
@@ -503,7 +520,7 @@ impl OversampledSync {
         mix: f32,
         decimator: &Decimator,
     ) -> f32 {
-        let mut leader = leader.quartered();
+        let mut leader = leader.quartered_ahead();
         for _ in 0..OVERSAMPLE {
             let value = if self.synced.is_quiet(&leader) {
                 self.synced.coast(from, to, mix)
@@ -521,7 +538,8 @@ impl OversampledSync {
             self.history[self.position + DECIMATOR_TAPS] = value;
             self.position = (self.position + 1) % DECIMATOR_TAPS;
         }
-        // The taps are symmetric, so the oldest-first run needs no reversing.
+        // Oldest first, against the taps from the zero: the taps after it are
+        // symmetric, so the run needs no reversing.
         let recent = &self.history[self.position..self.position + DECIMATOR_TAPS];
         dot(recent, &decimator.taps)
     }
@@ -770,6 +788,49 @@ mod tests {
         }
         assert!(restarts > 90);
         assert!(largest > 1e-3, "the largest corner correction is {largest}");
+    }
+
+    /// At its leader's pitch a synced oscillator restarts just where it
+    /// would have started a cycle anyway, so, four steps a sample and through
+    /// the decimator, it plays what the free oscillator plays, in time with
+    /// it: the decimator's delay is made up by reading the leader ahead. The
+    /// two match best (their cross-correlation peaks) within a fiftieth of a
+    /// sample of each other. Without the lead it would be 15 samples
+    /// late; read ahead by the whole delay, three quarters of a sample early.
+    #[test]
+    fn oversampled_it_lines_up_with_its_leader() {
+        let decimator = Decimator::new();
+        for frequency in [110.0, 440.0, 1_000.0] {
+            let increment = frequency / 48_000.0;
+            let mut leader = Oscillator::default();
+            leader.set_increment(increment);
+            let mut free = Oscillator::default();
+            free.set_increment(increment);
+            let mut synced = OversampledSync::default();
+            synced.start_with(&leader, increment);
+            let (mut free_values, mut synced_values) = (Vec::new(), Vec::new());
+            for _ in 0..9_600 {
+                free_values.push(f64::from(free.value(Waveform::Saw, SQUARE)));
+                let (saw, mix) = (Waveform::Saw, 0.0);
+                let value = synced.next(&leader, saw, saw, mix, &decimator);
+                synced_values.push(f64::from(value));
+                free.advance();
+                leader.advance();
+            }
+            // How well the synced oscillator, `lag` samples later, matches.
+            let correlation = |lag: i32| -> f64 {
+                (200..9_000)
+                    .map(|n| free_values[n] * synced_values[(n as i32 + lag) as usize])
+                    .sum()
+            };
+            let lags: Vec<f64> = (-20..=20).map(correlation).collect();
+            let best = (1..lags.len() - 1)
+                .max_by(|&a, &b| lags[a].total_cmp(&lags[b]))
+                .unwrap();
+            let (a, b, c) = (lags[best - 1], lags[best], lags[best + 1]);
+            let lag = best as f64 - 20.0 + 0.5 * (a - c) / (a - 2.0 * b + c);
+            assert!(lag.abs() < 0.02, "{frequency} Hz: {lag} samples late");
+        }
     }
 
     /// Wherever the leader restarts it, the synced oscillator's jump is

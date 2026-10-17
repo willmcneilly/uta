@@ -1,8 +1,8 @@
 //! The built-in synth: 16 voices, each two oscillators, a sub-oscillator and
 //! noise, mixed into a filter with its own envelope, then the amp envelope.
-//! Oscillator 1's pulse has a width, and oscillator 2 can sync to oscillator
-//! 1. See RFC-002, "The synth is ours, small and fixed-size", and RFC-008,
-//! "In the engine".
+//! Oscillator 1's pulse has a width, and oscillator 2 can sync to the first.
+//! See RFC-002, "The synth is ours, small and fixed-size", and RFC-008, "In
+//! the engine".
 //!
 //! Everything here runs on the audio thread. The voices are a fixed array
 //! created with the processor, and a voice remembers its note only by a
