@@ -210,10 +210,10 @@ fn pluck() -> FactorySound {
             sub_level: 0.6,
             cutoff_hz: 250.0,
             resonance: 0.2,
-            filter_env_octaves: 4.0,
+            filter_env_octaves: 3.5,
             filter_key: 0.6,
             filter_attack_seconds: 0.001,
-            filter_decay_seconds: 0.15,
+            filter_decay_seconds: 0.4,
             filter_sustain: 0.0,
             filter_release_seconds: 0.15,
             attack_seconds: 0.002,
@@ -316,7 +316,7 @@ fn lead() -> FactorySound {
         key: "lead",
         name: "Lead",
         brief: "A singing mono lead for melodies around C4 to C5, like a Minimoog or Pro-One \
-                lead: a saw and a square together, a filter with some resonance that \
+                lead: two saws a few cents apart, a filter with some resonance that \
                 stays fairly open, a gentle vibrato, and short glides between overlapping \
                 notes. Present and clear, cutting through a mix without being shrill.",
         audition: Audition {
