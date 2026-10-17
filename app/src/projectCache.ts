@@ -26,9 +26,9 @@ export interface ProjectCache {
   notes: ReadonlyMap<string, ClipNotes>;
   /**
    * What the UI draws: the outline, with each setting's description and
-   * each clip's notes if they're held at its revision. A clip that's the same as in the last one keeps its
-   * object, and a track whose clips are all the same keeps its list, so
-   * views can skip them.
+   * each clip's notes if they're held at its revision. A clip that's the
+   * same as in the last one keeps its object, and a track whose clips are
+   * all the same keeps its list, so views can skip them.
    */
   project: ProjectView | null;
   /** The clips in the outline whose notes aren't held at its revision. */
