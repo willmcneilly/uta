@@ -1,0 +1,245 @@
+{
+  "project": "dbc14131-f63c-5a03-9a44-e33140a48915",
+  "commands": [
+    {
+      "format": 11,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "bd6e3ff5-ec8c-578d-a145-a6dcdd1e6444",
+              "name": "Poly",
+              "source": {
+                "synth": {
+                  "osc1_wave": "pulse",
+                  "osc1_width": 0.35,
+                  "osc2_level": 0.5,
+                  "osc2_pitch_semitones": -0.08,
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "sustain": 0.8,
+                  "release_seconds": 0.15
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "7af3720b-6463-548d-82d6-404e9c642278",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "149801de-983c-5054-a99c-edfd67e05a5c",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3360
+                    },
+                    {
+                      "id": "f3d2d78b-0488-576b-a334-64e5a68bc694",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 480
+                    },
+                    {
+                      "id": "7ed82ce8-d92d-5d6c-bf49-311c94fcb18a",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "b261ad2a-f964-5b66-9ee1-bf03d0ddc63c",
+                      "pitch": 72,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "ba22127b-f10c-5143-b574-b7e0579f1c9a",
+                      "pitch": 76,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "77516cd0-6f5d-54e0-980e-d97e6d8e4da6",
+              "name": "Mono",
+              "source": {
+                "synth": {
+                  "osc1_wave": "pulse",
+                  "osc1_width": 0.35,
+                  "osc2_level": 0.5,
+                  "osc2_pitch_semitones": -0.08,
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "sustain": 0.8,
+                  "release_seconds": 0.15,
+                  "voice_mode": "mono"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "ed4519de-c792-54b8-ac15-a4a3f19511d3",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "bdef73ed-81e5-57fb-95df-67a9c29e196a",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3360
+                    },
+                    {
+                      "id": "948154f9-2355-52dd-8a4f-e9f126f54fed",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 480
+                    },
+                    {
+                      "id": "b4fac78c-3574-56dc-87e3-5e1573eaaa09",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "c94e99c6-46b2-5d0a-abd4-89a811ef3a2f",
+                      "pitch": 72,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "a9243dde-60d1-500e-9015-6ab93d353214",
+                      "pitch": 76,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "05e4d55d-fdb9-581a-ac57-2d3bb5753457",
+              "name": "Mono, Legato, Glide",
+              "source": {
+                "synth": {
+                  "osc1_wave": "pulse",
+                  "osc1_width": 0.35,
+                  "osc2_level": 0.5,
+                  "osc2_pitch_semitones": -0.08,
+                  "cutoff_hz": 3000.0,
+                  "resonance": 0.2,
+                  "sustain": 0.8,
+                  "release_seconds": 0.15,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.06
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "3e498018-b96a-5802-86b9-4a00bd73800c",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "8ef56711-fdc1-56fa-9fce-5a8b04e76b63",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3360
+                    },
+                    {
+                      "id": "7d62ae6c-75bb-5d55-8eab-a2e4a08bd5b1",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 480
+                    },
+                    {
+                      "id": "19368baa-02e9-54e9-ac75-9d072e70b47c",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "8469da21-2e24-5756-9f6f-7affc51541c4",
+                      "pitch": 72,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 240
+                    },
+                    {
+                      "id": "318b35d6-a61c-5551-b3c7-aa4bba9ebd22",
+                      "pitch": 76,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 240
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
