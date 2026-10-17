@@ -1441,6 +1441,86 @@ mod tests {
         assert_eq!(synth.next_sample(), 0.0);
     }
 
+    fn mono_synth(glide_seconds: f32) -> Synth {
+        Synth::new(
+            SynthSettings {
+                voice_mode: VoiceMode::Mono,
+                glide_seconds,
+                ..SynthSettings::default()
+            },
+            RATE,
+        )
+    }
+
+    /// In Mono, however many notes are held, one voice sounds, and it plays
+    /// the latest. Past 16, the oldest are forgotten, and the held notes
+    /// count as the busy voices.
+    #[test]
+    fn in_mono_one_voice_plays_the_latest_held_note() {
+        let mut synth = mono_synth(0.05);
+        for key in 0..20 {
+            synth.note_on(sequenced(key, 40 + key as u8));
+            run(&mut synth, 100);
+            let sounding: Vec<_> = synth.sounding_keys().into_iter().flatten().collect();
+            assert_eq!(sounding, [NoteKey(key)]);
+        }
+        assert_eq!(synth.busy_voices(), 16);
+        assert!(!synth.is_holding(NoteKey(3)), "forgotten");
+        assert!(synth.is_holding(NoteKey(4)));
+        synth.note_off(NoteKey(19));
+        assert_eq!(synth.voices[MONO_VOICE].key, Some(NoteKey(18)));
+        assert_eq!(synth.voices[MONO_VOICE].pitch, 58);
+    }
+
+    /// The glide moves the pitch every sample, and lands exactly on the new
+    /// note's after the Glide's time in samples, then stays there.
+    #[test]
+    fn the_glide_lands_on_the_new_pitch_after_its_samples() {
+        let mut synth = mono_synth(0.01);
+        synth.note_on(note(1));
+        run(&mut synth, 100);
+        synth.note_on(NoteOn {
+            pitch: 72,
+            ..note(2)
+        });
+        let glide = samples(0.01, RATE);
+        let target = pitch_to_hz(72) / RATE;
+        let mut last = synth.voices[MONO_VOICE].increment;
+        for n in 1..=glide {
+            synth.next_sample();
+            let increment = synth.voices[MONO_VOICE].increment;
+            assert!(increment > last, "sample {n}: didn't rise");
+            assert_eq!(increment == target, n == glide, "sample {n}");
+            last = increment;
+        }
+        run(&mut synth, 10);
+        assert_eq!(synth.voices[MONO_VOICE].increment, target);
+    }
+
+    /// Switching the Voice mode releases every note, in either direction.
+    #[test]
+    fn a_new_voice_mode_releases_every_note() {
+        let mut synth = Synth::new(SynthSettings::default(), RATE);
+        for key in 0..3 {
+            synth.note_on(note(key));
+        }
+        run(&mut synth, 100);
+        let mono = SynthSettings {
+            voice_mode: VoiceMode::Mono,
+            ..SynthSettings::default()
+        };
+        synth.set_settings(mono);
+        assert!(synth.voices.iter().all(|voice| !voice.is_held()));
+        synth.note_on(note(5));
+        synth.note_on(note(6));
+        run(&mut synth, 400);
+        synth.set_settings(SynthSettings::default());
+        assert!(synth.voices.iter().all(|voice| !voice.is_held()));
+        assert!(!synth.is_holding(NoteKey(6)));
+        run(&mut synth, RATE as usize);
+        assert!(!synth.is_sounding());
+    }
+
     #[test]
     fn pitches_and_velocities() {
         assert_eq!(pitch_to_hz(69), 440.0);
