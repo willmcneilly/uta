@@ -178,6 +178,12 @@ struct Voice {
     /// Its own LFO's rate against the knob's, from a mod slot: 1 when
     /// nothing moves it.
     lfo_ratio: f64,
+    /// Each oscillator's frequency against its knobs', from the mod slots'
+    /// pitch: worked out at each control point and gliding in a straight
+    /// line between them, so the voice never works out a power of two each
+    /// sample.
+    pitch_ratios: [f64; 2],
+    pitch_ratio_steps: [f64; 2],
     /// When the note started, in the order notes started.
     started: u64,
     /// When the release started, in the same order.
@@ -212,6 +218,8 @@ impl Voice {
             modulation: [0.0; DESTINATIONS],
             modulation_step: [0.0; DESTINATIONS],
             lfo_ratio: 1.0,
+            pitch_ratios: [1.0; 2],
+            pitch_ratio_steps: [0.0; 2],
             started: 0,
             released: 0,
         }
@@ -1088,8 +1096,10 @@ impl Synth {
                 osc1_width
             };
             let (osc1_ratio, osc2_ratio) = if mods_on {
-                let [osc1, osc2] = [ModDestination::Osc1Pitch, ModDestination::Osc2Pitch]
-                    .map(|pitch| semitones_ratio(modulation[pitch as usize]));
+                for (ratio, step) in voice.pitch_ratios.iter_mut().zip(voice.pitch_ratio_steps) {
+                    *ratio += step;
+                }
+                let [osc1, osc2] = voice.pitch_ratios;
                 (osc1_ratio * osc1, osc2_ratio * osc2)
             } else {
                 (osc1_ratio, osc2_ratio)
@@ -1173,6 +1183,14 @@ impl Synth {
                         .zip(moved)
                     {
                         *step = (target - now) / FILTER_CONTROL_SAMPLES as f32;
+                    }
+                    for ((step, now), target) in voice
+                        .pitch_ratio_steps
+                        .iter_mut()
+                        .zip(voice.pitch_ratios)
+                        .zip(pitch_ratios_for(moved))
+                    {
+                        *step = (target - now) / f64::from(FILTER_CONTROL_SAMPLES);
                     }
                     voice.lfo_ratio = lfo_ratio_for(moved, lfo_sync);
                     if voice.is_held() && voice.started >= newest.0 {
@@ -1297,6 +1315,8 @@ impl Synth {
             [0.0; DESTINATIONS]
         };
         voice.modulation_step = [0.0; DESTINATIONS];
+        voice.pitch_ratios = pitch_ratios_for(voice.modulation);
+        voice.pitch_ratio_steps = [0.0; 2];
         voice.lfo_ratio = lfo_ratio_for(voice.modulation, self.settings.lfo_sync);
         // A note starting while the voices have their own filter settings
         // starts at its own, which the filter envelope's attack moves on
@@ -1551,6 +1571,14 @@ fn moved_resonance(resonance: f64, moved: [f32; DESTINATIONS]) -> f64 {
     );
     (resonance + f64::from(moved[ModDestination::Resonance as usize]))
         .clamp(f64::from(*min), f64::from(*max))
+}
+
+/// Each oscillator's frequency ratio for the pitch the mod slots in
+/// `moved` give it.
+#[inline]
+fn pitch_ratios_for(moved: [f32; DESTINATIONS]) -> [f64; 2] {
+    [ModDestination::Osc1Pitch, ModDestination::Osc2Pitch]
+        .map(|pitch| semitones_ratio(moved[pitch as usize]))
 }
 
 /// A frequency ratio for an offset in semitones: 1 for none.
