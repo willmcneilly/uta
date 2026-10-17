@@ -1,0 +1,423 @@
+{
+  "project": "8078845b-700c-5962-ae5c-210d6f1c38af",
+  "commands": [
+    {
+      "format": 8,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 8,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "8cafd360-a0d9-5cf4-a336-71ca380fcd3c",
+              "name": "Low-pass",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 800.0,
+                  "resonance": 0.3
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c6eab882-895a-5785-b1b2-e8b0c4a5694c",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "61c96ac5-5074-5c4e-81ee-2674416bf187",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "ab672c3c-f49e-5d44-8856-8cbe498c5443",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "ee4ce997-1780-5608-ab7e-b5952ae74299",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "61e5bc5a-2715-5814-9b95-a87389a58273",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "e9597c7d-4ef8-5e76-be8a-76532c6a39fb",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "68f5d2b4-9746-54b0-b12e-8737824236e4",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "e1abb11d-8bbf-5db8-b55d-ef0fe2b861a0",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "275e8540-c671-5521-b8c7-857589f36c2c",
+              "name": "Band-pass",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 800.0,
+                  "resonance": 0.3,
+                  "filter_mode": "band_pass"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "fe69c027-5379-53f4-9181-a3fa7aa6577a",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "eb745ae6-2cf7-53bc-9801-0efc60c968a2",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "27b2000c-a6a4-5ad6-9a18-aa03520b1387",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "573ca3cc-68b4-5adc-bf25-5e4232471edb",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "3332caeb-70ab-5361-9d65-5a611806b9be",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "fca45b6d-9357-518b-8040-74c53f47a493",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "c48335e2-2b92-5d9f-8eb0-897c6ca5b0c9",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "8bcf8354-9ec4-5ff6-b7db-a35be09ce4a6",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "63acdd0d-68d8-52bf-a3cf-29b82c2b1869",
+              "name": "High-pass",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 800.0,
+                  "resonance": 0.3,
+                  "filter_mode": "high_pass"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "d5e56867-a25a-51c1-8a79-da69992236ec",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "f71881d4-e8d2-5ba5-89e3-10203bea02e6",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "97afe781-babf-5c4e-a4a4-89ee41e985db",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "6b1854df-1fa6-5b6d-bb7f-1b6a0e3535eb",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "ead2a1bc-5734-5009-b568-68027561e1fb",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "335ddab0-897c-5d70-8181-63a8bdfa6031",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "88a5cd68-2b30-5fd2-b3e4-23cd80674091",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "3fa0f292-6c86-569b-9757-0612baa61a18",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "209aa2a0-b4ee-57e2-92b2-dd30baccf6a2",
+              "name": "Band-pass 2 kHz, resonance 0.7",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 2000.0,
+                  "resonance": 0.7,
+                  "filter_mode": "band_pass"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "38c02821-765b-5c09-8e32-6531d85bd3ef",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "653b15a9-4fd8-5caa-a86d-35179f91405f",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "ad8cc718-3bb4-54bf-8e06-e0a40da4ca62",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "588bd37a-98b9-570d-b094-e2226cccd356",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "feb007c3-feb2-5d1b-b7e0-fe6f30e59c64",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "c766163e-f4ea-5140-afb1-426c31ef7dc1",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "4a139224-2801-58af-9c12-e93c86980126",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "f3905f95-3d55-5fbd-92eb-c2619c4b2917",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "bab5720d-5cab-5d0a-b91a-cbcfe28a6d01",
+              "name": "High-pass 200 Hz",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 200.0,
+                  "resonance": 0.3,
+                  "filter_mode": "high_pass"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "32a2b7cf-0279-58d7-99d9-8f59a5d4ddbf",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "ad873505-6ded-5d58-bf54-a437a9972eb9",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "50cf076b-cc15-517d-92b1-4072c00c6e8c",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "c9404231-502f-56b9-ba85-73c0c3cadf2d",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "50a950f9-b2a9-58d3-b41b-d546c9b7e370",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "4db341f6-8f85-5c0a-ab1c-acebb8b2dcf8",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "338a825c-70cb-5158-8668-d59bcb6f8dc3",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "0d51ab36-dd12-555b-a6ba-44039bd23c70",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

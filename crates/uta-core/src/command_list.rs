@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":7,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
+        let json = r#"{"project":"6f1c2c1e-8a47-4a8e-9d57-3f2b2f0c9a10","commands":[{"format":8,"command":{"type":"set_tempo","bpm":100.0}}]}"#;
         let list: CommandList = serde_json::from_str(json).unwrap();
         assert_eq!(list.commands, [Command::SetTempo { bpm: 100.0 }]);
         assert_eq!(serde_json::to_string(&list).unwrap(), json);

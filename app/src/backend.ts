@@ -297,6 +297,9 @@ export interface MixerLimits {
 
 export type Waveform = "sine" | "triangle" | "saw" | "pulse";
 
+/** Which part of the sound the synth's filter lets through. */
+export type FilterMode = "low_pass" | "band_pass" | "high_pass";
+
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
@@ -304,12 +307,14 @@ export type Limits = [number, number];
 export type SynthSettingView =
   | ChoiceSettingView<"osc1_wave", Waveform>
   | ChoiceSettingView<"osc2_wave", Waveform>
+  | ChoiceSettingView<"filter_mode", FilterMode>
   | NumberSettingView<SynthNumber["name"]>
   | ToggleSettingView<"osc_retrigger">;
 
 /** One synth setting and its new value, as `set_synth_param` takes it. */
 export type SynthParam =
   | { name: "osc1_wave" | "osc2_wave"; value: Waveform }
+  | { name: "filter_mode"; value: FilterMode }
   | SynthNumber
   | { name: "osc_retrigger"; value: boolean };
 
@@ -326,6 +331,12 @@ export interface SynthNumber {
     | "noise_level"
     | "cutoff_hz"
     | "resonance"
+    | "filter_env_octaves"
+    | "filter_key"
+    | "filter_attack_seconds"
+    | "filter_decay_seconds"
+    | "filter_sustain"
+    | "filter_release_seconds"
     | "attack_seconds"
     | "decay_seconds"
     | "sustain"

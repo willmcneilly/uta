@@ -7,8 +7,8 @@ use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
-    DEFAULT_SAMPLE_RATE, EffectSnapshot, KitSettings, MixerStrip, NoteKey, SynthSettings,
-    TRACK_SLOTS, Waveform,
+    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, MixerStrip, NoteKey,
+    SynthSettings, TRACK_SLOTS, Waveform,
 };
 
 /// Everything the audio thread needs to know about what to play.
@@ -779,8 +779,19 @@ fn synth_settings(settings: &uta_core::SynthSettings) -> SynthSettings {
         osc2_level: settings.osc2_level,
         sub_level: settings.sub_level,
         noise_level: settings.noise_level,
+        filter_mode: match settings.filter_mode {
+            uta_core::FilterMode::LowPass => FilterMode::LowPass,
+            uta_core::FilterMode::BandPass => FilterMode::BandPass,
+            uta_core::FilterMode::HighPass => FilterMode::HighPass,
+        },
         cutoff_hz: settings.cutoff_hz,
         resonance: settings.resonance,
+        filter_env_octaves: settings.filter_env_octaves,
+        filter_key: settings.filter_key,
+        filter_attack_seconds: settings.filter_attack_seconds,
+        filter_decay_seconds: settings.filter_decay_seconds,
+        filter_sustain: settings.filter_sustain,
+        filter_release_seconds: settings.filter_release_seconds,
         attack_seconds: settings.attack_seconds,
         decay_seconds: settings.decay_seconds,
         sustain: settings.sustain,
@@ -938,6 +949,13 @@ mod tests {
             SynthParam::SubLevel(0.4),
             SynthParam::NoiseLevel(0.2),
             SynthParam::OscRetrigger(false),
+            SynthParam::FilterMode(uta_core::FilterMode::HighPass),
+            SynthParam::FilterEnvOctaves(-2.5),
+            SynthParam::FilterKey(0.75),
+            SynthParam::FilterAttackSeconds(0.02),
+            SynthParam::FilterDecaySeconds(0.4),
+            SynthParam::FilterSustain(0.3),
+            SynthParam::FilterReleaseSeconds(0.6),
         ] {
             project
                 .apply(&Command::SetSynthParam { track, param })
@@ -961,7 +979,14 @@ mod tests {
                 osc2_level: 0.6,
                 sub_level: 0.4,
                 noise_level: 0.2,
+                filter_mode: FilterMode::HighPass,
                 cutoff_hz: 800.0,
+                filter_env_octaves: -2.5,
+                filter_key: 0.75,
+                filter_attack_seconds: 0.02,
+                filter_decay_seconds: 0.4,
+                filter_sustain: 0.3,
+                filter_release_seconds: 0.6,
                 osc_retrigger: false,
                 ..SynthSettings::default()
             }

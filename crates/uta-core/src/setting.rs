@@ -84,7 +84,9 @@ pub enum Unit {
     Amount,
     /// A pitch offset: 12 to the octave.
     Semitones,
-    /// A pitch offset in whole octaves.
+    /// A distance in octaves: whole ones for an oscillator's Octave, where
+    /// the description has a step of 1, and any for the filter envelope's
+    /// amount, which moves the cutoff.
     Octaves,
 }
 
