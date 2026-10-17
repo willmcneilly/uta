@@ -1,5 +1,6 @@
 //! Measurements of rendered audio, taken from the waveform: pitch, level,
-//! clicks, brightness, attack, decay and loudness. The sound tests check
+//! loudness, clicks, brightness, noisiness, inharmonicity, aliasing,
+//! stereo, attack and decay. The sound tests check
 //! Uta's renders with them, and `uta analyse` prints them as a [`report`],
 //! so the numbers read from a render are the numbers the tests check.
 //!
