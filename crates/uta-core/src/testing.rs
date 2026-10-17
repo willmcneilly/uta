@@ -9,7 +9,7 @@ use crate::{
     Chain, Clip, ClipId, ClipPosition, Command, DelayMode, DelayParam, DelaySettings, DrumParam,
     DrumSound, Effect, EffectId, EffectSettings, FilterMode, KIT, KitSettings, MixerStrip, Note,
     NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam,
-    SynthSettings, Track, TrackId, Waveform,
+    SynthSettings, Track, TrackId, VoiceMode, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -249,6 +249,9 @@ fn any_synth_param() -> impl Strategy<Value = SynthParam> {
         (-0.1f32..1.1).prop_map(SynthParam::SubLevel),
         (-0.1f32..1.1).prop_map(SynthParam::NoiseLevel),
         any::<bool>().prop_map(SynthParam::OscRetrigger),
+        prop_oneof![Just(VoiceMode::Poly), Just(VoiceMode::Mono)].prop_map(SynthParam::VoiceMode),
+        any::<bool>().prop_map(SynthParam::Legato),
+        (0.0f32..5.5).prop_map(SynthParam::GlideSeconds),
         prop_oneof![
             Just(FilterMode::LowPass),
             Just(FilterMode::BandPass),
