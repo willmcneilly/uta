@@ -4,14 +4,18 @@
 //! Round the loop, each echo goes through the Low cut and the High cut, a
 //! level control, then the tape's saturation, then back onto the tape, so
 //! each repeat is thinner and darker than the last, and loud ones are
-//! squashed rather than growing without end. Past 100% Feedback the level
-//! control is what holds the loop: the saturation alone holds its peaks,
-//! but everything quieter would go on growing until the tape was a
-//! squared-off thud. This goes beyond RFC-007, which had the saturation
-//! hold it, after Will heard 110% grow until it sounded like a drum. The playback head glides to a new time, bending the
-//! echoes on their way in pitch as tape does (repitch), and Wobble sways it
-//! with wow and flutter. Ping-pong records both sides onto the left tape and
-//! crosses each echo to the other side as it comes round.
+//! squashed rather than growing without end.
+//!
+//! The level control only acts past 100% Feedback, and takes away only the
+//! Feedback past it: the saturation alone holds the loop's peaks, but
+//! everything quieter would go on growing until the tape was a squared-off
+//! thud. This goes beyond RFC-007, which had the saturation hold it, after
+//! Will heard 110% grow until it sounded like a drum.
+//!
+//! The playback head glides to a new time, bending the echoes on their way
+//! in pitch as tape does (repitch), and Wobble sways it with wow and
+//! flutter. Ping-pong records both sides onto the left tape and crosses
+//! each echo to the other side as it comes round.
 
 use std::f64::consts::{FRAC_1_SQRT_2, TAU};
 
@@ -65,7 +69,8 @@ const KNEE: f32 = 0.5;
 const CEILING: f32 = 1.0;
 /// Full Drive hits the saturation this much harder, in dB. The echoes come
 /// out as much quieter again, so Drive changes how squashed they are, not
-/// how loud quiet ones are, and the loop's gain stays the Feedback.
+/// how loud quiet ones are, and the loop's gain stays the Feedback (up to
+/// 100%: past it, the level control takes the rest away once it's loud).
 const MAX_DRIVE_DB: f32 = 18.0;
 /// Wow: two slow sways of the playback head, in Hz, and their shares of
 /// it. Two rates that never line up make a drift rather than a wobble.
@@ -74,12 +79,11 @@ const WOW: [(f64, f64); 2] = [(0.8, 0.75), (0.31, 0.25)];
 /// is: the time constant of its average, long enough to follow the echoes'
 /// loudness rather than each wave.
 const LOOP_LEVEL_SECONDS: f64 = 0.3;
-/// The loudest, on average, the level control lets what goes round get,
-/// as a share of the saturation's knee (after Drive): an RMS that keeps
-/// most of a sound's peaks under the knee. Below 100% Feedback the echoes
-/// of an ordinary sound never get there; past it they swell to it and hold,
-/// rather than filling the tape until the saturation squares everything
-/// off.
+/// The loudest, on average, the level control lets what goes round get
+/// past 100% Feedback, as a share of the saturation's knee (after Drive):
+/// an RMS that keeps most of a sound's peaks under the knee. The echoes
+/// swell to it and hold, rather than filling the tape until the saturation
+/// squares everything off. At 100% or less the control never acts.
 const LOOP_HOLD: f32 = 0.3;
 /// How far wow sways the playback head at full Wobble, either way.
 const WOW_SECONDS: f64 = 0.0025;
@@ -319,6 +323,9 @@ pub(crate) struct Delay {
     quiet: u32,
     #[cfg(test)]
     processed: u64,
+    /// Whether the level control has ever turned the loop down.
+    #[cfg(test)]
+    held: bool,
 }
 
 impl Delay {
@@ -354,6 +361,8 @@ impl Delay {
             quiet: u32::MAX,
             #[cfg(test)]
             processed: 0,
+            #[cfg(test)]
+            held: false,
         };
         delay.prepare(sample_rate);
         delay
@@ -536,12 +545,19 @@ impl Effect for Delay {
             if self.loudness < f32::MIN_POSITIVE {
                 self.loudness = 0.0;
             }
+            // It takes away at most the Feedback past 100%: at 100% or less
+            // it never acts, and past it the loop's gain comes down to 1,
+            // where the echoes stop growing, and no further.
             let hold = LOOP_HOLD * KNEE / drive;
-            let level = if self.loudness > hold * hold {
-                hold / self.loudness.sqrt()
+            let level = if feedback > 1.0 && self.loudness > hold * hold {
+                (hold / self.loudness.sqrt()).max(1.0 / feedback)
             } else {
                 1.0
             };
+            #[cfg(test)]
+            {
+                self.held |= level < 1.0;
+            }
             let round = darkened.map(|sample| saturate(sample * level, drive));
             let input = [*left, *right];
             let stereo = [input[0] + round[0], input[1] + round[1]];
@@ -990,6 +1006,41 @@ mod tests {
         .drive_gain();
         assert!((gain - 7.943).abs() < 1e-3);
         assert!(saturate(0.5, gain) < 0.13);
+    }
+
+    /// The level control never acts at 100% Feedback or less, however loud
+    /// what comes round and however much Drive; past 100% it does once the
+    /// loop is loud.
+    #[test]
+    fn the_level_control_acts_only_past_100_percent() {
+        for (feedback, drive, held) in [
+            (0.4, 0.0, false),
+            (0.9, 1.0, false),
+            (1.0, 1.0, false),
+            (1.1, 0.0, true),
+            (1.1, 1.0, true),
+        ] {
+            let mut delay = Delay::new(
+                DelaySettings {
+                    drive,
+                    ..DelaySettings::plain(0.05, feedback)
+                },
+                48_000.0,
+            );
+            // A loud, held 220 Hz tone for a second, then its echoes.
+            let mut left: Vec<f32> = (0..96_000)
+                .map(|n| {
+                    if n < 48_000 {
+                        0.9 * (TAU * 220.0 * n as f64 / 48_000.0).sin() as f32
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            let mut right = left.clone();
+            run(&mut delay, &mut left, &mut right, 128);
+            assert_eq!(delay.held, held, "Feedback {feedback}, Drive {drive}");
+        }
     }
 
     /// Wow and flutter restart from the same point, and with Wobble at
