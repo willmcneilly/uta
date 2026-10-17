@@ -1,0 +1,8 @@
+[package]
+name = "uta-analysis"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Measurements of rendered audio: pitch, level, brightness, decay. It only reads samples."
+
+[dependencies]

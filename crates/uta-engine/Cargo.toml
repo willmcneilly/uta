@@ -21,4 +21,6 @@ cpal = "0.18.2"
 # release test builds too.
 assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", rev = "a6fb4f62b9624715291e320ea5f0f70e73b035cf", default-features = false, features = ["backtrace"] }
 serde_json = "1"
+# The sound tests' measurements. Tests only: the engine never measures itself.
+uta-analysis = { path = "../uta-analysis" }
 uuid = "1"

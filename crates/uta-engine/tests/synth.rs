@@ -215,32 +215,6 @@ fn the_filter_cuts_above_the_cutoff() {
     }
 }
 
-/// The loudest partial in `spectrum` that isn't a harmonic of
-/// `frequency_hz`, in dB relative to the loudest harmonic: for a saw, its
-/// fundamental, and for a synced wave, whichever harmonic its restarts make
-/// loudest.
-fn loudest_alias_db(spectrum: &[f64], frequency_hz: f64, fft_len: usize) -> f64 {
-    let bin_hz = f64::from(RATE) / fft_len as f64;
-    // The window's main lobe is 4 bins either side; allow a little more.
-    let lobe = 6.0;
-    // The harmonic each bin is on, if it's on one: 0 is any offset, which
-    // isn't an alias but isn't a harmonic either.
-    let harmonic = |bin: usize| {
-        let harmonic = (bin as f64 * bin_hz / frequency_hz).round();
-        ((bin as f64 - harmonic * frequency_hz / bin_hz).abs() <= lobe).then_some(harmonic)
-    };
-    let loudest = |on: fn(Option<f64>) -> bool| {
-        spectrum
-            .iter()
-            .enumerate()
-            .filter(|&(bin, _)| on(harmonic(bin)))
-            .fold(0.0f64, |a, (_, &b)| a.max(b))
-    };
-    let alias = loudest(|harmonic| harmonic.is_none());
-    let harmonics = loudest(|harmonic| harmonic.is_some_and(|h| h >= 1.0));
-    20.0 * (alias / harmonics).log10()
-}
-
 /// C7 at 2093 Hz: its 11th harmonic is already past half the sample rate, so
 /// a naive saw folds strong aliases back down.
 const HIGH_NOTE: u8 = 96;

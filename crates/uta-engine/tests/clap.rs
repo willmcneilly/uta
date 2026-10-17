@@ -407,17 +407,6 @@ fn the_snare_and_clap_hear_the_same_noise() {
     assert!(correlation > 0.3, "correlation {correlation:.2}");
 }
 
-/// The correlation of two signals, from -1 to 1.
-fn correlation(a: &[f32], b: &[f32]) -> f64 {
-    let dot = |x: &[f32], y: &[f32]| {
-        x.iter()
-            .zip(y)
-            .map(|(&p, &q)| f64::from(p) * f64::from(q))
-            .sum::<f64>()
-    };
-    dot(a, b) / (dot(a, a) * dot(b, b)).sqrt()
-}
-
 /// Once it has died away, a clap stops: a render of one hit ends in exact
 /// silence, well within the time the kit says it rings for.
 #[test]
