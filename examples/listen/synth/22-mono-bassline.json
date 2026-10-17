@@ -261,10 +261,7 @@
                   "sub_level": 0.3,
                   "decay_seconds": 0.4,
                   "sustain": 0.5,
-                  "release_seconds": 0.05,
-                  "voice_mode": "mono",
-                  "legato": true,
-                  "glide_seconds": 0.07
+                  "release_seconds": 0.05
                 }
               },
               "mixer": {
@@ -467,6 +464,39 @@
             }
           }
         ]
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_synth_param",
+        "track": "189a2fcb-b32c-5554-b36a-141e47e00a6d",
+        "param": {
+          "name": "voice_mode",
+          "value": "mono"
+        }
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_synth_param",
+        "track": "189a2fcb-b32c-5554-b36a-141e47e00a6d",
+        "param": {
+          "name": "legato",
+          "value": true
+        }
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_synth_param",
+        "track": "189a2fcb-b32c-5554-b36a-141e47e00a6d",
+        "param": {
+          "name": "glide_seconds",
+          "value": 0.07
+        }
       }
     }
   ]
