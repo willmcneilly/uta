@@ -144,9 +144,12 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                 SynthSettings {
                     osc1_wave: waveforms[usize::from(round) % 4],
                     osc1_octave: (round % 5) as i8 - 2,
+                    osc1_width: 0.95 - 0.9 * step,
                     osc2_wave: waveforms[usize::from(round + 1) % 4],
                     osc2_octave: 2 - (round % 5) as i8,
                     osc2_pitch_semitones: 24.0 * step - 12.0,
+                    // On, off and on again, crossfading.
+                    osc2_sync: round % 3 != 1,
                     sub_octave: -1 - (round % 2) as i8,
                     osc1_level: 1.0 - step,
                     osc2_level: step,

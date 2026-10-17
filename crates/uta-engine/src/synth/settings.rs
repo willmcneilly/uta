@@ -14,8 +14,13 @@ pub enum Waveform {
     Triangle,
     #[default]
     Saw,
-    /// A square, until it has a Width.
+    /// A pulse: oscillator 1's has a Width, and oscillator 2's is a square.
     Pulse,
+}
+
+impl Waveform {
+    /// Every wave, in order.
+    pub const ALL: [Waveform; 4] = [Self::Sine, Self::Triangle, Self::Saw, Self::Pulse];
 }
 
 /// Which part of the sound the filter lets through.
@@ -34,12 +39,18 @@ pub struct SynthSettings {
     pub osc1_wave: Waveform,
     /// Oscillator 1's octave from the note, [`Self::OCTAVE`].
     pub osc1_octave: i8,
+    /// How much of each cycle oscillator 1's pulse spends high,
+    /// [`Self::WIDTH`]: 0.5 is a square. It glides.
+    pub osc1_width: f32,
     pub osc2_wave: Waveform,
     /// Oscillator 2's octave from the note, [`Self::OCTAVE`].
     pub osc2_octave: i8,
     /// Oscillator 2's offset from its octave in semitones,
     /// [`Self::PITCH_SEMITONES`]. It glides.
     pub osc2_pitch_semitones: f32,
+    /// Whether oscillator 2 restarts its cycle where oscillator 1 starts
+    /// one. Switching it crossfades.
+    pub osc2_sync: bool,
     /// How far under oscillator 1 the sub plays, in octaves,
     /// [`Self::SUB_OCTAVE`].
     pub sub_octave: i8,
@@ -90,6 +101,7 @@ pub struct SynthSettings {
 
 impl SynthSettings {
     pub const OCTAVE: RangeInclusive<i8> = -2..=2;
+    pub const WIDTH: RangeInclusive<f32> = 0.05..=0.95;
     pub const PITCH_SEMITONES: RangeInclusive<f32> = -12.0..=12.0;
     pub const SUB_OCTAVE: RangeInclusive<i8> = -2..=-1;
     pub const LEVEL: RangeInclusive<f32> = 0.0..=1.0;
@@ -117,6 +129,7 @@ impl SynthSettings {
         Self {
             osc1_wave: self.osc1_wave,
             osc1_octave: octave(self.osc1_octave, Self::OCTAVE),
+            osc1_width: clamp(self.osc1_width, Self::WIDTH, default.osc1_width),
             osc2_wave: self.osc2_wave,
             osc2_octave: octave(self.osc2_octave, Self::OCTAVE),
             osc2_pitch_semitones: clamp(
@@ -124,6 +137,7 @@ impl SynthSettings {
                 Self::PITCH_SEMITONES,
                 default.osc2_pitch_semitones,
             ),
+            osc2_sync: self.osc2_sync,
             sub_octave: octave(self.sub_octave, Self::SUB_OCTAVE),
             osc1_level: clamp(self.osc1_level, Self::LEVEL, default.osc1_level),
             osc2_level: clamp(self.osc2_level, Self::LEVEL, default.osc2_level),
@@ -177,15 +191,17 @@ impl SynthSettings {
 
 impl Default for SynthSettings {
     /// Today's sound: oscillator 1 a saw at full level, the rest of the
-    /// mixer at zero, a low-pass filter that nothing moves, and the
-    /// oscillators restarting on each note.
+    /// mixer at zero, oscillator 2 free of oscillator 1, a low-pass filter
+    /// that nothing moves, and the oscillators restarting on each note.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
             osc1_octave: 0,
+            osc1_width: 0.5,
             osc2_wave: Waveform::Saw,
             osc2_octave: 0,
             osc2_pitch_semitones: 0.0,
+            osc2_sync: false,
             sub_octave: -1,
             osc1_level: 1.0,
             osc2_level: 0.0,
@@ -220,6 +236,8 @@ mod tests {
         assert_eq!((settings.osc1_octave, settings.osc2_octave), (0, 0));
         assert_eq!(settings.osc2_wave, Waveform::Saw);
         assert_eq!(settings.osc2_pitch_semitones, 0.0);
+        assert_eq!(settings.osc1_width, 0.5);
+        assert!(!settings.osc2_sync);
         assert_eq!(settings.sub_octave, -1);
         assert_eq!(
             [
@@ -259,9 +277,11 @@ mod tests {
         let wild = SynthSettings {
             osc1_wave: Waveform::Pulse,
             osc1_octave: -9,
+            osc1_width: 1.0,
             osc2_wave: Waveform::Sine,
             osc2_octave: 9,
             osc2_pitch_semitones: f32::NAN,
+            osc2_sync: true,
             sub_octave: 0,
             osc1_level: 2.0,
             osc2_level: -1.0,
@@ -287,6 +307,8 @@ mod tests {
         assert_eq!(wild.osc1_octave, -2);
         assert_eq!(wild.osc2_octave, 2);
         assert_eq!(wild.osc2_pitch_semitones, 0.0);
+        assert_eq!(wild.osc1_width, 0.95);
+        assert!(wild.osc2_sync);
         assert_eq!(wild.sub_octave, -1);
         assert_eq!(
             [

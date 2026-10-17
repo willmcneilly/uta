@@ -211,7 +211,7 @@ What to listen for:
 
 ## Synth
 
-The synth's oscillators, sub, noise, mixer and filter (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+The synth's oscillators, sub, noise, mixer and filter, pulse width and sync (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
 
 | Render | What it plays |
 |---|---|
@@ -229,6 +229,10 @@ The synth's oscillators, sub, noise, mixer and filter (RFC-008), in `synth/`. Ea
 | `12-swells` | A held chord: cutoff 3 kHz with no envelope; the same with Env amount -4 over 1.2 s; then cutoff 300 Hz with Env amount +4, a 1 s filter attack and a sustain of 0.5. |
 | `13-key` | A minor in eighths across four octaves, cutoff 400 Hz: Key 0, 0.5 and 1. |
 | `14-resonant-pluck` | The sixteenths at cutoff 180 Hz, resonance 0.85, Env amount 4.5 over 0.15 s; then the same on a pulse with the sub and Key 0.5. |
+| `15-width` | Oscillator 1 as a pulse at Width 50% (a square), 35%, 20%, 10% and 5%. |
+| `16-sync` | Oscillator 2 alone, a saw synced to oscillator 1, at Pitch 0, +3, +7 and +10, then an octave up at +3, +7 and +11. |
+| `17-sync-waves` | Oscillator 2 alone, synced an octave and a fifth up, as a sine, triangle, saw and pulse. |
+| `18-sync-lead` | A lead line (cutoff 5 kHz, a little resonance) with oscillator 2 an octave and a fifth over oscillator 1: free, synced, then synced at +3 and +10 instead of +7. |
 
 What to listen for:
 
@@ -246,6 +250,10 @@ What to listen for:
 - **Swells:** with Env -4 each chord starts dark and opens up to the plain sound over a second; with +4 and the slow attack it brightens slowly into focus, then settles. Neither should step or zip as it moves.
 - **Key:** at 0 the low notes are full and the high ones dull and muffled; at 1 every octave sounds as bright as the others; 0.5 is in between.
 - **Resonant pluck:** a squelchy, rubbery bass, each note with a ringing "yow" as the filter closes. No clicks or crackle at the start of the notes, even with the resonance this high.
+- **Width:** 50% is the hollow, woody square the pulse always was. Narrower is thinner and more nasal, towards a reedy buzz at 5%. It also gets quieter, about 7 dB by 5%, as a narrow pulse has less in it; that's how a pulse behaves on an analog synth too. Every step should stay centred and clean, with no new rumble or thump.
+- **Sync:** every bar plays the same notes at the same pitch: only the tone changes. As oscillator 2's Pitch rises the sound gets brighter, more nasal and vocal, with a resonant "wah" that moves up; that's the sync sound. Listen on the high chord notes for anything gritty, glassy or out of tune whistling under the tone (aliasing). Some edge is the character of sync; a whine that doesn't belong to the note isn't.
+- **Sync's waves:** the sine and triangle synced are softer and rounder than the saw and pulse, but still clearly a different tone from a plain sine or triangle. None should click or buzz on every cycle.
+- **Sync lead:** the free bar beats and sounds like two notes, an octave and a fifth apart; synced, it's one note with a bright, tearing edge. +3 is darker and +10 brighter, each the same note.
 
 ## Delay
 
