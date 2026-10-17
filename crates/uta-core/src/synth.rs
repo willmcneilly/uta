@@ -202,6 +202,203 @@ const VOICE_MODES: [Choice; 2] = [
     },
 ];
 
+/// What drives a mod slot: each runs from 0 to 1, or -1 to 1 for the LFO
+/// and the key, and the slot's Amount scales it. See RFC-008, "The
+/// instrument" (Mod).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModSource {
+    /// The filter envelope's level, from 0 to 1, whatever its Env amount.
+    FilterEnv,
+    /// The amp envelope's level, from 0 to 1.
+    AmpEnv,
+    /// The LFO, from -1 to 1, whatever its own amounts.
+    Lfo,
+    /// How hard the note was played, from 0 (softest) to 1 (hardest).
+    Velocity,
+    /// How far the note is from middle C: -1 five octaves under it, 1 five
+    /// octaves over it.
+    Key,
+}
+
+impl ModSource {
+    /// Every source, in the panel's order.
+    pub const ALL: [ModSource; 5] = [
+        Self::FilterEnv,
+        Self::AmpEnv,
+        Self::Lfo,
+        Self::Velocity,
+        Self::Key,
+    ];
+
+    /// The source as `SetSynthParam` carries it: `"velocity"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::FilterEnv => "filter_env",
+            Self::AmpEnv => "amp_env",
+            Self::Lfo => "lfo",
+            Self::Velocity => "velocity",
+            Self::Key => "key",
+        }
+    }
+}
+
+/// Every mod source, as the panel offers them.
+const MOD_SOURCES: [Choice; 5] = [
+    Choice {
+        value: "filter_env",
+        label: "Filter env",
+    },
+    Choice {
+        value: "amp_env",
+        label: "Amp env",
+    },
+    Choice {
+        value: "lfo",
+        label: "LFO",
+    },
+    Choice {
+        value: "velocity",
+        label: "Velocity",
+    },
+    Choice {
+        value: "key",
+        label: "Key",
+    },
+];
+
+/// What a mod slot moves, or nothing. At an Amount of 1 with its source at
+/// 1, each moves by its own amount: see [`ModDestination::full_scale`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModDestination {
+    /// An empty slot: it moves nothing.
+    #[default]
+    Off,
+    Osc1Pitch,
+    Osc2Pitch,
+    Osc1Level,
+    Osc2Level,
+    SubLevel,
+    NoiseLevel,
+    /// Oscillator 1's pulse width.
+    Osc1Width,
+    Cutoff,
+    Resonance,
+    /// The LFO's rate, when it isn't synced.
+    LfoRate,
+    /// The voice's level.
+    Volume,
+}
+
+impl ModDestination {
+    /// Every destination, in the panel's order.
+    pub const ALL: [ModDestination; 12] = [
+        Self::Off,
+        Self::Osc1Pitch,
+        Self::Osc2Pitch,
+        Self::Osc1Level,
+        Self::Osc2Level,
+        Self::SubLevel,
+        Self::NoiseLevel,
+        Self::Osc1Width,
+        Self::Cutoff,
+        Self::Resonance,
+        Self::LfoRate,
+        Self::Volume,
+    ];
+
+    /// The destination as `SetSynthParam` carries it: `"cutoff"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Osc1Pitch => "osc1_pitch",
+            Self::Osc2Pitch => "osc2_pitch",
+            Self::Osc1Level => "osc1_level",
+            Self::Osc2Level => "osc2_level",
+            Self::SubLevel => "sub_level",
+            Self::NoiseLevel => "noise_level",
+            Self::Osc1Width => "osc1_width",
+            Self::Cutoff => "cutoff",
+            Self::Resonance => "resonance",
+            Self::LfoRate => "lfo_rate",
+            Self::Volume => "volume",
+        }
+    }
+
+    /// How far it moves at an Amount of 1 with the source at 1, in its own
+    /// unit: semitones for a pitch, octaves for the cutoff and the LFO's
+    /// rate, and the setting's own scale for the rest. Volume's is a gain:
+    /// 1 doubles it (+6 dB), -1 silences it. Agreed with Will for UTA-79.
+    pub const fn full_scale(self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Osc1Pitch | Self::Osc2Pitch => 24.0,
+            Self::Osc1Level
+            | Self::Osc2Level
+            | Self::SubLevel
+            | Self::NoiseLevel
+            | Self::Resonance
+            | Self::Volume => 1.0,
+            Self::Osc1Width => SynthSettings::MAX_WIDTH - SynthSettings::MIN_WIDTH,
+            Self::Cutoff => SynthSettings::MAX_FILTER_ENV_OCTAVES,
+            Self::LfoRate => 4.0,
+        }
+    }
+}
+
+/// Every mod destination, as the panel offers them.
+const MOD_DESTINATIONS: [Choice; 12] = [
+    Choice {
+        value: "off",
+        label: "Off",
+    },
+    Choice {
+        value: "osc1_pitch",
+        label: "Osc 1 pitch",
+    },
+    Choice {
+        value: "osc2_pitch",
+        label: "Osc 2 pitch",
+    },
+    Choice {
+        value: "osc1_level",
+        label: "Osc 1 level",
+    },
+    Choice {
+        value: "osc2_level",
+        label: "Osc 2 level",
+    },
+    Choice {
+        value: "sub_level",
+        label: "Sub level",
+    },
+    Choice {
+        value: "noise_level",
+        label: "Noise level",
+    },
+    Choice {
+        value: "osc1_width",
+        label: "Osc 1 width",
+    },
+    Choice {
+        value: "cutoff",
+        label: "Cutoff",
+    },
+    Choice {
+        value: "resonance",
+        label: "Resonance",
+    },
+    Choice {
+        value: "lfo_rate",
+        label: "LFO rate",
+    },
+    Choice {
+        value: "volume",
+        label: "Volume",
+    },
+];
+
 /// Everything that shapes the synth's sound, from the oscillators through
 /// the mixer, filter and envelope to the voice: the order the sound flows
 /// in, and the order [`Self::params`] gives them.
@@ -292,6 +489,18 @@ pub struct SynthSettings {
     /// Whether the oscillators start their wave afresh on each note. Off,
     /// they keep running between notes.
     pub osc_retrigger: bool,
+    /// The three mod slots: each moves its destination by its source times
+    /// its amount, from -1 to 1, on top of the knobs and the fixed
+    /// routings. A slot whose destination is Off moves nothing.
+    pub mod1_source: ModSource,
+    pub mod1_destination: ModDestination,
+    pub mod1_amount: f32,
+    pub mod2_source: ModSource,
+    pub mod2_destination: ModDestination,
+    pub mod2_amount: f32,
+    pub mod3_source: ModSource,
+    pub mod3_destination: ModDestination,
+    pub mod3_amount: f32,
 }
 
 impl SynthSettings {
@@ -339,10 +548,13 @@ impl SynthSettings {
     /// The shortest Glide, which is off, and the longest.
     pub const MIN_GLIDE_SECONDS: f32 = 0.001;
     pub const MAX_GLIDE_SECONDS: f32 = 5.0;
+    /// A mod slot's Amount either side of zero: its destination's whole
+    /// [`ModDestination::full_scale`].
+    pub const MAX_MOD_AMOUNT: f32 = 1.0;
 
     /// Every setting, as `SetSynthParam` carries them, in the order the
     /// sound flows through them.
-    pub fn params(&self) -> [SynthParam; 37] {
+    pub fn params(&self) -> [SynthParam; 46] {
         [
             SynthParam::Osc1Wave(self.osc1_wave),
             SynthParam::Osc1Octave(self.osc1_octave),
@@ -381,6 +593,15 @@ impl SynthSettings {
             SynthParam::Legato(self.legato),
             SynthParam::GlideSeconds(self.glide_seconds),
             SynthParam::OscRetrigger(self.osc_retrigger),
+            SynthParam::Mod1Source(self.mod1_source),
+            SynthParam::Mod1Destination(self.mod1_destination),
+            SynthParam::Mod1Amount(self.mod1_amount),
+            SynthParam::Mod2Source(self.mod2_source),
+            SynthParam::Mod2Destination(self.mod2_destination),
+            SynthParam::Mod2Amount(self.mod2_amount),
+            SynthParam::Mod3Source(self.mod3_source),
+            SynthParam::Mod3Destination(self.mod3_destination),
+            SynthParam::Mod3Amount(self.mod3_amount),
         ]
     }
 
@@ -497,6 +718,33 @@ impl SynthSettings {
             SynthParam::OscRetrigger(on) => {
                 SynthParam::OscRetrigger(replace(&mut self.osc_retrigger, on))
             }
+            SynthParam::Mod1Source(source) => {
+                SynthParam::Mod1Source(replace(&mut self.mod1_source, source))
+            }
+            SynthParam::Mod1Destination(to) => {
+                SynthParam::Mod1Destination(replace(&mut self.mod1_destination, to))
+            }
+            SynthParam::Mod1Amount(value) => {
+                SynthParam::Mod1Amount(replace(&mut self.mod1_amount, value))
+            }
+            SynthParam::Mod2Source(source) => {
+                SynthParam::Mod2Source(replace(&mut self.mod2_source, source))
+            }
+            SynthParam::Mod2Destination(to) => {
+                SynthParam::Mod2Destination(replace(&mut self.mod2_destination, to))
+            }
+            SynthParam::Mod2Amount(value) => {
+                SynthParam::Mod2Amount(replace(&mut self.mod2_amount, value))
+            }
+            SynthParam::Mod3Source(source) => {
+                SynthParam::Mod3Source(replace(&mut self.mod3_source, source))
+            }
+            SynthParam::Mod3Destination(to) => {
+                SynthParam::Mod3Destination(replace(&mut self.mod3_destination, to))
+            }
+            SynthParam::Mod3Amount(value) => {
+                SynthParam::Mod3Amount(replace(&mut self.mod3_amount, value))
+            }
         })
     }
 }
@@ -508,7 +756,9 @@ impl Default for SynthSettings {
     /// oscillators restarting on each note. The filter envelope is set for a
     /// pluck, so turning up its amount alone makes one, and the LFO for a
     /// vibrato, so turning up Vibrato alone makes one; it moves nothing
-    /// until an amount is turned up.
+    /// until an amount is turned up. The mod slots are empty, with the
+    /// sources of RFC-008's three examples ready: velocity, the filter
+    /// envelope and the LFO.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -548,6 +798,15 @@ impl Default for SynthSettings {
             legato: false,
             glide_seconds: Self::MIN_GLIDE_SECONDS,
             osc_retrigger: true,
+            mod1_source: ModSource::Velocity,
+            mod1_destination: ModDestination::Off,
+            mod1_amount: 0.0,
+            mod2_source: ModSource::FilterEnv,
+            mod2_destination: ModDestination::Off,
+            mod2_amount: 0.0,
+            mod3_source: ModSource::Lfo,
+            mod3_destination: ModDestination::Off,
+            mod3_amount: 0.0,
         }
     }
 }
@@ -597,6 +856,15 @@ pub enum SynthParam {
     Legato(bool),
     GlideSeconds(f32),
     OscRetrigger(bool),
+    Mod1Source(ModSource),
+    Mod1Destination(ModDestination),
+    Mod1Amount(f32),
+    Mod2Source(ModSource),
+    Mod2Destination(ModDestination),
+    Mod2Amount(f32),
+    Mod3Source(ModSource),
+    Mod3Destination(ModDestination),
+    Mod3Amount(f32),
 }
 
 impl SynthParam {
@@ -632,6 +900,15 @@ impl SynthParam {
             | Self::LfoVibratoSemitones(_)
             | Self::LfoWidth(_) => 11,
             Self::VoiceMode(_) | Self::Legato(_) | Self::GlideSeconds(_) => 12,
+            Self::Mod1Source(_)
+            | Self::Mod1Destination(_)
+            | Self::Mod1Amount(_)
+            | Self::Mod2Source(_)
+            | Self::Mod2Destination(_)
+            | Self::Mod2Amount(_)
+            | Self::Mod3Source(_)
+            | Self::Mod3Destination(_)
+            | Self::Mod3Amount(_) => 13,
             _ => 6,
         }
     }
@@ -654,7 +931,13 @@ impl SynthParam {
             | Self::LfoRetrigger(_)
             | Self::VoiceMode(_)
             | Self::Legato(_)
-            | Self::OscRetrigger(_) => None,
+            | Self::OscRetrigger(_)
+            | Self::Mod1Source(_)
+            | Self::Mod1Destination(_)
+            | Self::Mod2Source(_)
+            | Self::Mod2Destination(_)
+            | Self::Mod3Source(_)
+            | Self::Mod3Destination(_) => None,
             Self::Osc1Octave(value) | Self::Osc2Octave(value) => {
                 octave(value, S::MIN_OCTAVE, S::MAX_OCTAVE)
             }
@@ -693,6 +976,9 @@ impl SynthParam {
             Self::GlideSeconds(seconds) => {
                 Some((seconds, S::MIN_GLIDE_SECONDS, S::MAX_GLIDE_SECONDS))
             }
+            Self::Mod1Amount(value) | Self::Mod2Amount(value) | Self::Mod3Amount(value) => {
+                Some((value, -S::MAX_MOD_AMOUNT, S::MAX_MOD_AMOUNT))
+            }
         }
     }
 
@@ -714,6 +1000,34 @@ impl SynthParam {
         let octave =
             |label, sounds| Description::whole(label, sounds, Unit::Octaves, (min, max), value);
         let level = |label, sounds| number(label, sounds, Unit::Fraction, Linear);
+        let source = |label, default: ModSource| {
+            Description::choice(
+                label,
+                "What moves this slot's destination: an envelope over each note, \
+                 the LFO, how hard the note was played, or how high it is.",
+                &MOD_SOURCES,
+                default.value(),
+            )
+        };
+        let destination = |label| {
+            Description::choice(
+                label,
+                "What this slot moves, on top of its knob. Off, the slot does \
+                 nothing.",
+                &MOD_DESTINATIONS,
+                ModDestination::default().value(),
+            )
+        };
+        let amount = |label| {
+            number(
+                label,
+                "How far the source moves the destination, and which way: full \
+                 is a pitch two octaves, the cutoff ten octaves, or a level its \
+                 whole range. Below zero it moves the other way.",
+                Unit::Fraction,
+                Linear,
+            )
+        };
         match self {
             Self::Osc1Wave(_) => Description::choice(
                 "Osc 1 wave",
@@ -980,6 +1294,15 @@ impl SynthParam {
                  little different.",
                 defaults.osc_retrigger,
             ),
+            Self::Mod1Source(_) => source("Mod 1 source", defaults.mod1_source),
+            Self::Mod1Destination(_) => destination("Mod 1 destination"),
+            Self::Mod1Amount(_) => amount("Mod 1 amount"),
+            Self::Mod2Source(_) => source("Mod 2 source", defaults.mod2_source),
+            Self::Mod2Destination(_) => destination("Mod 2 destination"),
+            Self::Mod2Amount(_) => amount("Mod 2 amount"),
+            Self::Mod3Source(_) => source("Mod 3 source", defaults.mod3_source),
+            Self::Mod3Destination(_) => destination("Mod 3 destination"),
+            Self::Mod3Amount(_) => amount("Mod 3 amount"),
         }
     }
 
@@ -1156,6 +1479,15 @@ mod tests {
             legato: true,
             glide_seconds: 0.5,
             osc_retrigger: false,
+            mod1_source: ModSource::Key,
+            mod1_destination: ModDestination::Cutoff,
+            mod1_amount: 1.0,
+            mod2_source: ModSource::AmpEnv,
+            mod2_destination: ModDestination::Osc2Pitch,
+            mod2_amount: -1.0,
+            mod3_source: ModSource::Velocity,
+            mod3_destination: ModDestination::Volume,
+            mod3_amount: 0.5,
         };
         let defaults = SynthSettings::default();
         for (old, new) in defaults.params().into_iter().zip(changed.params()) {
@@ -1251,6 +1583,12 @@ mod tests {
                         SynthParam::LfoShape(shape) => shape.value(),
                         SynthParam::LfoDivision(division) => division.value(),
                         SynthParam::VoiceMode(mode) => mode.value(),
+                        SynthParam::Mod1Source(source)
+                        | SynthParam::Mod2Source(source)
+                        | SynthParam::Mod3Source(source) => source.value(),
+                        SynthParam::Mod1Destination(to)
+                        | SynthParam::Mod2Destination(to)
+                        | SynthParam::Mod3Destination(to) => to.value(),
                         _ => panic!("{param:?} is a choice"),
                     };
                     assert_eq!(default, value);
@@ -1319,7 +1657,64 @@ mod tests {
                 (Semitones, Linear, None),
                 (Fraction, Linear, None),
                 (Seconds, Log, None),
+                (Fraction, Linear, None),
+                (Fraction, Linear, None),
+                (Fraction, Linear, None),
             ]
+        );
+    }
+
+    /// The mod slots offer every source and destination, in order, as
+    /// their commands carry them, and an empty slot is the default.
+    #[test]
+    fn the_mod_slots_choices_are_their_values_in_order() {
+        let options = |param: SynthParam| match param.describe().kind {
+            Kind::Choice { options, default } => {
+                let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+                (values, default)
+            }
+            kind => panic!("{param:?} is {kind:?}"),
+        };
+        let serialised = |values: Vec<serde_json::Value>| serde_json::Value::Array(values);
+        let (sources, _) = options(SynthParam::Mod1Source(ModSource::Key));
+        assert_eq!(
+            serde_json::to_value(&sources).unwrap(),
+            serialised(
+                ModSource::ALL
+                    .iter()
+                    .map(|s| serde_json::to_value(s).unwrap())
+                    .collect()
+            )
+        );
+        let names: Vec<_> = ModSource::ALL.iter().map(|s| s.value()).collect();
+        assert_eq!(sources, names);
+        for param in [
+            SynthParam::Mod1Destination(ModDestination::Off),
+            SynthParam::Mod2Destination(ModDestination::Off),
+            SynthParam::Mod3Destination(ModDestination::Off),
+        ] {
+            let (destinations, default) = options(param);
+            assert_eq!(default, "off");
+            assert_eq!(
+                serde_json::to_value(&destinations).unwrap(),
+                serialised(
+                    ModDestination::ALL
+                        .iter()
+                        .map(|d| serde_json::to_value(d).unwrap())
+                        .collect()
+                )
+            );
+            let names: Vec<_> = ModDestination::ALL.iter().map(|d| d.value()).collect();
+            assert_eq!(destinations, names);
+        }
+        let defaults = SynthSettings::default();
+        assert_eq!(
+            [
+                defaults.mod1_destination,
+                defaults.mod2_destination,
+                defaults.mod3_destination
+            ],
+            [ModDestination::Off; 3]
         );
     }
 
