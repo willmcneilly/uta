@@ -148,9 +148,12 @@ struct Voice {
     tuning_step: Tuning,
     /// The amp envelope.
     envelope: Envelope,
-    /// The note's velocity, as a gain. In Mono it moves to the next note's
-    /// over [`TAKE_OVER_SECONDS`], so the level doesn't jump.
-    velocity_gain: Ramp,
+    /// The note's velocity, as a gain.
+    velocity_gain: f32,
+    /// In Mono, the velocity's gain moving to the next note's over
+    /// [`TAKE_OVER_SECONDS`], so the level doesn't jump. While it moves, it
+    /// sets `velocity_gain`.
+    velocity_glide: Ramp,
     /// When the note started, in the order notes started.
     started: u64,
     /// When the release started, in the same order.
@@ -180,7 +183,8 @@ impl Voice {
             tuning: Tuning::default(),
             tuning_step: Tuning::default(),
             envelope: Envelope::default(),
-            velocity_gain: Ramp::new(0.0, 1),
+            velocity_gain: 0.0,
+            velocity_glide: Ramp::new(0.0, 1),
             started: 0,
             released: 0,
         }
@@ -201,6 +205,22 @@ impl Voice {
 
     fn is_releasing(&self) -> bool {
         self.envelope.stage() == Stage::Release && !self.is_taken_over()
+    }
+
+    /// Moves its pitch on by a sample of its glide. Out of line, as only
+    /// the mono voice ever glides.
+    #[inline(never)]
+    fn glide_on(&mut self, sample_rate: f64) {
+        self.glide.next_value();
+        self.increment = semitones_to_hz(f64::from(self.glide.value())) / sample_rate;
+    }
+
+    /// Moves its velocity's gain on by a sample, out of line as
+    /// [`Self::glide_on`] is.
+    #[inline(never)]
+    fn velocity_glide_on(&mut self) {
+        self.velocity_glide.next_value();
+        self.velocity_gain = self.velocity_glide.value();
     }
 
     /// Releases both envelopes.
@@ -237,7 +257,7 @@ impl Voice {
                 self.increment = pitch_to_hz(note.pitch) / sample_rate;
             }
         }
-        self.velocity_gain
+        self.velocity_glide
             .set_target(velocity_to_gain(note.velocity));
         if !legato {
             self.envelope.restart(times);
@@ -877,16 +897,21 @@ impl Synth {
         let mix_gain = self.gain;
         let [osc1_level, osc2_level, sub_level, noise_level] = levels;
         self.running += 1;
+        // Only the mono voice glides, and checking it here rather than in
+        // the loop keeps the loop as fast as it was before Mono.
+        let mono = &mut self.voices[MONO_VOICE];
+        if mono.glide.is_moving() {
+            mono.glide_on(sample_rate);
+        }
+        if mono.velocity_glide.is_moving() {
+            mono.velocity_glide_on();
+        }
 
         let mut sum = 0.0f32;
         for index in 0..VOICES {
             let voice = &mut self.voices[index];
             if voice.is_free() {
                 continue;
-            }
-            if voice.glide.is_moving() {
-                voice.glide.next_value();
-                voice.increment = semitones_to_hz(f64::from(voice.glide.value())) / sample_rate;
             }
             let phase = if lfo_retrigger {
                 voice.lfo.advance_own(lfo_increment)
@@ -997,7 +1022,7 @@ impl Synth {
                 voice.take_over_remaining -= 1;
                 faded_out = voice.take_over_remaining == 0;
             }
-            sum += filtered * gain * voice.velocity_gain.next_value();
+            sum += filtered * gain * voice.velocity_gain;
 
             if faded_out {
                 voice.envelope.reset();
@@ -1083,7 +1108,8 @@ impl Synth {
         );
         voice.tuning_step = Tuning::default();
         voice.envelope.start(&self.times);
-        voice.velocity_gain = Ramp::new(velocity_to_gain(note.velocity), self.take_over_samples);
+        voice.velocity_gain = velocity_to_gain(note.velocity);
+        voice.velocity_glide = Ramp::new(voice.velocity_gain, self.take_over_samples);
         voice.started = self.clock;
         self.mono_started = true;
     }
