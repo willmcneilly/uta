@@ -732,11 +732,8 @@ impl SynthParam {
             ),
             Self::Osc1Width(_) => number(
                 "Osc 1 width",
-                "How much of each cycle oscillator 1's pulse spends high. Half \
-                 is a square, hollow and woody; narrower thins it towards a \
-                 nasal, reedy buzz. Moving it slowly gives a pad the gentle, \
-                 chorus-like movement of a string machine. Only the pulse has \
-                 a width.",
+                "How much of each cycle the pulse spends high: half is a hollow \
+                 square, narrower a thin, reedy buzz. Only the pulse has a width.",
                 Unit::Fraction,
                 Linear,
             ),
@@ -756,20 +753,17 @@ impl SynthParam {
             ),
             Self::Osc2PitchSemitones(_) => number(
                 "Osc 2 pitch",
-                "Moves oscillator 2 by up to an octave either way, finely near \
-                 zero. A few cents off and the two oscillators beat slowly \
-                 against each other, the classic thick, detuned sound; seven \
-                 semitones is a fifth, a big, organ-like interval.",
+                "Moves oscillator 2 up to an octave either way, finely near zero. A \
+                 few cents off beats against oscillator 1, thick and detuned; seven \
+                 is a fifth.",
                 Unit::Semitones,
                 Cubic,
             ),
             Self::Osc2Sync(_) => Description::toggle(
                 "Osc 2 sync",
-                "Restarts oscillator 2 each time oscillator 1 starts a cycle, \
-                 so it always sounds at oscillator 1's pitch. Its own Pitch \
-                 then changes its tone instead of its note: higher is brighter \
-                 and more nasal, and sweeping it gives the tearing, vocal sound \
-                 of a classic sync lead.",
+                "Restarts oscillator 2 with each cycle of oscillator 1, so its \
+                 Pitch changes its tone, not its note: sweep it for a tearing sync \
+                 lead.",
                 defaults.osc2_sync,
             ),
             Self::SubOctave(_) => octave(
@@ -804,11 +798,9 @@ impl SynthParam {
             ),
             Self::FilterMode(_) => Description::choice(
                 "Filter mode",
-                "Which part of the sound the filter keeps. Low-pass keeps what's \
-                 under the cutoff, warm and round, for basses and pads; band-pass \
-                 keeps a band around it, thin and nasal, like a voice down a \
-                 telephone; high-pass keeps what's over it, airy and light, \
-                 taking the weight out from underneath.",
+                "Low-pass keeps what's under the cutoff, warm and round; band-pass \
+                 a thin, nasal band around it; high-pass what's over it, airy and \
+                 light.",
                 &FILTER_MODES,
                 defaults.filter_mode.value(),
             ),
@@ -831,9 +823,8 @@ impl SynthParam {
             Self::FilterEnvOctaves(_) => number(
                 "Env amount",
                 "How far the filter envelope opens the filter on each note, in \
-                 octaves above the cutoff. Up, with a short decay and no sustain, \
-                 each note starts bright and closes down: a pluck. Below zero it \
-                 closes the filter instead, so each note swells from dark.",
+                 octaves. Up with a short decay is a pluck; below zero each note \
+                 swells from dark.",
                 Unit::Octaves,
                 Linear,
             ),
@@ -964,32 +955,29 @@ impl SynthParam {
             ),
             Self::VoiceMode(_) => Description::choice(
                 "Voice mode",
-                "Poly plays chords; Mono plays one note at a time, the latest \
-                 winning, and goes back to a note still held when you let go: \
-                 a classic bass or lead line.",
+                "Poly plays chords; Mono one note at a time, the latest winning, as \
+                 a bass or lead line plays.",
                 &VOICE_MODES,
                 defaults.voice_mode.value(),
             ),
             Self::Legato(_) => Description::toggle(
                 "Legato",
-                "In Mono, a note that overlaps the last only changes the pitch, \
-                 so the line sounds as one phrase; off, each note attacks again.",
+                "In Mono, an overlapping note only changes the pitch, for one \
+                 smooth phrase; off, each attacks again.",
                 defaults.legato,
             ),
             Self::GlideSeconds(_) => number(
                 "Glide",
-                "In Mono, how long the pitch slides from one overlapping note to \
-                 the next: a slur, or a slow swoop. At its shortest it's off.",
+                "In Mono, how long the pitch slides between overlapping notes: a \
+                 slur, or a slow swoop. Shortest is off.",
                 Unit::Seconds,
                 Log,
             ),
             Self::OscRetrigger(_) => Description::toggle(
                 "Osc retrigger",
-                "Whether the oscillators start their wave afresh on every note. \
-                 On, every note starts the same way, tight and punchy; off, they \
-                 keep running between notes, as on an analog synth, so each note \
-                 catches the wave somewhere different and sounds a little more \
-                 alive.",
+                "On, the oscillators start afresh on every note, tight and punchy; \
+                 off, they run on between notes, as on an analog synth, each note a \
+                 little different.",
                 defaults.osc_retrigger,
             ),
         }
