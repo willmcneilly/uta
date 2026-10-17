@@ -25,8 +25,8 @@ use uta_core::{
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor, STATUS_CAPACITY,
-    Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
+    EngineConfig, FilterMode, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor,
+    STATUS_CAPACITY, Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
 };
 
 #[global_allocator]
@@ -100,7 +100,9 @@ fn many_swaps_in_one_block_do_not_allocate() {
 
 /// Notes starting and stopping, more notes than voices so voices are taken
 /// over (including while already being taken over), and snapshot swaps that
-/// change every synth setting while they sound, with Play pressed now and
+/// change every synth setting while they sound (the filter's own settings
+/// on and off, so the voices move between sharing filter settings and
+/// working out their own), with Play pressed now and
 /// then to restart the free-running parts: none of it allocates or frees on
 /// the audio thread.
 #[test]
@@ -112,6 +114,11 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
         Waveform::Triangle,
         Waveform::Saw,
         Waveform::Pulse,
+    ];
+    let filter_modes = [
+        FilterMode::LowPass,
+        FilterMode::BandPass,
+        FilterMode::HighPass,
     ];
     let mut swaps = 0;
     for round in 0..8u8 {
@@ -145,8 +152,17 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                     osc2_level: step,
                     sub_level: 0.5 * step,
                     noise_level: 1.0 - 0.5 * step,
+                    filter_mode: filter_modes[usize::from(round) % 3],
                     cutoff_hz: 20_000.0 / f32::from(round + 1).powi(3),
                     resonance: f32::from(round % 3) / 2.0,
+                    // On and off, so the voices move between sharing their
+                    // filter settings and working out their own.
+                    filter_env_octaves: [0.0, 6.0, -4.0, 0.0][usize::from(round) % 4],
+                    filter_key: [0.0, 0.0, 1.0, 0.5][usize::from(round + 1) % 4],
+                    filter_attack_seconds: 0.002 * f32::from(round + 1),
+                    filter_decay_seconds: 0.03,
+                    filter_sustain: 1.0 - step,
+                    filter_release_seconds: 0.02,
                     attack_seconds: 0.001 * f32::from(round + 1),
                     decay_seconds: 0.05,
                     sustain: step,

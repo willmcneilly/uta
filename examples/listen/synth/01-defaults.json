@@ -125,49 +125,49 @@
                       "id": "e186cffa-5954-5988-945f-63e36f4583c3",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 3840,
+                      "start": 0,
                       "length": 1920
                     },
                     {
                       "id": "25dd7849-52d5-5fc2-8560-65157c352aaa",
                       "pitch": 60,
                       "velocity": 100,
-                      "start": 3840,
+                      "start": 0,
                       "length": 1920
                     },
                     {
                       "id": "2d3690c5-beb4-500f-bed4-48f3eb2e07cd",
                       "pitch": 64,
                       "velocity": 100,
-                      "start": 3840,
+                      "start": 0,
                       "length": 1920
                     },
                     {
                       "id": "efa24194-bed3-515f-aca0-763a58489b2b",
                       "pitch": 45,
                       "velocity": 100,
-                      "start": 5760,
+                      "start": 1920,
                       "length": 480
                     },
                     {
                       "id": "0216a61f-c5c3-5adc-899b-e9d8c6276b69",
                       "pitch": 52,
                       "velocity": 100,
-                      "start": 6240,
+                      "start": 2400,
                       "length": 480
                     },
                     {
                       "id": "d38ff651-1637-5340-82ed-3d2031ee966e",
                       "pitch": 57,
                       "velocity": 100,
-                      "start": 6720,
+                      "start": 2880,
                       "length": 480
                     },
                     {
                       "id": "368f8b6b-0e6e-5017-b4eb-28cb43413c4c",
                       "pitch": 52,
                       "velocity": 100,
-                      "start": 7200,
+                      "start": 3360,
                       "length": 480
                     }
                   ]

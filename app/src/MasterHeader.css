@@ -1,0 +1,147 @@
+/*
+ * The master's header row, pinned below the tracks: shorter than a track,
+ * named Master, with today's volume, meter and clip light. A heavier rule
+ * above it sets it apart, the way a total is ruled off. provisional: D-30
+ */
+.master-row {
+  display: flex;
+  flex: none;
+  height: 64px;
+  border-top: var(--stroke-clip-selected) solid var(--ink-3);
+}
+
+.master-header {
+  /* The volume row's columns, as a track header's. */
+  --master-label-width: 28px;
+  --master-value-width: 56px;
+
+  display: grid;
+  grid-template-areas:
+    "name name"
+    "volume volume"
+    "meter light";
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: center;
+  gap: 0 var(--space-2);
+  box-sizing: border-box;
+  flex: 0 0 var(--track-headers-width);
+  padding: 0 var(--space-4);
+  border-right: var(--stroke-grid) solid var(--line-2);
+}
+
+/* Beside it, where the master's lane would be on the timeline. */
+.master-lane {
+  flex: 1;
+}
+
+/* The same wash as a selected track. */
+.master-header.selected,
+.master-header.selected + .master-lane {
+  background: var(--selected-wash);
+}
+
+.master-name {
+  grid-area: name;
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-name);
+  text-align: left;
+  cursor: default;
+  appearance: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.master-name:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.master-header.selected .master-name {
+  text-decoration: underline var(--stroke-clip-selected) var(--selected);
+  text-underline-offset: var(--space-1);
+}
+
+/* Volume: the label in the second ink, the value in ink. */
+.master-volume {
+  grid-area: volume;
+  display: grid;
+  grid-template-columns: var(--master-label-width) 1fr var(--master-value-width);
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink-2);
+  font: var(--font-text);
+}
+
+.master-volume .fader {
+  min-width: 0;
+}
+
+.master-volume output {
+  text-align: right;
+  color: var(--ink);
+}
+
+/* Under the fader's rail, past the label column and its gap. */
+.master-header .meter {
+  grid-area: meter;
+  align-self: center;
+  margin-left: calc(var(--master-label-width) + var(--space-3) + var(--space-3));
+}
+
+/*
+ * The clip light: an empty ring until the master clips, then filled in the
+ * clip red, with no glow. The key around it is a space-7 square to hit; it
+ * shades under the pointer only while lit, when a click resets it.
+ * provisional: D-9
+ */
+.clip-light {
+  grid-area: light;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-md);
+  background: transparent;
+  cursor: default;
+  appearance: none;
+}
+
+.clip-light::before {
+  content: "";
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: var(--stroke-clip) solid var(--ink-3);
+  border-radius: 50%;
+}
+
+.clip-light[data-lit="true"] {
+  cursor: pointer;
+}
+
+.clip-light[data-lit="true"]::before {
+  border-color: var(--clip);
+  background: var(--clip);
+}
+
+.clip-light[data-lit="true"]:hover {
+  background: var(--line);
+}
+
+.clip-light[data-lit="true"]:active {
+  background: var(--line-2);
+}
+
+.clip-light:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: 0;
+}

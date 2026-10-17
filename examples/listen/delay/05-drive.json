@@ -2,28 +2,28 @@
   "project": "7c8939a3-d24a-57a7-b0ed-7b4612f0dda0",
   "commands": [
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_master_volume",
         "volume_db": 0.0
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_tempo",
         "bpm": 120.0
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_loop_enabled",
         "enabled": false
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "add_tracks",
         "tracks": [

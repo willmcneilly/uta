@@ -25,17 +25,20 @@ use crate::{
 ///   didn't have take their defaults, and the old names read as the new.
 /// - Format 7 adds `move_effect`, `set_effect_enabled` and the master's
 ///   chain (RFC-007).
-/// - Format 8 adds the Delay's tape loop: its Sync, synced time (a note
+/// - Format 8 adds the synth's filter mode, filter envelope and key
+///   tracking (RFC-008). Older synth settings still read, with those they
+///   didn't have at their defaults.
+/// - Format 9 adds the Delay's tape loop: its Sync, synced time (a note
 ///   division), Mode, Low cut, High cut, Drive and Wobble, and Feedback up
 ///   to 110% (RFC-007). A Delay from an older format reads as the plain
 ///   Delay it was: unsynced, with its cuts wide open and no Drive or
 ///   Wobble.
-pub const COMMAND_FORMAT: u32 = 8;
+pub const COMMAND_FORMAT: u32 = 9;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":8,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":9,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -1062,8 +1065,10 @@ mod tests {
     const DEFAULT_SYNTH_JSON: &str = concat!(
         r#"{"osc1_wave":"saw","osc1_octave":0,"osc2_wave":"saw","osc2_octave":0,"#,
         r#""osc2_pitch_semitones":0.0,"sub_octave":-1,"osc1_level":1.0,"osc2_level":0.0,"#,
-        r#""sub_level":0.0,"noise_level":0.0,"cutoff_hz":20000.0,"resonance":0.0,"#,
-        r#""attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2,"#,
+        r#""sub_level":0.0,"noise_level":0.0,"filter_mode":"low_pass","cutoff_hz":20000.0,"#,
+        r#""resonance":0.0,"filter_env_octaves":0.0,"filter_key":0.0,"#,
+        r#""filter_attack_seconds":0.001,"filter_decay_seconds":0.3,"filter_sustain":0.0,"#,
+        r#""filter_release_seconds":0.2,"attack_seconds":0.005,"decay_seconds":0.2,"sustain":0.7,"release_seconds":0.2,"#,
         r#""osc_retrigger":true}"#,
     );
 
@@ -1072,7 +1077,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":8,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":9,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1138,7 +1143,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 2 to 6 lists still load.
@@ -1243,7 +1248,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 3 to 6 lists still load.
@@ -1318,7 +1323,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 4 to 6 lists still load.
@@ -1382,6 +1387,50 @@ mod tests {
                 let json = json.replace(&format!(r#""format":{format}"#), r#""format":6"#);
                 assert!(serde_json::from_str::<Command>(&json).is_ok());
             }
+        }
+    }
+
+    /// Format 7's synth settings, which have no filter mode, filter
+    /// envelope or key tracking, read with those at their defaults: an
+    /// unmoved low-pass, today's sound. The filter's new settings are
+    /// refused in an older `set_synth_param`.
+    #[test]
+    fn format_7_synth_settings_read_with_the_filter_at_its_defaults() {
+        let track = track();
+        let new_track = testing::track_id(0);
+        let settings_json = DEFAULT_SYNTH_JSON
+            .split(',')
+            .filter(|field| !field.contains("filter_"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(!settings_json.contains("filter"), "{settings_json}");
+        let json = format!(
+            r#"{{"format":7,"command":{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{settings_json}}},"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[]}}}}]}}}}"#
+        );
+        let Command::AddTracks { tracks } = serde_json::from_str::<Command>(&json).unwrap() else {
+            panic!("an add_tracks command");
+        };
+        assert_eq!(
+            tracks[0].track.source(),
+            &Source::Synth(SynthSettings::default())
+        );
+
+        for param in [
+            r#"{"name":"filter_mode","value":"high_pass"}"#,
+            r#"{"name":"filter_env_octaves","value":3.0}"#,
+            r#"{"name":"filter_key","value":1.0}"#,
+            r#"{"name":"filter_attack_seconds","value":0.1}"#,
+            r#"{"name":"filter_decay_seconds","value":0.1}"#,
+            r#"{"name":"filter_sustain","value":0.5}"#,
+            r#"{"name":"filter_release_seconds","value":0.1}"#,
+        ] {
+            let json = format!(
+                r#"{{"format":7,"command":{{"type":"set_synth_param","track":"{track}","param":{param}}}}}"#
+            );
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(error.to_string().contains("arrived in format 8"), "{error}");
+            let json = json.replace(r#""format":7"#, r#""format":8"#);
+            assert!(serde_json::from_str::<Command>(&json).is_ok(), "{param}");
         }
     }
 
@@ -1451,13 +1500,13 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // Format 5 to 7 lists still load, with the Delay as they wrote
+            // Format 5 to 8 lists still load, with the Delay as they wrote
             // it.
             let old = body.replace(PLAIN_DELAY_JSON, r#"{"time_seconds":0.375,"feedback":0.4}"#);
-            for format in [5, 6, 7] {
+            for format in [5, 6, 7, 8] {
                 let json = format!(r#"{{"format":{format},"command":{old}}}"#);
                 assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             }
@@ -1501,7 +1550,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 7, even in a format 6 command.
@@ -1512,7 +1561,7 @@ mod tests {
     }
 
     #[test]
-    fn the_format_8_delay_settings_serialise_like_this() {
+    fn the_format_9_delay_settings_serialise_like_this() {
         let effect = testing::effect_id(0);
         let cases = [
             (DelayParam::Sync(false), r#"{"name":"sync","value":false}"#),
@@ -1542,13 +1591,13 @@ mod tests {
             let command = Command::SetDelayParam { effect, param };
             let body =
                 format!(r#"{{"type":"set_delay_param","effect":"{effect}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":8,"command":{body}}}"#);
+            let json = format!(r#"{{"format":9,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
-            // New in format 8, even in a format 7 command.
-            let json = format!(r#"{{"format":7,"command":{body}}}"#);
+            // New in format 9, even in a format 8 command.
+            let json = format!(r#"{{"format":8,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
-            assert!(error.to_string().contains("arrived in format 8"), "{error}");
+            assert!(error.to_string().contains("arrived in format 9"), "{error}");
         }
         // Feedback past 100% is a format 5 setting with a wider range.
         let json = format!(
@@ -1665,7 +1714,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 9, 99] {
+        for format in [0, 10, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

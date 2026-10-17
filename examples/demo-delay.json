@@ -2,21 +2,21 @@
   "project": "e73a482c-51af-5579-8648-0f3ab03caf88",
   "commands": [
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_master_volume",
         "volume_db": 0.0
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_tempo",
         "bpm": 120.0
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "set_loop",
         "start_bar": 0,
@@ -24,7 +24,7 @@
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "add_tracks",
         "tracks": [
@@ -126,7 +126,7 @@
       }
     },
     {
-      "format": 8,
+      "format": 9,
       "command": {
         "type": "add_effects",
         "effects": [

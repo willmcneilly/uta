@@ -43,12 +43,20 @@ body {
   flex: 1 1 520px;
 }
 
-/* The track headers, with the timeline beside them. */
+/* The track headers, with the timeline beside them, and the master's row
+   below both. */
 .arrangement {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.arrangement-tracks {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .editor {
@@ -104,6 +112,11 @@ body {
   color: var(--ink);
 }
 
+/* The master's Notes tab: it has nothing to show. */
+.tabs [role="tab"][data-empty] {
+  color: var(--ink-3);
+}
+
 /* The rule sits over the bar's own line, so the chosen tab reads as joined
    to the panel below. */
 .tabs [role="tab"][aria-selected="true"]::after {
@@ -132,10 +145,6 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.tab-panel > .synth {
-  padding: var(--space-5) var(--space-6);
 }
 
 /* An empty panel says what to do next, quietly, in its middle, as the

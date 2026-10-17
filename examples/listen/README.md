@@ -211,7 +211,7 @@ What to listen for:
 
 ## Synth
 
-The synth's oscillators, sub, noise and mixer (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+The synth's oscillators, sub, noise, mixer and filter (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
 
 | Render | What it plays |
 |---|---|
@@ -224,6 +224,11 @@ The synth's oscillators, sub, noise and mixer (RFC-008), in `synth/`. Each list 
 | `07-noise` | The chord held for a bar as a soft pad (attack 0.2 s, cutoff 3 kHz), with Noise at 0, 0.05, 0.15, 0.3 and 0.6, then the noise alone. |
 | `08-retrigger` | A pluck in sixteenths on one note, with oscillator 2 detuned and the sub: Osc retrigger on, off, on, off. |
 | `09-mix` | Oscillator 1 alone, then with oscillator 2 detuned, the sub and some noise brought in one at a time, then alone again. |
+| `10-filter-modes` | The phrase at cutoff 800 Hz, resonance 0.3: low-pass, band-pass and high-pass; then band-pass at 2 kHz with resonance 0.7, and high-pass at 200 Hz. |
+| `11-plucks` | A bassline in sixteenths, cutoff 150 Hz, the filter envelope decaying to nothing in 0.2 s: Env amount 0, 3, 5 and 7 octaves; then at 5, a filter decay of 0.06 s and 0.6 s, and a filter sustain of 0.4. |
+| `12-swells` | A held chord: cutoff 3 kHz with no envelope; the same with Env amount -4 over 1.2 s; then cutoff 300 Hz with Env amount +4, a 1 s filter attack and a sustain of 0.5. |
+| `13-key` | A minor in eighths across four octaves, cutoff 400 Hz: Key 0, 0.5 and 1. |
+| `14-resonant-pluck` | The sixteenths at cutoff 180 Hz, resonance 0.85, Env amount 4.5 over 0.15 s; then the same on a pulse with the sub and Key 0.5. |
 
 What to listen for:
 
@@ -236,6 +241,11 @@ What to listen for:
 - **Noise:** 0.05 is a breath of air on the pad, 0.15 to 0.3 a clear hiss, 0.6 more noise than tone. The hiss should be smooth and even, not crackly, and should fade in and out with each note.
 - **Retrigger:** on, every pluck starts the same, tight and identical, like a machine; off, each pluck is a little different, livelier, while staying in time and in tune.
 - **Mix:** bringing each source in changes the colour, not much the loudness: the mixer keeps it about as loud as one oscillator (within about 2 dB, as measured). Nothing should jump out.
+- **Filter modes:** low-pass warm and rounded; band-pass thin and nasal, like a telephone; high-pass light and airy, with the bass line almost gone. The resonant band-pass should sing a little at 2 kHz, and the 200 Hz high-pass take only the weight away.
+- **Plucks:** Env 0 is a dull thud. From 3 each note starts with a bright "pew" that closes down fast, getting brighter and more snappy at 5 and 7, which should sound like a classic synth pluck. The short decay is a tight click of brightness, the long one a slow "wah" on each note, and sustain 0.4 keeps each note brighter after the pluck.
+- **Swells:** with Env -4 each chord starts dark and opens up to the plain sound over a second; with +4 and the slow attack it brightens slowly into focus, then settles. Neither should step or zip as it moves.
+- **Key:** at 0 the low notes are full and the high ones dull and muffled; at 1 every octave sounds as bright as the others; 0.5 is in between.
+- **Resonant pluck:** a squelchy, rubbery bass, each note with a ringing "yow" as the filter closes. No clicks or crackle at the start of the notes, even with the resonance this high.
 
 ## Delay
 

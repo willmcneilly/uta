@@ -18,6 +18,15 @@ pub enum Waveform {
     Pulse,
 }
 
+/// Which part of the sound the filter lets through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FilterMode {
+    #[default]
+    LowPass,
+    BandPass,
+    HighPass,
+}
+
 /// How the synth sounds. It travels in the [`crate::Snapshot`], and changes
 /// glide rather than jump (see [`crate::SYNTH_SMOOTHING_SECONDS`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,12 +50,27 @@ pub struct SynthSettings {
     pub osc2_level: f32,
     pub sub_level: f32,
     pub noise_level: f32,
-    /// The low-pass filter's cutoff in Hz, [`Self::CUTOFF_HZ`]. It glides on
-    /// a log scale.
+    /// Which output of the filter the voice plays. A new mode crossfades
+    /// from the old one.
+    pub filter_mode: FilterMode,
+    /// The filter's cutoff in Hz, [`Self::CUTOFF_HZ`]. It glides on a log
+    /// scale.
     pub cutoff_hz: f32,
     /// The filter's resonance, [`Self::RESONANCE`]: 0 is a plain
-    /// (Butterworth) low-pass, 1 rings strongly at the cutoff.
+    /// (Butterworth) filter, 1 rings strongly at the cutoff.
     pub resonance: f32,
+    /// How far the filter envelope moves the cutoff at its peak, in octaves,
+    /// [`Self::FILTER_ENV_OCTAVES`]. It glides.
+    pub filter_env_octaves: f32,
+    /// How far the cutoff follows the note, [`Self::FILTER_KEY`]: at 1, an
+    /// octave for each octave from middle C. It glides.
+    pub filter_key: f32,
+    /// The filter envelope, in the same units and ranges as the amp
+    /// envelope's settings below.
+    pub filter_attack_seconds: f32,
+    pub filter_decay_seconds: f32,
+    pub filter_sustain: f32,
+    pub filter_release_seconds: f32,
     /// Seconds to rise from silence to full level, [`Self::TIME_SECONDS`].
     pub attack_seconds: f32,
     /// Seconds to fall from full level to the sustain level,
@@ -71,6 +95,8 @@ impl SynthSettings {
     pub const LEVEL: RangeInclusive<f32> = 0.0..=1.0;
     pub const CUTOFF_HZ: RangeInclusive<f32> = 20.0..=20_000.0;
     pub const RESONANCE: RangeInclusive<f32> = 0.0..=1.0;
+    pub const FILTER_ENV_OCTAVES: RangeInclusive<f32> = -10.0..=10.0;
+    pub const FILTER_KEY: RangeInclusive<f32> = 0.0..=1.0;
     pub const TIME_SECONDS: RangeInclusive<f32> = 0.001..=10.0;
     pub const SUSTAIN: RangeInclusive<f32> = 0.0..=1.0;
 
@@ -104,7 +130,30 @@ impl SynthSettings {
             sub_level: clamp(self.sub_level, Self::LEVEL, default.sub_level),
             noise_level: clamp(self.noise_level, Self::LEVEL, default.noise_level),
             cutoff_hz: clamp(self.cutoff_hz, Self::CUTOFF_HZ, default.cutoff_hz),
+            filter_mode: self.filter_mode,
             resonance: clamp(self.resonance, Self::RESONANCE, default.resonance),
+            filter_env_octaves: clamp(
+                self.filter_env_octaves,
+                Self::FILTER_ENV_OCTAVES,
+                default.filter_env_octaves,
+            ),
+            filter_key: clamp(self.filter_key, Self::FILTER_KEY, default.filter_key),
+            filter_attack_seconds: clamp(
+                self.filter_attack_seconds,
+                Self::TIME_SECONDS,
+                default.filter_attack_seconds,
+            ),
+            filter_decay_seconds: clamp(
+                self.filter_decay_seconds,
+                Self::TIME_SECONDS,
+                default.filter_decay_seconds,
+            ),
+            filter_sustain: clamp(self.filter_sustain, Self::SUSTAIN, default.filter_sustain),
+            filter_release_seconds: clamp(
+                self.filter_release_seconds,
+                Self::TIME_SECONDS,
+                default.filter_release_seconds,
+            ),
             attack_seconds: clamp(
                 self.attack_seconds,
                 Self::TIME_SECONDS,
@@ -128,7 +177,8 @@ impl SynthSettings {
 
 impl Default for SynthSettings {
     /// Today's sound: oscillator 1 a saw at full level, the rest of the
-    /// mixer at zero, and the oscillators restarting on each note.
+    /// mixer at zero, a low-pass filter that nothing moves, and the
+    /// oscillators restarting on each note.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -141,8 +191,15 @@ impl Default for SynthSettings {
             osc2_level: 0.0,
             sub_level: 0.0,
             noise_level: 0.0,
+            filter_mode: FilterMode::LowPass,
             cutoff_hz: 20_000.0,
             resonance: 0.0,
+            filter_env_octaves: 0.0,
+            filter_key: 0.0,
+            filter_attack_seconds: 0.001,
+            filter_decay_seconds: 0.3,
+            filter_sustain: 0.0,
+            filter_release_seconds: 0.2,
             attack_seconds: 0.005,
             decay_seconds: 0.2,
             sustain: 0.7,
@@ -173,8 +230,22 @@ mod tests {
             ],
             [1.0, 0.0, 0.0, 0.0]
         );
+        assert_eq!(settings.filter_mode, FilterMode::LowPass);
         assert_eq!(settings.cutoff_hz, 20_000.0);
         assert_eq!(settings.resonance, 0.0);
+        assert_eq!(
+            (settings.filter_env_octaves, settings.filter_key),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            [
+                settings.filter_attack_seconds,
+                settings.filter_decay_seconds,
+                settings.filter_sustain,
+                settings.filter_release_seconds
+            ],
+            [0.001, 0.3, 0.0, 0.2]
+        );
         assert_eq!(settings.attack_seconds, 0.005);
         assert_eq!(settings.decay_seconds, 0.2);
         assert_eq!(settings.sustain, 0.7);
@@ -196,8 +267,15 @@ mod tests {
             osc2_level: -1.0,
             sub_level: f32::INFINITY,
             noise_level: f32::NAN,
+            filter_mode: FilterMode::BandPass,
             cutoff_hz: 1.0e9,
             resonance: -3.0,
+            filter_env_octaves: -40.0,
+            filter_key: f32::NAN,
+            filter_attack_seconds: 0.0,
+            filter_decay_seconds: 1.0e6,
+            filter_sustain: 2.0,
+            filter_release_seconds: f32::NAN,
             attack_seconds: 0.0,
             decay_seconds: f32::INFINITY,
             sustain: f32::NAN,
@@ -219,8 +297,19 @@ mod tests {
             ],
             [1.0, 0.0, 1.0, 0.0]
         );
+        assert_eq!(wild.filter_mode, FilterMode::BandPass);
         assert_eq!(wild.cutoff_hz, 20_000.0);
         assert_eq!(wild.resonance, 0.0);
+        assert_eq!((wild.filter_env_octaves, wild.filter_key), (-10.0, 0.0));
+        assert_eq!(
+            [
+                wild.filter_attack_seconds,
+                wild.filter_decay_seconds,
+                wild.filter_sustain,
+                wild.filter_release_seconds
+            ],
+            [0.001, 10.0, 1.0, 0.2]
+        );
         assert_eq!(wild.attack_seconds, 0.001);
         assert_eq!(wild.decay_seconds, 10.0);
         assert_eq!(wild.sustain, 0.7);

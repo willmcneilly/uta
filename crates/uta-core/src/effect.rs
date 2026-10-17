@@ -188,7 +188,7 @@ impl EffectSettings {
 
 /// The Delay's settings: a tape echo. See RFC-007, "The Delay".
 ///
-/// Serialises with the same names as [`DelayParam`]. Command formats 5 to 7
+/// Serialises with the same names as [`DelayParam`]. Command formats 5 to 8
 /// had only `time_seconds` and `feedback`: the settings they didn't have
 /// read as the plain Delay they made, unsynced, with its cuts wide open and
 /// no Drive or Wobble ([`DelaySettings::plain`]).
@@ -255,7 +255,7 @@ impl DelaySettings {
     pub const MIN_AMOUNT: f32 = 0.0;
     pub const MAX_AMOUNT: f32 = 1.0;
 
-    /// The plain Delay of command formats 5 to 7: `time_seconds` apart,
+    /// The plain Delay of command formats 5 to 8: `time_seconds` apart,
     /// unsynced, in stereo, with its cuts wide open and no Drive or Wobble.
     pub fn plain(time_seconds: f32, feedback: f32) -> Self {
         Self {
@@ -438,7 +438,7 @@ impl DelayParam {
     pub(crate) fn since_format(&self) -> u32 {
         match self {
             Self::TimeSeconds(_) | Self::Feedback(_) => 5,
-            _ => 8,
+            _ => 9,
         }
     }
 
@@ -749,7 +749,7 @@ mod tests {
         );
     }
 
-    /// Command formats 5 to 7 carried only the time and Feedback: they read
+    /// Command formats 5 to 8 carried only the time and Feedback: they read
     /// as the plain Delay they made.
     #[test]
     fn a_delay_from_before_its_tape_loop_reads_as_the_plain_delay() {

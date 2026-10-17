@@ -41,8 +41,8 @@ pub use snapshot::{
     TrackSnapshot, TrackSound, db_to_gain,
 };
 pub use synth::{
-    NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES,
-    Waveform, pitch_to_hz, velocity_to_gain,
+    FILTER_CONTROL_SAMPLES, FilterMode, NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings,
+    TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES, Waveform, pitch_to_hz, velocity_to_gain,
 };
 
 /// The crate version.
