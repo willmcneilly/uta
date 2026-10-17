@@ -31,8 +31,8 @@ use serde::ser::{Serialize, SerializeMap, Serializer};
 use crate::{
     MOMENTARY_SECONDS, SHORT_TERM_SECONDS, alias_db, attack_seconds, correlation, crest_factor,
     decay_seconds, first_sound, hit_loudness_db, inharmonicity, integrated_loudness,
-    loudness_over_time, max_jump, peak, pitch_track, rms, share_above, smoothed_pitch,
-    spectral_centroid, spectral_flatness, steady_pitch, stereo_width, while_loud,
+    loudest_stretch, loudness_over_time, max_jump, peak, pitch_track, rms, share_above,
+    smoothed_pitch, spectral_centroid, spectral_flatness, steady_pitch, stereo_width, while_loud,
 };
 
 /// One measurement in the report.
@@ -177,16 +177,14 @@ pub const MEASUREMENTS: &[Measurement] = &[
         unit: "dB re harmonics",
         decimals: 1,
         about: "The loudest partial between the pitch's harmonics, in dB relative to the \
-                loudest harmonic, from the whole file's spectrum: aliasing folds back between \
-                the harmonics. A naive saw on a high note reads high; a clean tone reads its \
-                noise floor. Needs a steady pitch: the measured pitch, or else `--pitch`'s \
-                note. `null` without a pitch.",
+                loudest harmonic: aliasing folds back between the harmonics. A naive saw on a \
+                high note reads high; a clean tone reads its noise floor. From the spectrum of \
+                the loudest 500 ms (or the whole file, if it's shorter), so it reads the same \
+                however long the file is. Needs a steady pitch: the measured pitch, or else \
+                `--pitch`'s note. `null` without a pitch.",
         measure: |sound| {
-            finite(alias_db(
-                &sound.samples,
-                sound.sample_rate,
-                sound.harmonic_hz()?,
-            ))
+            let stretch = loudest_stretch(&sound.samples, sound.sample_rate, ALIAS_SECONDS);
+            finite(alias_db(stretch, sound.sample_rate, sound.harmonic_hz()?))
         },
     },
     Measurement {
@@ -316,6 +314,12 @@ pub const MEASUREMENTS: &[Measurement] = &[
         },
     },
 ];
+
+/// How long a stretch `alias_db` is measured over, in seconds. Its spectrum
+/// has bins 2 Hz apart, so the harmonics' allowance is 12 Hz whatever the
+/// file's length, which a pitch measured to a fraction of a cent is well
+/// within at the top harmonic.
+const ALIAS_SECONDS: f64 = 0.5;
 
 /// The sound a report measures: its mid, its channels, and what it's
 /// measured with.
@@ -846,12 +850,13 @@ mod tests {
         assert!((peak - 20.0 * 0.25f64.log10()).abs() < 1e-3, "{peak} dBFS");
         // BS.1770 adds the channels' energy: the tone at full level in one
         // channel is 6 dB louder than at half level in a mono file's one.
-        let louder =
-            b.get("loudness_momentary_lufs").unwrap() - a.get("loudness_momentary_lufs").unwrap();
-        assert!(
-            (louder - 20.0 * 2f64.log10()).abs() < 1e-3,
-            "{louder} LU louder"
-        );
+        for key in ["loudness_momentary_lufs", "loudness_integrated_lufs"] {
+            let louder = b.get(key).unwrap() - a.get(key).unwrap();
+            assert!(
+                (louder - 20.0 * 2f64.log10()).abs() < 1e-3,
+                "{key} {louder} LU louder"
+            );
+        }
         // A tone in one channel and silence in the other: half its energy is
         // side, and the silent channel has no correlation.
         assert_eq!(b.get("stereo_width_percent"), Some(50.0));
@@ -881,6 +886,32 @@ mod tests {
         let told = Report::measure("noise", &Sound::new(&noise(), 1, RATE).with_note(Note(48)));
         let inharmonicity = told.get("inharmonicity").unwrap();
         assert!(inharmonicity > 0.3, "noise told C3 reads {inharmonicity}");
+    }
+
+    #[test]
+    fn a_clean_tone_reads_no_aliasing_however_long_it_is() {
+        // A band-limited saw at 220 Hz, up to 20 kHz: from one spectrum of
+        // the whole file, its 90th harmonic's allowance would shrink to
+        // under 1 Hz at 10 s, less than the measured pitch's tiny error is
+        // there, and the clean saw would read as aliased.
+        let saw = |seconds: f64| -> Vec<f32> {
+            (0..(seconds * f64::from(RATE)) as usize)
+                .map(|i| {
+                    let t = i as f64 / f64::from(RATE);
+                    let sum: f64 = (1..=90)
+                        .map(|k| {
+                            (std::f64::consts::TAU * 220.0 * f64::from(k) * t).sin() / f64::from(k)
+                        })
+                        .sum();
+                    (0.3 * sum) as f32
+                })
+                .collect()
+        };
+        for seconds in [1.0, 10.0] {
+            let report = Report::measure("saw", &Sound::new(&saw(seconds), 1, RATE));
+            let alias = report.get("alias_db").unwrap();
+            assert!(alias < -80.0, "{seconds} s reads {alias} dB");
+        }
     }
 
     #[test]

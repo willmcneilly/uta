@@ -727,6 +727,27 @@ pub fn alias_db(samples: &[f32], sample_rate: u32, frequency_hz: f64) -> f64 {
     20.0 * (alias / harmonics).log10()
 }
 
+/// The `seconds` of `samples` with the most energy, or all of them if
+/// they're shorter. A held note's loudest stretch is its sustain.
+pub fn loudest_stretch(samples: &[f32], sample_rate: u32, seconds: f64) -> &[f32] {
+    let length = (seconds * f64::from(sample_rate)) as usize;
+    if samples.len() <= length {
+        return samples;
+    }
+    let energy: Vec<f64> = std::iter::once(0.0)
+        .chain(samples.iter().scan(0.0, |sum, &s| {
+            *sum += f64::from(s) * f64::from(s);
+            Some(*sum)
+        }))
+        .collect();
+    let start = (0..=samples.len() - length)
+        .max_by(|&a, &b| {
+            (energy[a + length] - energy[a]).total_cmp(&(energy[b + length] - energy[b]))
+        })
+        .expect("there's at least one stretch");
+    &samples[start..start + length]
+}
+
 /// How far a sound's partials sit from whole-number multiples of
 /// `frequency_hz`, from 0 (harmonic, as a saw or a square is) to 1: what
 /// makes a sound metallic or bell-like. Each partial is a peak in the
@@ -1176,6 +1197,21 @@ mod tests {
     }
 
     #[test]
+    fn the_absolute_gate_leaves_out_what_is_nearly_silent() {
+        // A tone at -75 LUFS is all under the -70 LUFS gate, so it has no
+        // integrated loudness; at -65 it's all over it. The relative gate
+        // alone would keep both, being 10 LU under the tone itself.
+        let tone = tones(RATE, &[(5.0, -75.0)]);
+        assert_eq!(integrated_loudness(&[&tone, &tone], RATE), None);
+        let tone = tones(RATE, &[(5.0, -65.0)]);
+        assert_lufs(
+            "-65 dBFS",
+            integrated_loudness(&[&tone, &tone], RATE).unwrap(),
+            -65.0,
+        );
+    }
+
+    #[test]
     fn loudness_reads_the_same_at_44_1_khz() {
         let rate = 44_100;
         let tone = tones(rate, &[(20.0, -23.0)]);
@@ -1245,19 +1281,23 @@ mod tests {
 
     #[test]
     fn a_squares_partials_are_harmonic_and_unrelated_ones_arent() {
-        // A band-limited square at 220 Hz: odd harmonics at 1/k.
-        let square: Vec<f32> = (0..RATE)
-            .map(|i| {
-                let t = f64::from(i) / f64::from(RATE);
-                let sum: f64 = (1..90)
-                    .step_by(2)
-                    .map(|k| (TAU * 220.0 * f64::from(k) * t).sin() / f64::from(k))
-                    .sum();
-                (0.3 * sum) as f32
-            })
-            .collect();
-        let square = inharmonicity(&square, RATE, 220.0).unwrap();
-        assert!(square < 0.01, "a square reads {square}");
+        // A band-limited square: odd harmonics at 1/k. At 220.5 Hz every
+        // partial is halfway between two bins (1 Hz apart), so it reads
+        // harmonic only if each peak is found between them.
+        for hz in [220.0, 220.5] {
+            let square: Vec<f32> = (0..RATE)
+                .map(|i| {
+                    let t = f64::from(i) / f64::from(RATE);
+                    let sum: f64 = (1..90)
+                        .step_by(2)
+                        .map(|k| (TAU * hz * f64::from(k) * t).sin() / f64::from(k))
+                        .sum();
+                    (0.3 * sum) as f32
+                })
+                .collect();
+            let square = inharmonicity(&square, RATE, hz).unwrap();
+            assert!(square < 0.001, "a square at {hz} Hz reads {square}");
+        }
         // A drum head's first modes over 200 Hz, all at one level: none is
         // a whole multiple of the first.
         let modes = [1.0, 1.594, 2.136, 2.296, 2.653, 2.918];
