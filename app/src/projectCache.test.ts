@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClipNotes, NoteView, Update } from "./backend";
-import { trackView } from "./pianoRoll/testing";
+import { outlineOf, trackView } from "./pianoRoll/testing";
 import { EMPTY_CACHE, type ProjectCache, missingNotes, receive } from "./projectCache";
 
 // The merge rule, as RFC-004 sets it out ("Where it lives in the UI").
@@ -25,6 +25,7 @@ function update(
   volumeDb = -12,
 ): Update {
   const track = trackView("track-1", "Synth 1");
+  const { descriptions, tracks } = outlineOf({ tracks: [track], masterEffects: [] });
   return {
     sequence,
     outline: {
@@ -50,9 +51,11 @@ function update(
       masterEffects: [],
       effectKinds: [{ kind: "delay", name: "Delay" }],
       maxEffects: 8,
+      descriptions,
       tracks: [
         {
           ...track,
+          ...tracks[0],
           clips: Object.entries(clips).map(([id, notesRevision], index) => ({
             id,
             start: index * 3840,

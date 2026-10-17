@@ -4,6 +4,15 @@
 import { act } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
 import type {
+  DelayParam,
+  Description,
+  DescriptionTable,
+  Descriptions,
+  DrumNumber,
+  EffectOutline,
+  EffectView,
+  SourceOutline,
+  SourceView,
   ClipNotes,
   ClipView,
   ChoiceSettingView,
@@ -62,10 +71,14 @@ export class Updates {
     this.sequence += 1;
     const notes: ClipNotes[] = [];
     const seen = new Set<string>();
+    const { descriptions, masterEffects, tracks } = outlineOf(project);
     const outline: Outline = {
       ...project,
-      tracks: project.tracks.map((track) => ({
+      descriptions,
+      masterEffects,
+      tracks: project.tracks.map((track, index) => ({
         ...track,
+        ...tracks[index],
         clips: track.clips.map((clip) => {
           seen.add(clip.id);
           const [revision, isNew] = this.check(clip);
@@ -93,6 +106,79 @@ export class Updates {
     this.sent.set(clip.id, { notes: clip.notes, revision: this.lastRevision });
     return [this.lastRevision, true];
   }
+}
+
+/** A setting as the outline carries it: its name and value. */
+interface Value {
+  name: string;
+  value: number | string | boolean;
+}
+
+/**
+ * `project`'s sources and chains as the outline carries them, each setting
+ * only its name and value, with every description gathered into one table,
+ * as Rust sends them. A test that describes one setting two ways in a
+ * project throws: Rust couldn't send that.
+ */
+export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">): {
+  descriptions: Descriptions;
+  masterEffects: EffectOutline[];
+  tracks: { source: SourceOutline; effects: EffectOutline[] }[];
+} {
+  const descriptions: Descriptions = {
+    synth: {},
+    drums: { "808": {}, "909": {} },
+    effects: { delay: {} },
+  };
+  const strip = <V extends Value>(setting: V & Description, table: DescriptionTable): V => {
+    const { name, value, ...description } = setting;
+    const held = table[name];
+    if (held && JSON.stringify(held) !== JSON.stringify(description)) {
+      throw new Error(`${name} is described two ways`);
+    }
+    table[name] = description as Description;
+    return { name, value } as V;
+  };
+  const effect = (view: EffectView): EffectOutline => {
+    const table = descriptions.effects[view.kind];
+    return {
+      ...view,
+      mix: strip(view.mix, table),
+      settings: view.settings.map((setting) => strip<DelayParam>(setting, table)),
+    };
+  };
+  const source = (view: SourceView): SourceOutline => {
+    if (view.kind === "synth") {
+      return {
+        kind: "synth",
+        settings: view.settings.map((setting) => strip<SynthParam>(setting, descriptions.synth)),
+      };
+    }
+    const model = view.kit.rows.find((row) => row.model)?.model?.value;
+    if (!model) throw new Error("a kit has its kick's model");
+    const kit = descriptions.drums[model];
+    return {
+      kind: "drums",
+      kit: {
+        rows: view.kit.rows.map((row) => {
+          const table = (kit[row.sound] ??= {});
+          return {
+            ...row,
+            settings: row.settings.map((setting) => strip<DrumNumber>(setting, table)),
+            model: row.model && strip(row.model, table),
+          };
+        }),
+      },
+    };
+  };
+  return {
+    descriptions,
+    masterEffects: project.masterEffects.map(effect),
+    tracks: project.tracks.map((track) => ({
+      source: source(track.source),
+      effects: track.effects.map(effect),
+    })),
+  };
 }
 
 /** A new track's mixer strip, as Rust sends it. */
