@@ -250,7 +250,7 @@ The Delay's tape loop (RFC-007), in `delay/`. Each list is one synth track per s
 | `05-drive` | Drive 0, 25, 50, 75 and 100% on an accented stab, at 60% Feedback, with no Wobble. |
 | `06-wobble` | Wobble 0, 25, 50 and 100% on a held chord, echoing on the quarter at 50% Feedback. |
 | `07-feedback-100` | One stab at 100% Feedback. It barely fades, so the render runs to its 30 s limit. |
-| `08-feedback-110` | One stab at 110%. The echoes swell, then the saturation holds them. Also to the 30 s limit. |
+| `08-feedback-110` | One stab at 110%. The echoes swell, then the loop's level control holds them. Also to the 30 s limit. |
 
 A Delay on a synth track and one on the master is `examples/demo-delay.json`, which is also the Delay's golden WAV:
 
@@ -267,5 +267,5 @@ What to listen for, against Ableton's Echo on the same sound:
 - **Drive:** 0 is clean. A little should round the echoes off and warm them; at full they're squashed and crunchy, and quieter than the stab, since the tape can't take them. Nothing should crackle or sound digital.
 - **Wobble:** at 0 the echoes are steady copies of the chord. A quarter should make them feel analogue without sounding out of tune; at full they sway and waver like a worn tape. The rates, how far they sway and how much is wow or flutter are first guesses, to be tuned in UTA-77.
 - **Feedback 100%:** the echoes go on and on, getting darker and thinner each time round (the cuts are still in the loop), but not quieter for a long while.
-- **Feedback 110%:** they swell for a few seconds, then hold at a steady roar well under full scale: a dub howl, never an ever louder blast. If it's painful, the top of the range should come down (RFC-007 risk).
+- **Feedback 110%:** they swell for a few seconds, then hold about as loud as the first echoes, still separate echoes of the stab, slowly getting darker and rounder: never an ever louder blast, and never a wall of thuds. If it's still painful, the top of the range should come down (RFC-007 risk).
 - **No clicks anywhere,** and no zipper noise as echoes go round.

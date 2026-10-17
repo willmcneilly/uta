@@ -610,8 +610,9 @@ fn with_the_low_cut_on_each_echo_is_thinner_than_the_last() {
 }
 
 /// At 110% feedback with full Drive, the echoes of a loud stab swell until
-/// the saturation holds them, then sit at a steady howl well below full
-/// scale: the track and the master at 0 dB, and only the Delay heard.
+/// the loop's level control and the saturation hold them, then sit at a
+/// steady howl well below full scale: the track and the master at 0 dB, and
+/// only the Delay heard.
 #[test]
 fn at_110_percent_with_full_drive_the_echoes_settle_below_full_scale() {
     let mut project = saw_stab(57);
@@ -637,6 +638,45 @@ fn at_110_percent_with_full_drive_the_echoes_settle_below_full_scale() {
     assert!(mean > 0.01, "still howling: {seconds:?}");
     for second in &seconds {
         assert!((second / mean - 1.0).abs() < 0.05, "{seconds:?}");
+    }
+}
+
+/// Past 100%, holding the peaks isn't enough: everything quieter than them
+/// would still grow each time round, filling the gaps between the echoes
+/// until the tape is a squared-off thud. The level control holds how loud
+/// the loop is on average, so at 110% with the Delay's defaults the echoes
+/// of a stab swell, then stay about as loud as they are at 10 s for the
+/// next half minute, and stay separate echoes with peaks well above their
+/// average, not a wall of sound. From Will's listening: without it, 110%
+/// grew louder until it sounded like a drum.
+#[test]
+fn at_110_percent_the_echoes_hold_their_loudness_and_stay_apart() {
+    let mut project = saw_stab(57);
+    project
+        .apply(&Command::SetMasterVolume { volume_db: 0.0 })
+        .unwrap();
+    let settings = DelaySettings {
+        feedback: 1.1,
+        ..DelaySettings::default()
+    };
+    let wet = play(
+        &with_settings(project, 0, settings, 1.0),
+        mono(48_000),
+        40.0,
+    );
+    let windows: Vec<(f64, f32)> = (2..10)
+        .map(|n| {
+            let window = &wet[n * 4 * 48_000..(n + 1) * 4 * 48_000];
+            (rms(window), peak(window))
+        })
+        .collect();
+    let settled = windows[0].0;
+    for &(loudness, top) in &windows {
+        assert!(
+            (loudness / settled - 1.0).abs() < 0.25,
+            "loudness every 4 s from 8 s: {windows:?}"
+        );
+        assert!(f64::from(top) > 4.0 * loudness, "squared off: {windows:?}");
     }
 }
 

@@ -1,10 +1,14 @@
 //! The Delay: a tape loop with a recording head, a playback head behind it,
 //! and some of what plays back fed round again. See RFC-007, "The Delay".
 //!
-//! Round the loop, each echo goes through the Low cut and the High cut,
-//! then the tape's saturation, then back onto the tape, so each repeat is
-//! thinner and darker than the last, and loud ones are squashed rather than
-//! growing without end. The playback head glides to a new time, bending the
+//! Round the loop, each echo goes through the Low cut and the High cut, a
+//! level control, then the tape's saturation, then back onto the tape, so
+//! each repeat is thinner and darker than the last, and loud ones are
+//! squashed rather than growing without end. Past 100% Feedback the level
+//! control is what holds the loop: the saturation alone holds its peaks,
+//! but everything quieter would go on growing until the tape was a
+//! squared-off thud. This goes beyond RFC-007, which had the saturation
+//! hold it, after Will heard 110% grow until it sounded like a drum. The playback head glides to a new time, bending the
 //! echoes on their way in pitch as tape does (repitch), and Wobble sways it
 //! with wow and flutter. Ping-pong records both sides onto the left tape and
 //! crosses each echo to the other side as it comes round.
@@ -57,7 +61,7 @@ const CUT_REST: f64 = 1e-30;
 /// Drive the echoes of an ordinary sound are clean.
 const KNEE: f32 = 0.5;
 /// Above the knee, the saturation curves smoothly towards this level and
-/// never passes it: what holds Feedback past 100% at a steady howl.
+/// never passes it, so no echo is ever louder than this.
 const CEILING: f32 = 1.0;
 /// Full Drive hits the saturation this much harder, in dB. The echoes come
 /// out as much quieter again, so Drive changes how squashed they are, not
@@ -66,6 +70,17 @@ const MAX_DRIVE_DB: f32 = 18.0;
 /// Wow: two slow sways of the playback head, in Hz, and their shares of
 /// it. Two rates that never line up make a drift rather than a wobble.
 const WOW: [(f64, f64); 2] = [(0.8, 0.75), (0.31, 0.25)];
+/// How long the loop's level control takes to hear how loud what goes round
+/// is: the time constant of its average, long enough to follow the echoes'
+/// loudness rather than each wave.
+const LOOP_LEVEL_SECONDS: f64 = 0.3;
+/// The loudest, on average, the level control lets what goes round get,
+/// as a share of the saturation's knee (after Drive): an RMS that keeps
+/// most of a sound's peaks under the knee. Below 100% Feedback the echoes
+/// of an ordinary sound never get there; past it they swell to it and hold,
+/// rather than filling the tape until the saturation squares everything
+/// off.
+const LOOP_HOLD: f32 = 0.3;
 /// How far wow sways the playback head at full Wobble, either way.
 const WOW_SECONDS: f64 = 0.0025;
 /// Flutter: a faster, smaller waver.
@@ -286,6 +301,11 @@ pub(crate) struct Delay {
     high_gain: f64,
     /// Each side's Low cut and High cut.
     cuts: [[Svf; 2]; 2],
+    /// How loud what goes round has been lately, both sides together: an
+    /// average of its square, which the level control holds down.
+    loudness: f32,
+    /// How much of the way the average goes each sample.
+    loudness_step: f32,
     /// Where wow's two sways and flutter are in their cycles, from 0 to 1,
     /// and how far each moves a sample.
     phases: [f64; 3],
@@ -326,6 +346,8 @@ impl Delay {
             low_gain: 0.0,
             high_gain: 0.0,
             cuts: Default::default(),
+            loudness: 0.0,
+            loudness_step: 0.0,
             phases: [0.0; 3],
             phase_steps: [0.0; 3],
             restart: Ramp::new(0.0, 1),
@@ -398,6 +420,7 @@ impl Delay {
         self.filled = 0;
         self.quiet = u32::MAX;
         self.cuts = Default::default();
+        self.loudness = 0.0;
         self.jump_to_settings();
     }
 }
@@ -417,6 +440,7 @@ impl Effect for Delay {
         self.high_cut = Ramp::new(0.0, smoothing);
         self.restart = Ramp::new(0.0, self.glide(RESTART_GLIDE_SECONDS));
         self.phase_steps = [WOW[0].0, WOW[1].0, FLUTTER_HZ].map(|hz| hz / sample_rate);
+        self.loudness_step = (1.0 - (-1.0 / (LOOP_LEVEL_SECONDS * sample_rate)).exp()) as f32;
         self.jump_to_settings();
     }
 
@@ -492,8 +516,9 @@ impl Effect for Delay {
                 self.high_cut.next_value();
                 self.high_gain = prewarp(f64::from(self.high_cut.value()).exp2(), self.sample_rate);
             }
-            // Round the loop: thinner, darker, then onto the tape.
-            let round = [0, 1].map(|side| {
+            // Round the loop: thinner, darker, held to a level, then onto
+            // the tape.
+            let darkened = [0, 1].map(|side| {
                 let [low, high] = &mut self.cuts[side];
                 let thinned = low
                     .process(f64::from(feedback * echoes[side]), self.low_gain, CUT_Q)
@@ -504,8 +529,20 @@ impl Effect for Delay {
                         *cut = Svf::default();
                     }
                 }
-                saturate(darkened as f32, drive)
+                darkened as f32
             });
+            let squared = 0.5 * (darkened[0] * darkened[0] + darkened[1] * darkened[1]);
+            self.loudness += (squared - self.loudness) * self.loudness_step;
+            if self.loudness < f32::MIN_POSITIVE {
+                self.loudness = 0.0;
+            }
+            let hold = LOOP_HOLD * KNEE / drive;
+            let level = if self.loudness > hold * hold {
+                hold / self.loudness.sqrt()
+            } else {
+                1.0
+            };
+            let round = darkened.map(|sample| saturate(sample * level, drive));
             let input = [*left, *right];
             let stereo = [input[0] + round[0], input[1] + round[1]];
             let written = if ping_pong == 0.0 {
