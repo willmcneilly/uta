@@ -1,0 +1,299 @@
+{
+  "project": "bbc3332e-e979-5e20-9758-19c3dd43badf",
+  "commands": [
+    {
+      "format": 11,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "8fd93ed9-d05e-5399-a3fd-dba54bb04323",
+              "name": "Filter LFO, sine",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_shape": "sine"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "8418f237-c67a-577d-9021-5a9525e34da6",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "dde91898-436c-5993-ac5a-5375c5d4ea4f",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "70e5666a-8f72-5cc1-beaf-7ef541cdf821",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "a39f0be9-4e8c-5016-9e98-4e2deaf8ef36",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "60e8e324-f58b-5b49-b5be-8ee6cc5a3c4a",
+              "name": "Filter LFO, triangle",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_shape": "triangle"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "391ceaa3-cafe-5265-a2fc-2ed7de4c0cbf",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "dde5ef87-5da7-5103-a824-2536e10e7071",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "79851c84-42d8-5a9b-8b28-31178d629c43",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "709ec9b4-f93a-5c90-bc95-b69da2cf4744",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "4ee6ab10-e919-57da-93cd-68208ad640bd",
+              "name": "Filter LFO, saw",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_shape": "saw"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "756097c8-780e-507b-802d-e8e5312a9044",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "16daf1ff-5c03-59b4-98cd-abf5a643e49d",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "3f886399-58c4-5b58-9e4c-9285b516b957",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "f9051521-e9a3-528e-b7ad-3cb8a5a5e312",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "5b3306f1-3b45-5bad-8c63-504efb52dd0f",
+              "name": "Filter LFO, square",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_shape": "square"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "89500e96-9d15-5421-8201-4c1374dbaa64",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "bb291391-dd72-5b35-bd86-2d76d8204fc9",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "b4b4895a-e96f-53be-a939-767a7ba58a7f",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "62708fb3-8137-5067-be8e-fbcdb8ba9ce7",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "b2643d9f-38a5-570a-83ac-c2053df62c3d",
+              "name": "Filter LFO, sample-and-hold",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_shape": "sample_and_hold"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "f127b4c0-0373-5b1e-bc2c-18b2e5c12f68",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "33c14c1c-e02f-52b6-81a2-c76330d63586",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "7ba95785-f429-513f-be54-19c7d306edc0",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "833f2008-5376-5ca7-aade-ccadeb52e35b",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

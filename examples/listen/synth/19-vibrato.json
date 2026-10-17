@@ -1,0 +1,421 @@
+{
+  "project": "09df4e8d-4c60-5630-b0d6-7e637200b0b0",
+  "commands": [
+    {
+      "format": 11,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "c5455742-cf1b-50d6-9dda-5c6f29ab6c8b",
+              "name": "No vibrato",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "b7fad702-f03e-5471-b539-ae88f4dafe62",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "23922202-8632-5b3e-a89b-620098eee756",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "4273a775-fbbd-56b4-a97b-2586e12e8708",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "5ab0860e-961e-519c-9e28-7e851b9e34a6",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "1ec0fc89-3c37-58ec-8649-42ff82b63ad7",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "23c40815-eeee-5f83-9235-3e5cf958855c",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "e00f4a4d-95a0-507f-b7a5-98e9c622e020",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "da7a4fbf-4897-5213-9766-30b79fb6eca9",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "40cff629-ec18-5edb-b8da-82caab55c208",
+              "name": "Vibrato 0.15, 5 Hz",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "lfo_vibrato_semitones": 0.15
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "f49f4668-81bd-531f-a379-38bbe537d067",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "bc8f717c-3779-5ecf-a980-cbfa488ed9c9",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "1be54257-d082-525c-8fa1-b780f42baeab",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "bebc6a24-24c5-5501-90cb-010b59262b3e",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "4965be35-003f-56e3-83ac-5144504e08c0",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "e1eb89fc-bcee-5910-bc56-a3e5da5171bc",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "465653a4-fa82-574a-b403-dec4094558e8",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "a2aac513-d0fb-5fdc-b343-d955b7bdcb06",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "57056e00-b6b9-50b6-ad2a-a4544d2abceb",
+              "name": "Vibrato 0.3, 5.5 Hz",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "lfo_vibrato_semitones": 0.3,
+                  "lfo_rate_hz": 5.5
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "4a943f20-f5db-5ce4-a4b8-fbfdf64fc647",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "ba9f9ac0-81ca-542e-bed8-72542c654ca1",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "5bc221d4-ec7b-58b8-b72c-e0fcdebcf0f5",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "f63107d0-c758-522a-9671-7e8852429cad",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "3da21417-994f-59c5-b2de-9ceff0d1cc27",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "8be1b7d8-3c1f-51bf-8509-834329d732ce",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "fb29a326-a998-505a-a617-aa1530be29eb",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "9e7c0894-633b-5d07-bb25-e94c751e3cb1",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "3f3004fa-589b-5db0-b967-08455c9ba08c",
+              "name": "Vibrato 1, 6 Hz",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "lfo_vibrato_semitones": 1.0,
+                  "lfo_rate_hz": 6.0
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "bd993f32-617e-576a-9714-b042663c49b4",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "288a79e9-f25c-5982-8af2-3cafd992caaa",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "640df9bb-bbb4-558f-93a9-b3928bdc98f5",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "127d76ed-ff8f-5cab-8824-e9e35379cb69",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "c0c4127b-de9c-5655-a133-c7e710fe76cc",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "d2feacb7-fcbc-54f1-a780-0f818c8db6b9",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "718fa358-ed73-5ba8-9ac2-1d57c65a399c",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "e008a481-9903-5b07-a504-8dba6e00b96b",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "243c9161-d47d-5c2e-9c01-87f4673a4add",
+              "name": "Vibrato 2, 2 Hz",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "lfo_vibrato_semitones": 2.0,
+                  "lfo_rate_hz": 2.0
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "4509c5ae-ab6a-51e6-b089-e40480df05a3",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "4b97d1c6-0846-57c7-95e8-492cadba50a6",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "a465270a-234a-5727-8fd8-85843c50f037",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "3d7b3f24-ef2b-53bc-bfb3-c4c8637a277a",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 1920
+                    },
+                    {
+                      "id": "3549834a-e23a-5be1-9781-43d67db9e174",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 480
+                    },
+                    {
+                      "id": "a471ee64-000a-56be-b62d-86eae16b121f",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 2400,
+                      "length": 480
+                    },
+                    {
+                      "id": "2628ae7a-89a0-5cc1-9757-fef1c89687d9",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 480
+                    },
+                    {
+                      "id": "dacfa662-91bf-57a9-bd23-a3d4f2da2f4d",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 3360,
+                      "length": 480
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

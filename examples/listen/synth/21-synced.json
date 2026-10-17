@@ -1,0 +1,309 @@
+{
+  "project": "6db3ce78-3f24-5a67-a995-8d5da5159a8f",
+  "commands": [
+    {
+      "format": 11,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "f79d8454-fdd9-590b-8e51-11e5eeb18afd",
+              "name": "Synced sine, 1/4",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_sync": true,
+                  "lfo_shape": "sine",
+                  "lfo_division": "1/4"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0143fbce-c034-5c78-9b27-3359ff7df754",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "e5cd7e26-3a58-5ca0-8eed-cd00642cb270",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "7b42a52f-35a5-57e3-a6c1-aae68f3505a1",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "f18efa59-3f9d-5b1d-aec3-11b308ff5d57",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "fd4f869b-accf-51ab-9a70-40eb9a98e172",
+              "name": "Synced saw, 1/8",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_sync": true,
+                  "lfo_shape": "saw",
+                  "lfo_division": "1/8"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "e48ab33d-b39e-58b5-a151-d88c79d43395",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "11a2963b-8ef7-5b80-840b-a40f882b9017",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "995f4536-3e24-54d2-a105-d25cef46ce3f",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "1ab0efa7-6058-5f5f-b59f-a55f3eb51d42",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "a9da8ce5-4633-5372-8273-bcc46df9edb2",
+              "name": "Synced square, 1/8 dotted",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_sync": true,
+                  "lfo_shape": "square",
+                  "lfo_division": "1/8d"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "f71bb376-298c-5b36-9d06-dcf2b69c6a04",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "2fb61b37-17a0-57ef-89ad-74be24b2f0a1",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "8f7e8d5e-4fae-55a8-98da-6d32e75b9015",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "c8e3265d-7dd6-5f0f-b2b9-f81562d06239",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "b34b676a-f32d-57e4-a5e6-b177c6700d63",
+              "name": "Synced square, 1/4 triplet",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_sync": true,
+                  "lfo_shape": "square",
+                  "lfo_division": "1/4t"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "7d76fb92-d638-5870-851a-686402d490b8",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "fea31377-c320-5283-9317-a5b09f8b7869",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "981bb6cc-dcc3-5d32-be0b-1c244586d513",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "a7c4d62c-3fee-55ee-ab4f-fac769cb58fc",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "5be7d196-6c74-5716-9568-53cd4b7df60f",
+              "name": "Synced sample-and-hold, 1/16",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.4,
+                  "filter_lfo_octaves": 2.5,
+                  "lfo_rate_hz": 3.0,
+                  "sustain": 1.0,
+                  "lfo_sync": true,
+                  "lfo_shape": "sample_and_hold",
+                  "lfo_division": "1/16"
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "1895071a-e6a3-50ee-b726-751c239ec800",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "7abd4018-ca1d-5920-be1c-233837cbd998",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "8d46cca0-70f7-5ff1-b2bf-adf5704de2ce",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "2ac14275-5715-571f-af5f-dba26ddd91ad",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

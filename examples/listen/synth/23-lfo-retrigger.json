@@ -1,0 +1,274 @@
+{
+  "project": "4991a1f7-8c0f-564e-9f5d-cbfdfe3e0117",
+  "commands": [
+    {
+      "format": 11,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 11,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "d74a2fc5-cd27-581d-864b-2e1de8440917",
+              "name": "Vibrato, Retrigger off",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "sustain": 1.0,
+                  "lfo_vibrato_semitones": 0.5,
+                  "lfo_rate_hz": 3.0,
+                  "lfo_retrigger": false
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "c06add4c-0f6e-5cd7-89e0-edaee8a16ce2",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "af488356-207a-5f34-8fb9-11f6dbf403fa",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "ca74f389-b45f-548d-9a4e-cf3a47d7922d",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 3360
+                    },
+                    {
+                      "id": "437da576-5823-5473-a50c-dfe5346cdeaa",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 2880
+                    },
+                    {
+                      "id": "33d1473b-8fbc-5705-96b6-b7a6e91be495",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1440,
+                      "length": 2400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "75d42716-c657-5105-abaf-fa5d446425e7",
+              "name": "Vibrato, Retrigger on",
+              "source": {
+                "synth": {
+                  "osc1_wave": "triangle",
+                  "sustain": 1.0,
+                  "lfo_vibrato_semitones": 0.5,
+                  "lfo_rate_hz": 3.0,
+                  "lfo_retrigger": true
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "a50f20f5-fd24-51f9-8e92-2bbecf0bd075",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "bca2e8a7-48a9-5d26-a4c7-81f5b7a17bd3",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "3afd30c3-3cb8-519f-9f1e-f400982dcb08",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 3360
+                    },
+                    {
+                      "id": "a28721ce-054b-5b56-8d5c-27863ae69f89",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 2880
+                    },
+                    {
+                      "id": "9f89d8d2-d25c-5eb2-823d-2c5fbfbf49b3",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1440,
+                      "length": 2400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "04dc7d65-1095-5848-bff9-450e30e391ac",
+              "name": "Sample-and-hold, Retrigger off",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 800.0,
+                  "resonance": 0.5,
+                  "filter_lfo_octaves": 2.0,
+                  "lfo_shape": "sample_and_hold",
+                  "lfo_rate_hz": 6.0,
+                  "sustain": 1.0,
+                  "lfo_retrigger": false
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "1fd2dc2a-8e4a-5a67-a88b-cd4780df2269",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "d58eea74-8398-5df5-85f8-c5ab2c437c12",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "bb9bce2c-66a1-55ec-a5cc-4d025f879bb1",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 3360
+                    },
+                    {
+                      "id": "6afc43ca-42bc-5e18-9fc5-341e909c829d",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 2880
+                    },
+                    {
+                      "id": "2539f5cb-0d7c-5a04-a54d-50e490f94176",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1440,
+                      "length": 2400
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "1363923d-62d8-58f9-a01f-cb50c9b10127",
+              "name": "Sample-and-hold, Retrigger on",
+              "source": {
+                "synth": {
+                  "cutoff_hz": 800.0,
+                  "resonance": 0.5,
+                  "filter_lfo_octaves": 2.0,
+                  "lfo_shape": "sample_and_hold",
+                  "lfo_rate_hz": 6.0,
+                  "sustain": 1.0,
+                  "lfo_retrigger": true
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "bc580da0-1d73-5216-876c-3797439286aa",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "41728d33-0e7a-5458-a201-43eb8da3be86",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 3840
+                    },
+                    {
+                      "id": "4248d4ac-0717-572d-a7d7-336f474931b2",
+                      "pitch": 60,
+                      "velocity": 100,
+                      "start": 480,
+                      "length": 3360
+                    },
+                    {
+                      "id": "3d8b44f2-4f90-512e-8892-dec20ca105ae",
+                      "pitch": 64,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 2880
+                    },
+                    {
+                      "id": "84d00226-1e90-5628-b098-eabed1f3ad53",
+                      "pitch": 69,
+                      "velocity": 100,
+                      "start": 1440,
+                      "length": 2400
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
