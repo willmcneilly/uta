@@ -2,7 +2,8 @@
 //! noise, mixed into a filter with its own envelope, then the amp envelope.
 //! Oscillator 1's pulse has a width, and oscillator 2 can sync to the first.
 //! Each voice has an LFO, which moves its pitch, its pulse width and its
-//! cutoff.
+//! cutoff. In Mono, one voice plays the latest held note, gliding to each
+//! new one.
 //! See RFC-002, "The synth is ours, small and fixed-size", and RFC-008, "In
 //! the engine".
 //!
@@ -13,6 +14,7 @@
 
 mod envelope;
 mod filter;
+mod held;
 mod lfo;
 pub(crate) mod oscillator;
 mod settings;
@@ -20,7 +22,9 @@ mod settings;
 mod sync_ab;
 
 pub use lfo::LFO_SMOOTHING_SECONDS;
-pub use settings::{FilterMode, LfoShape, SynthSettings, Waveform};
+pub use settings::{FilterMode, LfoShape, SynthSettings, VoiceMode, Waveform};
+
+use held::HeldNotes;
 
 use envelope::{Envelope, Stage, Times};
 use filter::{Coefficients, Filter, Outputs, Tuning};
@@ -60,9 +64,22 @@ pub const VOICE_LEVEL: f32 = 0.25;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NoteKey(pub u128);
 
+/// The voice Mono plays its notes in.
+const MONO_VOICE: usize = 0;
+
+// In Mono the held notes stand for the busy voices (`Synth::busy_voices`),
+// so there must be no more of them than voices.
+const _: () = assert!(held::HELD_NOTES <= VOICES);
+
 /// A note's frequency in Hz, from its MIDI note number (A4, 69, is 440 Hz).
 pub fn pitch_to_hz(pitch: u8) -> f64 {
-    440.0 * 2f64.powf((f64::from(pitch) - 69.0) / 12.0)
+    semitones_to_hz(f64::from(pitch))
+}
+
+/// A pitch's frequency in Hz, in semitones on the MIDI note number's scale,
+/// between notes too: for a pitch gliding from one note to the next.
+fn semitones_to_hz(semitones: f64) -> f64 {
+    440.0 * 2f64.powf((semitones - 69.0) / 12.0)
 }
 
 /// A velocity's level, as a linear gain: `(velocity / 127)²`, which is
@@ -100,6 +117,9 @@ struct Voice {
     /// the note's pitch moves in a sample. Each oscillator moves this times
     /// its octave and pitch.
     increment: f64,
+    /// The pitch it's sounding, in semitones, which slides to a new note in
+    /// Mono with Glide on. While it moves, it sets `increment`.
+    glide: Ramp,
     osc1: Oscillator,
     osc2: Oscillator,
     /// Oscillator 2 under sync, following oscillator 1 four steps a
@@ -128,7 +148,12 @@ struct Voice {
     tuning_step: Tuning,
     /// The amp envelope.
     envelope: Envelope,
+    /// The note's velocity, as a gain.
     velocity_gain: f32,
+    /// In Mono, the velocity's gain moving to the next note's over
+    /// [`TAKE_OVER_SECONDS`], so the level doesn't jump. While it moves, it
+    /// sets `velocity_gain`.
+    velocity_glide: Ramp,
     /// When the note started, in the order notes started.
     started: u64,
     /// When the release started, in the same order.
@@ -145,6 +170,7 @@ impl Voice {
             pending: None,
             take_over_remaining: 0,
             increment: 0.0,
+            glide: Ramp::new(0.0, 1),
             osc1: Oscillator::default(),
             osc2: Oscillator::default(),
             osc2_synced: OversampledSync::default(),
@@ -158,6 +184,7 @@ impl Voice {
             tuning_step: Tuning::default(),
             envelope: Envelope::default(),
             velocity_gain: 0.0,
+            velocity_glide: Ramp::new(0.0, 1),
             started: 0,
             released: 0,
         }
@@ -180,10 +207,63 @@ impl Voice {
         self.envelope.stage() == Stage::Release && !self.is_taken_over()
     }
 
+    /// Moves its pitch on by a sample of its glide. Out of line, as only
+    /// the mono voice ever glides.
+    #[inline(never)]
+    fn glide_on(&mut self, sample_rate: f64) {
+        self.glide.next_value();
+        self.increment = semitones_to_hz(f64::from(self.glide.value())) / sample_rate;
+    }
+
+    /// Moves its velocity's gain on by a sample, out of line as
+    /// [`Self::glide_on`] is.
+    #[inline(never)]
+    fn velocity_glide_on(&mut self) {
+        self.velocity_glide.next_value();
+        self.velocity_gain = self.velocity_glide.value();
+    }
+
     /// Releases both envelopes.
     fn release(&mut self, times: &Times, filter_times: &Times) {
         self.envelope.release(times);
         self.filter_envelope.release(filter_times);
+    }
+
+    /// Takes on `note` without a gap, in Mono: the oscillators, filter and
+    /// LFO carry on (the LFO's Retrigger restarts it only on a note after
+    /// silence), the pitch glides to the note's over `glide` samples (or
+    /// moves at once if `glide` is `None`), and the velocity moves to its
+    /// own. Unless `legato`, both envelopes attack again from where they
+    /// are.
+    fn follow_on(
+        &mut self,
+        note: NoteOn,
+        glide: Option<u32>,
+        legato: bool,
+        sample_rate: f64,
+        times: &Times,
+        filter_times: &Times,
+    ) {
+        self.key = Some(note.key);
+        self.pitch = note.pitch;
+        self.sequenced = note.sequenced;
+        let pitch = f32::from(note.pitch);
+        match glide {
+            Some(samples) => {
+                self.glide = Ramp::new(self.glide.value(), samples);
+                self.glide.set_target(pitch);
+            }
+            None => {
+                self.glide.jump_to(pitch);
+                self.increment = pitch_to_hz(note.pitch) / sample_rate;
+            }
+        }
+        self.velocity_glide
+            .set_target(velocity_to_gain(note.velocity));
+        if !legato {
+            self.envelope.restart(times);
+            self.filter_envelope.restart(filter_times);
+        }
     }
 }
 
@@ -371,6 +451,13 @@ pub(crate) struct Synth {
     gain_for: [f32; 4],
 
     take_over_samples: u32,
+    /// In Mono, every note held, the latest of which the mono voice plays.
+    /// Empty in Poly.
+    held: HeldNotes,
+    /// Whether the mono voice started a note afresh since the last sample,
+    /// so nothing of it has been heard: a note that follows on the same
+    /// sample replaces it rather than gliding from it.
+    mono_started: bool,
     /// Counts note starts and releases, to find the oldest.
     clock: u64,
     /// Samples since Play, so a note's oscillators can start where they'd
@@ -420,6 +507,8 @@ impl Synth {
             gain: 1.0,
             gain_for: [0.0; 4],
             take_over_samples: 1,
+            held: HeldNotes::default(),
+            mono_started: false,
             clock: 0,
             running: 0,
         };
@@ -437,6 +526,7 @@ impl Synth {
         for (index, voice) in self.voices.iter_mut().enumerate() {
             *voice = Voice::new(index);
         }
+        self.held.clear();
         self.running = 0;
         self.filter_countdown = 0;
         self.lfo_phase = 0.0;
@@ -469,6 +559,7 @@ impl Synth {
     /// Real-time safe.
     pub(crate) fn load(&mut self, settings: SynthSettings) {
         self.settings = settings.clamped();
+        self.held.clear();
         self.jump_to_settings();
     }
 
@@ -511,11 +602,15 @@ impl Synth {
         self.voices.iter().any(|voice| !voice.is_free())
     }
 
-    /// Glides to new settings. Real-time safe.
+    /// Glides to new settings. A new Voice mode releases every note, and the
+    /// next starts afresh in the new mode. Real-time safe.
     pub(crate) fn set_settings(&mut self, settings: SynthSettings) {
         let settings = settings.clamped();
         if settings == self.settings {
             return;
+        }
+        if settings.voice_mode != self.settings.voice_mode {
+            self.release_all();
         }
         self.settings = settings;
         self.cutoff_octaves.set_target(settings.cutoff_hz.log2());
@@ -549,7 +644,21 @@ impl Synth {
     /// voice, then the oldest held one. A taken-over voice fades out over
     /// [`TAKE_OVER_SECONDS`] before the note starts. A note already sounding
     /// with the same key is released first.
+    ///
+    /// In Mono, the note is held as the latest and the mono voice plays it:
+    /// afresh if no other note is held, and otherwise following on from the
+    /// last (see [`Voice::follow_on`]).
     pub(crate) fn note_on(&mut self, note: NoteOn) {
+        if self.is_mono() {
+            let fresh = self.held.is_empty();
+            self.held.push(note);
+            if fresh {
+                self.mono_start(note);
+            } else {
+                self.mono_follow_on(note);
+            }
+            return;
+        }
         self.note_off(note.key);
         self.clock += 1;
         let index = self.choose_voice();
@@ -565,9 +674,29 @@ impl Synth {
         }
     }
 
+    /// Starts a note already under way: on Play, a jump, or going round the
+    /// loop, which chase notes latest start first. In Poly it's an ordinary
+    /// note on. In Mono, with another note held, it's held under the rest,
+    /// as it started before them, so it doesn't take the mono voice.
+    pub(crate) fn chase(&mut self, note: NoteOn) {
+        if self.is_mono() && !self.held.is_empty() {
+            self.held.push_oldest(note);
+        } else {
+            self.note_on(note);
+        }
+    }
+
     /// Releases the note with this key. A note still waiting for its voice
-    /// never starts.
+    /// never starts. In Mono, letting go of the latest note returns to the
+    /// one held before it.
     pub(crate) fn note_off(&mut self, key: NoteKey) {
+        if self.is_mono() {
+            let latest = self.held.latest();
+            if self.held.remove(key) && latest.is_some_and(|note| note.key == key) {
+                self.mono_return();
+            }
+            return;
+        }
         for voice in self.voices.iter_mut() {
             if voice.is_taken_over() {
                 if voice.pending.is_some_and(|pending| pending.key == key) {
@@ -587,6 +716,15 @@ impl Synth {
     /// given its key and pitch, and cancels any such note still waiting for
     /// a voice. Live notes are left alone. Bounded by the number of voices.
     pub(crate) fn release_sequenced_unless(&mut self, keep: impl Fn(NoteKey, u8) -> bool) {
+        if self.is_mono() {
+            let latest = self.held.latest().map(|note| note.key);
+            self.held
+                .retain(|note| !note.sequenced || keep(note.key, note.pitch));
+            if self.held.latest().map(|note| note.key) != latest {
+                self.mono_return();
+            }
+            return;
+        }
         for voice in self.voices.iter_mut() {
             if voice.is_taken_over() {
                 if voice
@@ -609,6 +747,9 @@ impl Synth {
     /// Whether the note with this key is held: started and not released, or
     /// waiting for a voice. Bounded by the number of voices.
     pub(crate) fn is_holding(&self, key: NoteKey) -> bool {
+        if self.is_mono() {
+            return self.held.contains(key);
+        }
         self.voices.iter().any(|voice| {
             if voice.is_taken_over() {
                 voice.pending.is_some_and(|pending| pending.key == key)
@@ -622,7 +763,13 @@ impl Synth {
     /// note: those holding one, and those being taken over, whether or not
     /// a note still waits there. The rest are free or releasing, which
     /// [`Self::note_on`] takes first. At most [`VOICES`].
+    ///
+    /// In Mono, the notes held: past [`held::HELD_NOTES`], as many as
+    /// there are voices, a new note makes it forget the oldest.
     pub(crate) fn busy_voices(&self) -> usize {
+        if self.is_mono() {
+            return self.held.len();
+        }
         self.voices
             .iter()
             .filter(|voice| voice.is_taken_over() || voice.is_held())
@@ -642,6 +789,7 @@ impl Synth {
 
     /// Releases every note, and cancels any waiting for a voice.
     pub(crate) fn release_all(&mut self) {
+        self.held.clear();
         for voice in self.voices.iter_mut() {
             if voice.is_taken_over() {
                 voice.pending = None;
@@ -657,6 +805,7 @@ impl Synth {
     /// taken over, and cancels any note waiting for a voice. For a slot handed
     /// to another track while its last track's notes still sound.
     pub(crate) fn fade_out(&mut self) {
+        self.held.clear();
         let fade = self.take_over_samples;
         for voice in self.voices.iter_mut() {
             voice.pending = None;
@@ -688,6 +837,7 @@ impl Synth {
     /// either way.
     #[inline]
     pub(crate) fn next_sample(&mut self) -> f32 {
+        self.mono_started = false;
         self.advance_settings();
         let osc1_wave = self.osc1_wave.next();
         let osc1_width = f64::from(self.osc1_width.next_value());
@@ -748,6 +898,15 @@ impl Synth {
         let mix_gain = self.gain;
         let [osc1_level, osc2_level, sub_level, noise_level] = levels;
         self.running += 1;
+        // Only the mono voice glides, and checking it here rather than in
+        // the loop keeps the loop as fast as it was before Mono.
+        let mono = &mut self.voices[MONO_VOICE];
+        if mono.glide.is_moving() {
+            mono.glide_on(sample_rate);
+        }
+        if mono.velocity_glide.is_moving() {
+            mono.velocity_glide_on();
+        }
 
         let mut sum = 0.0f32;
         for index in 0..VOICES {
@@ -841,7 +1000,7 @@ impl Synth {
                         env_octaves,
                         filter_level,
                         key,
-                        voice.pitch,
+                        voice.glide.value(),
                         filter_lfo * lfo,
                     );
                     let target = Tuning::new(octaves.exp2(), resonance, sample_rate);
@@ -905,6 +1064,7 @@ impl Synth {
         voice.pending = None;
         voice.take_over_remaining = 0;
         voice.increment = pitch_to_hz(note.pitch) / self.sample_rate;
+        voice.glide = Ramp::new(f32::from(note.pitch), 1);
         if self.settings.osc_retrigger {
             voice.osc1.start_at(0.0);
             voice.osc2.start_at(0.0);
@@ -939,7 +1099,7 @@ impl Synth {
             self.filter_env_octaves.value(),
             0.0,
             self.filter_key.value(),
-            note.pitch,
+            f32::from(note.pitch),
             self.filter_lfo_octaves.value() * voice.lfo.value(),
         );
         voice.tuning = Tuning::new(
@@ -950,7 +1110,77 @@ impl Synth {
         voice.tuning_step = Tuning::default();
         voice.envelope.start(&self.times);
         voice.velocity_gain = velocity_to_gain(note.velocity);
+        voice.velocity_glide = Ramp::new(voice.velocity_gain, self.take_over_samples);
         voice.started = self.clock;
+        self.mono_started = true;
+    }
+
+    fn is_mono(&self) -> bool {
+        self.settings.voice_mode == VoiceMode::Mono
+    }
+
+    /// Starts `note` afresh in the mono voice, as a note after silence: at
+    /// once if the voice is free, and otherwise once it has faded out, as a
+    /// voice taken over does. It doesn't glide.
+    fn mono_start(&mut self, note: NoteOn) {
+        self.clock += 1;
+        let voice = &mut self.voices[MONO_VOICE];
+        if voice.is_free() {
+            self.start_voice(MONO_VOICE, note);
+        } else {
+            if !voice.is_taken_over() {
+                voice.take_over_remaining = self.take_over_samples;
+            }
+            voice.pending = Some(note);
+            voice.started = self.clock;
+        }
+    }
+
+    /// Moves the mono voice on to `note` while another note is held: see
+    /// [`Voice::follow_on`]. A note still waiting for the voice, or started
+    /// on this same sample, is replaced instead, as nothing of it has been
+    /// heard.
+    fn mono_follow_on(&mut self, note: NoteOn) {
+        let voice = &mut self.voices[MONO_VOICE];
+        if voice.is_taken_over() {
+            voice.pending = Some(note);
+        } else if self.mono_started {
+            self.clock += 1;
+            self.start_voice(MONO_VOICE, note);
+        } else if !voice.is_held() {
+            self.mono_start(note);
+        } else {
+            let glide = (self.settings.glide_seconds > *SynthSettings::GLIDE_SECONDS.start())
+                .then(|| samples(f64::from(self.settings.glide_seconds), self.sample_rate));
+            voice.follow_on(
+                note,
+                glide,
+                self.settings.legato,
+                self.sample_rate,
+                &self.times,
+                &self.filter_times,
+            );
+            self.clock += 1;
+            voice.started = self.clock;
+        }
+    }
+
+    /// After the latest held note is let go: the mono voice returns to the
+    /// one held before it, or releases if none is.
+    fn mono_return(&mut self) {
+        match self.held.latest() {
+            Some(note) => self.mono_follow_on(note),
+            None => {
+                let voice = &mut self.voices[MONO_VOICE];
+                if voice.is_taken_over() {
+                    voice.pending = None;
+                } else if voice.is_held() {
+                    self.clock += 1;
+                    voice.released = self.clock;
+                    voice.release(&self.times, &self.filter_times);
+                }
+            }
+        }
     }
 
     /// Moves the gliding settings on by one sample.
@@ -1053,17 +1283,17 @@ fn synced_increment(settings: &SynthSettings, sample_rate: f64) -> f64 {
 
 /// A voice's cutoff, in octaves (log2 of Hz): the shared cutoff in
 /// `base_octaves`, opened by the filter envelope at `level` (0 to 1) times
-/// its amount, moved by `key` of the way an octave for each octave the
-/// note is from middle C, and by the LFO's `lfo_octaves`. Kept to the
-/// lowest cutoff a knob can reach; the filter keeps it under half the
-/// sample rate itself.
+/// its amount, moved by `key` of the way an octave for each octave `pitch`
+/// (in semitones, between notes while it glides) is from middle C, and by
+/// the LFO's `lfo_octaves`. Kept to the lowest cutoff a knob can reach; the
+/// filter keeps it under half the sample rate itself.
 #[inline]
 fn filter_octaves(
     base_octaves: f32,
     env_octaves: f32,
     level: f64,
     key: f32,
-    pitch: u8,
+    pitch: f32,
     lfo_octaves: f32,
 ) -> f64 {
     let from_centre = (f64::from(pitch) - f64::from(FILTER_KEY_CENTRE)) / 12.0;
@@ -1412,6 +1642,151 @@ mod tests {
         run(&mut synth, fade);
         assert!(!synth.is_sounding());
         assert_eq!(synth.next_sample(), 0.0);
+    }
+
+    fn mono_synth(glide_seconds: f32) -> Synth {
+        Synth::new(
+            SynthSettings {
+                voice_mode: VoiceMode::Mono,
+                glide_seconds,
+                ..SynthSettings::default()
+            },
+            RATE,
+        )
+    }
+
+    /// In Mono, however many notes are held, one voice sounds, and it plays
+    /// the latest. Past 16, the oldest are forgotten, and the held notes
+    /// count as the busy voices.
+    #[test]
+    fn in_mono_one_voice_plays_the_latest_held_note() {
+        let mut synth = mono_synth(0.05);
+        for key in 0..20 {
+            synth.note_on(sequenced(key, 40 + key as u8));
+            run(&mut synth, 100);
+            let sounding: Vec<_> = synth.sounding_keys().into_iter().flatten().collect();
+            assert_eq!(sounding, [NoteKey(key)]);
+        }
+        assert_eq!(synth.busy_voices(), 16);
+        assert!(!synth.is_holding(NoteKey(3)), "forgotten");
+        assert!(synth.is_holding(NoteKey(4)));
+        synth.note_off(NoteKey(19));
+        assert_eq!(synth.voices[MONO_VOICE].key, Some(NoteKey(18)));
+        assert_eq!(synth.voices[MONO_VOICE].pitch, 58);
+    }
+
+    /// The glide moves the pitch every sample, and lands exactly on the new
+    /// note's after the Glide's time in samples, then stays there.
+    #[test]
+    fn the_glide_lands_on_the_new_pitch_after_its_samples() {
+        let mut synth = mono_synth(0.01);
+        synth.note_on(note(1));
+        run(&mut synth, 100);
+        synth.note_on(NoteOn {
+            pitch: 72,
+            ..note(2)
+        });
+        let glide = samples(0.01, RATE);
+        let target = pitch_to_hz(72) / RATE;
+        let mut last = synth.voices[MONO_VOICE].increment;
+        for n in 1..=glide {
+            synth.next_sample();
+            let increment = synth.voices[MONO_VOICE].increment;
+            assert!(increment > last, "sample {n}: didn't rise");
+            assert_eq!(increment == target, n == glide, "sample {n}");
+            last = increment;
+        }
+        run(&mut synth, 10);
+        assert_eq!(synth.voices[MONO_VOICE].increment, target);
+    }
+
+    /// With Key on, the cutoff follows the pitch as it glides, not the note
+    /// it's gliding to: a quarter of the way through an octave's glide up,
+    /// the filter is still well under where it ends.
+    #[test]
+    fn key_tracking_follows_the_glide() {
+        let mut synth = Synth::new(
+            SynthSettings {
+                voice_mode: VoiceMode::Mono,
+                glide_seconds: 0.1,
+                cutoff_hz: 200.0,
+                filter_key: 1.0,
+                ..SynthSettings::default()
+            },
+            RATE,
+        );
+        synth.note_on(NoteOn {
+            pitch: 48,
+            ..note(1)
+        });
+        run(&mut synth, 1_000);
+        let start = synth.voices[MONO_VOICE].tuning;
+        synth.note_on(NoteOn {
+            pitch: 60,
+            ..note(2)
+        });
+        let glide = samples(0.1, RATE) as usize;
+        run(&mut synth, glide / 4);
+        let quarter = synth.voices[MONO_VOICE].tuning;
+        run(&mut synth, glide);
+        let end = synth.voices[MONO_VOICE].tuning;
+        assert!(
+            end.cutoff_share() > 1.9 * start.cutoff_share(),
+            "an octave up"
+        );
+        // A quarter of an octave up is 2^0.25, about 1.19 times.
+        let share = quarter.cutoff_share() / start.cutoff_share();
+        assert!(
+            (1.1..1.3).contains(&share),
+            "{share} of the way at a quarter"
+        );
+    }
+
+    /// A Mono note that follows on plays at its own velocity, which the
+    /// voice moves to over the take-over time rather than jumping to.
+    #[test]
+    fn a_note_that_follows_on_moves_to_its_own_velocity() {
+        let mut synth = mono_synth(0.01);
+        synth.note_on(NoteOn {
+            velocity: 127,
+            ..note(1)
+        });
+        run(&mut synth, 1_000);
+        synth.note_on(NoteOn {
+            velocity: 30,
+            ..note(2)
+        });
+        let fade = synth.take_over_samples as usize;
+        run(&mut synth, fade / 2);
+        let half = synth.voices[MONO_VOICE].velocity_gain;
+        let (from, to) = (velocity_to_gain(127), velocity_to_gain(30));
+        assert!((half - (from + to) / 2.0).abs() < 0.01, "{half} half way");
+        run(&mut synth, fade);
+        assert_eq!(synth.voices[MONO_VOICE].velocity_gain, to);
+    }
+
+    /// Switching the Voice mode releases every note, in either direction.
+    #[test]
+    fn a_new_voice_mode_releases_every_note() {
+        let mut synth = Synth::new(SynthSettings::default(), RATE);
+        for key in 0..3 {
+            synth.note_on(note(key));
+        }
+        run(&mut synth, 100);
+        let mono = SynthSettings {
+            voice_mode: VoiceMode::Mono,
+            ..SynthSettings::default()
+        };
+        synth.set_settings(mono);
+        assert!(synth.voices.iter().all(|voice| !voice.is_held()));
+        synth.note_on(note(5));
+        synth.note_on(note(6));
+        run(&mut synth, 400);
+        synth.set_settings(SynthSettings::default());
+        assert!(synth.voices.iter().all(|voice| !voice.is_held()));
+        assert!(!synth.is_holding(NoteKey(6)));
+        run(&mut synth, RATE as usize);
+        assert!(!synth.is_sounding());
     }
 
     #[test]

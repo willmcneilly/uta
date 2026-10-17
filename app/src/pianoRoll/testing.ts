@@ -26,6 +26,7 @@ import type {
   TrackView,
   Unit,
   Update,
+  VoiceMode,
   Waveform,
 } from "../backend";
 import { DIVISIONS } from "../chain/delayTesting";
@@ -132,6 +133,9 @@ export interface SynthValues {
   lfoRetrigger: boolean;
   lfoVibratoSemitones: number;
   lfoWidth: number;
+  voiceMode: VoiceMode;
+  legato: boolean;
+  glideSeconds: number;
   oscRetrigger: boolean;
 }
 
@@ -170,6 +174,9 @@ export const SYNTH_FIELDS: Record<SynthParam["name"], keyof SynthValues> = {
   lfo_retrigger: "lfoRetrigger",
   lfo_vibrato_semitones: "lfoVibratoSemitones",
   lfo_width: "lfoWidth",
+  voice_mode: "voiceMode",
+  legato: "legato",
+  glide_seconds: "glideSeconds",
   osc_retrigger: "oscRetrigger",
 };
 
@@ -208,6 +215,9 @@ export const SYNTH_DEFAULTS: SynthValues = {
   lfoRetrigger: false,
   lfoVibratoSemitones: 0,
   lfoWidth: 0,
+  voiceMode: "poly",
+  legato: false,
+  glideSeconds: 0.001,
   oscRetrigger: true,
 };
 
@@ -236,6 +246,12 @@ const LFO_SHAPES: ChoiceSettingView<string, LfoShape>["options"] = [
   { value: "saw", label: "Saw" },
   { value: "square", label: "Square" },
   { value: "sample_and_hold", label: "Sample & hold" },
+];
+
+/** Every voice mode, as Rust offers them. */
+const VOICE_MODES: ChoiceSettingView<string, VoiceMode>["options"] = [
+  { value: "poly", label: "Poly" },
+  { value: "mono", label: "Mono" },
 ];
 
 /**
@@ -287,6 +303,7 @@ export function synthSettings(
         osc2_sync: "osc2Sync",
         lfo_sync: "lfoSync",
         lfo_retrigger: "lfoRetrigger",
+        legato: "legato",
         osc_retrigger: "oscRetrigger",
       } as const
     )[name];
@@ -373,6 +390,17 @@ export function synthSettings(
     // Vibrato is in semitones, but moves linearly, from zero.
     number("lfo_vibrato_semitones", "Vibrato", "semitones", [0, 2], undefined, "linear"),
     number("lfo_width", "LFO width", "fraction", [0, 0.45]),
+    {
+      kind: "choice",
+      name: "voice_mode",
+      label: "Voice mode",
+      sounds: SOUNDS,
+      value: values.voiceMode,
+      options: VOICE_MODES,
+      default: defaults.voiceMode,
+    },
+    toggle("legato", "Legato"),
+    number("glide_seconds", "Glide", "seconds", [0.001, 5]),
     toggle("osc_retrigger", "Osc retrigger"),
   ];
 }

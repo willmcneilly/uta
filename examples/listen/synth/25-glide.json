@@ -1,0 +1,479 @@
+{
+  "project": "02903913-d904-5794-99c3-e2e0627e1c32",
+  "commands": [
+    {
+      "format": 12,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 12,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 12,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 12,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "01a0fa2b-7aba-50df-92d6-60ed88ce2034",
+              "name": "Glide 0.001",
+              "source": {
+                "synth": {
+                  "osc2_level": 0.6,
+                  "osc2_pitch_semitones": 0.1,
+                  "sub_level": 0.5,
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.3,
+                  "filter_env_octaves": 3.0,
+                  "filter_decay_seconds": 0.25,
+                  "filter_sustain": 0.2,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.6,
+                  "release_seconds": 0.08,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.001
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "eee41e12-b825-5a04-a199-d5ed22a9e3bd",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "e2ef1844-a425-555b-ad5e-4be942afae5f",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 720
+                    },
+                    {
+                      "id": "6f303d16-54b5-5f8e-941f-7ee01911b0bc",
+                      "pitch": 52,
+                      "velocity": 90,
+                      "start": 480,
+                      "length": 720
+                    },
+                    {
+                      "id": "08dadcc2-d011-5bb4-95c1-0cf9ce47ad8b",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 720
+                    },
+                    {
+                      "id": "c5edcc57-994e-5036-b4ea-8083057bba36",
+                      "pitch": 55,
+                      "velocity": 90,
+                      "start": 1440,
+                      "length": 720
+                    },
+                    {
+                      "id": "f8e56026-3fc7-50f1-b52c-ac5ed1b45234",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 720
+                    },
+                    {
+                      "id": "451f1275-c4c6-55a8-abb0-7fc9f28ac974",
+                      "pitch": 48,
+                      "velocity": 90,
+                      "start": 2400,
+                      "length": 720
+                    },
+                    {
+                      "id": "fd4ca59c-b3ad-590c-9af0-9bafdc4c6d88",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 2,
+            "track": {
+              "id": "ab0bc293-3e34-518e-b420-ffb06c161acd",
+              "name": "Glide 0.03",
+              "source": {
+                "synth": {
+                  "osc2_level": 0.6,
+                  "osc2_pitch_semitones": 0.1,
+                  "sub_level": 0.5,
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.3,
+                  "filter_env_octaves": 3.0,
+                  "filter_decay_seconds": 0.25,
+                  "filter_sustain": 0.2,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.6,
+                  "release_seconds": 0.08,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.03
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0a5b55c7-d68d-5212-ac9c-8d26558722ca",
+                  "start": 3840,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "0b54f7e9-0826-5acb-a9f9-e90b080820c4",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 720
+                    },
+                    {
+                      "id": "23577467-3130-58d8-8636-3c4eef62ebc3",
+                      "pitch": 52,
+                      "velocity": 90,
+                      "start": 480,
+                      "length": 720
+                    },
+                    {
+                      "id": "8f58293d-228c-5603-96e0-363e9570d17e",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 720
+                    },
+                    {
+                      "id": "883f6d14-8f77-5b97-9bbd-1ae336813e21",
+                      "pitch": 55,
+                      "velocity": 90,
+                      "start": 1440,
+                      "length": 720
+                    },
+                    {
+                      "id": "39321017-f621-5e47-b66e-95608ecfa3e8",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 720
+                    },
+                    {
+                      "id": "89c7b286-fdc2-5bf4-bb42-f29bb1fbf715",
+                      "pitch": 48,
+                      "velocity": 90,
+                      "start": 2400,
+                      "length": 720
+                    },
+                    {
+                      "id": "2cd7a73a-8f3f-573a-bec7-45f62ea743ae",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 3,
+            "track": {
+              "id": "f7ba4ce7-84cc-5615-94ab-b17790d03b24",
+              "name": "Glide 0.08",
+              "source": {
+                "synth": {
+                  "osc2_level": 0.6,
+                  "osc2_pitch_semitones": 0.1,
+                  "sub_level": 0.5,
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.3,
+                  "filter_env_octaves": 3.0,
+                  "filter_decay_seconds": 0.25,
+                  "filter_sustain": 0.2,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.6,
+                  "release_seconds": 0.08,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.08
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0b977d2a-28c0-593c-bd51-fff2341a8d49",
+                  "start": 7680,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "34e89580-2272-550d-a76c-f78cd3bfccf6",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 720
+                    },
+                    {
+                      "id": "cc6601cd-d746-56cc-ba05-477ad2f3c86b",
+                      "pitch": 52,
+                      "velocity": 90,
+                      "start": 480,
+                      "length": 720
+                    },
+                    {
+                      "id": "e0034c46-197d-5369-b874-9f99f25fa7f4",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 720
+                    },
+                    {
+                      "id": "d44398de-3118-5594-a2de-66bc17b340ba",
+                      "pitch": 55,
+                      "velocity": 90,
+                      "start": 1440,
+                      "length": 720
+                    },
+                    {
+                      "id": "2cf12f7a-9eb5-5ed4-9016-4c35ecba2615",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 720
+                    },
+                    {
+                      "id": "ef4dffff-6509-5de4-8a38-1ab43d63d571",
+                      "pitch": 48,
+                      "velocity": 90,
+                      "start": 2400,
+                      "length": 720
+                    },
+                    {
+                      "id": "11e0affd-4e7b-510c-baaa-76a118731386",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 4,
+            "track": {
+              "id": "11d8ec2a-88c4-54de-807b-d237394e08f3",
+              "name": "Glide 0.2",
+              "source": {
+                "synth": {
+                  "osc2_level": 0.6,
+                  "osc2_pitch_semitones": 0.1,
+                  "sub_level": 0.5,
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.3,
+                  "filter_env_octaves": 3.0,
+                  "filter_decay_seconds": 0.25,
+                  "filter_sustain": 0.2,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.6,
+                  "release_seconds": 0.08,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.2
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "0408a3da-e890-5bae-9519-cf66372b6031",
+                  "start": 11520,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "3119653e-5aea-5d27-a39c-8392cff8e025",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 720
+                    },
+                    {
+                      "id": "f1439649-562e-554d-b9f7-fd3f25737ca0",
+                      "pitch": 52,
+                      "velocity": 90,
+                      "start": 480,
+                      "length": 720
+                    },
+                    {
+                      "id": "1b264e2d-083c-53c2-a3d5-cdf07acfa1a3",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 720
+                    },
+                    {
+                      "id": "e5bc5cbf-42e8-55fd-9185-b4b397b3368a",
+                      "pitch": 55,
+                      "velocity": 90,
+                      "start": 1440,
+                      "length": 720
+                    },
+                    {
+                      "id": "cb93a017-c154-5391-900d-678ad52127dd",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 720
+                    },
+                    {
+                      "id": "0e324cd8-1bb6-5cdb-af26-1b6af382a17b",
+                      "pitch": 48,
+                      "velocity": 90,
+                      "start": 2400,
+                      "length": 720
+                    },
+                    {
+                      "id": "b250fb57-0ae8-5168-8887-3645a7b5c05c",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "index": 5,
+            "track": {
+              "id": "fddd7848-da04-5d60-9d16-768f85065463",
+              "name": "Glide 0.5",
+              "source": {
+                "synth": {
+                  "osc2_level": 0.6,
+                  "osc2_pitch_semitones": 0.1,
+                  "sub_level": 0.5,
+                  "cutoff_hz": 700.0,
+                  "resonance": 0.3,
+                  "filter_env_octaves": 3.0,
+                  "filter_decay_seconds": 0.25,
+                  "filter_sustain": 0.2,
+                  "decay_seconds": 0.3,
+                  "sustain": 0.6,
+                  "release_seconds": 0.08,
+                  "voice_mode": "mono",
+                  "legato": true,
+                  "glide_seconds": 0.5
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "829c9222-a2d3-587c-9ec4-5afc7877dfae",
+                  "start": 15360,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "ff716284-525c-5bb6-a2eb-2a7be67befb3",
+                      "pitch": 45,
+                      "velocity": 100,
+                      "start": 0,
+                      "length": 720
+                    },
+                    {
+                      "id": "f04dcd27-8367-5b40-aaf3-bdd2b1bdb14a",
+                      "pitch": 52,
+                      "velocity": 90,
+                      "start": 480,
+                      "length": 720
+                    },
+                    {
+                      "id": "c57deead-0a81-552e-8dc6-b9a6f60aa424",
+                      "pitch": 57,
+                      "velocity": 100,
+                      "start": 960,
+                      "length": 720
+                    },
+                    {
+                      "id": "fac786d4-8727-56fc-880c-8fcc08a1a761",
+                      "pitch": 55,
+                      "velocity": 90,
+                      "start": 1440,
+                      "length": 720
+                    },
+                    {
+                      "id": "77c05bde-d2dc-5841-af07-3992bff91a7b",
+                      "pitch": 52,
+                      "velocity": 100,
+                      "start": 1920,
+                      "length": 720
+                    },
+                    {
+                      "id": "fd3d9bb4-d46c-50c1-a243-904e1b643f49",
+                      "pitch": 48,
+                      "velocity": 90,
+                      "start": 2400,
+                      "length": 720
+                    },
+                    {
+                      "id": "5b0f3128-9edc-5891-be1f-6fa383e8a87f",
+                      "pitch": 50,
+                      "velocity": 100,
+                      "start": 2880,
+                      "length": 960
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

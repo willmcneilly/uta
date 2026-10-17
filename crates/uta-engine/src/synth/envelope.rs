@@ -103,6 +103,22 @@ impl Envelope {
         };
     }
 
+    /// Attacks again from the level it's at rather than from silence, so the
+    /// level doesn't jump: for a note in Mono that follows the one before
+    /// without a gap. It reaches full level in the attack's time, wherever
+    /// it starts from.
+    pub(crate) fn restart(&mut self, times: &Times) {
+        let level = self.level;
+        *self = Self {
+            stage: Stage::Attack,
+            progress: level,
+            rate: (1.0 - level) / f64::from(times.attack_samples),
+            remaining: times.attack_samples,
+            release_from: 0.0,
+            level,
+        };
+    }
+
     /// Starts the release from the current level. Does nothing if it's
     /// already releasing or idle.
     pub(crate) fn release(&mut self, times: &Times) {
@@ -222,6 +238,22 @@ mod tests {
             last = level;
         }
         assert_eq!(envelope.stage(), Stage::Sustain);
+    }
+
+    #[test]
+    fn a_restart_attacks_again_from_the_current_level() {
+        let times = Times::new(0.01, 0.02, 0.04, RATE);
+        let mut envelope = Envelope::default();
+        envelope.start(&times);
+        // Into the sustain, at 0.5.
+        let held = levels(&mut envelope, &times, 40);
+        envelope.restart(&times);
+        let attack = levels(&mut envelope, &times, 10);
+        assert_eq!(attack[0], held[39], "no jump");
+        assert!(attack.windows(2).all(|pair| pair[1] > pair[0]));
+        // Full level after the attack's 10 samples, then the decay.
+        assert!((envelope.next_level(0.5, &times) - 1.0).abs() < 1e-12);
+        assert_eq!(envelope.stage(), Stage::Decay);
     }
 
     #[test]

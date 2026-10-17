@@ -26,7 +26,7 @@ use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback
 use uta_engine::offline::Renderer;
 use uta_engine::{
     EngineConfig, FilterMode, LfoShape, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor,
-    STATUS_CAPACITY, Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, Waveform,
+    STATUS_CAPACITY, Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, VoiceMode, Waveform,
 };
 
 #[global_allocator]
@@ -100,7 +100,8 @@ fn many_swaps_in_one_block_do_not_allocate() {
 
 /// Notes starting and stopping, more notes than voices so voices are taken
 /// over (including while already being taken over), and snapshot swaps that
-/// change every synth setting while they sound (the filter's own settings
+/// change every synth setting while they sound (Poly to Mono and back, and
+/// Mono's Legato and Glide) (the filter's own settings
 /// on and off, so the voices move between sharing filter settings and
 /// working out their own), with Play pressed now and
 /// then to restart the free-running parts: none of it allocates or frees on
@@ -180,6 +181,16 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                     lfo_retrigger: round % 3 == 0,
                     lfo_vibrato_semitones: [0.0, 2.0, 0.5, 0.0][usize::from(round) % 4],
                     lfo_width: [0.45, 0.0, 0.2, 0.0][usize::from(round) % 4],
+                    // Poly, then Mono for two rounds, gliding with and
+                    // without Legato, then Poly again: more held notes than
+                    // Mono remembers, and letting go returning to them.
+                    voice_mode: if round % 4 == 1 || round % 4 == 2 {
+                        VoiceMode::Mono
+                    } else {
+                        VoiceMode::Poly
+                    },
+                    legato: round % 4 == 2,
+                    glide_seconds: 0.001 + 0.02 * step,
                     osc_retrigger: round % 2 == 0,
                 },
             )
@@ -206,7 +217,9 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
 
 /// The loop playing: notes starting and ending mid-block, the loop going
 /// back to its start mid-block, more notes at once than voices so voices are
-/// taken over, and edits arriving as whole new snapshots. None of it
+/// taken over, a jump that chases the notes under way, and edits arriving
+/// as whole new snapshots, which switch it to Mono, with Glide and Legato,
+/// and back. None of it
 /// allocates or frees on the audio thread.
 ///
 /// Each edit's snapshot is built afresh from the project, so it shares no
@@ -239,14 +252,32 @@ fn a_looping_render_with_take_overs_and_edits_does_not_allocate() {
     for pass in 0..passes {
         for block in 0..blocks_per_pass {
             process_block(renderer.processor(), &mut buffer);
+            if block == blocks_per_pass / 4 {
+                // A jump into the middle of the overlapping notes, which
+                // chases a dozen of them: in Mono, into the held notes,
+                // latest start first.
+                renderer
+                    .controller
+                    .locate(1_700 + 100 * pass as u64)
+                    .unwrap();
+            }
             if block == blocks_per_pass / 2 {
                 // An edit: the same notes, a new cutoff, in a new snapshot.
-                project
-                    .apply(&Command::SetSynthParam {
-                        track,
-                        param: SynthParam::CutoffHz(500.0 + 1000.0 * pass as f32),
-                    })
-                    .unwrap();
+                // From the second pass the track is in Mono, gliding, then
+                // with Legato, and in Poly again for the last: the next
+                // pass's jump chases the notes into Mono's held notes.
+                let voice = [
+                    SynthParam::GlideSeconds(0.03),
+                    SynthParam::VoiceMode(uta_core::VoiceMode::Mono),
+                    SynthParam::Legato(true),
+                    SynthParam::Legato(false),
+                    SynthParam::VoiceMode(uta_core::VoiceMode::Poly),
+                ][pass];
+                for param in [SynthParam::CutoffHz(500.0 + 1000.0 * pass as f32), voice] {
+                    project
+                        .apply(&Command::SetSynthParam { track, param })
+                        .unwrap();
+                }
                 renderer
                     .controller
                     .set_snapshot(Snapshot::from(&project))

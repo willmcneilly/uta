@@ -36,6 +36,12 @@ impl Tuning {
         }
     }
 
+    /// The cutoff over the sample rate: for tests.
+    #[cfg(test)]
+    pub(crate) fn cutoff_share(self) -> f64 {
+        self.g.atan() / PI
+    }
+
     /// The step that takes this tuning to `target` in `samples` steps.
     pub(crate) fn step_to(self, target: Tuning, samples: u32) -> Tuning {
         let samples = f64::from(samples.max(1));

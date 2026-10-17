@@ -902,7 +902,7 @@ mod tests {
     use crate::testing::{self, note, note_id};
     use crate::{
         DrumParam, DrumSound, Effect, FilterMode, KickModel, KitSettings, MixerStrip, Note,
-        SynthParam, Waveform,
+        SynthParam, VoiceMode, Waveform,
     };
     use proptest::prelude::*;
 
@@ -1482,6 +1482,9 @@ mod tests {
             SynthParam::Osc2Level(0.5),
             SynthParam::SubLevel(0.3),
             SynthParam::NoiseLevel(0.1),
+            SynthParam::VoiceMode(VoiceMode::Mono),
+            SynthParam::Legato(true),
+            SynthParam::GlideSeconds(0.3),
             SynthParam::OscRetrigger(false),
             SynthParam::FilterMode(FilterMode::BandPass),
             SynthParam::FilterEnvOctaves(-3.5),

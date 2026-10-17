@@ -211,7 +211,7 @@ What to listen for:
 
 ## Synth
 
-The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, and the LFO (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
+The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, the LFO, and Mono with Legato and Glide (RFC-008), in `synth/`. Each list is one synth track per setting, each playing the same phrase in its own bar at 120 BPM: a held A minor chord for two beats, then four eighths of bass line. Settings a list doesn't name are at their defaults, so oscillator 2, the sub and the noise are off unless it turns them up.
 
 | Render | What it plays |
 |---|---|
@@ -238,6 +238,10 @@ The synth's oscillators, sub, noise, mixer and filter, pulse width and sync, and
 | `21-synced` | The same chord with the LFO synced at 120 BPM: a sine at 1/4, a saw at 1/8, a square at 1/8 dotted and at 1/4 triplet, and sample-and-hold at 1/16. |
 | `22-pwm` | A chord held on a pulse (attack 0.15 s): still, then the LFO's Width at 0.3 at 0.5 Hz and 1.5 Hz, 0.45 at 4 Hz, and a string pad: 0.3 at 0.5 Hz with oscillator 2, a second pulse 10 cents sharp. |
 | `23-lfo-retrigger` | Four notes entering an eighth apart and held to the bar's end: vibrato at 3 Hz with Retrigger off and on, then a sample-and-hold on the filter at 6 Hz, off and on. |
+| `24-mono` | A plucky bass (detuned saws, the sub, a filter envelope) playing a line whose notes each overlap the next by a 16th: in Poly, in Mono, then in Mono with Legato. Glide is off. |
+| `25-glide` | The same line in Mono with Legato, at Glide 1 ms (off), 30 ms, 80 ms, 0.2 s and 0.5 s. |
+| `26-return` | A lead (a pulse and a detuned saw) holding A3 through the bar while E4, A4, C5 and E5 are stabbed over it and let go: in Poly, in Mono, then in Mono with Legato and a 60 ms Glide. |
+| `27-mono-bassline` | Two bars of an acid-style line in 16ths (cutoff 250 Hz, resonance 0.65, a snappy filter envelope), where three notes run into the next: in Poly, then in Mono with Legato and a 70 ms Glide. |
 
 What to listen for:
 
@@ -264,6 +268,10 @@ What to listen for:
 - **Synced:** every movement lands on the beat: the sine swells once a beat, the saw twice, the dotted square weaves against the beat, the triplet square gallops in threes, and the sample-and-hold steps on every sixteenth. Clap along: the steps should fall exactly on the grid.
 - **PWM:** the still pulse is hollow and plain. With the Width moving it shimmers, a gentle chorus at 0.5 Hz and a faster, rolling movement at 1.5 Hz; 0.45 at 4 Hz is a strong, almost seasick warble. The string pad should sound like an old string machine: lush, wide and moving, with no beating that sounds out of tune.
 - **LFO retrigger:** with vibrato, off the four notes wobble together as one; on, each starts its wobble as it enters, so they wobble against each other. With the sample-and-hold, off the notes step at the same moments; on, each steps in its own time from when it entered.
+- **Mono:** in Poly each note's tail rings on under the next, so the overlaps smear into two-note chords. In Mono there's only ever one note: the line is clean and tight, and each note still plucks, as the envelopes start again from where they are. With Legato the line runs together into one phrase: only the first note plucks, and the rest change pitch under one long, closing filter. None of it should click as the notes change.
+- **Glide:** at 1 ms the pitch steps, as in `24-mono`. From 30 ms each note slides into the next, a slur at first; by 0.2 s you hear every slide as a swoop, and at 0.5 s the line barely arrives at a note before it leaves, a slow, drunken lead. Every slide takes the same time whatever the interval, and should land exactly in tune.
+- **Return:** in Poly the stabs sit on top of the held A as chords. In Mono each stab replaces the A, and letting go drops straight back to it, without a gap and without the A attacking again from silence. With Legato and Glide it slides up to each stab and back down, smoothly, like a trill played on one string.
+- **Mono bassline:** in Poly the long notes smear into the next. In Mono the three notes that run into the next slide up or down to it without re-plucking: the squelchy, rubbery slide of an acid bass. The notes with a gap before them pluck afresh and don't slide, so it should be clear by ear which notes slide and which don't.
 
 ## Delay
 

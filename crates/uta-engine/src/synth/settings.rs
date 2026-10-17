@@ -54,6 +54,16 @@ impl LfoShape {
     ];
 }
 
+/// How many notes the synth plays at once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum VoiceMode {
+    /// One voice for each note, up to [`crate::VOICES`].
+    #[default]
+    Poly,
+    /// One note at a time, in one voice: the latest held note.
+    Mono,
+}
+
 /// How the synth sounds. It travels in the [`crate::Snapshot`], and changes
 /// glide rather than jump (see [`crate::SYNTH_SMOOTHING_SECONDS`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -138,6 +148,14 @@ pub struct SynthSettings {
     /// How far the LFO moves oscillator 1's pulse width at its peak,
     /// [`Self::LFO_WIDTH`]. It glides.
     pub lfo_width: f32,
+    /// Poly or Mono. Switching releases every note.
+    pub voice_mode: VoiceMode,
+    /// In Mono, whether a note that overlaps the one before carries its
+    /// envelopes on instead of attacking again.
+    pub legato: bool,
+    /// In Mono, how long the pitch takes to slide to an overlapping note,
+    /// [`Self::GLIDE_SECONDS`]. At its shortest the pitch moves at once.
+    pub glide_seconds: f32,
     /// Whether the oscillators start at the beginning of their wave on each
     /// note. Off, each note picks them up where they would be had they been
     /// running since Play.
@@ -163,6 +181,7 @@ impl SynthSettings {
     pub const LFO_WIDTH: RangeInclusive<f32> = 0.0..=0.45;
     pub const TIME_SECONDS: RangeInclusive<f32> = 0.001..=10.0;
     pub const SUSTAIN: RangeInclusive<f32> = 0.0..=1.0;
+    pub const GLIDE_SECONDS: RangeInclusive<f32> = 0.001..=5.0;
 
     /// These settings with every value inside its range. A value that isn't
     /// a number takes its default. The synth plays what this returns, so a
@@ -259,6 +278,13 @@ impl SynthSettings {
                 default.lfo_vibrato_semitones,
             ),
             lfo_width: clamp(self.lfo_width, Self::LFO_WIDTH, default.lfo_width),
+            voice_mode: self.voice_mode,
+            legato: self.legato,
+            glide_seconds: clamp(
+                self.glide_seconds,
+                Self::GLIDE_SECONDS,
+                default.glide_seconds,
+            ),
             osc_retrigger: self.osc_retrigger,
         }
     }
@@ -268,7 +294,7 @@ impl Default for SynthSettings {
     /// Today's sound: oscillator 1 a saw at full level, the rest of the
     /// mixer at zero, oscillator 2 free of oscillator 1, a low-pass filter
     /// that nothing moves, the oscillators restarting on each note, and an
-    /// LFO that moves nothing.
+    /// LFO that moves nothing, in Poly.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -305,6 +331,9 @@ impl Default for SynthSettings {
             lfo_retrigger: false,
             lfo_vibrato_semitones: 0.0,
             lfo_width: 0.0,
+            voice_mode: VoiceMode::Poly,
+            legato: false,
+            glide_seconds: 0.001,
             osc_retrigger: true,
         }
     }
@@ -362,6 +391,9 @@ mod tests {
             (settings.lfo_vibrato_semitones, settings.lfo_width),
             (0.0, 0.0)
         );
+        assert_eq!(settings.voice_mode, VoiceMode::Poly);
+        assert!(!settings.legato);
+        assert_eq!(settings.glide_seconds, 0.001);
         assert!(settings.osc_retrigger);
         assert_eq!(settings.clamped(), settings);
     }
@@ -402,6 +434,9 @@ mod tests {
             lfo_retrigger: true,
             lfo_vibrato_semitones: f32::INFINITY,
             lfo_width: -1.0,
+            voice_mode: VoiceMode::Mono,
+            legato: true,
+            glide_seconds: 60.0,
             osc_retrigger: false,
         }
         .clamped();
@@ -444,6 +479,15 @@ mod tests {
         assert!(wild.lfo_sync && wild.lfo_retrigger);
         assert_eq!(wild.lfo_synced_seconds, 0.5);
         assert_eq!((wild.lfo_vibrato_semitones, wild.lfo_width), (2.0, 0.0));
+        assert_eq!(wild.voice_mode, VoiceMode::Mono);
+        assert!(wild.legato);
+        assert_eq!(wild.glide_seconds, 5.0);
         assert!(!wild.osc_retrigger);
+        let nan = SynthSettings {
+            glide_seconds: f32::NAN,
+            ..SynthSettings::default()
+        }
+        .clamped();
+        assert_eq!(nan.glide_seconds, 0.001);
     }
 }

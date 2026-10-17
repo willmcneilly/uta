@@ -1803,7 +1803,25 @@ mod tests {
             division["options"][8],
             serde_json::json!({"value": "1/8d", "label": "1/8 dotted"})
         );
-        let retrigger = &json["settings"][33];
+        let voice_mode = &json["settings"][33];
+        assert_eq!(voice_mode["name"], "voice_mode");
+        assert_eq!(voice_mode["value"], "poly");
+        assert_eq!(voice_mode["kind"], "choice");
+        assert_eq!(
+            voice_mode["options"][1],
+            serde_json::json!({"value": "mono", "label": "Mono"})
+        );
+        let legato = &json["settings"][34];
+        assert_eq!(legato["name"], "legato");
+        assert_eq!(legato["value"], false);
+        assert_eq!(legato["kind"], "toggle");
+        let glide = &json["settings"][35];
+        assert_eq!(glide["name"], "glide_seconds");
+        assert_eq!(glide["unit"], "seconds");
+        assert_eq!(glide["scale"], "log");
+        let limits: (f32, f32) = serde_json::from_value(glide["limits"].clone()).unwrap();
+        assert_eq!(limits, (0.001, 5.0));
+        let retrigger = &json["settings"][36];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
@@ -1869,6 +1887,9 @@ mod tests {
                 None,
                 Some("semitones"),
                 Some("fraction"),
+                None,
+                None,
+                Some("seconds"),
                 None,
             ]
         );
@@ -2240,6 +2261,18 @@ mod tests {
             (
                 serde_json::json!({"name": "osc_retrigger", "value": false}),
                 SynthParam::OscRetrigger(false),
+            ),
+            (
+                serde_json::json!({"name": "voice_mode", "value": "mono"}),
+                SynthParam::VoiceMode(uta_core::VoiceMode::Mono),
+            ),
+            (
+                serde_json::json!({"name": "legato", "value": true}),
+                SynthParam::Legato(true),
+            ),
+            (
+                serde_json::json!({"name": "glide_seconds", "value": 0.25}),
+                SynthParam::GlideSeconds(0.25),
             ),
             (
                 serde_json::json!({"name": "osc1_width", "value": 0.2}),

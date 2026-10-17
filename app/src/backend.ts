@@ -308,6 +308,8 @@ export type FilterMode = "low_pass" | "band_pass" | "high_pass";
 
 /** The shape of the synth's LFO. */
 export type LfoShape = "sine" | "triangle" | "saw" | "square" | "sample_and_hold";
+/** Whether the synth plays chords, or one note at a time. */
+export type VoiceMode = "poly" | "mono";
 
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
@@ -319,6 +321,7 @@ export type SynthSettingView =
   | ChoiceSettingView<"filter_mode", FilterMode>
   | ChoiceSettingView<"lfo_shape", LfoShape>
   | ChoiceSettingView<"lfo_division">
+  | ChoiceSettingView<"voice_mode", VoiceMode>
   | NumberSettingView<SynthNumber["name"]>
   | ToggleSettingView<SynthToggle>;
 
@@ -329,11 +332,12 @@ export type SynthParam =
   | { name: "lfo_shape"; value: LfoShape }
   /** A note length, as Rust's options for it name it: `"1/8d"`. */
   | { name: "lfo_division"; value: string }
+  | { name: "voice_mode"; value: VoiceMode }
   | SynthNumber
   | { name: SynthToggle; value: boolean };
 
 /** A synth setting that's on or off. */
-export type SynthToggle = "osc2_sync" | "lfo_sync" | "lfo_retrigger" | "osc_retrigger";
+export type SynthToggle = "osc2_sync" | "lfo_sync" | "lfo_retrigger" | "legato" | "osc_retrigger";
 
 /** A synth setting that's a number. */
 export interface SynthNumber {
@@ -362,7 +366,8 @@ export interface SynthNumber {
     | "release_seconds"
     | "lfo_rate_hz"
     | "lfo_vibrato_semitones"
-    | "lfo_width";
+    | "lfo_width"
+    | "glide_seconds";
   value: number;
 }
 

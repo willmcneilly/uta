@@ -8,7 +8,7 @@ use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
     DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip, NoteKey,
-    SynthSettings, TRACK_SLOTS, Waveform,
+    SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
 };
 
 /// Everything the audio thread needs to know about what to play.
@@ -811,6 +811,12 @@ fn synth_settings(settings: &uta_core::SynthSettings, bpm: f32) -> SynthSettings
         lfo_retrigger: settings.lfo_retrigger,
         lfo_vibrato_semitones: settings.lfo_vibrato_semitones,
         lfo_width: settings.lfo_width,
+        voice_mode: match settings.voice_mode {
+            uta_core::VoiceMode::Poly => VoiceMode::Poly,
+            uta_core::VoiceMode::Mono => VoiceMode::Mono,
+        },
+        legato: settings.legato,
+        glide_seconds: settings.glide_seconds,
         osc_retrigger: settings.osc_retrigger,
     }
 }
@@ -966,6 +972,9 @@ mod tests {
             SynthParam::SubLevel(0.4),
             SynthParam::NoiseLevel(0.2),
             SynthParam::OscRetrigger(false),
+            SynthParam::VoiceMode(uta_core::VoiceMode::Mono),
+            SynthParam::Legato(true),
+            SynthParam::GlideSeconds(0.25),
             SynthParam::FilterMode(uta_core::FilterMode::HighPass),
             SynthParam::FilterEnvOctaves(-2.5),
             SynthParam::FilterKey(0.75),
@@ -1023,6 +1032,9 @@ mod tests {
                 lfo_retrigger: true,
                 lfo_vibrato_semitones: 0.2,
                 lfo_width: 0.1,
+                voice_mode: VoiceMode::Mono,
+                legato: true,
+                glide_seconds: 0.25,
                 osc_retrigger: false,
                 ..SynthSettings::default()
             }

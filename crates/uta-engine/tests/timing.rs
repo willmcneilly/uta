@@ -18,7 +18,7 @@ use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
     Chain, Clip, ClipId, Command, DelayMode, DelaySettings, DrumParam, DrumSound, Effect, EffectId,
     EffectSettings, FilterMode, KIT, KickModel, Note, NoteId, PlacedClip, PlacedEffect,
-    PlacedTrack, Project, SynthParam, TrackId, Waveform,
+    PlacedTrack, Project, SynthParam, TrackId, VoiceMode, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -60,6 +60,11 @@ enum Load {
     /// [`Load::Tracks`] with every synth feature on ([`FULL_VOICE`]). See
     /// RFC-008, "Risks & unknowns" (CPU per voice goes up).
     FullTracks,
+    /// 32 tracks, each a full voice ([`FULL_VOICE`]) in Mono, playing a
+    /// line of overlapping 16ths: every 16th it follows on to the next
+    /// note, attacking again from where it is, and it's always gliding.
+    /// The most Mono costs. See RFC-008, "In the engine" (Mono mode).
+    FullMonoTracks,
     /// [`Load::Tracks`] with a Delay on every track and on the master, at
     /// its defaults but in ping-pong and with more Wobble, so every part of
     /// its tape loop is working, and never asleep. See RFC-007, "Risks &
@@ -94,6 +99,7 @@ impl Load {
             Self::Song => "Demo song",
             Self::Tracks => "32 tracks × 8 voices",
             Self::FullTracks => "32 tracks × 8 full voices",
+            Self::FullMonoTracks => "32 tracks × a full voice in Mono, gliding",
             Self::Delays => "32 tracks × 8 voices, a Delay on each and the master",
             Self::Check7 => "Check 7 (588k notes)",
             Self::Drums => "32 drum tracks × every sound",
@@ -181,10 +187,7 @@ const FULL_VOICE: [SynthParam; 20] = [
 /// 32 tracks, each holding the same 8-note saw chord through the whole
 /// loop at full sustain, centred, with these synth settings.
 fn many_tracks(params: &[SynthParam]) -> Project {
-    let mut project = synth_project();
-    let track = project.tracks()[0].id();
-    let clip = project.tracks()[0].clips()[0].id();
-    let loop_length = project.transport().loop_length();
+    let loop_length = synth_project().transport().loop_length();
     let notes = (0..8u8)
         .map(|i| Note {
             id: NoteId::random(),
@@ -194,6 +197,40 @@ fn many_tracks(params: &[SynthParam]) -> Project {
             length: loop_length,
         })
         .collect();
+    tracks_playing(params, notes)
+}
+
+/// The full voice in Mono, with a glide longer than a 16th.
+const FULL_MONO: [SynthParam; 3] = [
+    SynthParam::VoiceMode(VoiceMode::Mono),
+    SynthParam::GlideSeconds(0.2),
+    SynthParam::Legato(false),
+];
+
+/// 32 tracks, each playing a bassline of 16ths through the loop, each note
+/// two 16ths long, so each overlaps the next, with these synth settings.
+fn mono_line_tracks(params: &[SynthParam]) -> Project {
+    let loop_length = synth_project().transport().loop_length();
+    let sixteenth = TICKS_PER_QUARTER / 4;
+    let pitches = [36, 43, 48, 39, 46, 41, 51, 34];
+    let notes = (0..loop_length / sixteenth)
+        .map(|i| Note {
+            id: NoteId::random(),
+            pitch: pitches[i as usize % pitches.len()],
+            velocity: 70 + (i % 5) as u8 * 10,
+            start: i * sixteenth,
+            length: (2 * sixteenth).min(loop_length - i * sixteenth),
+        })
+        .collect();
+    tracks_playing(params, notes)
+}
+
+/// 32 tracks, each playing `notes` through the loop at full sustain,
+/// centred, with these synth settings.
+fn tracks_playing(params: &[SynthParam], notes: Vec<Note>) -> Project {
+    let mut project = synth_project();
+    let track = project.tracks()[0].id();
+    let clip = project.tracks()[0].clips()[0].id();
     for &param in [SynthParam::Sustain(1.0)].iter().chain(params) {
         project
             .apply(&Command::SetSynthParam { track, param })
@@ -358,6 +395,10 @@ fn snapshot(load: Load) -> Snapshot {
         Load::Song => Snapshot::from(&common::demo_song()),
         Load::Tracks => Snapshot::from(&many_tracks(&[])),
         Load::FullTracks => Snapshot::from(&many_tracks(&FULL_VOICE)),
+        Load::FullMonoTracks => {
+            let params: Vec<_> = FULL_VOICE.iter().chain(&FULL_MONO).copied().collect();
+            Snapshot::from(&mono_line_tracks(&params))
+        }
         Load::Delays => Snapshot::from(&with_delays(many_tracks(&[]))),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
         Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
@@ -410,6 +451,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                 | Load::Song
                 | Load::Tracks
                 | Load::FullTracks
+                | Load::FullMonoTracks
                 | Load::Delays
                 | Load::Check7 => renderer
                     .controller
@@ -613,6 +655,7 @@ fn report_block_timing() {
         Load::Song,
         Load::Tracks,
         Load::FullTracks,
+        Load::FullMonoTracks,
         Load::Delays,
         Load::Check7,
         Load::Check7FirstBlock,

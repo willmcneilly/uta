@@ -228,8 +228,9 @@ impl Slot {
         self.synth.is_sounding() || self.kit.is_sounding()
     }
 
-    /// Starts every note in `notes` already under way at `playhead`, with an
-    /// ordinary note on, up to the slot's budget. The rest are skipped and
+    /// Starts every note in `notes` already under way at `playhead`, as the
+    /// synth chases a note (an ordinary note on, but in Mono held under the
+    /// notes that started later), up to the slot's budget. The rest are skipped and
     /// counted in `dropped`. Each ends at its own end event. See RFC-003,
     /// "Playing a song" (note chasing).
     ///
@@ -244,7 +245,7 @@ impl Slot {
         // Bounded by the budget.
         for note in sounding.by_ref().take(self.budget) {
             self.budget -= 1;
-            self.synth.note_on(NoteOn {
+            self.synth.chase(NoteOn {
                 key: note.key,
                 pitch: note.pitch,
                 velocity: note.velocity,
@@ -353,7 +354,7 @@ impl Slot {
                 continue;
             }
             room -= 1;
-            self.synth.note_on(NoteOn {
+            self.synth.chase(NoteOn {
                 key: note.key,
                 pitch: note.pitch,
                 velocity: note.velocity,
