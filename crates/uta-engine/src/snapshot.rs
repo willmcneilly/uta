@@ -996,6 +996,43 @@ mod tests {
     }
 
     #[test]
+    fn the_snapshot_carries_each_mod_slot() {
+        let mut project = project();
+        let track = project.tracks()[0].id();
+        let synth = |project: &Project| match Snapshot::from(project).tracks()[0].sound {
+            TrackSound::Synth(synth) => synth,
+            TrackSound::Drums(_) => panic!("a synth track"),
+        };
+        let set = |project: &mut Project, param| {
+            project
+                .apply(&Command::SetSynthParam { track, param })
+                .unwrap()
+        };
+        set(&mut project, SynthParam::Mod2Amount(-0.5));
+        set(&mut project, SynthParam::Mod3Amount(0.25));
+        // Every destination and source reaches the engine as itself: the
+        // two lists are in the same order.
+        for (core, engine) in uta_core::ModDestination::ALL
+            .into_iter()
+            .zip(ModDestination::ALL)
+        {
+            set(&mut project, SynthParam::Mod2Destination(core));
+            assert_eq!(synth(&project).mods[1].destination, engine, "{core:?}");
+        }
+        for (core, engine) in uta_core::ModSource::ALL.into_iter().zip(ModSource::ALL) {
+            set(&mut project, SynthParam::Mod3Source(core));
+            assert_eq!(synth(&project).mods[2].source, engine, "{core:?}");
+        }
+        let mods = synth(&project).mods;
+        assert_eq!(
+            mods.map(|slot| slot.amount),
+            [0.0, -0.5, 0.25],
+            "each slot's amount is its own"
+        );
+        assert_eq!(mods[0], SynthSettings::default().mods[0]);
+    }
+
+    #[test]
     fn the_snapshot_follows_the_master_volume_and_synth() {
         let mut project = project();
         let track = project.tracks()[0].id();

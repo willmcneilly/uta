@@ -73,7 +73,8 @@ pub enum ModSource {
     Lfo,
     #[default]
     Velocity,
-    /// -1 five octaves under middle C, 1 five octaves over it.
+    /// -1 five octaves under middle C, 1 five octaves over it, and held
+    /// there beyond.
     Key,
 }
 

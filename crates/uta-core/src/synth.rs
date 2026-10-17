@@ -217,7 +217,7 @@ pub enum ModSource {
     /// How hard the note was played, from 0 (softest) to 1 (hardest).
     Velocity,
     /// How far the note is from middle C: -1 five octaves under it, 1 five
-    /// octaves over it.
+    /// octaves over it, and held there beyond.
     Key,
 }
 

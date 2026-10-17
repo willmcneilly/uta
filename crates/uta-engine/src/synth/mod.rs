@@ -1672,6 +1672,27 @@ fn samples(seconds: f64, sample_rate: f64) -> u32 {
 mod tests {
     use super::*;
 
+    /// A slot moves the LFO's rate within the knob's range, and not at all
+    /// when it's synced.
+    #[test]
+    fn the_lfo_rate_a_slot_moves_stays_in_its_range() {
+        let moved = |octaves: f32| {
+            let mut moved = [0.0; DESTINATIONS];
+            moved[ModDestination::LfoRate as usize] = octaves;
+            moved
+        };
+        let knob = |hz: f32| hz.log2();
+        assert_eq!(lfo_ratio_for(moved(1.0), false, knob(5.0)), 2.0);
+        assert_eq!(lfo_ratio_for(moved(-1.0), false, knob(5.0)), 0.5);
+        // From 10 Hz, four octaves up stops at 20 Hz, and from 0.1 Hz four
+        // down at 0.05 Hz.
+        assert!((lfo_ratio_for(moved(4.0), false, knob(10.0)) - 2.0).abs() < 1e-6);
+        assert!((lfo_ratio_for(moved(-4.0), false, knob(0.1)) - 0.5).abs() < 1e-6);
+        assert_eq!(lfo_ratio_for(moved(12.0), false, knob(20.0)), 1.0);
+        assert_eq!(lfo_ratio_for(moved(2.0), true, knob(5.0)), 1.0);
+        assert_eq!(lfo_ratio_for(moved(0.0), false, knob(5.0)), 1.0);
+    }
+
     const RATE: f64 = 48_000.0;
 
     fn note(key: u128) -> NoteOn {

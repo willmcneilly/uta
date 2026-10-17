@@ -702,6 +702,48 @@ fn turning_the_slots_while_notes_sound_stays_under_the_click_limit() {
     assert_no_click(&samples, click_limit(), "the mod slots turning");
 }
 
+/// The share of a held note's energy above 2 kHz, from 0.1 s, under the
+/// Blackman-Harris window, so the leakage of the note's own partials stays
+/// far below it.
+fn top_end(samples: &[f32]) -> f64 {
+    let bins = spectrum(&samples[seconds(0.1)..seconds(0.1) + 16384]);
+    let first = (2000.0 * 16384.0 / f64::from(RATE)).ceil() as usize;
+    let energy = |bins: &[f64]| bins.iter().map(|m| m * m).sum::<f64>();
+    energy(&bins[first..]) / energy(&bins)
+}
+
+/// The slots glide between control points rather than stepping at each:
+/// a 220 Hz sine under a deep 7 Hz tremolo, and under a 7 Hz vibrato of an
+/// octave, keeps next to nothing above 2 kHz. Steps every 16 samples would
+/// put a zipper's buzz there, around the control rate (3 kHz).
+#[test]
+fn the_slots_glide_between_control_points() {
+    let lfo = SynthSettings {
+        lfo_rate_hz: 7.0,
+        lfo_retrigger: true,
+        ..sine()
+    };
+    for destination in [ModDestination::Volume, ModDestination::Osc1Pitch] {
+        let amount = if destination == ModDestination::Volume {
+            0.9
+        } else {
+            0.5
+        };
+        let samples = held_note(
+            routed(lfo, ModSource::Lfo, destination, amount),
+            57,
+            127,
+            0.5,
+        );
+        let above = top_end(&samples);
+        // A plain sine has about 1e-12 there; steps would put about 1e-5.
+        assert!(
+            above < 1e-8,
+            "{destination:?}: {above} of the sound over 2 kHz"
+        );
+    }
+}
+
 /// A slot moves a note from its first sample: with velocity moving
 /// oscillator 1 up an octave, the note starts exactly as one an octave up
 /// on its knob does, rather than gliding there over the first control
