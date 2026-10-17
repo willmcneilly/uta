@@ -42,7 +42,7 @@ pub use snapshot::{
 };
 pub use synth::{
     FILTER_CONTROL_SAMPLES, FilterMode, NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings,
-    TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES, Waveform, pitch_to_hz, velocity_to_gain,
+    TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES, VoiceMode, Waveform, pitch_to_hz, velocity_to_gain,
 };
 
 /// The crate version.
