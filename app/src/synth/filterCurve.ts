@@ -15,12 +15,18 @@
 // filterCurve.test.ts checks this formula against them within 0.5 dB.
 // Research: https://app.notion.com/p/3f23af969b6f81f9a4d9f08a1bc97317
 //
-// The engine's filter is Andrew Simper's state-variable low-pass, built by
+// The engine's filter is Andrew Simper's state-variable filter, built by
 // trapezoidal integration. That's the bilinear transform of the analogue
-// two-pole low-pass 1 / (s² + k·s + 1) with its cutoff prewarped, so its
-// exact gain at a frequency is the analogue one at the warped frequency
+// two-pole filter with its cutoff prewarped, so its exact gain at a
+// frequency is the analogue one at the warped frequency
 // tan(π·f/rate) / tan(π·cutoff/rate). It depends on the sample rate near
-// the top of the range.
+// the top of the range. Its three outputs share the denominator
+// s² + k·s + 1: the low-pass is 1 over it, the band-pass (the engine's
+// `band`, unnormalised, so it peaks at 1/k) s over it, and the high-pass
+// s² over it. The measurements are of the low-pass; the band- and high-pass
+// are checked against the engine's own tests of them.
+
+import type { FilterMode } from "../backend";
 
 /** The damping at full resonance, as the engine's `MIN_DAMPING`. */
 const MIN_DAMPING = 0.1;
@@ -31,13 +37,15 @@ const MAX_CUTOFF_RATIO = 0.49;
 export const DEFAULT_SAMPLE_RATE = 48_000;
 
 /**
- * How much the filter lets through at `frequencyHz`, in dB: 0 is unchanged,
- * negative is quieter. -Infinity at or above half the sample rate.
+ * How much the filter lets through at `frequencyHz` in `mode`, in dB: 0 is
+ * unchanged, negative is quieter. -Infinity at or above half the sample
+ * rate.
  */
 export function filterGainDb(
   frequencyHz: number,
   cutoffHz: number,
   resonance: number,
+  mode: FilterMode,
   sampleRate: number,
 ): number {
   if (frequencyHz >= sampleRate / 2) return -Infinity;
@@ -45,8 +53,9 @@ export function filterGainDb(
   const g = Math.tan((Math.PI * cutoff) / sampleRate);
   const k = Math.SQRT2 + (MIN_DAMPING - Math.SQRT2) * resonance;
   const w = Math.tan((Math.PI * frequencyHz) / sampleRate) / g;
-  const power = 1 / ((1 - w * w) ** 2 + (k * w) ** 2);
-  return 10 * Math.log10(power);
+  const denominator = (1 - w * w) ** 2 + (k * w) ** 2;
+  const numerator = { low_pass: 1, band_pass: w * w, high_pass: w ** 4 }[mode];
+  return 10 * Math.log10(numerator / denominator);
 }
 
 /** The frequencies the drawing spans, in Hz: the cutoff knob's range. */
@@ -93,6 +102,7 @@ export function gainOfY(y: number, height: number): number {
 export function filterCurve(
   cutoffHz: number,
   resonance: number,
+  mode: FilterMode,
   sampleRate: number,
   width: number,
   height: number,
@@ -103,6 +113,18 @@ export function filterCurve(
   xs.sort((a, b) => a - b);
   return xs.map((x) => ({
     x,
-    y: yOfGain(filterGainDb(frequencyOfX(x, width), cutoffHz, resonance, sampleRate), height),
+    y: yOfGain(
+      filterGainDb(frequencyOfX(x, width), cutoffHz, resonance, mode, sampleRate),
+      height,
+    ),
   }));
+}
+
+/**
+ * Where the filter envelope takes the cutoff at its peak: `envOctaves`
+ * above it (below, when negative), within the drawing.
+ */
+export function reachHz(cutoffHz: number, envOctaves: number): number {
+  const [low, high] = FREQUENCIES;
+  return Math.min(high, Math.max(low, cutoffHz * 2 ** envOctaves));
 }

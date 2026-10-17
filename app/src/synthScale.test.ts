@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { Limits } from "./backend";
+import type { Limits, NumberSettingView } from "./backend";
 import {
   SETTING_STEPS,
   formatAmount,
+  formatFineOctaves,
   formatHz,
   formatLevel,
   formatOctaves,
   formatSeconds,
+  formatOf,
   formatSemitones,
+  formatSignedLevel,
   fromPosition,
+  isCentred,
+  settingScale,
   toPosition,
 } from "./synthScale";
 
@@ -102,5 +107,42 @@ describe("formatting", () => {
     expect(formatOctaves(1)).toBe("+1 oct");
     expect(formatOctaves(-2)).toBe("\u22122 oct");
     expect(formatOctaves(0)).toBe("0 oct");
+  });
+});
+
+describe("a setting Rust describes", () => {
+  const setting = (fields: Partial<NumberSettingView>): NumberSettingView => ({
+    kind: "number",
+    name: "x",
+    label: "X",
+    sounds: "",
+    value: 0,
+    unit: "octaves",
+    scale: "linear",
+    limits: [-2, 2],
+    default: 0,
+    ...fields,
+  });
+
+  it("takes only whole steps when it has a step", () => {
+    const octave = settingScale(setting({ step: 1 }));
+    expect(octave.steps).toBe(4);
+    expect(octave.fromPosition(1)).toBe(-1);
+    expect(octave.toPosition(0.4)).toBe(2);
+  });
+
+  it("is centred when its limits are either side of zero", () => {
+    expect(isCentred(setting({ limits: [-10, 10] }))).toBe(true);
+    expect(isCentred(setting({ limits: [-2, -1] }))).toBe(false);
+    expect(isCentred(setting({ limits: [0, 1] }))).toBe(false);
+  });
+
+  it("reads by its unit, signed when centred, and in whole octaves only when stepped", () => {
+    expect(formatOf(setting({ step: 1 }))(1)).toBe("+1 oct");
+    expect(formatOf(setting({ limits: [-10, 10] }))(1.5)).toBe("+1.5 oct");
+    expect(formatOf(setting({ unit: "fraction", limits: [-1, 1] }))(-0.25)).toBe("\u221225%");
+    expect(formatOf(setting({ unit: "fraction", limits: [0, 1] }))(0.25)).toBe("25%");
+    expect(formatSignedLevel(0.6)).toBe("+60%");
+    expect(formatFineOctaves(0)).toBe("0.0 oct");
   });
 });

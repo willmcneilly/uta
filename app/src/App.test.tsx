@@ -36,7 +36,7 @@ import {
   SYNTH_FIELDS,
   recordingFactory,
   type SynthValues,
-  synthSettings,
+  synthSource,
   synthOf,
   trackView,
   withFirstClipNotes,
@@ -853,7 +853,7 @@ describe("App", () => {
       mixerDefaults: { volumeDb: -3, pan: 0.2, mute: false, solo: false },
       tracks: project.tracks.map((track) => ({
         ...track,
-        source: { kind: "synth", settings: synthSettings(synthOf(track), synthDefaults) },
+        source: synthSource(synthOf(track), synthDefaults),
         mixer: { ...track.mixer, volumeDb: -6, pan: -0.5 },
       })),
     };

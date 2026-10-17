@@ -733,6 +733,9 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                         track.source.kind === "synth" ? (
                           <SynthPanel
                             settings={track.source.settings}
+                            lfoSeconds={track.source.lfoSeconds}
+                            barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
+                            beatsPerBar={project.beatsPerBar}
                             sampleRate={status?.output.sampleRate ?? null}
                             onChange={changeSynth}
                           />

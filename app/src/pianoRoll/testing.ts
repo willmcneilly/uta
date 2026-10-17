@@ -156,6 +156,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
       return {
         kind: "synth",
         settings: view.settings.map((setting) => strip<SynthParam>(setting, descriptions.synth)),
+        lfoSeconds: view.lfoSeconds,
       };
     }
     const model = view.kit.rows.find((row) => row.model)?.model?.value;
@@ -409,6 +410,58 @@ type NumberField = {
   [K in keyof SynthValues]: SynthValues[K] extends number ? K : never;
 }[keyof SynthValues];
 
+/** Each synth setting's short label, where Rust gives one (`short_label` in uta-core). */
+const SHORT: Partial<Record<SynthParam["name"], string>> = {
+  osc1_octave: "Octave",
+  osc2_octave: "Octave",
+  osc1_width: "Width",
+  lfo_width: "Width",
+  osc2_pitch_semitones: "Pitch",
+  osc2_sync: "Sync",
+  lfo_sync: "Sync",
+  osc1_level: "Osc 1",
+  osc2_level: "Osc 2",
+  sub_level: "Sub",
+  noise_level: "Noise",
+  resonance: "Res",
+  filter_env_octaves: "Env",
+  filter_lfo_octaves: "LFO",
+  filter_attack_seconds: "Attack",
+  filter_decay_seconds: "Decay",
+  filter_sustain: "Sustain",
+  filter_release_seconds: "Release",
+  lfo_rate_hz: "Rate",
+  lfo_division: "Rate",
+  lfo_retrigger: "Retrig",
+  osc_retrigger: "Osc retrig",
+  mod1_source: "Source",
+  mod2_source: "Source",
+  mod3_source: "Source",
+  mod1_destination: "Destination",
+  mod2_destination: "Destination",
+  mod3_destination: "Destination",
+  mod1_amount: "Amount",
+  mod2_amount: "Amount",
+  mod3_amount: "Amount",
+};
+
+/**
+ * A synth track's source as Rust sends it: its settings with `values`, and
+ * how long its LFO's cycle is, which Rust works out from the tempo: one
+ * over the rate, or `syncedSeconds` when synced (a quarter at 120 BPM).
+ */
+export function synthSource(
+  values: SynthValues = SYNTH_DEFAULTS,
+  defaults: SynthValues = SYNTH_DEFAULTS,
+  syncedSeconds = 0.5,
+): Extract<SourceView, { kind: "synth" }> {
+  return {
+    kind: "synth",
+    settings: synthSettings(values, defaults),
+    lfoSeconds: values.lfoSync ? syncedSeconds : 1 / values.lfoRateHz,
+  };
+}
+
 /**
  * The synth's settings with `values`, described as Rust describes them, in
  * its order, each resetting to its value in `defaults`.
@@ -473,7 +526,7 @@ export function synthSettings(
       default: defaults[field],
     };
   };
-  return [
+  const settings: SynthSettingView[] = [
     wave("osc1_wave", "Osc 1 wave"),
     number("osc1_octave", "Osc 1 octave", "octaves", [-2, 2], 1),
     number("osc1_width", "Osc 1 width", "fraction", [0.05, 0.95]),
@@ -570,6 +623,13 @@ export function synthSettings(
       ];
     }),
   ];
+  return settings.map((setting) => {
+    const short = SHORT[setting.name];
+    // After the label, where Rust's description puts it.
+    if (!short) return setting;
+    const { kind, name, label, ...rest } = setting;
+    return { kind, name, label, short, ...rest } as SynthSettingView;
+  });
 }
 
 /** A track with the default sound and mixer, and `clips`. */
@@ -578,7 +638,7 @@ export function trackView(id: string, name: string, clips: ClipView[] = []): Tra
     id,
     name,
     mixer: { ...MIXER_DEFAULTS },
-    source: { kind: "synth", settings: synthSettings() },
+    source: synthSource(),
     effects: [],
     clips,
   };
@@ -603,7 +663,7 @@ export function withSynth(track: TrackView, values: Partial<SynthValues>): Track
   const defaults = valuesOf(track.source.settings, "default");
   return {
     ...track,
-    source: { kind: "synth", settings: synthSettings({ ...synthOf(track), ...values }, defaults) },
+    source: synthSource({ ...synthOf(track), ...values }, defaults),
   };
 }
 

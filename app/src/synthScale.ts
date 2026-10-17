@@ -5,7 +5,7 @@
 // such as oscillator 2's Pitch, on a cubic one, fine near zero.
 
 import type { Limits, NumberSettingView, Scale } from "./backend";
-import type { NumberScale } from "./design/numberScale";
+import { type NumberScale, linearScale } from "./design/numberScale";
 
 /** The number of steps from one end of a control to the other. */
 export const SETTING_STEPS = 1000;
@@ -49,8 +49,13 @@ export function toPosition(value: number, limits: Limits, scale: Scale): number 
   return Math.min(SETTING_STEPS, Math.max(0, Number.isFinite(position) ? position : 0));
 }
 
-/** A setting's positions, on the scale and within the limits Rust describes it with. */
-export function settingScale({ limits, scale }: NumberSettingView): NumberScale {
+/**
+ * A setting's positions, on the scale and within the limits Rust describes
+ * it with, or one position a step for a setting that takes only some values
+ * (an oscillator's whole octaves).
+ */
+export function settingScale({ limits, scale, step }: NumberSettingView): NumberScale {
+  if (step !== undefined) return linearScale(limits[0], limits[1], step);
   return {
     min: limits[0],
     max: limits[1],
@@ -94,4 +99,43 @@ export function formatSemitones(semitones: number): string {
 /** Whole octaves: "+1 oct", "−2 oct". */
 export function formatOctaves(octaves: number): string {
   return `${signed(octaves, 0)} oct`;
+}
+
+/** A share either side of zero, signed: "+60%", "−25%". */
+export function formatSignedLevel(level: number): string {
+  return `${signed(level * 100, 0)}%`;
+}
+
+/** Octaves that needn't be whole, to a tenth: "+1.5 oct". */
+export function formatFineOctaves(octaves: number): string {
+  return `${signed(octaves, 1)} oct`;
+}
+
+/**
+ * Whether a setting is an offset either side of zero, such as oscillator
+ * 2's Pitch or a mod slot's Amount: its control fills from the middle, and
+ * its value reads signed.
+ */
+export function isCentred({ limits: [min, max] }: NumberSettingView): boolean {
+  return min < 0 && max === -min;
+}
+
+/** How a setting's value reads, from its unit, its step and its range. */
+export function formatOf(setting: NumberSettingView): (value: number) => string {
+  switch (setting.unit) {
+    case "hz":
+      return formatHz;
+    case "seconds":
+      return formatSeconds;
+    case "db":
+      return (db) => `${db.toFixed(1)} dB`;
+    case "fraction":
+      return isCentred(setting) ? formatSignedLevel : formatLevel;
+    case "amount":
+      return formatAmount;
+    case "semitones":
+      return formatSemitones;
+    case "octaves":
+      return setting.step === undefined ? formatFineOctaves : formatOctaves;
+  }
 }

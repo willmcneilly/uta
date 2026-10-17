@@ -67,7 +67,10 @@ describe("describeSource and describeEffect", () => {
   it("says so when Rust sends a setting it didn't describe", () => {
     const { descriptions } = outlineOf({ tracks: [], masterEffects: [] });
     expect(() =>
-      describeSource({ kind: "synth", settings: [{ name: "cutoff_hz", value: 800 }] }, descriptions),
+      describeSource(
+        { kind: "synth", settings: [{ name: "cutoff_hz", value: 800 }], lfoSeconds: 0.2 },
+        descriptions,
+      ),
     ).toThrow("Rust sent cutoff_hz without describing it");
   });
 });
