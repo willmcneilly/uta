@@ -777,11 +777,8 @@ impl SynthParam {
             ),
             Self::FilterLfoOctaves(_) => number(
                 "Filter LFO",
-                "How far the LFO moves the cutoff, in octaves either way. A \
-                 little, slowly, makes a pad breathe; more, at a few Hz, is a \
-                 wah; a synced square or sample-and-hold steps the filter in \
-                 time with the song. Below zero it moves the other way, so a \
-                 saw closes the filter instead of opening it.",
+                "How far the LFO moves the cutoff, in octaves. Slow and small, a pad \
+                 breathes; a few Hz is a wah. Below zero it moves the other way.",
                 Unit::Octaves,
                 Linear,
             ),
@@ -849,63 +846,48 @@ impl SynthParam {
             ),
             Self::LfoShape(_) => Description::choice(
                 "LFO shape",
-                "The shape of the LFO's movement. Sine and triangle sway \
-                 smoothly back and forth; saw rises and drops back, a \
-                 repeating swell; square flips between two places, a trill or \
-                 a stepped wah; sample-and-hold jumps to a new random place \
-                 each cycle, the bubbling, computer-like sound of old sci-fi.",
+                "How the LFO moves. Sine and triangle sway; saw rises and drops; \
+                 square flips; sample-and-hold jumps somewhere random each cycle.",
                 &LFO_SHAPES,
                 defaults.lfo_shape.value(),
             ),
             Self::LfoRateHz(_) => number(
                 "LFO rate",
-                "How fast the LFO moves, in cycles a second. Under one is a \
-                 slow sweep you feel more than hear, for pads; about five is a \
-                 singer's vibrato; faster turns movement into a flutter or a \
-                 buzz.",
+                "How fast the LFO moves. Under 1 Hz is a slow sweep; about 5 Hz a \
+                 singer's vibrato; faster a flutter.",
                 Unit::Hz,
                 Log,
             ),
             Self::LfoSync(_) => Description::toggle(
                 "LFO sync",
-                "Whether the LFO's rate follows the tempo. On, its rate is a \
-                 note length and its cycles line up with the bars, so a wah \
-                 or a stepped filter moves in time with the song wherever it \
-                 plays from; off, it's in Hz, free of the beat.",
+                "Whether the LFO's rate is a note length, with its cycles on the \
+                 bars, rather than in Hz.",
                 defaults.lfo_sync,
             ),
             Self::LfoDivision(_) => Description::choice(
                 "LFO rate (synced)",
-                "How long one of the LFO's cycles is, as a note length. A bar \
-                 or more is a slow sweep across a phrase; a quarter pulses \
-                 with the beat; a sixteenth is a fast, rhythmic flutter.",
+                "One cycle as a note length: a bar is a slow sweep, a quarter \
+                 pulses with the beat.",
                 &NoteDivision::CHOICES,
                 defaults.lfo_division.value(),
             ),
             Self::LfoRetrigger(_) => Description::toggle(
                 "LFO retrigger",
-                "Whether each note starts the LFO's cycle afresh. On, every \
-                 note moves the same way from its start, so a vibrato or a \
-                 wah sounds the same on each; off, all the notes share one LFO \
-                 that keeps running, so a chord moves together and each note \
-                 joins it wherever it is.",
+                "On, each note starts the LFO afresh, so every note moves alike; \
+                 off, the notes share one, and a chord moves together.",
                 defaults.lfo_retrigger,
             ),
             Self::LfoVibratoSemitones(_) => number(
                 "Vibrato",
-                "How far the LFO moves both oscillators' pitch, in semitones \
-                 either way. A tenth or two at about five Hz is a singer's \
-                 vibrato, warm and alive; more is a wobble, and a whole tone \
-                 is a siren.",
+                "How far the LFO bends the pitch, in semitones. A tenth or two is a \
+                 warm vibrato; more is a wobble.",
                 Unit::Semitones,
                 Linear,
             ),
             Self::LfoWidth(_) => number(
                 "LFO width",
-                "How far the LFO moves oscillator 1's pulse width either side \
-                 of its Width. Slowly, it's the shimmering, chorus-like \
-                 movement of a string machine; only the pulse has a width, so \
-                 it does nothing to the other waves.",
+                "How far the LFO moves oscillator 1's pulse width: the shimmer of a \
+                 string machine. Only the pulse has a width.",
                 Unit::Fraction,
                 Linear,
             ),
