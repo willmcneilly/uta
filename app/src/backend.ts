@@ -93,6 +93,12 @@ interface ProjectFields {
   mixerDefaults: MixerView;
   /** The most tracks a project can have. */
   maxTracks: number;
+  /** The master's chain: the effects after the sum of the tracks, in order. */
+  masterEffects: EffectView[];
+  /** Every kind of effect, in the order the **+** menu lists them. */
+  effectKinds: EffectKindChoice[];
+  /** The most effects a chain holds. */
+  maxEffects: number;
 }
 
 /** A track: its name, mixer strip, sound and clips. */
@@ -108,6 +114,8 @@ interface TrackFields {
   name: string;
   mixer: MixerView;
   source: SourceView;
+  /** Its chain: the effects after the source, in order. */
+  effects: EffectView[];
 }
 
 /** What makes a track's sound: the synth's settings, or the drum kit. */
@@ -180,6 +188,45 @@ export type Scale = "log" | "linear" | "cubic";
 /** Which kind of track to add. */
 export type TrackKind = SourceView["kind"];
 
+/** Which chain a command means: a track's, or the master's. */
+export type ChainAddress = { track: string } | "master";
+
+/** The kinds of effect there are: just Delay for now. */
+export type EffectKind = "delay";
+
+/** A kind of effect the **+** menu offers. */
+export interface EffectKindChoice {
+  kind: EffectKind;
+  /** What the menu and the panel call it: "Delay". */
+  name: string;
+}
+
+/** Any one of an effect's own settings, described. */
+export type EffectSettingView = NumberSettingView | ChoiceSettingView | ToggleSettingView;
+
+/**
+ * One effect in a chain: its ID, its name, whether it's on, its Mix, and its
+ * kind with its own settings, each described by Rust, so its panel keeps no
+ * label, range or default of its own.
+ */
+export interface EffectView {
+  id: string;
+  /** What the panel calls it: "Delay". */
+  name: string;
+  /** Off, the sound passes through it unchanged. */
+  enabled: boolean;
+  mix: NumberSettingView<"mix">;
+  kind: EffectKind;
+  /** Its own settings, in the order its panel shows them. */
+  settings: EffectSettingView[];
+}
+
+/** One Delay setting and its new value, as `set_delay_param` takes it. */
+export interface DelayParam {
+  name: string;
+  value: number | string | boolean;
+}
+
 /** A drum track's kit. Rust says what its rows are; the UI never assumes them. */
 export interface KitView {
   /** From the bottom of the piano roll to the top: kick to cymbal. */
@@ -250,6 +297,9 @@ export interface MixerLimits {
 
 export type Waveform = "sine" | "triangle" | "saw" | "pulse";
 
+/** Which part of the sound the synth's filter lets through. */
+export type FilterMode = "low_pass" | "band_pass" | "high_pass";
+
 /** An inclusive range: `[min, max]`. */
 export type Limits = [number, number];
 
@@ -257,12 +307,14 @@ export type Limits = [number, number];
 export type SynthSettingView =
   | ChoiceSettingView<"osc1_wave", Waveform>
   | ChoiceSettingView<"osc2_wave", Waveform>
+  | ChoiceSettingView<"filter_mode", FilterMode>
   | NumberSettingView<SynthNumber["name"]>
   | ToggleSettingView<SynthToggle>;
 
 /** One synth setting and its new value, as `set_synth_param` takes it. */
 export type SynthParam =
   | { name: "osc1_wave" | "osc2_wave"; value: Waveform }
+  | { name: "filter_mode"; value: FilterMode }
   | SynthNumber
   | { name: SynthToggle; value: boolean };
 
@@ -283,6 +335,12 @@ export interface SynthNumber {
     | "noise_level"
     | "cutoff_hz"
     | "resonance"
+    | "filter_env_octaves"
+    | "filter_key"
+    | "filter_attack_seconds"
+    | "filter_decay_seconds"
+    | "filter_sustain"
+    | "filter_release_seconds"
     | "attack_seconds"
     | "decay_seconds"
     | "sustain"
@@ -473,6 +531,43 @@ export function removeTrack(track: string): Promise<Update> {
 /** Moves a track to `index` in the order, counting from 0 at the top. */
 export function moveTrack(track: string, index: number): Promise<Update> {
   return invoke<Update>("move_track", { track, index });
+}
+
+/** Adds an effect of `kind` at the end of `chain`, with the ID picked here. One undo step. */
+export function addEffect(chain: ChainAddress, id: string, kind: EffectKind): Promise<Update> {
+  return invoke<Update>("add_effect", { chain, id, kind });
+}
+
+/** Deletes effects, from whichever chains they're in. One undo step. */
+export function removeEffects(effects: string[]): Promise<Update> {
+  return invoke<Update>("remove_effects", { effects });
+}
+
+/** Moves an effect to `index` in its own chain, counting from 0. */
+export function moveEffect(effect: string, index: number): Promise<Update> {
+  return invoke<Update>("move_effect", { effect, index });
+}
+
+/** Switches an effect on or off. One undo step. */
+export function setEffectEnabled(effect: string, enabled: boolean): Promise<Update> {
+  return invoke<Update>("set_effect_enabled", { effect, enabled });
+}
+
+/** Sets an effect's Mix. Changes with the same `gesture` (one drag) undo as one step. */
+export function setEffectMix(effect: string, mix: number, gesture?: number): Promise<Update> {
+  return invoke<Update>("set_effect_mix", { effect, mix, gesture: gesture ?? null });
+}
+
+/**
+ * Sets one of a Delay's settings. Changes to the same setting with the same
+ * `gesture` (one drag) undo as one step.
+ */
+export function setDelayParam(
+  effect: string,
+  param: DelayParam,
+  gesture?: number,
+): Promise<Update> {
+  return invoke<Update>("set_delay_param", { effect, param, gesture: gesture ?? null });
 }
 
 /** Where a clip is, as `set_clips` takes it. Positions and lengths are in ticks. */

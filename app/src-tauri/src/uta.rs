@@ -12,9 +12,10 @@ use crate::stress::{self, TestSong};
 use serde::{Deserialize, Serialize};
 use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
-    Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description, DrumParam,
-    DrumSound, Effect, EffectId, EffectSettings, KIT, KitSettings, MixerStrip, Note, NoteId,
-    PlacedClip, PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId,
+    Chain, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description, DrumParam,
+    DrumSound, Effect, EffectId, EffectKind, EffectSettings, KIT, KitSettings, MAX_EFFECTS,
+    MixerStrip, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack, Project, Session, Source,
+    SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -95,8 +96,20 @@ pub struct Outline<C = ClipOutline> {
     pub mixer_defaults: MixerView,
     /// The most tracks a project can have.
     pub max_tracks: usize,
+    /// Every kind of effect, in the order the **+** menu lists them.
+    pub effect_kinds: Vec<EffectKindChoice>,
+    /// The most effects a chain holds.
+    pub max_effects: usize,
     /// Every track, in order from the top.
     pub tracks: Vec<TrackOutline<C>>,
+}
+
+/// A kind of effect the **+** menu offers: `{"kind":"delay","name":"Delay"}`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct EffectKindChoice {
+    pub kind: EffectKind,
+    /// What the menu and the panel call it.
+    pub name: &'static str,
 }
 
 /// A track as the UI shows it: its name, mixer strip, sound, chain and
@@ -776,6 +789,73 @@ impl Uta {
         self.change(Command::MoveTrack { track, index }, None)
     }
 
+    /// Adds an effect of `kind`, with its defaults, at the end of `chain`.
+    /// The caller picks its ID, so it can select it. A full chain refuses it.
+    pub fn add_effect(
+        &mut self,
+        chain: Chain,
+        id: EffectId,
+        kind: EffectKind,
+    ) -> Result<(), String> {
+        let project = self.session.project();
+        let index = match chain {
+            Chain::Master => project.master_effects().len(),
+            Chain::Track(track) => project
+                .track(track)
+                .ok_or_else(|| CommandError::UnknownTrack(track).to_string())?
+                .effects()
+                .len(),
+        };
+        self.change(
+            Command::AddEffects {
+                effects: vec![PlacedEffect {
+                    chain,
+                    index,
+                    effect: Effect::default_of(id, kind),
+                }],
+            },
+            None,
+        )
+    }
+
+    /// Deletes effects, from whichever chains they're in. Undo puts each
+    /// back in its place, with its settings.
+    pub fn remove_effects(&mut self, effects: Vec<EffectId>) -> Result<(), String> {
+        self.change(Command::RemoveEffects { effects }, None)
+    }
+
+    /// Moves an effect to `index` in its own chain, counting from 0.
+    pub fn move_effect(&mut self, effect: EffectId, index: usize) -> Result<(), String> {
+        self.change(Command::MoveEffect { effect, index }, None)
+    }
+
+    /// Switches an effect on or off.
+    pub fn set_effect_enabled(&mut self, effect: EffectId, enabled: bool) -> Result<(), String> {
+        self.change(Command::SetEffectEnabled { effect, enabled }, None)
+    }
+
+    /// Sets an effect's Mix. Changes to the same effect that share a
+    /// `gesture` (one drag of its knob) undo as one.
+    pub fn set_effect_mix(
+        &mut self,
+        effect: EffectId,
+        mix: f32,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetEffectMix { effect, mix }, gesture)
+    }
+
+    /// Sets one of a Delay's settings. Changes to the same setting that
+    /// share a `gesture` (one drag of its control) undo as one.
+    pub fn set_delay_param(
+        &mut self,
+        effect: EffectId,
+        param: DelayParam,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetDelayParam { effect, param }, gesture)
+    }
+
     /// Adds an empty clip to `track`, from `start` for `length` ticks. The
     /// caller picks its ID, so it can select it.
     pub fn add_clip(
@@ -1232,6 +1312,14 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         mixer_limits: MixerLimits::ALL,
         mixer_defaults: (&MixerStrip::default()).into(),
         max_tracks: Project::MAX_TRACKS,
+        effect_kinds: EffectKind::ALL
+            .into_iter()
+            .map(|kind| EffectKindChoice {
+                kind,
+                name: kind.name(),
+            })
+            .collect(),
+        max_effects: MAX_EFFECTS,
         tracks: project
             .tracks()
             .iter()
@@ -1458,8 +1546,8 @@ mod tests {
         let source = &outline["tracks"][0]["source"];
         assert_eq!(source["kind"], "synth");
         assert_eq!(source["settings"][0]["value"], "saw");
-        assert_eq!(source["settings"][12]["name"], "cutoff_hz");
-        assert_eq!(source["settings"][12]["value"], 20_000.0);
+        assert_eq!(source["settings"][13]["name"], "cutoff_hz");
+        assert_eq!(source["settings"][13]["value"], 20_000.0);
         assert_eq!(outline["tracks"][1]["source"]["kind"], "drums");
         assert!(outline["tracks"][0]["id"].is_string());
         let clip = &outline["tracks"][0]["clips"][0];
@@ -1662,12 +1750,25 @@ mod tests {
         assert_eq!(sync["name"], "osc2_sync");
         assert_eq!(sync["value"], false);
         assert_eq!(sync["kind"], "toggle");
-        let retrigger = &json["settings"][18];
+        let mode = &json["settings"][12];
+        assert_eq!(mode["name"], "filter_mode");
+        assert_eq!(mode["value"], "low_pass");
+        assert_eq!(mode["kind"], "choice");
+        assert_eq!(
+            mode["options"][2],
+            serde_json::json!({"value": "high_pass", "label": "High-pass"})
+        );
+        let env = &json["settings"][15];
+        assert_eq!(env["name"], "filter_env_octaves");
+        assert_eq!(env["unit"], "octaves");
+        assert_eq!(env["limits"], serde_json::json!([-10.0, 10.0]));
+        assert!(env.get("step").is_none());
+        let retrigger = &json["settings"][25];
         assert_eq!(retrigger["name"], "osc_retrigger");
         assert_eq!(retrigger["value"], true);
         assert_eq!(retrigger["kind"], "toggle");
         assert_eq!(retrigger["default"], true);
-        let cutoff = &json["settings"][12];
+        let cutoff = &json["settings"][13];
         assert_eq!(cutoff["name"], "cutoff_hz");
         assert_eq!(cutoff["value"], 20_000.0);
         assert_eq!(cutoff["label"], "Cutoff");
@@ -1707,8 +1808,15 @@ mod tests {
                 Some("fraction"),
                 Some("fraction"),
                 Some("fraction"),
+                None,
                 Some("hz"),
                 Some("amount"),
+                Some("octaves"),
+                Some("fraction"),
+                Some("seconds"),
+                Some("seconds"),
+                Some("fraction"),
+                Some("seconds"),
                 Some("seconds"),
                 Some("seconds"),
                 Some("fraction"),
@@ -1794,6 +1902,114 @@ mod tests {
         assert!(!effect.enabled);
         let json = serde_json::to_value(&outline).unwrap();
         assert_eq!(json["masterEffects"][0]["name"], "Delay");
+    }
+
+    /// The IDs in a chain, in order, and which are on.
+    fn chain_of(effects: &[EffectView]) -> Vec<(EffectId, bool)> {
+        effects
+            .iter()
+            .map(|effect| (effect.id, effect.enabled))
+            .collect()
+    }
+
+    #[test]
+    fn the_outline_lists_the_kinds_of_effect_and_how_many_a_chain_holds() {
+        let json = serde_json::to_value(offline().update().outline).unwrap();
+        assert_eq!(
+            json["effectKinds"],
+            serde_json::json!([{"kind": "delay", "name": "Delay"}])
+        );
+        assert_eq!(json["maxEffects"], 8);
+    }
+
+    #[test]
+    fn the_sound_tab_adds_moves_switches_and_removes_effects_each_undoing() {
+        let mut uta = offline();
+        let track = uta.project().tracks[0].id;
+        let [a, b] = [EffectId::random(), EffectId::random()];
+        // Each goes on the end of its chain.
+        uta.add_effect(Chain::Track(track), a, EffectKind::Delay)
+            .unwrap();
+        uta.add_effect(Chain::Track(track), b, EffectKind::Delay)
+            .unwrap();
+        let master = EffectId::random();
+        uta.add_effect(Chain::Master, master, EffectKind::Delay)
+            .unwrap();
+        assert_eq!(
+            chain_of(&uta.project().tracks[0].effects),
+            [(a, true), (b, true)]
+        );
+        assert_eq!(chain_of(&uta.project().master_effects), [(master, true)]);
+
+        uta.move_effect(b, 0).unwrap();
+        assert_eq!(
+            chain_of(&uta.project().tracks[0].effects),
+            [(b, true), (a, true)]
+        );
+        uta.set_effect_enabled(a, false).unwrap();
+        assert_eq!(
+            chain_of(&uta.project().tracks[0].effects),
+            [(b, true), (a, false)]
+        );
+        uta.remove_effects(vec![b]).unwrap();
+        assert_eq!(chain_of(&uta.project().tracks[0].effects), [(a, false)]);
+
+        // Undo brings each step back, the removed Delay in its place.
+        uta.undo();
+        assert_eq!(
+            chain_of(&uta.project().tracks[0].effects),
+            [(b, true), (a, false)]
+        );
+        uta.undo();
+        uta.undo();
+        assert_eq!(
+            chain_of(&uta.project().tracks[0].effects),
+            [(a, true), (b, true)]
+        );
+        uta.undo();
+        assert!(uta.project().master_effects.is_empty());
+    }
+
+    #[test]
+    fn a_full_chain_refuses_another_effect() {
+        let mut uta = offline();
+        for _ in 0..MAX_EFFECTS {
+            uta.add_effect(Chain::Master, EffectId::random(), EffectKind::Delay)
+                .unwrap();
+        }
+        assert!(
+            uta.add_effect(Chain::Master, EffectId::random(), EffectKind::Delay)
+                .is_err()
+        );
+        assert_eq!(uta.project().master_effects.len(), MAX_EFFECTS);
+        let unknown = TrackId::random();
+        assert!(
+            uta.add_effect(Chain::Track(unknown), EffectId::random(), EffectKind::Delay)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn one_mix_or_delay_drag_undoes_as_one_step() {
+        let mut uta = offline();
+        let effect = EffectId::random();
+        uta.add_effect(Chain::Master, effect, EffectKind::Delay)
+            .unwrap();
+        for mix in [0.4, 0.5, 0.6] {
+            uta.set_effect_mix(effect, mix, Some(1)).unwrap();
+        }
+        for feedback in [0.5, 0.7] {
+            uta.set_delay_param(effect, DelayParam::Feedback(feedback), Some(2))
+                .unwrap();
+        }
+        let json = |uta: &Uta| serde_json::to_value(&uta.project().master_effects[0]).unwrap();
+        assert_eq!(json(&uta)["mix"]["value"], 0.6_f32 as f64);
+        assert_eq!(json(&uta)["settings"][1]["value"], 0.7_f32 as f64);
+        uta.undo();
+        assert_eq!(json(&uta)["settings"][1]["value"], 0.4_f32 as f64);
+        assert_eq!(json(&uta)["mix"]["value"], 0.6_f32 as f64);
+        uta.undo();
+        assert_eq!(json(&uta)["mix"]["value"], 0.3_f32 as f64);
     }
 
     #[test]
@@ -1923,6 +2139,18 @@ mod tests {
             (
                 serde_json::json!({"name": "noise_level", "value": 0.25}),
                 SynthParam::NoiseLevel(0.25),
+            ),
+            (
+                serde_json::json!({"name": "filter_mode", "value": "band_pass"}),
+                SynthParam::FilterMode(uta_core::FilterMode::BandPass),
+            ),
+            (
+                serde_json::json!({"name": "filter_env_octaves", "value": -2.5}),
+                SynthParam::FilterEnvOctaves(-2.5),
+            ),
+            (
+                serde_json::json!({"name": "filter_sustain", "value": 0.5}),
+                SynthParam::FilterSustain(0.5),
             ),
         ] {
             assert_eq!(serde_json::from_value::<SynthParam>(json).unwrap(), param);

@@ -52,7 +52,7 @@ pub use id::{ClipId, EffectId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
 pub use session::{Applied, Session};
 pub use setting::{Choice, Description, Kind as SettingKind, Scale, Unit};
-pub use synth::{SynthParam, SynthSettings, Waveform};
+pub use synth::{FilterMode, SynthParam, SynthSettings, Waveform};
 pub use track::{Clip, MixerStrip, Note, Notes, Source, SourceKind, Track};
 
 /// The crate version.

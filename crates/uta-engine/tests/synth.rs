@@ -13,8 +13,8 @@ use std::f64::consts::PI;
 use common::*;
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, NoteKey, Snapshot, SynthSettings, VOICE_LEVEL, VOICES, Waveform, pitch_to_hz,
-    velocity_to_gain,
+    EngineConfig, FilterMode, NoteKey, Snapshot, SynthSettings, VOICE_LEVEL, VOICES, Waveform,
+    pitch_to_hz, velocity_to_gain,
 };
 
 const RATE: u32 = 48_000;
@@ -466,7 +466,9 @@ fn session(block_size: usize) -> Vec<f32> {
     {
         // Every setting moves: oscillator 1's pulse narrows, oscillator 2
         // detunes, changes octave and syncs on and off, the sub and noise
-        // come in, and the oscillators run free from the second change on.
+        // come in, the oscillators run free from the second change on, and
+        // the filter changes mode and has its own envelope and key tracking
+        // from the second, so the voices work out their own filter settings.
         renderer
             .controller
             .set_synth_settings(
@@ -484,8 +486,19 @@ fn session(block_size: usize) -> Vec<f32> {
                     osc2_level: 0.3 * i as f32,
                     sub_level: 0.25 * i as f32,
                     noise_level: 0.1 * i as f32,
+                    filter_mode: [
+                        FilterMode::LowPass,
+                        FilterMode::BandPass,
+                        FilterMode::HighPass,
+                        FilterMode::LowPass,
+                    ][i],
                     cutoff_hz: 300.0 * (i + 1) as f32,
                     resonance: 0.25 * i as f32,
+                    filter_env_octaves: [0.0, 4.0, -3.0, 6.5][i],
+                    filter_key: [0.0, 0.5, 1.0, 0.0][i],
+                    filter_attack_seconds: 0.01 * (i + 1) as f32,
+                    filter_decay_seconds: 0.1,
+                    filter_sustain: 0.25 * i as f32,
                     sustain: 0.2 * (i + 1) as f32,
                     osc_retrigger: i == 0,
                     ..SynthSettings::default()
@@ -508,8 +521,8 @@ fn session(block_size: usize) -> Vec<f32> {
     renderer.into_samples()
 }
 
-/// Rendering twice gives identical audio, noise and free-running
-/// oscillators and all, and so do blocks of 32, 128 and 1024.
+/// Rendering twice gives identical audio, noise, free-running oscillators
+/// and per-voice filters and all, and so do blocks of 32, 128 and 1024.
 #[test]
 fn block_size_does_not_change_the_synth() {
     let reference = session(1024);
@@ -1188,6 +1201,67 @@ fn under_sync_the_pitch_follows_oscillator_1() {
     }
 }
 
+/// The filter's response as a two-pole analog filter with its cutoff
+/// pre-warped, as a trapezoidal filter is, for each mode at resonance 0:
+/// low-pass 1/(s² + √2·s + 1), band-pass s/(…) and high-pass s²/(…), with s
+/// the frequency over the cutoff.
+fn expected_mode_db(mode: FilterMode, frequency_hz: f64, cutoff_hz: f64) -> f64 {
+    let warp = |f: f64| (PI * f / f64::from(RATE)).tan();
+    let w = warp(frequency_hz) / warp(cutoff_hz);
+    let denominator = ((1.0 - w * w).powi(2) + 2.0 * w * w).sqrt();
+    let numerator = match mode {
+        FilterMode::LowPass => 1.0,
+        FilterMode::BandPass => w,
+        FilterMode::HighPass => w * w,
+    };
+    20.0 * (numerator / denominator).log10()
+}
+
+/// Each mode passes and cuts where it should: sine notes from two octaves
+/// under the cutoff to two over, measured against the same notes with the
+/// filter open, match each mode's response within 0.1 dB.
+#[test]
+fn each_filter_mode_passes_and_cuts_where_it_should() {
+    let cutoff = pitch_to_hz(81); // 880 Hz
+    let open = SynthSettings {
+        sustain: 1.0,
+        ..sine()
+    };
+    for mode in [
+        FilterMode::LowPass,
+        FilterMode::BandPass,
+        FilterMode::HighPass,
+    ] {
+        let filtered = SynthSettings {
+            filter_mode: mode,
+            cutoff_hz: cutoff as f32,
+            ..open
+        };
+        let mut levels = Vec::new();
+        for pitch in [57, 69, 81, 93, 105] {
+            let level_db = 20.0
+                * (rms(&steady(filtered, pitch, 127)) / rms(&steady(open, pitch, 127))).log10();
+            let expected = expected_mode_db(mode, pitch_to_hz(pitch), cutoff);
+            assert!(
+                (level_db - expected).abs() < 0.1,
+                "{mode:?}, note {pitch}: {level_db} dB, expected {expected} dB"
+            );
+            levels.push(level_db);
+        }
+        // And in words: what each keeps is within 3 dB, and what it cuts is
+        // down by more than 20 dB two octaves out.
+        let [two_under, _, at, _, two_over] = levels[..] else {
+            unreachable!()
+        };
+        assert!((at + 3.0).abs() < 0.1, "{mode:?}: {at} dB at the cutoff");
+        match mode {
+            FilterMode::LowPass => assert!(two_under > -0.1 && two_over < -20.0),
+            FilterMode::BandPass => assert!(two_under < -11.0 && two_over < -11.0),
+            FilterMode::HighPass => assert!(two_under < -20.0 && two_over > -0.1),
+        }
+    }
+}
+
 /// The loudest alias allowed in a sync sweep, for each wave, relative to the
 /// loudest harmonic: oscillator 2 synced to C7 (2093 Hz) and swept up two
 /// octaves. Measured here, with the synced oscillator taking four steps a
@@ -1382,4 +1456,399 @@ fn width_and_sync_glide_when_turned() {
     for (what, from, to) in turns {
         assert_glides(&turn_difference(from, to, at), glide, what);
     }
+}
+
+/// How bright a held saw is from each of `starts` (in seconds): the
+/// spectral centroid of the next 2048 samples (43 ms) under the
+/// Blackman-Harris window, over the note's fundamental, so notes at
+/// different pitches compare. Without a window, the leakage of a cut-off
+/// stretch of wave would swamp the filter's effect.
+fn brightness(settings: SynthSettings, pitch: u8, starts: &[f64]) -> Vec<f64> {
+    let samples = held_note(settings, pitch, 127, 1.0);
+    starts
+        .iter()
+        .map(|&from| {
+            let bins = spectrum(&samples[seconds(from)..seconds(from) + 2048]);
+            let bin_hz = f64::from(RATE) / 2048.0;
+            let total: f64 = bins.iter().sum();
+            let weighted: f64 = bins
+                .iter()
+                .enumerate()
+                .map(|(k, magnitude)| k as f64 * bin_hz * magnitude)
+                .sum();
+            weighted / total / pitch_to_hz(pitch)
+        })
+        .collect()
+}
+
+/// A saw held for a second, with a filter envelope that decays to nothing
+/// in 0.3 s.
+fn pluck(cutoff_hz: f32, env_octaves: f32) -> SynthSettings {
+    SynthSettings {
+        cutoff_hz,
+        filter_env_octaves: env_octaves,
+        filter_decay_seconds: 0.3,
+        filter_sustain: 0.0,
+        sustain: 1.0,
+        ..SynthSettings::default()
+    }
+}
+
+/// Env amount up, each note starts bright and closes down to the cutoff:
+/// a pluck. Below zero, it starts dark and opens up to the cutoff. Either
+/// way the end of the note sounds as the cutoff alone does.
+#[test]
+fn env_amount_moves_the_brightness_over_a_note() {
+    let (early, late) = (0.01, 0.6);
+    let [start, end] = brightness(pluck(200.0, 6.0), 45, &[early, late])[..] else {
+        unreachable!()
+    };
+    let [unmoved] = brightness(pluck(200.0, 0.0), 45, &[late])[..] else {
+        unreachable!()
+    };
+    assert!(
+        start > 2.0 * end,
+        "up: brightness {start:.2} at the start, {end:.2} at the end"
+    );
+    assert!(
+        (end / unmoved - 1.0).abs() < 0.02,
+        "up: {end:.2} at the end, {unmoved:.2} with no envelope"
+    );
+
+    let [start, end] = brightness(pluck(4_000.0, -6.0), 45, &[early, late])[..] else {
+        unreachable!()
+    };
+    let [unmoved] = brightness(pluck(4_000.0, 0.0), 45, &[late])[..] else {
+        unreachable!()
+    };
+    assert!(
+        end > 2.0 * start,
+        "down: brightness {start:.2} at the start, {end:.2} at the end"
+    );
+    assert!(
+        (end / unmoved - 1.0).abs() < 0.02,
+        "down: {end:.2} at the end, {unmoved:.2} with no envelope"
+    );
+}
+
+/// With Env amount at zero, the filter envelope's own settings change
+/// nothing: the note is the same, sample for sample, as with each at its
+/// default.
+#[test]
+fn env_amount_zero_does_nothing() {
+    let base = SynthSettings {
+        cutoff_hz: 600.0,
+        resonance: 0.4,
+        ..SynthSettings::default()
+    };
+    let busy_envelope = SynthSettings {
+        filter_attack_seconds: 0.002,
+        filter_decay_seconds: 0.05,
+        filter_sustain: 0.6,
+        filter_release_seconds: 1.5,
+        ..base
+    };
+    let render = |settings| {
+        let mut samples = held_note(settings, 52, 110, 0.5);
+        samples.truncate(seconds(0.5));
+        samples
+    };
+    assert_eq!(render(busy_envelope), render(base));
+}
+
+/// Key tracking makes higher notes as bright as lower ones: two octaves
+/// apart, through a low-pass at 500 Hz, the high note's harmonics are cut
+/// far harder than the low note's with Key at zero, and alike at full Key.
+#[test]
+fn key_makes_higher_notes_as_bright_as_lower_ones() {
+    let settings = |key| SynthSettings {
+        cutoff_hz: 500.0,
+        filter_key: key,
+        sustain: 1.0,
+        ..SynthSettings::default()
+    };
+    let window = [0.5];
+    let ratio =
+        |key| brightness(settings(key), 72, &window)[0] / brightness(settings(key), 48, &window)[0];
+    let untracked = ratio(0.0);
+    let tracked = ratio(1.0);
+    assert!(
+        untracked < 0.6,
+        "Key 0: the high note is {untracked:.2} as bright as the low one"
+    );
+    assert!(
+        (tracked - 1.0).abs() < 0.1,
+        "Key 1: the high note is {tracked:.2} as bright as the low one"
+    );
+    let half = ratio(0.5);
+    assert!(
+        untracked < half && half < tracked,
+        "Key 0.5: {half:.2}, between {untracked:.2} and {tracked:.2}"
+    );
+}
+
+/// When the voices work out their own filter settings but nothing makes
+/// them differ from the shared ones (Key up, on middle C, where it moves
+/// nothing), they sound as the shared ones do: the per-voice path is the
+/// same filter, not a different one.
+#[test]
+fn the_per_voice_filter_matches_the_shared_one_when_nothing_moves_it() {
+    for mode in [
+        FilterMode::LowPass,
+        FilterMode::BandPass,
+        FilterMode::HighPass,
+    ] {
+        let shared = SynthSettings {
+            filter_mode: mode,
+            cutoff_hz: 900.0,
+            resonance: 0.7,
+            ..SynthSettings::default()
+        };
+        let per_voice = SynthSettings {
+            filter_key: 1.0,
+            ..shared
+        };
+        let a = held_note(shared, 60, 127, 0.5);
+        let b = held_note(per_voice, 60, 127, 0.5);
+        assert!(peak(&a) > 0.01, "{mode:?} made no sound");
+        let difference = max_difference(&a, &b);
+        assert!(difference < 1e-4, "{mode:?}: they differ by {difference}");
+    }
+}
+
+/// A filter envelope sweeping fast still moves the sound smoothly: a 1 ms
+/// attack over 8 octaves on a sine at 110 Hz moves it no faster than the
+/// notes allow. (How the voices work out their own cutoff at the control
+/// rate is unit-tested in `synth/mod.rs`.)
+#[test]
+fn a_fast_filter_sweep_moves_smoothly() {
+    let settings = SynthSettings {
+        filter_env_octaves: 8.0,
+        filter_attack_seconds: 0.001,
+        filter_decay_seconds: 0.01,
+        cutoff_hz: 30.0,
+        sustain: 1.0,
+        ..sine()
+    };
+    let samples = held_note(settings, 45, 127, 0.3);
+    assert!(peak(&samples) > 0.1, "the sweep made no sound");
+    let attack = (0.005 * f64::from(RATE)) as usize;
+    assert_no_click(
+        &samples,
+        click_limit(1, 110.0, 1.0, attack),
+        "a fast filter sweep",
+    );
+}
+
+/// The filter's mode crossfades, and its envelope's amount and key tracking
+/// glide, so each change makes its difference over the glide, not at once.
+#[test]
+fn the_filter_mode_crossfades_and_its_amounts_glide() {
+    let base = SynthSettings {
+        cutoff_hz: 800.0,
+        sustain: 1.0,
+        filter_sustain: 0.5,
+        ..SynthSettings::default()
+    };
+    let turns = [
+        (
+            "band-pass",
+            SynthSettings {
+                filter_mode: FilterMode::BandPass,
+                ..base
+            },
+        ),
+        (
+            "high-pass",
+            SynthSettings {
+                filter_mode: FilterMode::HighPass,
+                ..base
+            },
+        ),
+        (
+            "Env amount",
+            SynthSettings {
+                filter_env_octaves: 4.0,
+                ..base
+            },
+        ),
+        (
+            "Key",
+            SynthSettings {
+                filter_key: 1.0,
+                ..base
+            },
+        ),
+    ];
+    let glide = (uta_engine::SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    for (what, turned) in turns {
+        assert_glides(&turn_difference(base, turned, 128 * 20), glide, what);
+    }
+}
+
+/// The click limit for four sines at 110 Hz through the filter while it
+/// turns. With no resonance no mode is louder than its input. A new mode
+/// crossfades from the old over the glide, and two modes' outputs can be
+/// half a cycle apart, so up to 2 apart: the crossfade itself can move each
+/// voice by up to 2 / glide a sample, as an attack of half the glide would.
+fn filter_click_limit() -> f32 {
+    let glide = (uta_engine::SYNTH_SMOOTHING_SECONDS * f64::from(RATE)).round() as usize;
+    click_limit(4, 110.0, 1.0, glide / 2)
+}
+
+/// Every new filter control turned while four sine notes hold, faster than
+/// they can glide: the mode, Env amount (up, down and back to zero, so the
+/// voices move between sharing filter settings and having their own), Key,
+/// and the filter envelope's times and sustain. Nothing clicks.
+#[test]
+fn no_clicks_when_the_filter_changes_while_notes_sound() {
+    let base = SynthSettings {
+        cutoff_hz: 400.0,
+        sustain: 1.0,
+        filter_sustain: 0.5,
+        ..sine()
+    };
+    let mut renderer = renderer(base, 128);
+    for key in 0..4 {
+        renderer
+            .controller
+            .note_on(0, NoteKey(key), 45, 127)
+            .unwrap();
+    }
+    renderer.render_seconds(0.1);
+    // (mode, env amount, key, filter attack, filter decay, filter sustain,
+    // filter release)
+    let changes = [
+        (FilterMode::LowPass, 6.0, 0.0, 0.001, 0.3, 0.5, 0.2),
+        (FilterMode::BandPass, -6.0, 1.0, 1.0, 0.01, 1.0, 2.0),
+        (FilterMode::HighPass, 0.0, 0.0, 0.01, 2.0, 0.0, 0.01),
+        (FilterMode::LowPass, 10.0, 0.5, 0.001, 0.001, 0.2, 0.2),
+        (FilterMode::HighPass, -10.0, 1.0, 5.0, 0.2, 1.0, 0.5),
+        (FilterMode::BandPass, 0.0, 0.0, 0.001, 0.3, 0.0, 0.2),
+        (FilterMode::LowPass, 0.0, 0.0, 0.001, 0.3, 0.5, 0.2),
+    ];
+    for _ in 0..3 {
+        for &(filter_mode, env, key, attack, decay, filter_sustain, release) in &changes {
+            renderer
+                .controller
+                .set_synth_settings(
+                    0,
+                    SynthSettings {
+                        filter_mode,
+                        filter_env_octaves: env,
+                        filter_key: key,
+                        filter_attack_seconds: attack,
+                        filter_decay_seconds: decay,
+                        filter_sustain,
+                        filter_release_seconds: release,
+                        ..base
+                    },
+                )
+                .unwrap();
+            renderer.render(300);
+        }
+    }
+    renderer.render_seconds(0.1);
+
+    assert_no_click(
+        renderer.samples(),
+        filter_click_limit(),
+        "the filter turning",
+    );
+}
+
+/// Guards the filter click test: a mode that switched at once, rather than
+/// crossfading, must fail it. The four notes are switched from low-pass to
+/// high-pass by hand, half way through.
+#[test]
+fn click_limit_catches_a_mode_switch() {
+    let base = SynthSettings {
+        cutoff_hz: 400.0,
+        sustain: 1.0,
+        ..sine()
+    };
+    let render = |mode| {
+        let mut renderer = renderer(
+            SynthSettings {
+                filter_mode: mode,
+                ..base
+            },
+            128,
+        );
+        for key in 0..4 {
+            renderer
+                .controller
+                .note_on(0, NoteKey(key), 45, 127)
+                .unwrap();
+        }
+        renderer.render_seconds(0.2);
+        renderer.into_samples()
+    };
+    let (low, high) = (render(FilterMode::LowPass), render(FilterMode::HighPass));
+    let half = seconds(0.1) + 100;
+    let switched: Vec<f32> = low[..half].iter().chain(&high[half..]).copied().collect();
+    let limit = filter_click_limit();
+    let (jump, _) = max_jump(&switched);
+    assert!(jump > limit, "a jump of {jump} passes the limit {limit}");
+}
+
+/// The filter's Sustain holds it open while a note is held: at 0.5, half
+/// the Env amount stays on after the decay, so the end of the note is
+/// brighter than with none.
+#[test]
+fn filter_sustain_holds_the_filter_open() {
+    let late = [0.6];
+    let none = brightness(pluck(200.0, 6.0), 45, &late)[0];
+    let half = brightness(
+        SynthSettings {
+            filter_sustain: 0.5,
+            ..pluck(200.0, 6.0)
+        },
+        45,
+        &late,
+    )[0];
+    assert!(
+        half > 2.0 * none,
+        "brightness {half:.2} at sustain 0.5, {none:.2} at none"
+    );
+}
+
+/// The filter's Release closes it after the note is let go: with a long
+/// filter release the amp's release tail stays bright, and with a short
+/// one it closes at once.
+#[test]
+fn filter_release_closes_the_filter_after_the_note() {
+    let tail_brightness = |filter_release_seconds| {
+        let settings = SynthSettings {
+            cutoff_hz: 200.0,
+            filter_env_octaves: 5.0,
+            filter_sustain: 1.0,
+            filter_release_seconds,
+            sustain: 1.0,
+            release_seconds: 2.0,
+            ..SynthSettings::default()
+        };
+        let mut renderer = renderer(settings, 128);
+        renderer.controller.note_on(0, NoteKey(1), 45, 127).unwrap();
+        renderer.render_seconds(0.5);
+        renderer.controller.note_off(0, NoteKey(1)).unwrap();
+        renderer.render_seconds(0.5);
+        let samples = renderer.into_samples();
+        let from = seconds(0.8);
+        let bins = spectrum(&samples[from..from + 2048]);
+        let bin_hz = f64::from(RATE) / 2048.0;
+        let total: f64 = bins.iter().sum();
+        let weighted: f64 = bins
+            .iter()
+            .enumerate()
+            .map(|(k, magnitude)| k as f64 * bin_hz * magnitude)
+            .sum();
+        weighted / total / pitch_to_hz(45)
+    };
+    let short = tail_brightness(0.05);
+    let long = tail_brightness(5.0);
+    assert!(
+        long > 2.0 * short,
+        "brightness {long:.2} with a long filter release, {short:.2} with a short one"
+    );
 }

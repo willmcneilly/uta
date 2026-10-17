@@ -901,8 +901,8 @@ mod tests {
     use super::*;
     use crate::testing::{self, note, note_id};
     use crate::{
-        DrumParam, DrumSound, Effect, KickModel, KitSettings, MixerStrip, Note, SynthParam,
-        Waveform,
+        DrumParam, DrumSound, Effect, FilterMode, KickModel, KitSettings, MixerStrip, Note,
+        SynthParam, Waveform,
     };
     use proptest::prelude::*;
 
@@ -1483,6 +1483,13 @@ mod tests {
             SynthParam::SubLevel(0.3),
             SynthParam::NoiseLevel(0.1),
             SynthParam::OscRetrigger(false),
+            SynthParam::FilterMode(FilterMode::BandPass),
+            SynthParam::FilterEnvOctaves(-3.5),
+            SynthParam::FilterKey(1.0),
+            SynthParam::FilterAttackSeconds(0.5),
+            SynthParam::FilterDecaySeconds(0.05),
+            SynthParam::FilterSustain(0.25),
+            SynthParam::FilterReleaseSeconds(2.0),
             SynthParam::Resonance(0.5),
             SynthParam::AttackSeconds(1.0),
             SynthParam::DecaySeconds(0.001),

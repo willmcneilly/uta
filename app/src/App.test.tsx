@@ -285,11 +285,11 @@ const commands = () => calls.map((call) => call.cmd);
 
 async function renderApp() {
   render(<App createRenderer={factory} />);
-  await screen.findByRole("slider", { name: /Volume/ });
+  await screen.findByRole("slider", { name: "Master volume" });
   await waitFor(() => expect(frames).not.toBeNull());
 }
 
-const volume = () => screen.getByRole("slider", { name: /Volume/ });
+const volume = () => screen.getByRole("slider", { name: "Master volume" });
 /** How far along a slider from `min` to `max` `value` is. */
 const along = (value: number, [min, max]: [number, number]) => (value - min) / (max - min);
 // The mock project's ranges.
@@ -947,7 +947,7 @@ describe("App", () => {
       // has anything to redraw (UTA-33).
       const { factory: timelineFactory, renderer: timeline } = recordingTimelineFactory();
       render(<App createRenderer={factory} createTimelineRenderer={timelineFactory} />);
-      await screen.findByRole("slider", { name: /Volume/ });
+      await screen.findByRole("slider", { name: "Master volume" });
       await waitFor(() => expect(timeline.clips.length).toBeGreaterThan(0));
       await waitFor(() => expect(drawnNotes()).toHaveLength(2));
       const before = [timeline.clips.length, renderer.notes.length];
@@ -1486,7 +1486,7 @@ describe("App", () => {
 
     async function openBenchmark() {
       render(<App createRenderer={factory} benchmark={{ options, clock }} />);
-      await screen.findByRole("slider", { name: /Volume/ });
+      await screen.findByRole("slider", { name: "Master volume" });
       await act(() => emit("develop-menu", "run-benchmark"));
       return screen.getByRole("dialog", { name: "Benchmark" });
     }
@@ -1562,7 +1562,7 @@ describe("App", () => {
           benchmark={{ options: { ...options, songs: ["wide"], noteDeletes: 5 }, clock }}
         />,
       );
-      await screen.findByRole("slider", { name: /Volume/ });
+      await screen.findByRole("slider", { name: "Master volume" });
       await act(() => emit("develop-menu", "run-benchmark"));
       fireEvent.click(screen.getByRole("button", { name: "Replace and Run" }));
       await screen.findByLabelText("Benchmark report", {}, { timeout: 5000 });

@@ -1,4 +1,4 @@
-/* The top bar: the transport, and the master that App draws beside it. */
+/* The top bar's transport. */
 .transport {
   display: flex;
   align-items: center;
@@ -24,89 +24,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Tempo: the label in the second ink, the value in ink (the drag field
+   draws its own). */
 .transport .setting {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   margin-left: var(--space-6);
-}
-
-.master {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-}
-
-.master .volume .fader {
-  width: 100px;
-}
-
-/* Tempo and volume: the label in the second ink, the value in ink (the
-   drag field draws its own). */
-.transport .setting,
-.master .volume {
   color: var(--ink-2);
   font: var(--font-text);
 }
 
-.master .volume output {
-  color: var(--ink);
-}
-
-.master-meter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-/*
- * The clip light: an empty ring until the master clips, then filled in the
- * clip red, with no glow. The key around it is a space-7 square to hit; it
- * shades under the pointer only while lit, when a click resets it.
- * provisional: D-9
- */
-.clip-light {
-  display: grid;
-  place-items: center;
-  box-sizing: border-box;
-  width: var(--space-7);
-  height: var(--space-7);
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--rounded-md);
-  background: transparent;
-  cursor: default;
-  appearance: none;
-}
-
-.clip-light::before {
-  content: "";
-  box-sizing: border-box;
-  width: 10px;
-  height: 10px;
-  border: var(--stroke-clip) solid var(--ink-3);
-  border-radius: 50%;
-}
-
-.clip-light[data-lit="true"] {
-  cursor: pointer;
-}
-
-.clip-light[data-lit="true"]::before {
-  border-color: var(--clip);
-  background: var(--clip);
-}
-
-.clip-light[data-lit="true"]:hover {
-  background: var(--line);
-}
-
-.clip-light[data-lit="true"]:active {
-  background: var(--line-2);
-}
-
-.clip-light:focus-visible {
-  outline: var(--stroke-clip-selected) solid var(--selected);
-  outline-offset: 0;
-}

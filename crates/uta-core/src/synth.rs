@@ -57,6 +57,49 @@ const WAVEFORMS: [Choice; 4] = [
     },
 ];
 
+/// Which part of the sound the filter lets through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterMode {
+    /// Everything under the cutoff: today's filter.
+    #[default]
+    LowPass,
+    /// A band around the cutoff.
+    BandPass,
+    /// Everything over the cutoff.
+    HighPass,
+}
+
+impl FilterMode {
+    /// Every mode, in the panel's order.
+    pub const ALL: [FilterMode; 3] = [Self::LowPass, Self::BandPass, Self::HighPass];
+
+    /// The mode as `SetSynthParam` carries it: `"low_pass"`.
+    pub fn value(self) -> &'static str {
+        match self {
+            Self::LowPass => "low_pass",
+            Self::BandPass => "band_pass",
+            Self::HighPass => "high_pass",
+        }
+    }
+}
+
+/// Every filter mode, as the panel offers them.
+const FILTER_MODES: [Choice; 3] = [
+    Choice {
+        value: "low_pass",
+        label: "Low-pass",
+    },
+    Choice {
+        value: "band_pass",
+        label: "Band-pass",
+    },
+    Choice {
+        value: "high_pass",
+        label: "High-pass",
+    },
+];
+
 /// Everything that shapes the synth's sound, from the oscillators through
 /// the mixer, filter and envelope to the voice: the order the sound flows
 /// in, and the order [`Self::params`] gives them.
@@ -91,10 +134,24 @@ pub struct SynthSettings {
     pub osc2_level: f32,
     pub sub_level: f32,
     pub noise_level: f32,
-    /// The low-pass filter's cutoff, in Hz. Controls move it on a log scale.
+    pub filter_mode: FilterMode,
+    /// The filter's cutoff, in Hz. Controls move it on a log scale.
     pub cutoff_hz: f32,
     /// The filter's resonance, from 0 to 1.
     pub resonance: f32,
+    /// How far the filter envelope moves the cutoff at its peak, in octaves:
+    /// -10 to 10. Below zero it closes the filter instead of opening it.
+    pub filter_env_octaves: f32,
+    /// How closely the cutoff follows the note, from 0 to 1: at 1 it moves
+    /// an octave for each octave the note is above or below middle C.
+    pub filter_key: f32,
+    /// The filter envelope, in the same units and ranges as the amp
+    /// envelope below.
+    pub filter_attack_seconds: f32,
+    pub filter_decay_seconds: f32,
+    pub filter_sustain: f32,
+    pub filter_release_seconds: f32,
+    /// The amp envelope: each note's level.
     pub attack_seconds: f32,
     pub decay_seconds: f32,
     /// The level held after the decay, from 0 to 1 (linear, not dB).
@@ -123,6 +180,11 @@ impl SynthSettings {
     pub const MAX_CUTOFF_HZ: f32 = 20_000.0;
     pub const MIN_RESONANCE: f32 = 0.0;
     pub const MAX_RESONANCE: f32 = 1.0;
+    /// The filter envelope's amount either side of zero, in octaves: enough
+    /// to sweep the whole range from the lowest cutoff.
+    pub const MAX_FILTER_ENV_OCTAVES: f32 = 10.0;
+    pub const MIN_FILTER_KEY: f32 = 0.0;
+    pub const MAX_FILTER_KEY: f32 = 1.0;
     /// The shortest attack, decay or release: 1 ms.
     pub const MIN_ENVELOPE_SECONDS: f32 = 0.001;
     /// The longest attack, decay or release.
@@ -132,7 +194,7 @@ impl SynthSettings {
 
     /// Every setting, as `SetSynthParam` carries them, in the order the
     /// sound flows through them.
-    pub fn params(&self) -> [SynthParam; 19] {
+    pub fn params(&self) -> [SynthParam; 26] {
         [
             SynthParam::Osc1Wave(self.osc1_wave),
             SynthParam::Osc1Octave(self.osc1_octave),
@@ -146,8 +208,15 @@ impl SynthSettings {
             SynthParam::Osc2Level(self.osc2_level),
             SynthParam::SubLevel(self.sub_level),
             SynthParam::NoiseLevel(self.noise_level),
+            SynthParam::FilterMode(self.filter_mode),
             SynthParam::CutoffHz(self.cutoff_hz),
             SynthParam::Resonance(self.resonance),
+            SynthParam::FilterEnvOctaves(self.filter_env_octaves),
+            SynthParam::FilterKey(self.filter_key),
+            SynthParam::FilterAttackSeconds(self.filter_attack_seconds),
+            SynthParam::FilterDecaySeconds(self.filter_decay_seconds),
+            SynthParam::FilterSustain(self.filter_sustain),
+            SynthParam::FilterReleaseSeconds(self.filter_release_seconds),
             SynthParam::AttackSeconds(self.attack_seconds),
             SynthParam::DecaySeconds(self.decay_seconds),
             SynthParam::Sustain(self.sustain),
@@ -202,11 +271,32 @@ impl SynthSettings {
             SynthParam::NoiseLevel(value) => {
                 SynthParam::NoiseLevel(replace(&mut self.noise_level, value))
             }
+            SynthParam::FilterMode(mode) => {
+                SynthParam::FilterMode(replace(&mut self.filter_mode, mode))
+            }
             SynthParam::CutoffHz(value) => {
                 SynthParam::CutoffHz(replace(&mut self.cutoff_hz, value))
             }
             SynthParam::Resonance(value) => {
                 SynthParam::Resonance(replace(&mut self.resonance, value))
+            }
+            SynthParam::FilterEnvOctaves(value) => {
+                SynthParam::FilterEnvOctaves(replace(&mut self.filter_env_octaves, value))
+            }
+            SynthParam::FilterKey(value) => {
+                SynthParam::FilterKey(replace(&mut self.filter_key, value))
+            }
+            SynthParam::FilterAttackSeconds(value) => {
+                SynthParam::FilterAttackSeconds(replace(&mut self.filter_attack_seconds, value))
+            }
+            SynthParam::FilterDecaySeconds(value) => {
+                SynthParam::FilterDecaySeconds(replace(&mut self.filter_decay_seconds, value))
+            }
+            SynthParam::FilterSustain(value) => {
+                SynthParam::FilterSustain(replace(&mut self.filter_sustain, value))
+            }
+            SynthParam::FilterReleaseSeconds(value) => {
+                SynthParam::FilterReleaseSeconds(replace(&mut self.filter_release_seconds, value))
             }
             SynthParam::AttackSeconds(value) => {
                 SynthParam::AttackSeconds(replace(&mut self.attack_seconds, value))
@@ -228,7 +318,9 @@ impl SynthSettings {
 impl Default for SynthSettings {
     /// Today's sound, from before RFC-008: oscillator 1 a saw at the note's
     /// pitch and full level, everything else in the mixer at zero, oscillator
-    /// 2 free of oscillator 1, and the oscillators restarting on each note.
+    /// 2 free of oscillator 1, a low-pass filter that nothing moves, and the
+    /// oscillators restarting on each note. The filter envelope is set for a
+    /// pluck, so turning up its amount alone makes one.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -243,8 +335,15 @@ impl Default for SynthSettings {
             osc2_level: 0.0,
             sub_level: 0.0,
             noise_level: 0.0,
+            filter_mode: FilterMode::LowPass,
             cutoff_hz: Self::MAX_CUTOFF_HZ,
             resonance: 0.0,
+            filter_env_octaves: 0.0,
+            filter_key: 0.0,
+            filter_attack_seconds: 0.001,
+            filter_decay_seconds: 0.3,
+            filter_sustain: 0.0,
+            filter_release_seconds: 0.2,
             attack_seconds: 0.005,
             decay_seconds: 0.2,
             sustain: 0.7,
@@ -274,8 +373,15 @@ pub enum SynthParam {
     Osc2Level(f32),
     SubLevel(f32),
     NoiseLevel(f32),
+    FilterMode(FilterMode),
     CutoffHz(f32),
     Resonance(f32),
+    FilterEnvOctaves(f32),
+    FilterKey(f32),
+    FilterAttackSeconds(f32),
+    FilterDecaySeconds(f32),
+    FilterSustain(f32),
+    FilterReleaseSeconds(f32),
     AttackSeconds(f32),
     DecaySeconds(f32),
     Sustain(f32),
@@ -299,22 +405,31 @@ impl SynthParam {
             | Self::DecaySeconds(_)
             | Self::Sustain(_)
             | Self::ReleaseSeconds(_) => 2,
-            Self::Osc1Width(_) | Self::Osc2Sync(_) => 8,
+            Self::FilterMode(_)
+            | Self::FilterEnvOctaves(_)
+            | Self::FilterKey(_)
+            | Self::FilterAttackSeconds(_)
+            | Self::FilterDecaySeconds(_)
+            | Self::FilterSustain(_)
+            | Self::FilterReleaseSeconds(_) => 8,
+            Self::Osc1Width(_) | Self::Osc2Sync(_) => 9,
             _ => 6,
         }
     }
 
-    /// The setting's value and its limits (inclusive), or `None` for a wave
-    /// or a switch, which have no range.
+    /// The setting's value and its limits (inclusive), or `None` for a
+    /// wave, a mode or a switch, which have no range.
     pub fn range(&self) -> Option<(f32, f32, f32)> {
         use SynthSettings as S;
         let octave = |octave: i8, min: i8, max: i8| {
             Some((f32::from(octave), f32::from(min), f32::from(max)))
         };
         match *self {
-            Self::Osc1Wave(_) | Self::Osc2Wave(_) | Self::Osc2Sync(_) | Self::OscRetrigger(_) => {
-                None
-            }
+            Self::Osc1Wave(_)
+            | Self::Osc2Wave(_)
+            | Self::Osc2Sync(_)
+            | Self::FilterMode(_)
+            | Self::OscRetrigger(_) => None,
             Self::Osc1Octave(value) | Self::Osc2Octave(value) => {
                 octave(value, S::MIN_OCTAVE, S::MAX_OCTAVE)
             }
@@ -329,12 +444,21 @@ impl SynthParam {
             | Self::NoiseLevel(value) => Some((value, S::MIN_LEVEL, S::MAX_LEVEL)),
             Self::CutoffHz(hz) => Some((hz, S::MIN_CUTOFF_HZ, S::MAX_CUTOFF_HZ)),
             Self::Resonance(value) => Some((value, S::MIN_RESONANCE, S::MAX_RESONANCE)),
+            Self::FilterEnvOctaves(value) => {
+                Some((value, -S::MAX_FILTER_ENV_OCTAVES, S::MAX_FILTER_ENV_OCTAVES))
+            }
+            Self::FilterKey(value) => Some((value, S::MIN_FILTER_KEY, S::MAX_FILTER_KEY)),
             Self::AttackSeconds(seconds)
             | Self::DecaySeconds(seconds)
-            | Self::ReleaseSeconds(seconds) => {
+            | Self::ReleaseSeconds(seconds)
+            | Self::FilterAttackSeconds(seconds)
+            | Self::FilterDecaySeconds(seconds)
+            | Self::FilterReleaseSeconds(seconds) => {
                 Some((seconds, S::MIN_ENVELOPE_SECONDS, S::MAX_ENVELOPE_SECONDS))
             }
-            Self::Sustain(level) => Some((level, S::MIN_SUSTAIN, S::MAX_SUSTAIN)),
+            Self::Sustain(level) | Self::FilterSustain(level) => {
+                Some((level, S::MIN_SUSTAIN, S::MAX_SUSTAIN))
+            }
         }
     }
 
@@ -444,10 +568,20 @@ impl SynthParam {
                  click on a pluck, or the hiss of a snare-like sound. A little \
                  goes a long way.",
             ),
+            Self::FilterMode(_) => Description::choice(
+                "Filter mode",
+                "Which part of the sound the filter keeps. Low-pass keeps what's \
+                 under the cutoff, warm and round, for basses and pads; band-pass \
+                 keeps a band around it, thin and nasal, like a voice down a \
+                 telephone; high-pass keeps what's over it, airy and light, \
+                 taking the weight out from underneath.",
+                &FILTER_MODES,
+                defaults.filter_mode.value(),
+            ),
             Self::CutoffHz(_) => number(
                 "Cutoff",
-                "How bright it is: the low-pass filter takes away everything above \
-                 it. Low is dark and muffled, like a bass through a wall; high lets \
+                "Where the filter cuts. In low-pass it's how bright the sound is: \
+                 low is dark and muffled, like a bass through a wall; high lets \
                  the whole wave through.",
                 Unit::Hz,
                 Log,
@@ -459,6 +593,56 @@ impl SynthParam {
                  the lows.",
                 Unit::Amount,
                 Linear,
+            ),
+            Self::FilterEnvOctaves(_) => number(
+                "Env amount",
+                "How far the filter envelope opens the filter on each note, in \
+                 octaves above the cutoff. Up, with a short decay and no sustain, \
+                 each note starts bright and closes down: a pluck. Below zero it \
+                 closes the filter instead, so each note swells from dark.",
+                Unit::Octaves,
+                Linear,
+            ),
+            Self::FilterKey(_) => number(
+                "Key",
+                "How closely the cutoff follows the note. At zero every note has \
+                 the same cutoff, so high notes sound duller than low ones; at \
+                 full the cutoff rises an octave with each octave, and every \
+                 note is as bright as the next.",
+                Unit::Fraction,
+                Linear,
+            ),
+            Self::FilterAttackSeconds(_) => number(
+                "Filter attack",
+                "How quickly the filter opens to its peak at the start of each \
+                 note. Short is a sharp, bright edge; long is a slow brightening, \
+                 like a pad coming into focus.",
+                Unit::Seconds,
+                Log,
+            ),
+            Self::FilterDecaySeconds(_) => number(
+                "Filter decay",
+                "How quickly the filter closes from its peak to the filter's \
+                 Sustain. Short is a pluck or a tight bass; long is a slow \
+                 darkening through each held note.",
+                Unit::Seconds,
+                Log,
+            ),
+            Self::FilterSustain(_) => number(
+                "Filter sustain",
+                "How open the filter stays while a note is held, as a share of \
+                 the Env amount. None closes it back to the cutoff, as a pluck \
+                 does; full keeps every held note bright.",
+                Unit::Fraction,
+                Linear,
+            ),
+            Self::FilterReleaseSeconds(_) => number(
+                "Filter release",
+                "How quickly the filter closes after the key is let go. Short \
+                 darkens the tail at once; long lets it close slowly as it \
+                 fades.",
+                Unit::Seconds,
+                Log,
             ),
             Self::AttackSeconds(_) => number(
                 "Attack",
@@ -534,8 +718,22 @@ mod tests {
             ],
             [1.0, 0.0, 0.0, 0.0]
         );
+        assert_eq!(settings.filter_mode, FilterMode::LowPass);
         assert_eq!(settings.cutoff_hz, 20_000.0);
         assert_eq!(settings.resonance, 0.0);
+        assert_eq!(
+            (settings.filter_env_octaves, settings.filter_key),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            [
+                settings.filter_attack_seconds,
+                settings.filter_decay_seconds,
+                settings.filter_sustain,
+                settings.filter_release_seconds
+            ],
+            [0.001, 0.3, 0.0, 0.2]
+        );
         assert_eq!(settings.attack_seconds, 0.005);
         assert_eq!(settings.decay_seconds, 0.2);
         assert_eq!(settings.sustain, 0.7);
@@ -603,8 +801,15 @@ mod tests {
             osc2_level: 0.25,
             sub_level: 0.75,
             noise_level: 1.0,
+            filter_mode: FilterMode::HighPass,
             cutoff_hz: 100.0,
             resonance: 1.0,
+            filter_env_octaves: -10.0,
+            filter_key: 0.5,
+            filter_attack_seconds: 2.0,
+            filter_decay_seconds: 0.01,
+            filter_sustain: 1.0,
+            filter_release_seconds: 4.0,
             attack_seconds: 10.0,
             decay_seconds: 0.001,
             sustain: 0.0,
@@ -649,6 +854,15 @@ mod tests {
             SynthParam::CutoffHz(20_000.0),
             SynthParam::Resonance(0.0),
             SynthParam::Resonance(1.0),
+            SynthParam::FilterEnvOctaves(-10.0),
+            SynthParam::FilterEnvOctaves(10.0),
+            SynthParam::FilterKey(0.0),
+            SynthParam::FilterKey(1.0),
+            SynthParam::FilterAttackSeconds(0.001),
+            SynthParam::FilterDecaySeconds(10.0),
+            SynthParam::FilterSustain(0.0),
+            SynthParam::FilterSustain(1.0),
+            SynthParam::FilterReleaseSeconds(10.0),
             SynthParam::AttackSeconds(0.001),
             SynthParam::DecaySeconds(10.0),
             SynthParam::Sustain(0.0),
@@ -680,11 +894,12 @@ mod tests {
                     assert_eq!(default, value, "{param:?}");
                 }
                 (Kind::Choice { default, .. }, None) => {
-                    let wave = match param {
-                        SynthParam::Osc1Wave(wave) | SynthParam::Osc2Wave(wave) => wave,
+                    let value = match param {
+                        SynthParam::Osc1Wave(wave) | SynthParam::Osc2Wave(wave) => wave.value(),
+                        SynthParam::FilterMode(mode) => mode.value(),
                         _ => panic!("{param:?} is a choice"),
                     };
-                    assert_eq!(default, wave.value());
+                    assert_eq!(default, value);
                 }
                 (Kind::Toggle { default }, None) => {
                     let on = match param {
@@ -731,6 +946,12 @@ mod tests {
                 (Fraction, Linear, None),
                 (Hz, Log, None),
                 (Amount, Linear, None),
+                (Octaves, Linear, None),
+                (Fraction, Linear, None),
+                (Seconds, Log, None),
+                (Seconds, Log, None),
+                (Fraction, Linear, None),
+                (Seconds, Log, None),
                 (Seconds, Log, None),
                 (Seconds, Log, None),
                 (Fraction, Linear, None),
@@ -759,6 +980,26 @@ mod tests {
     }
 
     #[test]
+    fn the_filter_modes_choices_are_its_values_in_order() {
+        let Kind::Choice { options, .. } =
+            SynthParam::FilterMode(FilterMode::LowPass).describe().kind
+        else {
+            panic!("the filter mode is a choice");
+        };
+        let values: Vec<_> = options.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = FilterMode::ALL
+            .iter()
+            .map(|mode| serde_json::to_value(mode).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = FilterMode::ALL.iter().map(|mode| mode.value()).collect();
+        assert_eq!(values, names);
+    }
+
+    #[test]
     fn out_of_range_values_are_rejected_and_change_nothing() {
         let mut settings = SynthSettings::default();
         for param in [
@@ -780,6 +1021,14 @@ mod tests {
             SynthParam::CutoffHz(f32::NAN),
             SynthParam::Resonance(-0.01),
             SynthParam::Resonance(1.01),
+            SynthParam::FilterEnvOctaves(10.01),
+            SynthParam::FilterEnvOctaves(f32::NAN),
+            SynthParam::FilterKey(-0.01),
+            SynthParam::FilterKey(1.01),
+            SynthParam::FilterAttackSeconds(0.0),
+            SynthParam::FilterDecaySeconds(11.0),
+            SynthParam::FilterSustain(1.5),
+            SynthParam::FilterReleaseSeconds(f32::NAN),
             SynthParam::AttackSeconds(0.0),
             SynthParam::DecaySeconds(10.5),
             SynthParam::Sustain(f32::INFINITY),
