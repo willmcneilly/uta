@@ -7,8 +7,8 @@ use uta_core::time::{TempoMap, Ticks};
 use uta_core::{ClipId, Notes, Project, Source, TrackId, Transport};
 
 use crate::{
-    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip, NoteKey,
-    SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
+    DEFAULT_SAMPLE_RATE, EffectSnapshot, FilterMode, KitSettings, LfoShape, MixerStrip,
+    ModDestination, ModSlot, ModSource, NoteKey, SynthSettings, TRACK_SLOTS, VoiceMode, Waveform,
 };
 
 /// Everything the audio thread needs to know about what to play.
@@ -818,6 +818,56 @@ fn synth_settings(settings: &uta_core::SynthSettings, bpm: f32) -> SynthSettings
         legato: settings.legato,
         glide_seconds: settings.glide_seconds,
         osc_retrigger: settings.osc_retrigger,
+        mods: [
+            (
+                settings.mod1_source,
+                settings.mod1_destination,
+                settings.mod1_amount,
+            ),
+            (
+                settings.mod2_source,
+                settings.mod2_destination,
+                settings.mod2_amount,
+            ),
+            (
+                settings.mod3_source,
+                settings.mod3_destination,
+                settings.mod3_amount,
+            ),
+        ]
+        .map(|(source, destination, amount)| ModSlot {
+            source: mod_source(source),
+            destination: mod_destination(destination),
+            amount,
+        }),
+    }
+}
+
+fn mod_source(source: uta_core::ModSource) -> ModSource {
+    match source {
+        uta_core::ModSource::FilterEnv => ModSource::FilterEnv,
+        uta_core::ModSource::AmpEnv => ModSource::AmpEnv,
+        uta_core::ModSource::Lfo => ModSource::Lfo,
+        uta_core::ModSource::Velocity => ModSource::Velocity,
+        uta_core::ModSource::Key => ModSource::Key,
+    }
+}
+
+fn mod_destination(destination: uta_core::ModDestination) -> ModDestination {
+    use uta_core::ModDestination as D;
+    match destination {
+        D::Off => ModDestination::Off,
+        D::Osc1Pitch => ModDestination::Osc1Pitch,
+        D::Osc2Pitch => ModDestination::Osc2Pitch,
+        D::Osc1Level => ModDestination::Osc1Level,
+        D::Osc2Level => ModDestination::Osc2Level,
+        D::SubLevel => ModDestination::SubLevel,
+        D::NoiseLevel => ModDestination::NoiseLevel,
+        D::Osc1Width => ModDestination::Osc1Width,
+        D::Cutoff => ModDestination::Cutoff,
+        D::Resonance => ModDestination::Resonance,
+        D::LfoRate => ModDestination::LfoRate,
+        D::Volume => ModDestination::Volume,
     }
 }
 

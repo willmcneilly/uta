@@ -25,8 +25,9 @@ use uta_core::{
 use uta_engine::live::{AudioCallback, DeviceError, ERROR_CAPACITY, ErrorCallback};
 use uta_engine::offline::Renderer;
 use uta_engine::{
-    EngineConfig, FilterMode, LfoShape, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, NoteKey, Processor,
-    STATUS_CAPACITY, Snapshot, SynthSettings, USED_SNAPSHOT_CAPACITY, VOICES, VoiceMode, Waveform,
+    EngineConfig, FilterMode, LfoShape, MAX_NOTE_EVENTS_PER_BLOCK, MixerStrip, ModDestination,
+    ModSlot, ModSource, NoteKey, Processor, STATUS_CAPACITY, Snapshot, SynthSettings,
+    USED_SNAPSHOT_CAPACITY, VOICES, VoiceMode, Waveform,
 };
 
 #[global_allocator]
@@ -192,6 +193,18 @@ fn notes_take_overs_and_synth_changes_do_not_allocate() {
                     legato: round % 4 == 2,
                     glide_seconds: 0.001 + 0.02 * step,
                     osc_retrigger: round % 2 == 0,
+                    // Every source and every destination over the rounds,
+                    // each slot changing its amount and its route while
+                    // notes sound, and every slot empty in some.
+                    mods: std::array::from_fn(|slot| {
+                        let turn = usize::from(round) + 4 * slot;
+                        ModSlot {
+                            source: ModSource::ALL[turn % ModSource::ALL.len()],
+                            destination: ModDestination::ALL
+                                [(turn * 5 + slot) % ModDestination::ALL.len()],
+                            amount: [1.0, -1.0, 0.5, 0.0][(turn + slot) % 4],
+                        }
+                    }),
                 },
             )
             .unwrap();

@@ -267,8 +267,9 @@ const MOD_SOURCES: [Choice; 5] = [
     },
 ];
 
-/// What a mod slot moves, or nothing. At an Amount of 1 with its source at
-/// 1, each moves by its own amount: see [`ModDestination::full_scale`].
+/// What a mod slot moves, or nothing. How far an Amount of 1 moves each is
+/// the engine's (`uta_engine::ModDestination::full_scale`): two octaves of
+/// pitch, ten octaves of cutoff, a level's whole range.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModDestination {
@@ -323,26 +324,6 @@ impl ModDestination {
             Self::Resonance => "resonance",
             Self::LfoRate => "lfo_rate",
             Self::Volume => "volume",
-        }
-    }
-
-    /// How far it moves at an Amount of 1 with the source at 1, in its own
-    /// unit: semitones for a pitch, octaves for the cutoff and the LFO's
-    /// rate, and the setting's own scale for the rest. Volume's is a gain:
-    /// 1 doubles it (+6 dB), -1 silences it. Agreed with Will for UTA-79.
-    pub const fn full_scale(self) -> f32 {
-        match self {
-            Self::Off => 0.0,
-            Self::Osc1Pitch | Self::Osc2Pitch => 24.0,
-            Self::Osc1Level
-            | Self::Osc2Level
-            | Self::SubLevel
-            | Self::NoiseLevel
-            | Self::Resonance
-            | Self::Volume => 1.0,
-            Self::Osc1Width => SynthSettings::MAX_WIDTH - SynthSettings::MIN_WIDTH,
-            Self::Cutoff => SynthSettings::MAX_FILTER_ENV_OCTAVES,
-            Self::LfoRate => 4.0,
         }
     }
 }
@@ -548,8 +529,8 @@ impl SynthSettings {
     /// The shortest Glide, which is off, and the longest.
     pub const MIN_GLIDE_SECONDS: f32 = 0.001;
     pub const MAX_GLIDE_SECONDS: f32 = 5.0;
-    /// A mod slot's Amount either side of zero: its destination's whole
-    /// [`ModDestination::full_scale`].
+    /// A mod slot's Amount either side of zero: all of how far its
+    /// destination can be moved.
     pub const MAX_MOD_AMOUNT: f32 = 1.0;
 
     /// Every setting, as `SetSynthParam` carries them, in the order the

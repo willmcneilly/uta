@@ -64,6 +64,115 @@ pub enum VoiceMode {
     Mono,
 }
 
+/// What drives a mod slot. See `uta_core::ModSource`: each runs from 0 to
+/// 1, or -1 to 1 for the LFO and the key.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ModSource {
+    FilterEnv,
+    AmpEnv,
+    Lfo,
+    #[default]
+    Velocity,
+    /// -1 five octaves under middle C, 1 five octaves over it.
+    Key,
+}
+
+impl ModSource {
+    /// Every source, in order.
+    pub const ALL: [ModSource; 5] = [
+        Self::FilterEnv,
+        Self::AmpEnv,
+        Self::Lfo,
+        Self::Velocity,
+        Self::Key,
+    ];
+}
+
+/// What a mod slot moves. See `uta_core::ModDestination`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ModDestination {
+    /// An empty slot.
+    #[default]
+    Off,
+    Osc1Pitch,
+    Osc2Pitch,
+    Osc1Level,
+    Osc2Level,
+    SubLevel,
+    NoiseLevel,
+    Osc1Width,
+    Cutoff,
+    Resonance,
+    LfoRate,
+    Volume,
+}
+
+impl ModDestination {
+    /// Every destination, in order. A destination's place in it is its
+    /// index in a voice's modulation.
+    pub const ALL: [ModDestination; 12] = [
+        Self::Off,
+        Self::Osc1Pitch,
+        Self::Osc2Pitch,
+        Self::Osc1Level,
+        Self::Osc2Level,
+        Self::SubLevel,
+        Self::NoiseLevel,
+        Self::Osc1Width,
+        Self::Cutoff,
+        Self::Resonance,
+        Self::LfoRate,
+        Self::Volume,
+    ];
+
+    /// How far it moves at an Amount of 1 with the source at 1, in its own
+    /// unit: semitones for a pitch (two octaves, enough for a sync sweep),
+    /// octaves for the cutoff (as far as the filter envelope's Env amount)
+    /// and for the LFO's rate, and the whole range of a level, the width
+    /// and the resonance. Volume's is a share of the voice's level: 1
+    /// doubles it (+6 dB), -1 silences it. Agreed with Will for UTA-79.
+    pub const fn full_scale(self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Osc1Pitch | Self::Osc2Pitch => 24.0,
+            Self::Osc1Level
+            | Self::Osc2Level
+            | Self::SubLevel
+            | Self::NoiseLevel
+            | Self::Resonance
+            | Self::Volume => 1.0,
+            Self::Osc1Width => 0.9,
+            Self::Cutoff => 10.0,
+            Self::LfoRate => 4.0,
+        }
+    }
+}
+
+/// One mod slot: its source moves its destination by its amount, from -1
+/// to 1, [`SynthSettings::MOD_AMOUNT`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModSlot {
+    pub source: ModSource,
+    pub destination: ModDestination,
+    /// It glides. A new source or destination glides the old one's amount
+    /// to nothing first, then the new one's in.
+    pub amount: f32,
+}
+
+impl ModSlot {
+    /// An empty slot, with `source` ready.
+    pub const fn off(source: ModSource) -> Self {
+        Self {
+            source,
+            destination: ModDestination::Off,
+            amount: 0.0,
+        }
+    }
+}
+
+/// How many mod slots the synth has.
+pub const MOD_SLOTS: usize = 3;
+
 /// How the synth sounds. It travels in the [`crate::Snapshot`], and changes
 /// glide rather than jump (see [`crate::SYNTH_SMOOTHING_SECONDS`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,6 +269,8 @@ pub struct SynthSettings {
     /// note. Off, each note picks them up where they would be had they been
     /// running since Play.
     pub osc_retrigger: bool,
+    /// The mod slots, each on top of the knobs and the fixed routings.
+    pub mods: [ModSlot; MOD_SLOTS],
 }
 
 impl SynthSettings {
@@ -182,6 +293,7 @@ impl SynthSettings {
     pub const TIME_SECONDS: RangeInclusive<f32> = 0.001..=10.0;
     pub const SUSTAIN: RangeInclusive<f32> = 0.0..=1.0;
     pub const GLIDE_SECONDS: RangeInclusive<f32> = 0.001..=5.0;
+    pub const MOD_AMOUNT: RangeInclusive<f32> = -1.0..=1.0;
 
     /// These settings with every value inside its range. A value that isn't
     /// a number takes its default. The synth plays what this returns, so a
@@ -286,6 +398,10 @@ impl SynthSettings {
                 default.glide_seconds,
             ),
             osc_retrigger: self.osc_retrigger,
+            mods: self.mods.map(|slot| ModSlot {
+                amount: clamp(slot.amount, Self::MOD_AMOUNT, 0.0),
+                ..slot
+            }),
         }
     }
 }
@@ -293,8 +409,8 @@ impl SynthSettings {
 impl Default for SynthSettings {
     /// Today's sound: oscillator 1 a saw at full level, the rest of the
     /// mixer at zero, oscillator 2 free of oscillator 1, a low-pass filter
-    /// that nothing moves, the oscillators restarting on each note, and an
-    /// LFO that moves nothing, in Poly.
+    /// that nothing moves, the oscillators restarting on each note, an LFO
+    /// that moves nothing and empty mod slots, in Poly.
     fn default() -> Self {
         Self {
             osc1_wave: Waveform::Saw,
@@ -335,6 +451,11 @@ impl Default for SynthSettings {
             legato: false,
             glide_seconds: 0.001,
             osc_retrigger: true,
+            mods: [
+                ModSlot::off(ModSource::Velocity),
+                ModSlot::off(ModSource::FilterEnv),
+                ModSlot::off(ModSource::Lfo),
+            ],
         }
     }
 }
@@ -438,8 +559,31 @@ mod tests {
             legato: true,
             glide_seconds: 60.0,
             osc_retrigger: false,
+            mods: [
+                ModSlot {
+                    source: ModSource::Key,
+                    destination: ModDestination::Cutoff,
+                    amount: 3.0,
+                },
+                ModSlot {
+                    source: ModSource::Lfo,
+                    destination: ModDestination::Volume,
+                    amount: f32::NAN,
+                },
+                ModSlot {
+                    source: ModSource::AmpEnv,
+                    destination: ModDestination::Osc2Pitch,
+                    amount: -2.0,
+                },
+            ],
         }
         .clamped();
+        assert_eq!(
+            wild.mods.map(|slot| slot.amount),
+            [1.0, 0.0, -1.0],
+            "an amount out of range is clamped, and one that isn't a number is none"
+        );
+        assert_eq!(wild.mods[2].destination, ModDestination::Osc2Pitch);
         assert_eq!(wild.osc1_wave, Waveform::Pulse);
         assert_eq!(wild.osc1_octave, -2);
         assert_eq!(wild.osc2_octave, 2);

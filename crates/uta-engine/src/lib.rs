@@ -41,9 +41,9 @@ pub use snapshot::{
     TrackSnapshot, TrackSound, db_to_gain,
 };
 pub use synth::{
-    FILTER_CONTROL_SAMPLES, FilterMode, LFO_SMOOTHING_SECONDS, LfoShape, NoteKey,
-    SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS, VOICE_LEVEL, VOICES, VoiceMode,
-    Waveform, pitch_to_hz, velocity_to_gain,
+    FILTER_CONTROL_SAMPLES, FilterMode, LFO_SMOOTHING_SECONDS, LfoShape, MOD_SLOTS, ModDestination,
+    ModSlot, ModSource, NoteKey, SYNTH_SMOOTHING_SECONDS, SynthSettings, TAKE_OVER_SECONDS,
+    VOICE_LEVEL, VOICES, VoiceMode, Waveform, pitch_to_hz, velocity_to_gain,
 };
 
 /// The crate version.

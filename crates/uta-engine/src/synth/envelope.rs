@@ -91,6 +91,11 @@ impl Envelope {
         self.stage
     }
 
+    /// The level of the last sample.
+    pub(crate) fn level(&self) -> f64 {
+        self.level
+    }
+
     /// Starts from silence at the beginning of the attack.
     pub(crate) fn start(&mut self, times: &Times) {
         *self = Self {

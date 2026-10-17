@@ -2,8 +2,9 @@
 //! noise, mixed into a filter with its own envelope, then the amp envelope.
 //! Oscillator 1's pulse has a width, and oscillator 2 can sync to the first.
 //! Each voice has an LFO, which moves its pitch, its pulse width and its
-//! cutoff. In Mono, one voice plays the latest held note, gliding to each
-//! new one.
+//! cutoff, and three mod slots route what else a voice has (its envelopes,
+//! LFO, velocity and key) to what else it plays. In Mono, one voice plays
+//! the latest held note, gliding to each new one.
 //! See RFC-002, "The synth is ours, small and fixed-size", and RFC-008, "In
 //! the engine".
 //!
@@ -22,7 +23,10 @@ mod settings;
 mod sync_ab;
 
 pub use lfo::LFO_SMOOTHING_SECONDS;
-pub use settings::{FilterMode, LfoShape, SynthSettings, VoiceMode, Waveform};
+pub use settings::{
+    FilterMode, LfoShape, MOD_SLOTS, ModDestination, ModSlot, ModSource, SynthSettings, VoiceMode,
+    Waveform,
+};
 
 use held::HeldNotes;
 
@@ -54,6 +58,13 @@ pub const FILTER_CONTROL_SAMPLES: u32 = 16;
 /// The note the cutoff is set for when it follows the key: middle C. Key
 /// tracking moves it from here.
 const FILTER_KEY_CENTRE: u8 = 60;
+/// How many things a mod slot can move: [`ModDestination::ALL`], Off
+/// among them. A voice keeps where each is moved in that order.
+const DESTINATIONS: usize = ModDestination::ALL.len();
+/// How many samples the mod slots keep running after the last one is
+/// emptied, so each voice glides what they moved back to nothing over at
+/// least a control point rather than dropping it.
+const MOD_TAIL_SAMPLES: u32 = 2 * FILTER_CONTROL_SAMPLES;
 /// Each voice's peak level at full velocity, before the master volume: -12 dB,
 /// so four full-velocity notes together reach full scale.
 pub const VOICE_LEVEL: f32 = 0.25;
@@ -63,6 +74,10 @@ pub const VOICE_LEVEL: f32 = 0.25;
 /// (`Uuid::as_u128`), and live notes use any number the caller chooses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NoteKey(pub u128);
+
+/// How far from middle C the key, as a mod source, reaches 1 (or -1): five
+/// octaves.
+const KEY_SOURCE_SEMITONES: f32 = 60.0;
 
 /// The voice Mono plays its notes in.
 const MONO_VOICE: usize = 0;
@@ -154,6 +169,15 @@ struct Voice {
     /// [`TAKE_OVER_SECONDS`], so the level doesn't jump. While it moves, it
     /// sets `velocity_gain`.
     velocity_glide: Ramp,
+    /// How far the mod slots move each destination now, in
+    /// [`ModDestination::ALL`]'s order and each destination's own unit, and
+    /// the step each moves by a sample to where it will be at the next
+    /// control point. Worked out only while a slot is in use.
+    modulation: [f32; DESTINATIONS],
+    modulation_step: [f32; DESTINATIONS],
+    /// Its own LFO's rate against the knob's, from a mod slot: 1 when
+    /// nothing moves it.
+    lfo_ratio: f64,
     /// When the note started, in the order notes started.
     started: u64,
     /// When the release started, in the same order.
@@ -185,9 +209,29 @@ impl Voice {
             envelope: Envelope::default(),
             velocity_gain: 0.0,
             velocity_glide: Ramp::new(0.0, 1),
+            modulation: [0.0; DESTINATIONS],
+            modulation_step: [0.0; DESTINATIONS],
+            lfo_ratio: 1.0,
             started: 0,
             released: 0,
         }
+    }
+
+    /// Where its mod slots' sources are now, in [`ModSource::ALL`]'s order:
+    /// the filter envelope at `filter_level`, the amp envelope, the LFO at
+    /// `lfo`, the velocity and the key.
+    #[inline]
+    fn mod_sources(&self, filter_level: f64, lfo: f32) -> [f32; ModSource::ALL.len()] {
+        let key = (self.glide.value() - f32::from(FILTER_KEY_CENTRE)) / KEY_SOURCE_SEMITONES;
+        [
+            filter_level as f32,
+            self.envelope.level() as f32,
+            lfo,
+            // The velocity's gain is its square: this is the velocity, and
+            // in Mono it glides as the gain does.
+            self.velocity_gain.sqrt(),
+            key,
+        ]
     }
 
     fn is_free(&self) -> bool {
@@ -450,6 +494,21 @@ pub(crate) struct Synth {
     gain: f32,
     gain_for: [f32; 4],
 
+    /// The source and destination each mod slot plays, and its amount,
+    /// gliding. A slot given a new source or destination glides its amount
+    /// to nothing, then takes the new route and glides to the new amount,
+    /// so the sound never jumps.
+    mod_routes: [(ModSource, ModDestination); MOD_SLOTS],
+    mod_amounts: [Ramp; MOD_SLOTS],
+    /// Whether a slot's amount is gliding, or its route waits to change.
+    mods_settling: bool,
+    /// Samples left that the mod slots run for, kept topped up while any
+    /// is in use. See [`MOD_TAIL_SAMPLES`].
+    mod_tail: u32,
+    /// The rate of the LFO the voices share, against the knob's: the newest
+    /// note's mod slots set it, as one LFO can only run at one rate.
+    shared_lfo_ratio: f64,
+
     take_over_samples: u32,
     /// In Mono, every note held, the latest of which the mono voice plays.
     /// Empty in Poly.
@@ -506,6 +565,11 @@ impl Synth {
             song_sample: 0,
             gain: 1.0,
             gain_for: [0.0; 4],
+            mod_routes: settings.mods.map(|slot| (slot.source, slot.destination)),
+            mod_amounts: [Ramp::new(0.0, 1); MOD_SLOTS],
+            mods_settling: false,
+            mod_tail: 0,
+            shared_lfo_ratio: 1.0,
             take_over_samples: 1,
             held: HeldNotes::default(),
             mono_started: false,
@@ -530,6 +594,7 @@ impl Synth {
         self.running = 0;
         self.filter_countdown = 0;
         self.lfo_phase = 0.0;
+        self.shared_lfo_ratio = 1.0;
     }
 
     /// Starts the free-running parts again from the same point: each voice's
@@ -590,6 +655,9 @@ impl Synth {
         self.lfo_vibrato = Ramp::new(settings.lfo_vibrato_semitones, smoothing);
         self.lfo_width = Ramp::new(settings.lfo_width, smoothing);
         self.filter_lfo_octaves = Ramp::new(settings.filter_lfo_octaves, smoothing);
+        self.mod_routes = settings.mods.map(|slot| (slot.source, slot.destination));
+        self.mod_amounts = settings.mods.map(|slot| Ramp::new(slot.amount, smoothing));
+        self.mods_settling = false;
         self.update_lfo_increment();
         self.update_ratios(settings.osc2_pitch_semitones);
         self.update_gain(self.levels.map(|level| level.value()));
@@ -637,7 +705,41 @@ impl Synth {
         self.lfo_width.set_target(settings.lfo_width);
         self.filter_lfo_octaves
             .set_target(settings.filter_lfo_octaves);
+        for ((route, amount), slot) in self
+            .mod_routes
+            .iter()
+            .zip(self.mod_amounts.iter_mut())
+            .zip(settings.mods)
+        {
+            let same_route = *route == (slot.source, slot.destination);
+            amount.set_target(if same_route { slot.amount } else { 0.0 });
+        }
+        self.mods_settling = true;
         self.update_times();
+    }
+
+    /// Moves the mod slots' amounts on by a sample, and gives a slot its
+    /// new route once its old one has glided to nothing.
+    #[inline(never)]
+    fn settle_mods(&mut self) {
+        let mut settling = false;
+        for ((route, amount), slot) in self
+            .mod_routes
+            .iter_mut()
+            .zip(self.mod_amounts.iter_mut())
+            .zip(self.settings.mods)
+        {
+            if amount.is_moving() {
+                amount.next_value();
+            }
+            let wanted = (slot.source, slot.destination);
+            if *route != wanted && !amount.is_moving() {
+                *route = wanted;
+                amount.set_target(slot.amount);
+            }
+            settling |= amount.is_moving() || *route != wanted;
+        }
+        self.mods_settling = settling;
     }
 
     /// Starts a note in a free voice, or takes one over: the oldest releasing
@@ -857,7 +959,33 @@ impl Synth {
         let per_voice_filter = env_octaves != 0.0 || key != 0.0 || filter_lfo != 0.0;
         let vibrato = self.lfo_vibrato.next_value();
         let width_amount = f64::from(self.lfo_width.next_value());
-        let lfo_on = vibrato != 0.0 || width_amount != 0.0 || filter_lfo != 0.0;
+        if self.mods_settling {
+            self.settle_mods();
+        }
+        let mut mod_filter = false;
+        let mut mod_lfo = false;
+        for (&(source, destination), amount) in self.mod_routes.iter().zip(&self.mod_amounts) {
+            if destination != ModDestination::Off && amount.value() != 0.0 {
+                self.mod_tail = MOD_TAIL_SAMPLES;
+                mod_lfo |= source == ModSource::Lfo || destination == ModDestination::LfoRate;
+                mod_filter |= matches!(
+                    destination,
+                    ModDestination::Cutoff | ModDestination::Resonance
+                );
+            }
+        }
+        let mods_on = self.mod_tail > 0;
+        if mods_on {
+            self.mod_tail -= 1;
+        } else {
+            self.shared_lfo_ratio = 1.0;
+        }
+        // The voices keep their own filter settings, and their LFOs, until
+        // the slots that moved them have glided back to nothing.
+        let mod_filter = mods_on && (mod_filter || self.per_voice_filter);
+        let mod_lfo = mods_on && mod_lfo;
+        let per_voice_filter = per_voice_filter || mod_filter;
+        let lfo_on = vibrato != 0.0 || width_amount != 0.0 || filter_lfo != 0.0 || mod_lfo;
         let (lfo_increment, shared_phase) = self.next_lfo_phase();
         let lfo_shape = self.settings.lfo_shape;
         let lfo_retrigger = self.settings.lfo_retrigger;
@@ -908,21 +1036,36 @@ impl Synth {
             mono.velocity_glide_on();
         }
 
+        let lfo_sync = self.settings.lfo_sync;
+        let mod_routes = self.mod_routes;
+        let mod_amounts = self.mod_amounts.map(|amount| amount.value());
+        // The newest held note's LFO rate, for the LFO the voices share.
+        let mut newest = (0, 1.0);
         let mut sum = 0.0f32;
         for index in 0..VOICES {
             let voice = &mut self.voices[index];
             if voice.is_free() {
                 continue;
             }
+            // Where the mod slots move this voice on this sample, gliding
+            // to where they were worked out to be at the next control point.
+            let mut modulation = [0.0; DESTINATIONS];
+            if mods_on {
+                for (now, step) in voice.modulation.iter_mut().zip(voice.modulation_step) {
+                    *now += step;
+                }
+                modulation = voice.modulation;
+            }
+            let lfo_ratio = if lfo_retrigger { voice.lfo_ratio } else { 1.0 };
             let phase = if lfo_retrigger {
-                voice.lfo.advance_own(lfo_increment)
+                voice.lfo.advance_own(lfo_increment * lfo_ratio)
             } else {
                 shared_phase
             };
             let lfo = if lfo_on {
                 if control {
                     // Where it will be at the next control point.
-                    let ahead = lfo::wrap(phase + lfo_ahead);
+                    let ahead = lfo::wrap(phase + lfo_ahead * lfo_ratio);
                     voice
                         .lfo
                         .control(ahead, lfo_shape, lfo_decay, FILTER_CONTROL_SAMPLES);
@@ -936,11 +1079,33 @@ impl Synth {
             } else {
                 voice.increment
             };
-            let width = if width_amount != 0.0 {
+            let width_moved = f64::from(modulation[ModDestination::Osc1Width as usize]);
+            let width = if width_amount != 0.0 || width_moved != 0.0 {
                 let (min, max) = (SynthSettings::WIDTH.start(), SynthSettings::WIDTH.end());
-                (osc1_width + width_amount * f64::from(lfo)).clamp(f64::from(*min), f64::from(*max))
+                (osc1_width + width_amount * f64::from(lfo) + width_moved)
+                    .clamp(f64::from(*min), f64::from(*max))
             } else {
                 osc1_width
+            };
+            let (osc1_ratio, osc2_ratio) = if mods_on {
+                let [osc1, osc2] = [ModDestination::Osc1Pitch, ModDestination::Osc2Pitch]
+                    .map(|pitch| semitones_ratio(modulation[pitch as usize]));
+                (osc1_ratio * osc1, osc2_ratio * osc2)
+            } else {
+                (osc1_ratio, osc2_ratio)
+            };
+            let [osc1_level, osc2_level, sub_level, noise_level] = if mods_on {
+                let moved = [
+                    ModDestination::Osc1Level,
+                    ModDestination::Osc2Level,
+                    ModDestination::SubLevel,
+                    ModDestination::NoiseLevel,
+                ]
+                .map(|level| modulation[level as usize]);
+                let levels = [osc1_level, osc2_level, sub_level, noise_level];
+                std::array::from_fn(|i| (levels[i] + moved[i]).clamp(0.0, 1.0))
+            } else {
+                [osc1_level, osc2_level, sub_level, noise_level]
             };
             voice.osc1.set_increment(increment * osc1_ratio);
             let mut mix = 0.0;
@@ -994,6 +1159,26 @@ impl Synth {
                 let filter_level = voice
                     .filter_envelope
                     .next_level(filter_sustain, &self.filter_times);
+                let mut moved = [0.0; DESTINATIONS];
+                if mods_on {
+                    moved = modulation_for(
+                        mod_routes,
+                        mod_amounts,
+                        voice.mod_sources(filter_level, lfo),
+                    );
+                    for ((step, now), target) in voice
+                        .modulation_step
+                        .iter_mut()
+                        .zip(voice.modulation)
+                        .zip(moved)
+                    {
+                        *step = (target - now) / FILTER_CONTROL_SAMPLES as f32;
+                    }
+                    voice.lfo_ratio = lfo_ratio_for(moved, lfo_sync);
+                    if voice.is_held() && voice.started >= newest.0 {
+                        newest = (voice.started, voice.lfo_ratio);
+                    }
+                }
                 if per_voice_filter {
                     let octaves = filter_octaves(
                         base_octaves,
@@ -1001,8 +1186,9 @@ impl Synth {
                         filter_level,
                         key,
                         voice.glide.value(),
-                        filter_lfo * lfo,
+                        filter_lfo * lfo + moved[ModDestination::Cutoff as usize],
                     );
+                    let resonance = moved_resonance(resonance, moved);
                     let target = Tuning::new(octaves.exp2(), resonance, sample_rate);
                     voice.tuning_step = voice.tuning.step_to(target, FILTER_CONTROL_SAMPLES);
                 }
@@ -1023,6 +1209,9 @@ impl Synth {
                 voice.take_over_remaining -= 1;
                 faded_out = voice.take_over_remaining == 0;
             }
+            if mods_on {
+                gain *= (1.0 + modulation[ModDestination::Volume as usize]).clamp(0.0, 2.0);
+            }
             sum += filtered * gain * voice.velocity_gain;
 
             if faded_out {
@@ -1032,6 +1221,9 @@ impl Synth {
                     self.start_voice(index, note);
                 }
             }
+        }
+        if mods_on && control && !lfo_retrigger {
+            self.shared_lfo_ratio = newest.1;
         }
         sum * VOICE_LEVEL
     }
@@ -1091,6 +1283,21 @@ impl Synth {
         voice.lfo.start(lfo_phase, self.settings.lfo_shape);
         voice.filter.reset();
         voice.filter_envelope.start(&self.filter_times);
+        voice.envelope.start(&self.times);
+        voice.velocity_gain = velocity_to_gain(note.velocity);
+        // The mod slots start where the note's sources start, so velocity
+        // or key moves it from its first sample.
+        voice.modulation = if self.mod_tail > 0 {
+            modulation_for(
+                self.mod_routes,
+                self.mod_amounts.map(|amount| amount.value()),
+                voice.mod_sources(0.0, voice.lfo.value()),
+            )
+        } else {
+            [0.0; DESTINATIONS]
+        };
+        voice.modulation_step = [0.0; DESTINATIONS];
+        voice.lfo_ratio = lfo_ratio_for(voice.modulation, self.settings.lfo_sync);
         // A note starting while the voices have their own filter settings
         // starts at its own, which the filter envelope's attack moves on
         // from at the next control point.
@@ -1100,16 +1307,15 @@ impl Synth {
             0.0,
             self.filter_key.value(),
             f32::from(note.pitch),
-            self.filter_lfo_octaves.value() * voice.lfo.value(),
+            self.filter_lfo_octaves.value() * voice.lfo.value()
+                + voice.modulation[ModDestination::Cutoff as usize],
         );
         voice.tuning = Tuning::new(
             octaves.exp2(),
-            f64::from(self.resonance.value()),
+            moved_resonance(f64::from(self.resonance.value()), voice.modulation),
             self.sample_rate,
         );
         voice.tuning_step = Tuning::default();
-        voice.envelope.start(&self.times);
-        voice.velocity_gain = velocity_to_gain(note.velocity);
         voice.velocity_glide = Ramp::new(voice.velocity_gain, self.take_over_samples);
         voice.started = self.clock;
         self.mono_started = true;
@@ -1215,9 +1421,13 @@ impl Synth {
             // steps, so it's the same whatever the blocks.
             (increment, lfo::wrap(self.song_sample as f64 * increment))
         } else {
-            (self.lfo_increment, self.lfo_phase)
+            (self.lfo_increment * self.shared_lfo_ratio, self.lfo_phase)
         };
-        self.lfo_phase = lfo::wrap(self.lfo_phase + self.lfo_increment);
+        if !self.settings.lfo_sync {
+            self.lfo_phase = lfo::wrap(self.lfo_phase + increment);
+        } else {
+            self.lfo_phase = lfo::wrap(self.lfo_phase + self.lfo_increment);
+        }
         self.song_sample += 1;
         (increment, shared)
     }
@@ -1302,6 +1512,55 @@ fn filter_octaves(
         + f64::from(key) * from_centre
         + f64::from(lfo_octaves);
     octaves.max(f64::from(SynthSettings::CUTOFF_HZ.start().log2()))
+}
+
+/// Where the mod slots, playing `routes` at `amounts`, move each
+/// destination, in [`ModDestination::ALL`]'s order, for sources at
+/// `sources`, in [`ModSource::ALL`]'s.
+#[inline]
+fn modulation_for(
+    routes: [(ModSource, ModDestination); MOD_SLOTS],
+    amounts: [f32; MOD_SLOTS],
+    sources: [f32; ModSource::ALL.len()],
+) -> [f32; DESTINATIONS] {
+    let mut moved = [0.0; DESTINATIONS];
+    for ((source, destination), amount) in routes.into_iter().zip(amounts) {
+        moved[destination as usize] += amount * destination.full_scale() * sources[source as usize];
+    }
+    moved
+}
+
+/// The LFO's rate against its knob's for a voice moved by `moved`: a synced
+/// LFO keeps to the tempo, so nothing moves it.
+#[inline]
+fn lfo_ratio_for(moved: [f32; DESTINATIONS], synced: bool) -> f64 {
+    let octaves = moved[ModDestination::LfoRate as usize];
+    if synced || octaves == 0.0 {
+        1.0
+    } else {
+        f64::from(octaves).exp2()
+    }
+}
+
+/// `resonance` moved by the mod slots in `moved`, within its range.
+#[inline]
+fn moved_resonance(resonance: f64, moved: [f32; DESTINATIONS]) -> f64 {
+    let (min, max) = (
+        SynthSettings::RESONANCE.start(),
+        SynthSettings::RESONANCE.end(),
+    );
+    (resonance + f64::from(moved[ModDestination::Resonance as usize]))
+        .clamp(f64::from(*min), f64::from(*max))
+}
+
+/// A frequency ratio for an offset in semitones: 1 for none.
+#[inline]
+fn semitones_ratio(semitones: f32) -> f64 {
+    if semitones == 0.0 {
+        1.0
+    } else {
+        (f64::from(semitones) / 12.0).exp2()
+    }
 }
 
 fn samples(seconds: f64, sample_rate: f64) -> u32 {
