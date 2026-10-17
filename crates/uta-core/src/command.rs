@@ -1460,7 +1460,10 @@ mod tests {
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":9,"command":{body}}}"#);
             let error = serde_json::from_str::<Command>(&json).unwrap_err();
-            assert!(error.to_string().contains("arrived in format 10"), "{error}");
+            assert!(
+                error.to_string().contains("arrived in format 10"),
+                "{error}"
+            );
         }
     }
 
