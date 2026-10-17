@@ -391,6 +391,7 @@ pub fn any_command() -> impl Strategy<Value = Command> {
             .prop_map(|bpm| Command::SetTempo { bpm }),
         1 => (0u32..=20).prop_map(|bars| Command::SetLoopLength { bars }),
         1 => (any_track_id(), any_synth_param()).prop_map(|(track, param)| Command::SetSynthParam { track, param }),
+        1 => (any_track_id(), any_synth_settings()).prop_map(|(track, settings)| Command::SetSynthSettings { track, settings }),
         1 => (any_track_id(), any_drum_param()).prop_map(|(track, (sound, param))| Command::SetDrumParam { track, sound, param }),
         // Mostly at the top, which is always in range.
         4 => one_or_two((prop_oneof![3 => Just(0usize), 1 => 0usize..4], any_track()).prop_map(|(index, track)| PlacedTrack { index, track }))
@@ -462,7 +463,7 @@ mod tests {
                 .map(|clip| clip.notes().len())
                 .sum::<usize>();
         }
-        assert_eq!(applied.len(), 23, "every kind of command applies");
+        assert_eq!(applied.len(), 24, "every kind of command applies");
         assert!(most_tracks >= 5, "at most {most_tracks} tracks");
         assert!(most_clips >= 5, "at most {most_clips} clips");
         assert!(notes_elsewhere > 0);
