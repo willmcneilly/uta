@@ -252,6 +252,15 @@ beforeEach(() => {
           };
           return updates.send(project);
         }
+        case "load_demo_song":
+          // The song's one drum track, named after it, in place of everything.
+          project = {
+            ...project,
+            canUndo: true,
+            bpm: 112,
+            tracks: [drumTrackView(`${args.song as string}-drums`, "Beat")],
+          };
+          return updates.send(project);
         case "remove_notes": {
           const gone = new Set(args.notes as string[]);
           project = {
@@ -1503,6 +1512,44 @@ describe("App", () => {
       await act(() => emit("track-menu", "duplicate-track"));
       expect(commands()).not.toContain("remove_track");
       expect(commands()).not.toContain("duplicate_track");
+    });
+  });
+
+  describe("demo songs", () => {
+    const BEAT = { id: "beat", name: "Beat" };
+
+    async function chooseBeat() {
+      await renderApp();
+      await act(() => emit("demo-song-menu", BEAT));
+      return screen.getByRole("dialog", { name: "Load Beat" });
+    }
+
+    it("asks first, and sends nothing if cancelled", async () => {
+      const dialog = await chooseBeat();
+      expect(dialog).toHaveTextContent("This replaces the current project");
+      const before = calls.length;
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(calls.length).toBe(before);
+    });
+
+    it("sends nothing if Esc closes it", async () => {
+      await chooseBeat();
+      const before = calls.length;
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(calls.length).toBe(before);
+    });
+
+    it("loads the song with one call, and shows what Rust sends back", async () => {
+      await chooseBeat();
+      const before = calls.length;
+      fireEvent.click(screen.getByRole("button", { name: "Replace and Play" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await waitFor(() => expect(calls.slice(before).map((c) => c.cmd)).toEqual(["load_demo_song"]));
+      expect(calls.at(-1)!.args).toEqual({ song: "beat" });
+      expect(await screen.findAllByText("Beat")).not.toHaveLength(0);
+      expect(screen.queryByText("Synth 1")).not.toBeInTheDocument();
     });
   });
 
