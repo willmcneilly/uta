@@ -121,7 +121,7 @@ fn measure_alone(sound: &FactorySound) -> Measured {
         brightness_hz: spectral_centroid(samples, 48_000),
         attack_ms: 1000.0 * attack_seconds(samples, 48_000).expect("it sounds"),
         fade_seconds: fade_seconds(samples),
-        loudness_db: hit_loudness_db(samples, sound.audition.held_seconds),
+        loudness_db: hit_loudness_db(samples, 48_000, sound.audition.held_seconds),
     }
 }
 
