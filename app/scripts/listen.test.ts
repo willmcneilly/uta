@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type Analysis,
   type Prepared,
+  IMAGES,
   type Tools,
+  imagePath,
   listSessions,
   listening,
   listeningDir,
@@ -66,7 +68,9 @@ const commandList = (bpm: number, bars: number) =>
 
 /**
  * Stands in for uta: "renders" a sine whose amplitude is the command list's
- * file name's entry in `levels`, and "measures" a loudness in LUFS from it.
+ * file name's entry in `levels`, "measures" a loudness in LUFS from it, and
+ * "draws" its images: each a file holding its own name, and no harmonics for
+ * a candidate with no loudness (so no pitch).
  */
 function fakeUta(levels: Record<string, { amplitude: number; lufs: number | null }>) {
   const calls = { render: [] as string[], analyse: [] as string[] };
@@ -76,9 +80,12 @@ function fakeUta(levels: Record<string, { amplitude: number; lufs: number | null
       const id = commands.split("/").pop()?.replace(".json", "") ?? "";
       writeFileSync(wav, floatWav(2, levels[id].amplitude));
     },
-    analyse(wav): Analysis {
+    analyse(wav, images): Analysis {
       calls.analyse.push(wav);
       const id = wav.split("/").pop()?.replace(".wav", "") ?? "";
+      mkdirSync(images, { recursive: true });
+      for (const image of IMAGES)
+        if (image !== "harmonics" || levels[id].lufs !== null) writeFileSync(join(images, `${id}-${image}.png`), `png of ${id} ${image}`);
       return { file: wav, measurements: { loudness_integrated_lufs: levels[id].lufs, decay_40db_s: 0.21 } };
     },
   };
@@ -239,6 +246,19 @@ describe("preparing a session", () => {
     prepare(readSession(dir), tools);
     expect(calls.render).toEqual([...calls.render.slice(0, 3), join(dir, "yak-bright.wav")]);
   });
+
+  it("draws each candidate's images beside its render, and draws them again if one is missing", () => {
+    const dir = writeSession("s", { ids: ["zebra-dark", "only"] });
+    const { tools, calls } = fakeUta({ ...LEVELS, only: { amplitude: 0.3, lufs: null } });
+    const prepared = prepare(readSession(dir), tools);
+    expect(prepared.candidates[0].images).toEqual(["spectrogram-long", "level", "spectrogram-short", "clicks", "harmonics"]);
+    expect(prepared.candidates[1].images).toEqual(["spectrogram-long", "level", "spectrogram-short", "clicks"]);
+    expect(readFileSync(imagePath(dir, "zebra-dark", "level"), "utf8")).toBe("png of zebra-dark level");
+
+    rmSync(imagePath(dir, "only", "level"));
+    prepare(readSession(dir), tools);
+    expect(calls.analyse).toEqual([join(dir, "zebra-dark.wav"), join(dir, "only.wav"), join(dir, "only.wav")]);
+  });
 });
 
 describe("the listening page's server", () => {
@@ -344,6 +364,23 @@ describe("the listening page's server", () => {
     expect(reveal.prediction.text).toContain("secret-prediction");
     expect(reveal.candidates.map((c: { label: string }) => c.label)).toEqual(["A", "B", "C"]);
     expect(reveal.candidates[0].measurements).toEqual({ loudness_integrated_lufs: expect.any(Number), decay_40db_s: 0.21 });
+  });
+
+  it("sends each candidate's images with the reveal, and nothing before", async () => {
+    // A is zebra-dark, B yak-bright, C xerus-plain.
+    await serve([prepared("s")], (n) => n - 1);
+    const before = JSON.stringify(await everythingSent());
+    expect(before).not.toContain("png of");
+    expect(before).not.toContain(Buffer.from("png of").toString("base64").slice(0, 6));
+
+    const reveal = await (await finish({ choice: "A", note: "" })).json();
+    const b = reveal.candidates[1];
+    expect(b.images.map((image: { name: string }) => image.name)).toEqual([...IMAGES]);
+    for (const { name, src } of b.images) {
+      const [type, data] = src.split(",");
+      expect(type).toBe("data:image/png;base64");
+      expect(Buffer.from(data, "base64").toString()).toBe(`png of yak-bright ${name}`);
+    }
   });
 
   it("writes verdict.toml with every field when Finish is pressed, and stops", async () => {

@@ -22,7 +22,14 @@ interface State {
 interface Reveal {
   verdict: string;
   prediction: { text: string; choice?: string; ratings?: Record<string, number>; measurements: string[] };
-  candidates: { label: string; id: string; gainDb: number; measurements: Record<string, number | null> }[];
+  candidates: {
+    label: string;
+    id: string;
+    gainDb: number;
+    measurements: Record<string, number | null>;
+    /** Each image as a data URL. */
+    images: { name: string; src: string }[];
+  }[];
   next: boolean;
 }
 
@@ -284,6 +291,17 @@ function showReveal(state: State, reveal: Reveal, listen: HTMLElement, next: () 
       }),
     ),
   );
+  // Each candidate's spectrogram and level curve, with the rest a click away.
+  const image = (c: Reveal["candidates"][number], shown: { name: string; src: string }) =>
+    element("img", { src: shown.src, alt: `${c.label} (${c.id}): ${shown.name.replace("-", " ")}` });
+  const images = candidates.filter((c) => c.images.length > 0).flatMap((c) => {
+    const more = c.images.slice(2);
+    return [
+      element("h3", {}, `${c.label}: ${c.id}`),
+      ...c.images.slice(0, 2).map((shown) => image(c, shown)),
+      ...(more.length > 0 ? [element("details", {}, element("summary", {}, `More images of ${c.label}`), ...more.map((shown) => image(c, shown)))] : []),
+    ];
+  });
   const nextKey = element("button", { className: "key primary", type: "button" }, "Next question");
   nextKey.addEventListener("click", next);
   app.replaceChildren(
@@ -307,6 +325,7 @@ function showReveal(state: State, reveal: Reveal, listen: HTMLElement, next: () 
       element("p", {}, prediction.text),
     ),
     element("section", {}, element("h2", {}, "The numbers (the ones the prediction relies on first)"), table),
+    ...(images.length > 0 ? [element("section", { className: "images" }, element("h2", {}, "The images"), ...images)] : []),
     reveal.next ? nextKey : element("p", { className: "hint" }, "That was the last question. You can close this tab."),
   );
 }

@@ -22,7 +22,7 @@ import {
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 
-/** `uta render` and `uta analyse --json`, from $UTA_BIN or this checkout's release build. */
+/** `uta render` and `uta analyse --json --png`, from $UTA_BIN or this checkout's release build. */
 function utaTools(): Tools {
   let uta = process.env.UTA_BIN;
   const binary = () => {
@@ -38,8 +38,10 @@ function utaTools(): Tools {
       const args = ["render", wav, "--commands", commands, ...(seconds ? ["--seconds", String(seconds)] : [])];
       execFileSync(binary(), args, { stdio: ["ignore", "ignore", "inherit"] });
     },
-    analyse(wav) {
-      return JSON.parse(execFileSync(binary(), ["analyse", wav, "--json"], { encoding: "utf8" }));
+    analyse(wav, images) {
+      // Its list of the images it drew goes to stderr: not needed here.
+      const args = ["analyse", wav, "--json", "--png", images];
+      return JSON.parse(execFileSync(binary(), args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
     },
   };
 }
