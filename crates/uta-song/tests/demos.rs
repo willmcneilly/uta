@@ -174,3 +174,20 @@ fn loop_and_beat_build_the_same_tracks_and_notes_as_their_command_lists() {
         }
     }
 }
+
+/// The example in `examples/demos/README.md` compiles and builds.
+#[test]
+fn the_readme_example_builds() {
+    let readme = std::fs::read_to_string(demos().join("README.md")).unwrap();
+    let example = readme
+        .split("```toml\n")
+        .nth(1)
+        .and_then(|rest| rest.split("```").next())
+        .expect("the README has a TOML example");
+    let project = uta_song::compile(example)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .build()
+        .unwrap();
+    let names: Vec<_> = project.tracks().iter().map(Track::name).collect();
+    assert_eq!(names, ["Bass", "Drums"]);
+}

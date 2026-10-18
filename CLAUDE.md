@@ -9,12 +9,13 @@ Cargo.toml            workspace: crates/* and app/src-tauri
 crates/uta-core       the project, commands and undo (no audio, no UI)
 crates/uta-engine     the audio engine: control side + audio-thread processor
 crates/uta-cli        the `uta` binary: offline render, terminal playback
+crates/uta-song       song files: a song in musical terms (TOML), compiled to a command list
 app/                  Tauri app: React + TypeScript, Vite, npm
 app/src-tauri         the app's Rust side (crate `uta-app`)
 DESIGN.md             design tokens and the reasons for them (generates app/src/design/tokens.*)
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
-examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound
+examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound; examples/demos: the demo songs, for `--song`
 scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
@@ -51,6 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # the `uta` command: offline render
 cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
+cargo run -p uta-cli -- song examples/demos/beat.toml   # compile a song file to its command list (--out to write it); render/play take --song
 cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 cargo run --release -p uta-cli -- analyse out.wav --pitch C3 --against before.wav   # measure a render (--json for data); the measurements are uta-analysis's
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)

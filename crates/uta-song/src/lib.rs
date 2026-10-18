@@ -844,7 +844,7 @@ fn param<P: DeserializeOwned>(what: &str, key: &str, value: &Value) -> Result<P,
         .try_into()
         .map_err(|error: toml::de::Error| {
             let error = error.message().trim_end().to_owned();
-            if error.contains("unknown variant") {
+            if error.contains(&format!("unknown variant `{key}`")) {
                 format!("`{key}` isn't a {what} setting ({error})")
             } else {
                 format!("{what} setting `{key}` = {value}: {error}")

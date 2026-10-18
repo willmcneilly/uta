@@ -63,8 +63,10 @@ Commands:
       unticks the ticket's criteria to match the PR's "- [x]" and "- [ ]"
       lines under "## Acceptance criteria" (each line starts with the
       ticket's text for that criterion), replaces the ticket's Verification
-      notes with the PR's acceptance criteria, "For Will to try" and
-      follow-ups, and sets the ticket's PR link and In Review. Changes only
+      notes with the PR's "Demo song:" line, acceptance criteria, "For Will
+      to try" and follow-ups, and sets the ticket's PR link and In Review.
+      Refuses a body without one "Demo song:" line answering "added", "not
+      yet" or "doesn't apply" (then why). Changes only
       what differs, so running it again after a fix updates everything in
       one go, and once more changes nothing.
 

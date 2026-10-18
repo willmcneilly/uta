@@ -87,6 +87,7 @@ The evidence is written in one place: the PR body. Keep it as a file in the sess
 
 **The body:**
 - one paragraph on what changed and why, plus the Notion ticket link;
+- a `Demo song:` line, then why: `added` when a demo song in `examples/demos/` now uses the change (say which), `not yet` when a song could use it but doesn't yet, or `doesn't apply` when there's nothing for a song to use (tooling, docs, a fix that doesn't change what a song can do). It keeps the demo songs up with what Uta can do (RFC-009). `sync` refuses a body without one, and copies it into the Verification notes;
 - `## Acceptance criteria`: one line per criterion, `- [x] **<the ticket's text for it, word for word>** <the evidence>`, or `- [ ]` with why it isn't met. Copy the text from the ticket: `sync` pairs each line with its checkbox by that text, and refuses a paraphrase (it lists the ticket's wording). Evidence can go in sub-bullets below the line;
 - `## For Will to try`: the manual checks, as steps with expected results;
 - `## Design decisions`, for UI work: each provisional decision's `D-n` and link, or "None";
@@ -94,7 +95,7 @@ The evidence is written in one place: the PR body. Keep it as a file in the sess
 - new Glossary terms, if any;
 - the PR attribution line.
 
-`sync` copies the acceptance criteria, "For Will to try" and the follow-ups into the ticket's Verification notes.
+`sync` copies the `Demo song:` line, the acceptance criteria, "For Will to try" and the follow-ups into the ticket's Verification notes.
 
 **How to write the evidence so it stays true:**
 - **Name the tests, don't count them.** "509 tests pass" is stale the moment anyone adds one. Name the tests that prove the criterion.
