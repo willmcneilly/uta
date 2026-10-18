@@ -81,6 +81,18 @@ Before opening the PR:
 
 5. **New concepts.** Did this work bring in a concept that isn't in the Glossary, something you had to reach for that the RFC didn't name? Usually the answer is no. If yes, add an entry (see the `uta-notion` skill), with `Introduced in` set to the ticket's RFC, and list the new terms in the PR.
 
+### Sound tickets: measure, predict, then ask
+
+A ticket that changes how something sounds asks Will's ear only after the numbers have had their say, and only through a listening session (RFC-009, part 3). Never ask him to render WAVs or compare files in Finder.
+
+1. **Measure first.** Render each candidate and run `uta analyse` on it (`--against` for two, `--pitch` when the note is known). Fix what the numbers already show (clicks, aliasing, a level or decay off its brief) before anyone listens.
+2. **Write the prediction first,** before Will hears anything: which candidate you expect him to pick (or how he'll rate them, or what he'll say is wrong) and why, naming the measurements it relies on. It goes in the session and can't change afterwards.
+3. **Hand every listening step over as a session,** one question each, in the listening folder (`~/.uta/listening/`, or `UTA_LISTENING_DIR`), never in the repo. `scripts/listen --help` has the `session.toml` format. Name it `<date>-<what>`, e.g. `2026-10-20-snare-decay`, with each candidate's command list beside it. Use *pick one* for an A/B/C, *rate each* to place several, and *listen and describe* for one render. Leave loudness matching on unless a candidate is meant to be louder.
+4. **In the PR,** "For Will to try" says `scripts/listen <session>` for each one (or just `scripts/listen`, which asks every waiting session), with the question and what's being decided, not the prediction. Check each session renders before handing over: `scripts/listen <session> --prepare` renders and measures it, and prints its loop and gains without serving the page.
+5. **Read the verdict** (`verdict.toml` beside the session) when Will's done, and say in the PR whether the prediction matched. Act on his note.
+
+A sound test made from verdicts records only the measured range and a one-line reason in the test itself ("decay 180–250 ms: Will picked these as 808-like in three sessions"), never his words: the verdicts are private, and the reviewer checks the test, not them.
+
 ## 6. Write the evidence, once
 
 The evidence is written in one place: the PR body. Keep it as a file in the session's scratchpad (`pr-body.md`), and edit only that file. `scripts/ticket sync` makes everything else from it: the PR's description, the ticket's ticks and its Verification notes. Never edit those by hand, because copies edited by hand drift, and a reviewer rightly blocks on a stale claim.
