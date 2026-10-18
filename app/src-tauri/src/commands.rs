@@ -7,6 +7,7 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use uta_core::time::Ticks;
@@ -15,6 +16,7 @@ use uta_core::{
     NoteId, SynthParam, TrackId,
 };
 
+use crate::demos::DemoSong;
 use crate::menu::MenuState;
 use crate::stress::TestSong;
 use crate::uta::{ClipNotes, Frame, MixerView, PastedClip, TrackKind, Update, Uta};
@@ -39,6 +41,18 @@ pub const TRACK_MENU: &str = "track-menu";
 /// The event sent when an item is chosen from the Develop menu, with the
 /// item's ID. The UI sends it back with the clip it's showing.
 pub const DEVELOP_MENU: &str = "develop-menu";
+
+/// The event sent when a song is chosen from Develop → Load Demo Song, with
+/// the song's ID and name ([`DemoSongItem`]). The UI asks first, then sends
+/// [`load_demo_song`].
+pub const DEMO_SONG_MENU: &str = "demo-song-menu";
+
+/// A demo song as [`DEMO_SONG_MENU`] names it.
+#[derive(Debug, Clone, Serialize)]
+pub struct DemoSongItem {
+    pub id: &'static str,
+    pub name: &'static str,
+}
 
 pub struct AppState {
     pub uta: Mutex<Uta>,
@@ -440,6 +454,25 @@ pub fn add_stress_notes<R: Runtime>(app: AppHandle<R>, clip: ClipId) -> Result<U
 #[tauri::command]
 pub fn build_test_song<R: Runtime>(app: AppHandle<R>, song: TestSong) -> Result<Update, String> {
     edit(&app, |uta| uta.build_test_song(song))
+}
+
+/// Tells the UI a demo song was chosen from the Develop menu, for it to ask
+/// before loading it.
+pub fn pass_demo_song<R: Runtime>(app: &AppHandle<R>, song: &DemoSong) -> Result<(), String> {
+    let item = DemoSongItem {
+        id: song.id,
+        name: song.name,
+    };
+    app.emit(DEMO_SONG_MENU, item)
+        .map_err(|error| error.to_string())
+}
+
+/// Replaces the whole project with a demo song, as one undo step, and plays
+/// it from the start of its loop. The UI calls it from Develop → Load Demo
+/// Song, once it's asked.
+#[tauri::command]
+pub fn load_demo_song<R: Runtime>(app: AppHandle<R>, song: String) -> Result<Update, String> {
+    edit(&app, |uta| uta.load_demo_song(&song))
 }
 
 #[tauri::command]
