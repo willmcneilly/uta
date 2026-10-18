@@ -27,7 +27,7 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 
 ### Ambient
 
-`ambient.toml`: **unfinished, on purpose.** About a minute at 70 BPM in D major, in three sections (drift, bloom, fade): the Pad's chords swelling in and fading into each other, two bars each, its cutoff moved by one slow LFO (a cycle every 12.5 s); a low D drone under them; PWM strings over them in the middle, their width breathing; and a sparse bell answered by a ping-pong Delay a dotted half apart (2.6 s) at 30% feedback, each echo darker and thinner. It's thin and dry, because ambient is mostly space, and Uta has no reverb yet.
+`ambient.toml`: **unfinished, on purpose.** About a minute at 70 BPM in D major, in three sections (drift, bloom, fade): the Pad's chords swelling in and fading into each other, two bars each, its cutoff moved by one slow LFO (a cycle every 12.5 s); a low D drone under them; a soft, dark pulse in eighths on each chord's root and fifth, under everything (added after Will's listen: "a bit of a background pulse"); PWM strings over them in the middle, their width breathing; and a sparse bell answered by a ping-pong Delay a dotted half apart (2.6 s) at 30% feedback, each echo darker and thinner. It's thin and dry, because ambient is mostly space, and Uta has no reverb yet.
 
 **What the Reverb project should add:** a long, dark hall or plate on the Pad and Strings, and a send of the Bell and its echoes into it, so the notes bloom and hang instead of stopping; and once it's there, the song finished around it. It's the song Reverb is tried in first.
 

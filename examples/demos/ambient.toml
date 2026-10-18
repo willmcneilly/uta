@@ -35,6 +35,20 @@ mixer = { volume_db = -3 }
 pattern.drift = { notes = "D2 - - - - - - -", step = "1/1", velocity = 80 }
 pattern.bloom = { notes = "D2 - - - - - - -", step = "1/1", velocity = 80 }
 
+# A soft pulse under it all, after Will's listen ("a bit of a background
+# pulse"): the Pluck, darker, in eighths on each chord's root and fifth, with
+# a dotted-eighth echo. It stops halfway through the fade.
+[[track]]
+name = "Pulse"
+kind = "synth"
+sound = "pluck"
+settings = { cutoff_hz = 220, filter_env_octaves = 2.0, release_seconds = 0.3 }
+mixer = { volume_db = -5, pan = 0.1 }
+effects = [{ delay = { sync = true, division = "1/8d", mode = "ping_pong", feedback = 0.3, high_cut_hz = 2000 }, mix = 0.25 }]
+pattern.drift = { notes = "D4@90 A3 D4 A3 D4@90 A3 D4 A3 | D4@90 A3 D4 A3 D4@90 A3 D4 A3 | B3@90 F#3 B3 F#3 B3@90 F#3 B3 F#3 | B3@90 F#3 B3 F#3 B3@90 F#3 B3 F#3 | G3@90 D4 G3 D4 G3@90 D4 G3 D4 | G3@90 D4 G3 D4 G3@90 D4 G3 D4 | A3@90 E4 A3 E4 A3@90 E4 A3 E4 | A3@90 E4 A3 E4 A3@90 E4 A3 E4", step = "1/8", velocity = 75 }
+pattern.bloom = { notes = "D4@90 A3 D4 A3 D4@90 A3 D4 A3 | D4@90 A3 D4 A3 D4@90 A3 D4 A3 | B3@90 F#3 B3 F#3 B3@90 F#3 B3 F#3 | B3@90 F#3 B3 F#3 B3@90 F#3 B3 F#3 | G3@90 D4 G3 D4 G3@90 D4 G3 D4 | G3@90 D4 G3 D4 G3@90 D4 G3 D4 | A3@90 E4 A3 E4 A3@90 E4 A3 E4 | A3@90 E4 A3 E4 A3@90 E4 A3 E4", step = "1/8", velocity = 75 }
+pattern.fade = { notes = "D4@90 A3 D4 A3 D4@90 A3 D4 A3 | D4@90 A3 D4 A3 D4@90 A3 D4 A3 | . . . . . . . . | . . . . . . . .", step = "1/8", velocity = 70 }
+
 # Strings over the pad in the second section, their pulse width breathing
 # slowly, a little to the left.
 [[track]]
