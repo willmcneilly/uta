@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
+use crate::demos;
 use crate::pieces::{PieceId, Pieces};
 use crate::stress::{self, TestSong};
 
@@ -1054,6 +1055,31 @@ impl Uta {
         self.gesture = None;
         self.sync_engine();
         Ok(())
+    }
+
+    /// Replaces the whole project with the demo song `id`, as one undo step,
+    /// and plays it from the start of its loop. Its tracks, tempo, master
+    /// volume and chain, and loop are the song's, the same as `uta song`
+    /// builds; only the project's ID stays.
+    pub fn load_demo_song(&mut self, id: &str) -> Result<(), String> {
+        let song = demos::find(id)
+            .ok_or_else(|| format!("there's no demo song `{id}`"))?
+            .build()?;
+        let mut commands = demos::replacing(self.session.project(), &song).into_iter();
+        let first = commands.next().expect("a song always sets its tempo");
+        self.session
+            .apply(first)
+            .map_err(|error| error.to_string())?;
+        for command in commands {
+            self.session
+                .join(command)
+                .expect("worked out from the project as it is");
+        }
+        self.gesture = None;
+        self.sync_engine();
+        self.stop()?;
+        self.locate(song.transport().loop_start())?;
+        self.play()
     }
 
     /// Adds `notes` to `clip`. Their IDs were chosen by the caller. A later
@@ -2713,6 +2739,99 @@ mod tests {
         assert_eq!(song("heavy"), TestSong::Heavy);
         assert_eq!(song("wide"), TestSong::Wide);
         assert_eq!(song("check-7"), TestSong::Check7);
+    }
+
+    /// Whether `project` is the project `uta song` builds from `song`, all
+    /// but its ID.
+    fn assert_is_song(project: &Project, song: &demos::DemoSong) {
+        let built = uta_song::compile(song.text).unwrap().build().unwrap();
+        assert_eq!(project.tracks(), built.tracks(), "{}", song.id);
+        assert_eq!(project.transport(), built.transport(), "{}", song.id);
+        assert_eq!(project.master_volume_db(), built.master_volume_db());
+        assert_eq!(project.master_effects(), built.master_effects());
+    }
+
+    #[test]
+    fn a_demo_song_builds_what_uta_song_builds_whatever_was_there() {
+        for song in demos::SONGS {
+            let mut uta = offline();
+            uta.set_tempo(90.0, None).unwrap();
+            uta.set_volume(-30.0, None).unwrap();
+            uta.set_loop(1, 2, None).unwrap();
+            uta.set_loop_enabled(false).unwrap();
+            uta.add_effect(Chain::Master, EffectId::random(), EffectKind::Delay)
+                .unwrap();
+            uta.add_stress_notes(clip_id(&uta)).unwrap();
+
+            uta.load_demo_song(song.id).unwrap();
+            assert_is_song(uta.session.project(), song);
+            assert_eq!(
+                uta.controller.snapshot().tracks().len(),
+                uta.project().tracks.len()
+            );
+
+            // Again, over itself: its IDs are the same each time.
+            uta.load_demo_song(song.id).unwrap();
+            assert_is_song(uta.session.project(), song);
+        }
+    }
+
+    #[test]
+    fn a_demo_song_replaces_the_project_as_one_undo_step() {
+        let mut uta = offline();
+        uta.set_tempo(90.0, None).unwrap();
+        uta.add_stress_notes(clip_id(&uta)).unwrap();
+        let before = uta.session.project().clone();
+
+        uta.load_demo_song("beat").unwrap();
+        uta.undo();
+        assert_eq!(uta.session.project(), &before);
+        assert_eq!(
+            uta.controller.snapshot().tracks().len(),
+            before.tracks().len()
+        );
+        uta.redo();
+        assert_is_song(uta.session.project(), demos::find("beat").unwrap());
+        uta.undo();
+        uta.undo();
+        uta.undo();
+        assert!(
+            !uta.session.can_undo(),
+            "the tempo and the notes were the rest"
+        );
+    }
+
+    #[test]
+    fn a_demo_song_plays_from_the_start_of_its_loop() {
+        let mut uta = offline();
+        uta.locate(3 * BAR).unwrap();
+        uta.play().unwrap();
+        uta.render(12_800);
+        assert!(uta.frame().playhead > 3 * BAR);
+
+        uta.load_demo_song("loop").unwrap();
+        uta.render(128);
+        let frame = uta.frame();
+        assert!(frame.playing);
+        let start = uta.session.project().transport().loop_start();
+        assert!(
+            frame.playhead.abs_diff(start) < TICKS_PER_QUARTER,
+            "{frame:?}"
+        );
+
+        // Stop goes back there, not to where Play was pressed before.
+        uta.stop().unwrap();
+        uta.render(128);
+        assert_eq!(uta.frame().playhead, start);
+    }
+
+    #[test]
+    fn an_unknown_demo_song_changes_nothing() {
+        let mut uta = offline();
+        let before = uta.session.project().clone();
+        assert!(uta.load_demo_song("nope").is_err());
+        assert_eq!(uta.session.project(), &before);
+        assert!(!uta.session.can_undo());
     }
 
     #[test]

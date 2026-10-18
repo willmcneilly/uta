@@ -2,6 +2,7 @@
 //! RFC-001, "The UI draws on canvas and receives streamed updates".
 
 mod commands;
+mod demos;
 mod menu;
 mod pieces;
 mod stress;
@@ -80,6 +81,7 @@ pub fn run() {
             commands::remove_clips,
             commands::add_stress_notes,
             commands::build_test_song,
+            commands::load_demo_song,
             commands::add_notes,
             commands::set_notes,
             commands::remove_notes,
@@ -128,7 +130,10 @@ fn menu_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> Result<(), String> {
         menu::ADD_STRESS_NOTES | menu::RUN_BENCHMARK => {
             commands::pass_menu_item(app, commands::DEVELOP_MENU, id)
         }
-        _ => Ok(()),
+        _ => match menu::demo_song(id) {
+            Some(song) => commands::pass_demo_song(app, song),
+            None => Ok(()),
+        },
     }
 }
 
@@ -221,5 +226,29 @@ mod tests {
             update.outline.tracks[0].clips[0].notes_revision,
             update.notes[0].revision
         );
+    }
+
+    #[test]
+    fn a_demo_song_from_the_menu_asks_the_ui_and_changes_nothing_itself() {
+        let (app, events) = app();
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        app.listen_any(commands::DEMO_SONG_MENU, {
+            let asked = asked.clone();
+            move |event| lock(&asked).push(event.payload().to_owned())
+        });
+        let before = commands::get_project(app.state()).outline;
+
+        menu_item(app.handle(), &format!("{}beat", menu::DEMO_SONG)).unwrap();
+        assert_eq!(*lock(&asked), [r#"{"id":"beat","name":"Beat"}"#]);
+        assert_eq!(
+            commands::get_project(app.state()).outline.tracks,
+            before.tracks
+        );
+        assert!(lock(&events).is_empty());
+
+        let update = commands::load_demo_song(app.handle().clone(), "beat".into()).unwrap();
+        assert_eq!(update.outline.tracks.len(), 1);
+        assert_eq!(update.outline.tracks[0].name, "Beat");
+        assert!(lock(&events).is_empty(), "the reply carries it");
     }
 }
