@@ -9,7 +9,13 @@ cargo run -p uta-cli -- render beat.wav --song examples/demos/beat.toml     # re
 cargo run -p uta-cli -- play --song examples/demos/loop.toml                # play it round its loop
 ```
 
-CI renders every `.toml` file here, from the top to the end with the loop off, and checks it builds, doesn't clip, and that each track played on its own isn't silent (`every_demo_song_builds_plays_without_clipping_and_has_no_silent_track` in `crates/uta-song/tests/demos.rs`). Not a golden WAV: the songs are meant to change.
+Every `cargo test` compiles and builds every `.toml` file here (`every_demo_song_compiles_and_builds` in `crates/uta-song/tests/demos.rs`). CI also renders each, from the top to the end with the loop off, and checks it doesn't clip and that each track played on its own isn't silent (`every_demo_song_plays_without_clipping_and_has_no_silent_track`). That takes minutes in a debug build, so it's ignored by `cargo test`, and runs in release, in CI's "Timing reports and demo renders" job and in `scripts/check` when a song or the audio path changed. To run it yourself:
+
+```bash
+cargo test -p uta-song --release --test demos -- --ignored
+```
+
+Not a golden WAV: the songs are meant to change.
 
 **In the app.** Every song here is built into the app and loads from Develop → Load Demo Song, which replaces the project with it as one undo step and plays it from the start of its loop. A new song needs its file here and one line in `SONGS` in `app/src-tauri/src/demos.rs`, with its file's name and what the menu calls it: `demo!("lo-fi", "Lo-fi"),`. A test fails if a file here isn't listed (`every_song_in_examples_demos_is_in_the_menu_once`).
 
@@ -24,6 +30,34 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 ### Beat
 
 `beat.toml`: every sound of the kit in a 2-bar groove at 112 BPM, with a fill. Rewritten from `examples/demo-beat.json`, and builds the same track and notes.
+
+### Lo-fi
+
+`lofi.toml`: a minute at 80 BPM in F major, the song every feature is tried in. Soft keys play a ii-V-I-vi (Gm9, C13, Fmaj9, Dm9) through a dark, wobbly ping-pong tape delay, over a round bass and a swung boom-bap beat on the 808 kick. It runs intro, groove, groove, break, groove, outro: the break drops the kick for a turn round Bbmaj9, and the outro resolves to Fmaj9.
+
+What the genre wanted and Uta lacks:
+
+- **Swing**, as a setting. The song swings by hand: every part steps in 1/32 triplets, twelve to a beat, with each off-beat eighth one step late, a 58.3% swing. The finest step the song file has allows only that or 62.5% (on a 1/32 grid), and 62.5% felt unravelled; a swing setting would let it be dialled in, and leave the lines readable at a sixteenth a step instead of 48 steps a bar.
+- **Saturation or a bitcrusher**, for the dusty, worn sound. The Delay's Drive warms only the echoes.
+- **Vinyl noise**, crackle and hiss under everything.
+- **Reverb**, so the keys and snare sit in a room. Only the Delay gives the keys any space, and the mix is nearly mono apart from its echoes.
+- **An electric piano.** The keys are the Bell, played low with some sustain: closer to an FM tine than a warm Rhodes. A Rhodes wants a tine with a bark when played hard and a tremolo that pans.
+- **A low-pass on the whole mix, or an EQ**, to roll off the top the way a sampled record does, and a filter sweep into the break, which wants **automation**.
+- **A low bass that stays round.** The Bass sound adds a sub an octave under each note, so with the line down at F1 and G1 the sub falls to 22–25 Hz, and the low notes buzz. The line sits an octave up, from F2, instead.
+- **Master gain past 0 dB, or a limiter.** The song peaks a few dB under full scale but is still quiet: the drums are at the mixer's +6 dB limit to lead the mix, and the engine holds the master's volume at 0 dB (so nothing passes full scale), though the project takes up to +6, so the song can't be made louder.
+
+### House
+
+`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a seventh-chord stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth (its mix kept low, at 0.2, so the echoes don't spread too wide), and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
+
+What house wanted that Uta doesn't have yet:
+- **Swing.** House hats and bass are pushed off the grid; every step here is straight, so it sits stiffer than the genre.
+- **Sidechain ducking.** The bass and the stab should dip under each kick. Without it, the kick is made to lead by the mixer alone.
+- **Louder than the mixer allows.** The drums are at a track's limit (+6 dB), and the master's +6 dB is cut to 0 dB by the engine (`Snapshot::MAX_VOLUME_DB`), so the balance came from turning the synths down.
+- **Automation.** A filter sweep on the stab or the bass into the drop, and the hats opening up through the build, are written today as separate sections.
+- **A stab sound.** The Pluck is the nearest factory sound; house stabs are usually an organ, a piano or a sampled chord, brighter and with more body.
+- **Reverb**, for the claps and the stab's tail in the break.
+- **A shaker or ride.** The kit has a closed and an open hat and a crash; a groove usually has a ride or a shaker on top in the drop.
 
 ### Ambient
 
