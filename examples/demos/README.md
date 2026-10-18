@@ -33,17 +33,18 @@ Not a golden WAV: the songs are meant to change.
 
 ### Lo-fi
 
-`lofi.toml`: a minute at 80 BPM in F major, the song every feature is tried in. Soft keys play a ii-V-I-vi (Gm9, C13, Fmaj9, Dm9) through a dark, wobbly ping-pong tape delay, over a round bass and a boom-bap beat on the 808 kick. It runs intro, groove, groove, break, groove, outro: the break drops the kick for a turn round Bbmaj9, and the outro resolves to Fmaj9.
+`lofi.toml`: a minute at 80 BPM in F major, the song every feature is tried in. Soft keys play a ii-V-I-vi (Gm9, C13, Fmaj9, Dm9) through a dark, wobbly ping-pong tape delay, over a round bass and a swung boom-bap beat on the 808 kick. It runs intro, groove, groove, break, groove, outro: the break drops the kick for a turn round Bbmaj9, and the outro resolves to Fmaj9.
 
 What the genre wanted and Uta lacks:
 
-- **Swing**, or notes placed behind the beat. Without it the beat and keys sit exactly on the grid, which is the opposite of lo-fi's lazy feel.
+- **Swing**, as a setting. The song swings by hand: every part steps in 32nds, with each off-beat eighth one 32nd late. That gives 62.5%, the only amount a 1/32 grid allows, on the heavy side of lo-fi's; a swing setting would let it be dialled in, and leave the lines readable at a sixteenth a step.
 - **Saturation or a bitcrusher**, for the dusty, worn sound. The Delay's Drive warms only the echoes.
 - **Vinyl noise**, crackle and hiss under everything.
-- **Reverb**, so the keys and snare sit in a room. Only the Delay gives the keys any space, and the mix is nearly mono (stereo width 1.7%) apart from its echoes.
+- **Reverb**, so the keys and snare sit in a room. Only the Delay gives the keys any space, and the mix is nearly mono apart from its echoes.
 - **An electric piano.** The keys are the Bell, played low with some sustain: closer to an FM tine than a warm Rhodes. A Rhodes wants a tine with a bark when played hard and a tremolo that pans.
 - **A low-pass on the whole mix, or an EQ**, to roll off the top the way a sampled record does, and a filter sweep into the break, which wants **automation**.
-- **Master gain past 0 dB, or a limiter.** The song peaks at -3.9 dBFS but measures only -23 LUFS: the drums are at the mixer's +6 dB limit to lead the mix, and the engine holds the master's volume at 0 dB (so nothing passes full scale), though the project takes up to +6, so the song can't be made louder.
+- **A low bass that stays round.** The Bass sound adds a sub an octave under each note, so with the line down at F1 and G1 the sub falls to 22–25 Hz, and the low notes buzz. The line sits an octave up, from F2, instead.
+- **Master gain past 0 dB, or a limiter.** The song peaks a few dB under full scale but is still quiet: the drums are at the mixer's +6 dB limit to lead the mix, and the engine holds the master's volume at 0 dB (so nothing passes full scale), though the project takes up to +6, so the song can't be made louder.
 
 ## The song file
 
