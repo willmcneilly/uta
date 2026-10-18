@@ -465,12 +465,12 @@ fn clicks_image(sound: &Sound) -> String {
         if at > first {
             svg.band(x(at - 1), x(at), plot.top, plot.bottom, "attack-band");
         }
-        let step_db = 20.0 * (step_at(at) / peak).max(1e-12).log10();
+        let step_db = fixed(20.0 * (step_at(at) / peak).max(1e-12).log10(), 1);
         svg.text(
             plot.left,
             plot.top - 6.0,
             &format!(
-                "{:.4} s · step {step_db:.1} dB re peak",
+                "{:.4} s · step {step_db} dB re peak",
                 at as f64 / f64::from(rate)
             ),
             "label",
@@ -764,6 +764,20 @@ fn full_scale_ladder(level: f64) -> f64 {
         .unwrap_or(1.0)
 }
 
+/// `value` to `decimals` places, without a minus sign on a zero.
+fn fixed(value: f64, decimals: usize) -> String {
+    let text = format!("{value:.decimals$}");
+    if text
+        .trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
+        text.trim_start_matches('-').to_string()
+    } else {
+        text
+    }
+}
+
 /// A number without trailing zeros: `0.5`, `0.05`, `1`.
 fn trim_number(value: f64) -> String {
     let text = format!("{value:.6}");
@@ -875,7 +889,7 @@ impl Svg {
             .iter()
             .map(|(name, value)| format!("{name} {value}"))
             .collect::<Vec<_>>()
-            .join("   ");
+            .join(" · ");
         self.text(LEFT, 56.0, &numbers, "numbers");
         self.text(LEFT, 78.0, about, "about");
     }
@@ -1104,6 +1118,13 @@ mod tests {
         assert_eq!(full_scale_ladder(0.15), 0.2);
         assert_eq!(full_scale_ladder(0.01), 0.01);
         assert_eq!(trim_number(full_scale_ladder(0.004)), "0.005");
+    }
+
+    #[test]
+    fn a_zero_has_no_minus_sign() {
+        assert_eq!(fixed(-0.04, 1), "0.0");
+        assert_eq!(fixed(-0.06, 1), "-0.1");
+        assert_eq!(fixed(2.5, 2), "2.50");
     }
 
     #[test]
