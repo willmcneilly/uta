@@ -23,6 +23,21 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 
 `beat.toml`: every sound of the kit in a 2-bar groove at 112 BPM, with a fill. Rewritten from `examples/demo-beat.json`, and builds the same track and notes.
 
+### Ambient
+
+`ambient.toml`: **unfinished, on purpose.** About a minute at 70 BPM in D major, in three sections (drift, bloom, fade): the Pad's chords swelling in and fading into each other, two bars each, its cutoff moved by one slow LFO (a cycle every 12.5 s); a low D drone under them; PWM strings over them in the middle, their width breathing; and a sparse bell answered by a ping-pong Delay a dotted half apart (2.6 s) at 30% feedback, each echo darker and thinner. It's thin and dry, because ambient is mostly space, and Uta has no reverb yet.
+
+**What the Reverb project should add:** a long, dark hall or plate on the Pad and Strings, and a send of the Bell and its echoes into it, so the notes bloom and hang instead of stopping; and once it's there, the song finished around it. It's the song Reverb is tried in first.
+
+**What it wanted and Uta lacks:**
+- **Reverb.** The biggest gap by far: without it there's no space, and every note ends where the synth's release ends.
+- **Sends.** The Delay and a reverb would be shared by several tracks on a send; today each track has its own chain, so the Bell's echoes can't feed the Pad's space.
+- **Stereo width on a synth** (unison voices spread across the field, or a chorus). The Pad is mono, so the mix measures 4% wide; only the pans and the ping-pong Delay give it any width.
+- **A note held across sections.** Each section's clip starts its notes afresh, so the drone restarts at the drift → bloom seam, with a short dip.
+- **Automation.** The filter and levels can only move with the LFO, so the song can't open up over the bloom or thin out over the fade.
+- **A slower synced LFO.** Synced, the LFO's longest cycle is a dotted whole note, a bar and a half; the Pad's drift wants one over the 8-bar chord cycle, so it uses the free rate instead and doesn't line up with the chords.
+- **A master above 0 dB.** The project takes a master volume up to +6 dB, but the engine holds it at 0 dB, so a quiet song can only be lifted on its tracks.
+
 ## The song file
 
 A song is its tempo, its tracks, what each plays in each section, the sections, and the order they play in. It covers notes, drum patterns, sections, sounds and effect settings, and nothing else on purpose: anything else is written as [raw commands](#raw-commands) inside the file.
