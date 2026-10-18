@@ -2,8 +2,9 @@
 //! device; `render-all` does the same for every command list in a folder;
 //! `play` plays it through the default output, round the loop until Ctrl-C
 //! or to the song's end. They build the project from a command list
-//! (`--commands`). `analyse` measures a WAV with `uta-analysis`, and with
-//! `--png` draws its [`images`].
+//! (`--commands`) or a song file (`--song`). `song` compiles a song file to
+//! its command list with `uta-song`. `analyse` measures a WAV with
+//! `uta-analysis`, and with `--png` draws its [`images`].
 
 mod images;
 
@@ -41,6 +42,10 @@ enum Command {
         /// the render is silent.
         #[arg(long)]
         commands: Option<PathBuf>,
+        /// A song file to build the project from instead, such as
+        /// `examples/demos/beat.toml`.
+        #[arg(long, conflicts_with = "commands")]
+        song: Option<PathBuf>,
         /// How long to play, in seconds. If not given: with the loop on,
         /// into the loop and twice round it; with the loop off, to the end
         /// of the song.
@@ -102,6 +107,10 @@ enum Command {
         /// silent.
         #[arg(long)]
         commands: Option<PathBuf>,
+        /// A song file to build the project from instead, such as
+        /// `examples/demos/beat.toml`.
+        #[arg(long, conflicts_with = "commands")]
+        song: Option<PathBuf>,
         /// The buffer size in frames: 32, 64 or 128. If the device can't do
         /// it, it gets the nearest size it can.
         #[arg(long, default_value_t = live::DEFAULT_BUFFER_SIZE, value_parser = buffer_size)]
@@ -114,6 +123,15 @@ enum Command {
         #[arg(long)]
         no_loop: bool,
     },
+    /// Compile a song file to the command list that builds it, as JSON, the
+    /// way `--commands` reads it. The format is in `examples/demos/README.md`.
+    Song {
+        /// The song file, such as `examples/demos/loop.toml`.
+        file: PathBuf,
+        /// Write the command list here instead of printing it.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -121,11 +139,11 @@ fn main() -> ExitCode {
         Command::Render {
             file,
             commands,
+            song,
             seconds,
             no_loop,
-        } => {
-            load(commands.as_deref(), no_loop).and_then(|project| render(&project, &file, seconds))
-        }
+        } => load(commands.as_deref(), song.as_deref(), no_loop)
+            .and_then(|project| render(&project, &file, seconds)),
         Command::RenderAll { commands, out } => render_all(&commands, &out),
         Command::Analyse {
             file,
@@ -144,10 +162,13 @@ fn main() -> ExitCode {
         ),
         Command::Play {
             commands,
+            song,
             buffer,
             from,
             no_loop,
-        } => load(commands.as_deref(), no_loop).and_then(|project| play(&project, buffer, from)),
+        } => load(commands.as_deref(), song.as_deref(), no_loop)
+            .and_then(|project| play(&project, buffer, from)),
+        Command::Song { file, out } => compile_song(&file, out.as_deref()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -158,16 +179,18 @@ fn main() -> ExitCode {
     }
 }
 
-/// The project a command list builds, or a new, empty one, with the loop
-/// switched off if `no_loop`.
-fn load(commands: Option<&Path>, no_loop: bool) -> Result<Project, String> {
-    let mut project = match commands {
-        None => Project::new(),
-        Some(path) => {
-            let json = std::fs::read_to_string(path)
-                .map_err(|error| format!("couldn't read {}: {error}", path.display()))?;
+/// The project a command list or a song file builds, or a new, empty one,
+/// with the loop switched off if `no_loop`.
+fn load(commands: Option<&Path>, song: Option<&Path>, no_loop: bool) -> Result<Project, String> {
+    let mut project = match (commands, song) {
+        (Some(path), _) => {
+            let json = read(path)?;
             build(&json).map_err(|error| format!("{}: {error}", path.display()))?
         }
+        (None, Some(path)) => compile(path)?.build().map_err(|(index, error)| {
+            format!("{}: command {} failed: {error}", path.display(), index + 1)
+        })?,
+        (None, None) => Project::new(),
     };
     if no_loop {
         project
@@ -175,6 +198,28 @@ fn load(commands: Option<&Path>, no_loop: bool) -> Result<Project, String> {
             .expect("switching the loop off always works");
     }
     Ok(project)
+}
+
+fn read(path: &Path) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map_err(|error| format!("couldn't read {}: {error}", path.display()))
+}
+
+/// The command list a song file compiles to.
+fn compile(path: &Path) -> Result<CommandList, String> {
+    uta_song::compile(&read(path)?).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+/// Prints the command list a song file compiles to, or writes it to `out`.
+fn compile_song(file: &Path, out: Option<&Path>) -> Result<(), String> {
+    let json =
+        serde_json::to_string_pretty(&compile(file)?).expect("a command list is always JSON");
+    match out {
+        None => println!("{json}"),
+        Some(out) => std::fs::write(out, json + "\n")
+            .map_err(|error| format!("couldn't write {}: {error}", out.display()))?,
+    }
+    Ok(())
 }
 
 /// Builds the project a JSON command list describes.
@@ -247,7 +292,7 @@ fn render_all(commands: &Path, out: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out)
         .map_err(|error| format!("couldn't create {}: {error}", out.display()))?;
     for list in &lists {
-        let project = load(Some(list), false)?;
+        let project = load(Some(list), None, false)?;
         let name = list.file_stem().expect("a .json file has a name");
         render(&project, &out.join(name).with_extension("wav"), None)?;
     }
@@ -675,8 +720,15 @@ mod tests {
 
     #[test]
     fn no_loop_switches_the_loop_off() {
-        assert!(load(None, false).unwrap().transport().loop_enabled());
-        assert!(!load(None, true).unwrap().transport().loop_enabled());
+        assert!(load(None, None, false).unwrap().transport().loop_enabled());
+        assert!(!load(None, None, true).unwrap().transport().loop_enabled());
+        let beat = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/demos/beat.toml");
+        assert!(
+            !load(None, Some(&beat), true)
+                .unwrap()
+                .transport()
+                .loop_enabled()
+        );
     }
 
     #[test]
@@ -808,7 +860,7 @@ mod tests {
             let lists = command_lists(&folder).unwrap();
             assert!(lists.len() >= 8, "{sound}: {lists:?}");
             for list in lists {
-                let project = load(Some(&list), false).unwrap();
+                let project = load(Some(&list), None, false).unwrap();
                 assert!(default_seconds(&project) > 1.0, "{}", list.display());
                 // A note's start is from its clip's start, so one past the
                 // clip's length never plays.

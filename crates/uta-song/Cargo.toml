@@ -1,0 +1,19 @@
+[package]
+name = "uta-song"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Songs written in musical terms, in a TOML song file, compiled to a command list through the real commands."
+
+[dependencies]
+uta-core = { path = "../uta-core" }
+serde = "1"
+# Already in the build, through Tauri.
+toml = "1"
+uuid = { version = "1", features = ["v5"] }
+
+[dev-dependencies]
+serde_json = "1"
+# The demo songs' render checks: they render each song and measure it.
+uta-analysis = { path = "../uta-analysis" }
+uta-engine = { path = "../uta-engine" }

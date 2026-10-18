@@ -18,6 +18,7 @@ import {
   pairCriteria,
   sync,
   verificationNotes,
+  demoSong,
   commandLine,
   dependencies,
   matchTodos,
@@ -443,6 +444,8 @@ describe("pairCriteria", () => {
 describe("verificationNotes", () => {
   const body = [
     "Intro, not copied.",
+    "",
+    "**Demo song:** doesn't apply: it's a script.",
     "## Acceptance criteria",
     "- [x] **Done thing.** `a_test`.",
     "- [ ] **Not done.** Because.",
@@ -460,6 +463,8 @@ describe("verificationNotes", () => {
     expect(notes).toBe(
       [
         "From [PR #63](https://github.com/willmcneilly/uta/pull/63).",
+        "",
+        "**Demo song:** doesn't apply: it's a script.",
         "",
         "### Acceptance criteria",
         "",
@@ -482,7 +487,32 @@ describe("verificationNotes", () => {
   });
 
   it("refuses a body without For Will to try", () => {
-    expect(() => verificationNotes("## Acceptance criteria\n- [x] A", { number: 1, url: "u" })).toThrow(/For Will to try/);
+    expect(() => verificationNotes("Demo song: not yet\n## Acceptance criteria\n- [x] A", { number: 1, url: "u" })).toThrow(/For Will to try/);
+  });
+
+  it("refuses a body without a Demo song line", () => {
+    expect(() => verificationNotes(body.replace(/^\*\*Demo song.*$/m, ""), { number: 1, url: "u" })).toThrow(/no "Demo song:" line/);
+  });
+});
+
+describe("demoSong", () => {
+  it("finds the line with each answer, bold or not, in a list or not, with or without a reason", () => {
+    expect(demoSong("Intro.\n\nDemo song: added. The bass glides in `lofi.toml`.")).toBe("Demo song: added. The bass glides in `lofi.toml`.");
+    expect(demoSong("- **Demo song:** not yet")).toBe("**Demo song:** not yet");
+    expect(demoSong("**Demo song: doesn’t apply** (a script)")).toBe("**Demo song: doesn’t apply** (a script)");
+    expect(demoSong("demo song: Doesn't apply — tooling")).toBe("demo song: Doesn't apply — tooling");
+  });
+
+  it("refuses no line, two, or one that doesn't answer", () => {
+    expect(() => demoSong("Intro.")).toThrow(/no "Demo song:" line\. Say whether .*"Demo song: added", "not yet", "doesn't apply"/);
+    expect(() => demoSong("Demo song: added\nDemo song: not yet")).toThrow(/2 "Demo song:" lines/);
+    expect(() => demoSong("Demo song: maybe")).toThrow(/doesn't answer/);
+    expect(() => demoSong("Demo song: addedd")).toThrow(/doesn't answer/);
+    expect(() => demoSong("Demo song: not yet's")).toThrow(/doesn't answer/);
+  });
+
+  it("ignores a Demo song line in a code block", () => {
+    expect(() => demoSong("```\nDemo song: added\n```")).toThrow(/no "Demo song:" line/);
   });
 });
 
@@ -507,6 +537,7 @@ describe("sync", () => {
   ];
   const body = [
     "Changed things.",
+    "Demo song: doesn't apply.",
     "## Acceptance criteria",
     "- [x] **First criterion.** `first_test` proves it.",
     "- [ ] **Second criterion.** Not yet.",
@@ -523,7 +554,7 @@ describe("sync", () => {
       "Update PR #10007's description from pr.md.",
       "Tick: First criterion",
       "Untick: Second criterion",
-      `Replace UTA-7's Verification notes with PR #10007's criteria, "For Will to try" and follow-ups.`,
+      `Replace UTA-7's Verification notes with PR #10007's demo song line, criteria, "For Will to try" and follow-ups.`,
       `Set UTA-7's PR to ${url} and status to In Review.`,
     ]);
     expect(actions[0].call.args).toEqual(["api", "repos/{owner}/{repo}/pulls/10007", "-X", "PATCH", "-F", `body=@${resolve("pr.md")}`]);

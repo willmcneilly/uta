@@ -545,14 +545,45 @@ export function pairCriteria(todos: Todo[], criteria: Criterion[]): { todo: Todo
   return pairs;
 }
 
+/** What a PR's "Demo song:" line can say: whether the change is in a demo song in `examples/demos/` (RFC-009, "They're kept up"). */
+export const DEMO_SONG = ["added", "not yet", "doesn't apply"] as const;
+
 /**
- * The ticket's Verification notes, made from the PR body: its acceptance
- * criteria (as ✓ and ✗, so they aren't checkboxes the ticket would count),
- * "For Will to try" and follow-ups. The last line carries a hash of the rest,
- * which is how a second sync knows the notes are already up to date.
+ * The PR body's "Demo song:" line, as written, without a list mark: its
+ * answer (one of DEMO_SONG), then any reason. Throws a Refusal unless there's
+ * exactly one, outside a code block, with one of the answers.
+ */
+export function demoSong(markdown: string): string {
+  const found: string[] = [];
+  let fenced = false;
+  for (const line of markdown.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) fenced = !fenced;
+    const match = !fenced && /^\s*(?:[-*]\s+)?((?:\*\*|__)?demo song:.*)$/i.exec(line);
+    if (match) found.push(match[1].trim());
+  }
+  const how = `Say whether the change is in a demo song with one line: "Demo song: ${DEMO_SONG.join('", "')}", then why.`;
+  if (found.length === 0) throw new Refusal(`The PR body has no "Demo song:" line. ${how}`);
+  if (found.length > 1) throw new Refusal(`The PR body has ${found.length} "Demo song:" lines. ${how}`);
+  const answer = found[0]
+    .replace(/^(?:\*\*|__)?demo song:(?:\*\*|__)?\s*/i, "")
+    .replace(/[*_`]/g, "")
+    .replace(/’/g, "'")
+    .toLowerCase();
+  if (!DEMO_SONG.some((value) => new RegExp(`^${value}(?![\\w'])`).test(answer))) {
+    throw new Refusal(`The PR body's "${found[0]}" doesn't answer. ${how}`);
+  }
+  return found[0];
+}
+
+/**
+ * The ticket's Verification notes, made from the PR body: its "Demo song:"
+ * line, its acceptance criteria (as ✓ and ✗, so they aren't checkboxes the
+ * ticket would count), "For Will to try" and follow-ups. The last line
+ * carries a hash of the rest, which is how a second sync knows the notes are
+ * already up to date.
  */
 export function verificationNotes(markdown: string, pr: { number: number; url: string }): { notes: string; hash: string } {
-  const parts: string[] = [`From [PR #${pr.number}](${pr.url}).`];
+  const parts: string[] = [`From [PR #${pr.number}](${pr.url}).`, demoSong(markdown)];
   for (const [heading, name, required] of [
     [CRITERIA, "Acceptance criteria", true],
     [FOR_WILL, "For Will to try", true],
@@ -642,7 +673,7 @@ export function sync(services: Services, run: Run, tree: Tree, id: number, numbe
   if (replacesNotes) {
     const heading = current.split("\n")[0];
     actions.push({
-      summary: `Replace ${label(id)}'s Verification notes with PR #${number}'s criteria, "For Will to try" and follow-ups.`,
+      summary: `Replace ${label(id)}'s Verification notes with PR #${number}'s demo song line, criteria, "For Will to try" and follow-ups.`,
       call: {
         tool: "ntn.sh",
         args: [
