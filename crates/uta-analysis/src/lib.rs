@@ -104,12 +104,39 @@ pub fn crest_factor(samples: &[f32]) -> f64 {
 }
 
 /// How long a sound takes to rise from 10% to 90% of its peak, in seconds:
-/// its attack. It's the rise into the loudest sample, from the last 5 ms
-/// before it whose loudest sample is under 10% of the peak, so in a file of
-/// several hits it's the loudest hit's. Within that, it follows the running
-/// peak (the loudest sample so far), interpolated between samples, so it
-/// reads a tone's rise to within half a cycle. `None` for silence.
+/// its attack, from [`attack`]. `None` for silence.
 pub fn attack_seconds(samples: &[f32], sample_rate: u32) -> Option<f64> {
+    attack(samples, sample_rate).map(|attack| (attack.to - attack.from) / f64::from(sample_rate))
+}
+
+/// Where a sound's attack is: the rise from 10% to 90% of its peak.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Attack {
+    /// The sample the rise is measured from.
+    pub start: usize,
+    /// Where it reaches 10% of its peak, in samples after `start`.
+    pub from: f64,
+    /// Where it reaches 90%, in samples after `start`.
+    pub to: f64,
+}
+
+impl Attack {
+    /// When it reaches 10% and 90% of its peak, in seconds from the first
+    /// sample.
+    pub fn seconds(self, sample_rate: u32) -> (f64, f64) {
+        let rate = f64::from(sample_rate);
+        let start = self.start as f64;
+        ((start + self.from) / rate, (start + self.to) / rate)
+    }
+}
+
+/// Where a sound rises from 10% to 90% of its peak. It's the rise into the
+/// loudest sample, from the last 5 ms before it whose loudest sample is
+/// under 10% of the peak, so in a file of several hits it's the loudest
+/// hit's. Within that, it follows the running peak (the loudest sample so
+/// far), interpolated between samples, so it reads a tone's rise to within
+/// half a cycle. `None` for silence.
+pub fn attack(samples: &[f32], sample_rate: u32) -> Option<Attack> {
     let (loudest, peak) = samples.iter().enumerate().fold((0, 0.0f32), |max, (i, s)| {
         if s.abs() > max.1 { (i, s.abs()) } else { max }
     });
@@ -135,7 +162,11 @@ pub fn attack_seconds(samples: &[f32], sample_rate: u32) -> Option<f64> {
         }
         unreachable!("the rise ends at the peak, which reaches every level below it")
     };
-    Some((reaches(0.9 * peak) - reaches(0.1 * peak)) / f64::from(sample_rate))
+    Some(Attack {
+        start,
+        from: reaches(0.1 * peak),
+        to: reaches(0.9 * peak),
+    })
 }
 
 /// The points of a pitch track (from [`pitch_track`] or
@@ -707,14 +738,7 @@ fn real_fft(samples: impl Iterator<Item = f64>) -> Vec<Complex<f64>> {
 pub fn alias_db(samples: &[f32], sample_rate: u32, frequency_hz: f64) -> f64 {
     let spectrum = spectrum(samples);
     let bin_hz = f64::from(sample_rate) / samples.len() as f64;
-    // The window's main lobe is 4 bins either side; allow a little more.
-    let lobe = 6.0;
-    // The harmonic each bin is on, if it's on one: 0 is any offset, which
-    // isn't an alias but isn't a harmonic either.
-    let harmonic = |bin: usize| {
-        let harmonic = (bin as f64 * bin_hz / frequency_hz).round();
-        ((bin as f64 - harmonic * frequency_hz / bin_hz).abs() <= lobe).then_some(harmonic)
-    };
+    let harmonic = |bin: usize| harmonic_at(bin, bin_hz, frequency_hz);
     let loudest = |on: fn(Option<f64>) -> bool| {
         spectrum
             .iter()
@@ -725,6 +749,17 @@ pub fn alias_db(samples: &[f32], sample_rate: u32, frequency_hz: f64) -> f64 {
     let alias = loudest(|harmonic| harmonic.is_none());
     let harmonics = loudest(|harmonic| harmonic.is_some_and(|h| h >= 1.0));
     20.0 * (alias / harmonics).log10()
+}
+
+/// The harmonic of `frequency_hz` that bin `bin` of a [`spectrum`] is on,
+/// if it's within the window's main lobe of one (4 bins either side, with a
+/// little to spare), as [`alias_db`] counts it. 0 is any offset, which isn't
+/// an alias but isn't a harmonic either. `None` is between the harmonics,
+/// where aliasing lands.
+pub fn harmonic_at(bin: usize, bin_hz: f64, frequency_hz: f64) -> Option<f64> {
+    let lobe = 6.0;
+    let harmonic = (bin as f64 * bin_hz / frequency_hz).round();
+    ((bin as f64 - harmonic * frequency_hz / bin_hz).abs() <= lobe).then_some(harmonic)
 }
 
 /// The `seconds` of `samples` with the most energy, or all of them if
@@ -820,6 +855,143 @@ pub fn spectral_flatness(samples: &[f32], sample_rate: u32) -> Option<f64> {
     let log_mean = band.iter().map(|p| p.ln()).sum::<f64>() / band.len() as f64;
     (mean > 0.0).then(|| log_mean.exp() / mean)
 }
+
+/// A spectrogram: the spectrum over time, in dB relative to a full-scale
+/// sine, so a full-scale sine reads 0 dB at its frequency.
+pub struct Spectrogram {
+    /// Each frame's spectrum in dB, from 0 Hz in steps of `bin_hz`, up to
+    /// half the sample rate. Silence reads [`SILENT_DB`].
+    pub frames: Vec<Vec<f32>>,
+    /// How far apart the bins are, in Hz.
+    pub bin_hz: f64,
+    /// How far apart the frames are, in seconds. Frame `i` is centred on
+    /// `i * hop_seconds`.
+    pub hop_seconds: f64,
+    /// How long each frame's window is, in seconds.
+    pub window_seconds: f64,
+}
+
+/// The level a spectrogram gives silence, in dB.
+pub const SILENT_DB: f32 = -240.0;
+
+/// The [`Spectrogram`] of `samples`: a Hann window of `window_seconds`
+/// every `hop_seconds`, each centred on its time, so the first is centred
+/// on the first sample (with silence before it) and the last at or past the
+/// last. Each window is zero-padded to four times its length, which draws
+/// the spectrum smoothly between bins without adding detail. A short
+/// window shows when things happen (a drum hit's start), a long one which
+/// frequencies (a tone's harmonics).
+pub fn spectrogram(
+    samples: &[f32],
+    sample_rate: u32,
+    window_seconds: f64,
+    hop_seconds: f64,
+) -> Spectrogram {
+    let rate = f64::from(sample_rate);
+    let window = ((window_seconds * rate).round() as usize).max(2);
+    let hop = ((hop_seconds * rate).round() as usize).max(1);
+    let length = 4 * window;
+    let fft = RealFftPlanner::<f64>::new().plan_fft_forward(length);
+    let shape: Vec<f64> = (0..window)
+        .map(|i| 0.5 - 0.5 * (TAU * i as f64 / window as f64).cos())
+        .collect();
+    // A sine of amplitude 1 peaks at half the window's sum.
+    let full_scale = shape.iter().sum::<f64>() / 2.0;
+    let (mut input, mut output) = (fft.make_input_vec(), fft.make_output_vec());
+    let frames = (0..=samples.len().div_ceil(hop))
+        .map(|frame| {
+            input.fill(0.0);
+            let centre = frame * hop;
+            for (i, w) in shape.iter().enumerate() {
+                let at = (centre + i).checked_sub(window / 2);
+                if let Some(&sample) = at.and_then(|at| samples.get(at)) {
+                    input[i] = f64::from(sample) * w;
+                }
+            }
+            fft.process(&mut input, &mut output)
+                .expect("the buffers are the plan's");
+            output
+                .iter()
+                .map(|bin| {
+                    let level = bin.norm() / full_scale;
+                    if level > 0.0 {
+                        (20.0 * level.log10()).max(f64::from(SILENT_DB)) as f32
+                    } else {
+                        SILENT_DB
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    Spectrogram {
+        frames,
+        bin_hz: rate / length as f64,
+        hop_seconds: hop as f64 / rate,
+        window_seconds: window as f64 / rate,
+    }
+}
+
+/// Where `samples` click: each sample-to-sample step that's more than
+/// [`CLICK_RATIO`] times the RMS of the steps in the 2 ms either side of
+/// it (not counting the 4 samples nearest), and no quieter than 60 dB under
+/// the loudest sample. A sine's steepest step is √2 times its RMS step, and
+/// noise's rarely reaches 6, so a step 8 times what's around it is a jump
+/// the sound itself doesn't make: a note starting or stopping mid-cycle, a
+/// setting changing at once. A sound starting suddenly from silence counts
+/// only if its first step is far bigger than the ones after it. Each is
+/// the index of the sample after the step: the largest of the steps
+/// within 10 ms of the first, in time order.
+pub fn clicks(samples: &[f32], sample_rate: u32) -> Vec<usize> {
+    let steps: Vec<f64> = samples
+        .windows(2)
+        .map(|pair| f64::from(pair[1] - pair[0]))
+        .collect();
+    let floor = f64::from(peak(samples)) * 1e-3;
+    if floor == 0.0 {
+        return Vec::new();
+    }
+    let energy: Vec<f64> = std::iter::once(0.0)
+        .chain(steps.iter().scan(0.0, |sum, step| {
+            *sum += step * step;
+            Some(*sum)
+        }))
+        .collect();
+    let rate = f64::from(sample_rate);
+    let around = ((0.002 * rate) as usize).max(8);
+    let near = 4;
+    let found: Vec<usize> = (0..steps.len())
+        .filter(|&i| {
+            let step = steps[i].abs();
+            if step < floor {
+                return false;
+            }
+            let (start, end) = (i.saturating_sub(around), (i + around + 1).min(steps.len()));
+            let (skip_start, skip_end) = (i.saturating_sub(near), (i + near + 1).min(steps.len()));
+            let sum = energy[end] - energy[start] - (energy[skip_end] - energy[skip_start]);
+            let count = (end - start) - (skip_end - skip_start);
+            count > 0 && step * step > CLICK_RATIO * CLICK_RATIO * sum / count as f64
+        })
+        .collect();
+    // The largest of each group within 10 ms.
+    let apart = ((0.01 * rate) as usize).max(1);
+    // Each group's first step and its largest.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for i in found {
+        match groups.last_mut() {
+            Some((first, largest)) if i - *first < apart => {
+                if steps[i].abs() > steps[*largest].abs() {
+                    *largest = i;
+                }
+            }
+            _ => groups.push((i, i)),
+        }
+    }
+    groups.into_iter().map(|(_, largest)| largest + 1).collect()
+}
+
+/// How many times the RMS of the steps around it a step must be, for
+/// [`clicks`] to count it.
+pub const CLICK_RATIO: f64 = 8.0;
 
 /// The correlation of two signals, from -1 to 1.
 pub fn correlation(a: &[f32], b: &[f32]) -> f64 {
@@ -1386,5 +1558,121 @@ mod tests {
                 "a band-limited saw at {rate} Hz reads {alias} dB"
             );
         }
+    }
+
+    #[test]
+    fn the_attack_says_where_the_rise_is() {
+        // Silence for 100 ms, then the ramp from `a_linear_ramp_reads_its_rise_time`:
+        // 10% is 5 ms in, 90% is 45 ms in.
+        let ramp = (0.05 * f64::from(RATE)) as usize;
+        let silence = (0.1 * f64::from(RATE)) as usize;
+        let samples: Vec<f32> = (0..RATE as usize)
+            .map(|i| 0.8 * (i.saturating_sub(silence) as f32 / ramp as f32).min(1.0))
+            .collect();
+        let (from, to) = attack(&samples, RATE).expect("it rises").seconds(RATE);
+        assert!((from - 0.105).abs() < 1e-4, "10% at {from} s");
+        assert!((to - 0.145).abs() < 1e-4, "90% at {to} s");
+    }
+
+    /// The loudest bin of each frame, in dB, and its frequency.
+    fn loudest_bin(spectrogram: &Spectrogram, frame: usize) -> (f64, f64) {
+        let (bin, &db) = spectrogram.frames[frame]
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .expect("a frame has bins");
+        (bin as f64 * spectrogram.bin_hz, f64::from(db))
+    }
+
+    #[test]
+    fn a_full_scale_sine_reads_0_db_at_its_frequency() {
+        for window in [0.003, 0.05] {
+            let spectrogram = spectrogram(&sine(1000.0, 1.0), RATE, window, window / 4.0);
+            let middle = spectrogram.frames.len() / 2;
+            let (hz, db) = loudest_bin(&spectrogram, middle);
+            // Zero-padded four times, the nearest bin is within an eighth of
+            // the window's resolution, where a Hann window has lost 0.1 dB.
+            assert!(db.abs() < 0.2, "{window} s: {db} dB");
+            assert!(
+                (hz - 1000.0).abs() <= spectrogram.bin_hz,
+                "{window} s: {hz} Hz"
+            );
+            let far = (8000.0 / spectrogram.bin_hz) as usize;
+            if window == 0.05 {
+                let far_db = spectrogram.frames[middle][far];
+                assert!(far_db < -90.0, "7 kHz away: {far_db} dB");
+            }
+        }
+    }
+
+    #[test]
+    fn a_spectrogram_has_a_frame_every_hop_and_silence_reads_silent() {
+        let samples = vec![0.0; RATE as usize];
+        let spectrogram = spectrogram(&samples, RATE, 0.05, 0.01);
+        assert_eq!(spectrogram.frames.len(), 101, "0 s to 1 s, every 10 ms");
+        assert!((spectrogram.hop_seconds - 0.01).abs() < 1e-9);
+        assert!((spectrogram.window_seconds - 0.05).abs() < 1e-9);
+        assert_eq!(spectrogram.frames[0].len(), 4 * 2400 / 2 + 1);
+        assert!(
+            spectrogram
+                .frames
+                .iter()
+                .flatten()
+                .all(|&db| db == SILENT_DB),
+            "silence"
+        );
+    }
+
+    #[test]
+    fn a_short_window_finds_when_an_impulse_is() {
+        let mut samples = vec![0.0; RATE as usize];
+        samples[24_000] = 1.0;
+        let spectrogram = spectrogram(&samples, RATE, 0.003, 0.001);
+        let loudest = (0..spectrogram.frames.len())
+            .max_by(|&a, &b| {
+                loudest_bin(&spectrogram, a)
+                    .1
+                    .total_cmp(&loudest_bin(&spectrogram, b).1)
+            })
+            .unwrap();
+        let at = loudest as f64 * spectrogram.hop_seconds;
+        assert!((at - 0.5).abs() <= 0.001, "loudest at {at} s");
+    }
+
+    #[test]
+    fn a_jump_in_a_sine_is_a_click_and_a_clean_sine_or_noise_isnt() {
+        let clean = sine(440.0, 0.5);
+        assert_eq!(clicks(&clean, RATE), Vec::<usize>::new(), "a clean sine");
+        assert_eq!(clicks(&noise(7), RATE), Vec::<usize>::new(), "noise");
+        assert_eq!(clicks(&[0.0; 4800], RATE), Vec::<usize>::new(), "silence");
+        // Half a cycle of phase skipped at a peak just after 0.25 s, and the
+        // sine cut off at a peak just after 0.75 s. Both are whole numbers
+        // of cycles, and a quarter cycle of 440 Hz is 27 samples.
+        let jump = 12_000 + 27;
+        let stop = 36_000 + 27;
+        let samples: Vec<f32> = (0..RATE as usize)
+            .map(|i| {
+                let skip = if i >= jump { 0.5 / 440.0 } else { 0.0 };
+                let t = i as f64 / f64::from(RATE) + skip;
+                if i >= stop {
+                    0.0
+                } else {
+                    0.5 * (TAU * 440.0 * t).sin() as f32
+                }
+            })
+            .collect();
+        let found = clicks(&samples, RATE);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(found[0].abs_diff(jump) <= 1, "{found:?}");
+        assert!(found[1].abs_diff(stop) <= 1, "{found:?}");
+    }
+
+    #[test]
+    fn a_harmonic_is_on_its_line_and_an_alias_between() {
+        // Bins 1 Hz apart, harmonics of 100 Hz.
+        assert_eq!(harmonic_at(300, 1.0, 100.0), Some(3.0));
+        assert_eq!(harmonic_at(305, 1.0, 100.0), Some(3.0));
+        assert_eq!(harmonic_at(350, 1.0, 100.0), None);
+        assert_eq!(harmonic_at(2, 1.0, 100.0), Some(0.0));
     }
 }

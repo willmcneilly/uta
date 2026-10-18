@@ -319,7 +319,7 @@ pub const MEASUREMENTS: &[Measurement] = &[
 /// has bins 2 Hz apart, so the harmonics' allowance is 12 Hz whatever the
 /// file's length, which a pitch measured to a fraction of a cent is well
 /// within at the top harmonic.
-const ALIAS_SECONDS: f64 = 0.5;
+pub const ALIAS_SECONDS: f64 = 0.5;
 
 /// The sound a report measures: its mid, its channels, and what it's
 /// measured with.
@@ -366,6 +366,11 @@ impl Sound {
             above_hz: 5000.0,
             track,
         }
+    }
+
+    /// The mid it's measured from: the average of its channels.
+    pub fn mid(&self) -> &[f32] {
+        &self.samples
     }
 
     /// Measures the pitch from `note`, rather than from the nearest note.
@@ -537,6 +542,38 @@ impl Report {
     pub fn get(&self, key: &str) -> Option<f64> {
         let index = MEASUREMENTS.iter().position(|m| m.key == key)?;
         self.values[index]
+    }
+
+    /// The measurement whose key is `key` as the text report shows it, with
+    /// its unit, such as `-3.1 dBFS`, or `-` if it couldn't be taken.
+    pub fn shown(&self, key: &str) -> String {
+        self.shown_with(key, |index| self.values[index], false)
+    }
+
+    /// The difference in the measurement whose key is `key` between this
+    /// and `other`, as `--against` shows it, with its unit, such as
+    /// `+1.5 dB`.
+    pub fn shown_difference(&self, other: &Report, key: &str) -> String {
+        let difference = self.difference(other);
+        self.shown_with(key, |index| difference[index], true)
+    }
+
+    fn shown_with(
+        &self,
+        key: &str,
+        value: impl Fn(usize) -> Option<f64>,
+        difference: bool,
+    ) -> String {
+        let Some(index) = MEASUREMENTS.iter().position(|m| m.key == key) else {
+            return "-".to_string();
+        };
+        let measurement = &MEASUREMENTS[index];
+        let shown = show(value(index), measurement.decimals, difference);
+        if shown == "-" || measurement.unit.is_empty() {
+            shown
+        } else {
+            format!("{shown} {}", measurement.unit)
+        }
     }
 
     /// Each measurement here minus the same in `other`, or `None` if either
