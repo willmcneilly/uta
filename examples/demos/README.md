@@ -23,6 +23,19 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 
 `beat.toml`: every sound of the kit in a 2-bar groove at 112 BPM, with a fill. Rewritten from `examples/demo-beat.json`, and builds the same track and notes.
 
+### House
+
+`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a minor-seventh stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth, and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
+
+What house wanted that Uta doesn't have yet:
+- **Swing.** House hats and bass are pushed off the grid; every step here is straight, so it sits stiffer than the genre.
+- **Sidechain ducking.** The bass and the stab should dip under each kick. Without it, the kick is made to lead by the mixer alone.
+- **Louder than the mixer allows.** The drums are at a track's limit (+6 dB), and the master's +6 dB is cut to 0 dB by the engine (`Snapshot::MAX_VOLUME_DB`), so the balance came from turning the synths down.
+- **Automation.** A filter sweep on the stab or the bass into the drop, and the hats opening up through the build, are written today as separate sections.
+- **A stab sound.** The Pluck is the nearest factory sound; house stabs are usually an organ, a piano or a sampled chord, brighter and with more body.
+- **Reverb**, for the claps and the stab's tail in the break.
+- **A shaker or ride.** The kit has a closed and an open hat and a crash; a groove usually has a ride or a shaker on top in the drop.
+
 ## The song file
 
 A song is its tempo, its tracks, what each plays in each section, the sections, and the order they play in. It covers notes, drum patterns, sections, sounds and effect settings, and nothing else on purpose: anything else is written as [raw commands](#raw-commands) inside the file.
