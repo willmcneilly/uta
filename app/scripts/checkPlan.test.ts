@@ -16,6 +16,8 @@ const BASE: TreeFile[] = [
   { hash: "a", path: "examples/demo-loop.json" },
   { hash: "b", path: "app/scripts/check.ts" },
   { hash: "c", path: "app/src/synth/filter-response.json" },
+  { hash: "d", path: "examples/demos/loop.toml" },
+  { hash: "e", path: "crates/uta-song/src/lib.rs" },
 ];
 
 /** BASE with the given files' content changed. */
@@ -58,7 +60,11 @@ describe("plan", () => {
   });
 
   it("runs no frontend jobs for a Rust-only change", () => {
-    expect(running(changing("crates/uta-core/src/lib.rs"))).toEqual([...RUST, "rtsan"]);
+    expect(running(changing("crates/uta-core/src/lib.rs"))).toEqual([
+      ...RUST,
+      "rtsan",
+      "rust: demo renders",
+    ]);
   });
 
   it("runs RTSan only when what its tests build changed", () => {
@@ -69,6 +75,24 @@ describe("plan", () => {
     expect(running(changing("app/src/App.tsx")).includes("app: release build")).toBe(false);
     expect(running(changing("Cargo.lock")).includes("app: release build")).toBe(false);
     expect(running(changing("app/package.json"))).toEqual([...FRONTEND, "app: release build"]);
+  });
+
+  it("renders the demo songs when a song or what plays it changed", () => {
+    expect(running(changing("examples/demos/loop.toml"))).toEqual([
+      ...RUST,
+      "rtsan",
+      "rust: demo renders",
+    ]);
+    expect(running(changing("crates/uta-song/src/lib.rs"))).toEqual([
+      ...RUST,
+      "rust: demo renders",
+    ]);
+    expect(running(changing("app/src-tauri/src/lib.rs")).includes("rust: demo renders")).toBe(
+      false,
+    );
+    expect(running(changing("examples/demo-loop.json")).includes("rust: demo renders")).toBe(
+      false,
+    );
   });
 
   it("runs both for a file both sides read", () => {

@@ -1,8 +1,15 @@
 //! The demo songs in `examples/demos/`: each builds, plays without
 //! clipping, and has no silent track. Not golden WAVs: the songs are meant
 //! to change. See RFC-009, "The demo song".
+//!
+//! Building is quick, so every `cargo test` does it. Rendering every song,
+//! and every track on its own, takes minutes in a debug build, so that test
+//! is ignored, and CI runs it with `--release` in the Timing reports job:
+//! `cargo test -p uta-song --release --test demos -- --ignored`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 
 use uta_core::time::Ticks;
 use uta_core::{Command, CommandList, MixerStrip, Project, Track};
@@ -61,7 +68,7 @@ fn db(level: f32) -> f64 {
 }
 
 #[test]
-fn every_demo_song_builds_plays_without_clipping_and_has_no_silent_track() {
+fn every_demo_song_compiles_and_builds() {
     let songs = songs();
     assert!(
         songs.iter().any(|path| path.ends_with("loop.toml")),
@@ -69,16 +76,24 @@ fn every_demo_song_builds_plays_without_clipping_and_has_no_silent_track() {
         demos().display()
     );
     for path in &songs {
-        let name = path.file_name().unwrap().to_string_lossy();
-        let project = build(path);
-        // The engine hard clips at full scale, so a song that clips has
-        // samples at full scale exactly.
-        let peak = uta_analysis::peak(&render(&project));
-        assert!(
-            peak < 1.0,
-            "{name} clips: its peak is {:+.2} dBFS",
-            db(peak)
-        );
+        build(path);
+    }
+}
+
+/// What one render plays: a song, or one of its tracks on its own.
+struct Render {
+    song: String,
+    /// The track soloed, or `None` for the whole song.
+    track: Option<String>,
+    project: Project,
+}
+
+/// Every song, then every track of it on its own.
+fn renders() -> Vec<Render> {
+    let mut renders = Vec::new();
+    for path in songs() {
+        let song = path.file_name().unwrap().to_string_lossy().into_owned();
+        let project = build(&path);
         for track in project.tracks() {
             let mut solo = project.clone();
             solo.apply(&Command::SetTrackMixer {
@@ -89,15 +104,76 @@ fn every_demo_song_builds_plays_without_clipping_and_has_no_silent_track() {
                 },
             })
             .unwrap();
-            let peak = uta_analysis::peak(&render(&solo));
-            assert!(
-                db(peak) > SILENT_DB,
-                "{name}'s {} is silent: its peak on its own is {:.1} dBFS",
-                track.name(),
+            renders.push(Render {
+                song: song.clone(),
+                track: Some(track.name().to_owned()),
+                project: solo,
+            });
+        }
+        renders.push(Render {
+            song,
+            track: None,
+            project,
+        });
+    }
+    renders
+}
+
+/// Each render's peak, in the order given, rendered on every core at once:
+/// each thread takes the next render not yet taken, so the time grows with
+/// the total, divided by the cores, not one song after another.
+fn peaks(renders: &[Render]) -> Vec<f32> {
+    let next = AtomicUsize::new(0);
+    let threads = thread::available_parallelism().map_or(1, usize::from);
+    let mut peaks = vec![0.0; renders.len()];
+    thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(job) = renders.get(index) else {
+                            return done;
+                        };
+                        done.push((index, uta_analysis::peak(&render(&job.project))));
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            for (index, peak) in worker.join().unwrap() {
+                peaks[index] = peak;
+            }
+        }
+    });
+    peaks
+}
+
+#[test]
+#[ignore = "renders every song: slow in debug, so CI runs it with --release"]
+fn every_demo_song_plays_without_clipping_and_has_no_silent_track() {
+    let renders = renders();
+    let peaks = peaks(&renders);
+    let mut failures = Vec::new();
+    for (render, peak) in renders.iter().zip(peaks) {
+        match &render.track {
+            // The engine hard clips at full scale, so a song that clips has
+            // samples at full scale exactly.
+            None if peak >= 1.0 => failures.push(format!(
+                "{} clips: its peak is {:+.2} dBFS",
+                render.song,
                 db(peak)
-            );
+            )),
+            Some(track) if db(peak) <= SILENT_DB => failures.push(format!(
+                "{}'s {track} is silent: its peak on its own is {:.1} dBFS",
+                render.song,
+                db(peak)
+            )),
+            _ => {}
         }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 /// Each note a track plays, in song time: (start, length, pitch, velocity).

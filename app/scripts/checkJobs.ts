@@ -33,6 +33,21 @@ const RTSAN = [
 ];
 
 /**
+ * What the demo songs' render test reads: the songs, and the crates that
+ * compile, build, play and measure them.
+ */
+const DEMO_RENDERS = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "rust-toolchain.toml",
+  "crates/uta-core/",
+  "crates/uta-engine/",
+  "crates/uta-analysis/",
+  "crates/uta-song/",
+  "examples/demos/",
+];
+
+/**
  * The frontend: the app without its Rust side, and the design tokens'
  * source. app/scripts/ is in it, so these jobs check scripts/check itself.
  */
@@ -70,6 +85,16 @@ export const JOBS: readonly Job[] = [
     inputs: RTSAN,
     command: ["cargo", "test", "-p", "uta-engine", "-p", "uta-cli"],
     env: { RTSAN_ENABLE: "1", CARGO_TARGET_DIR: "target/rtsan" },
+    cargo: true,
+  },
+  // Ignored in `rust: test`, since rendering every song takes minutes in a
+  // debug build; CI runs it in release too, in the Timing reports job. After
+  // the release build: both build in target/release, and cargo locks it.
+  {
+    name: "rust: demo renders",
+    inputs: DEMO_RENDERS,
+    command: ["cargo", "test", "-p", "uta-song", "--release", "--test", "demos", "--", "--ignored"],
+    after: ["app: release build"],
     cargo: true,
   },
   // CI checks the committed token files match DESIGN.md. Here the tree may
