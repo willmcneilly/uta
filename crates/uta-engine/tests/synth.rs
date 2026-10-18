@@ -227,11 +227,7 @@ const ALIAS_LIMIT_DB: f64 = -33.0;
 #[test]
 fn high_saw_aliasing_is_below_the_limit() {
     let samples = held_note(SynthSettings::default(), HIGH_NOTE, 127, 1.2)[seconds(0.4)..].to_vec();
-    let alias_db = loudest_alias_db(
-        &spectrum(&samples[..FFT_LEN]),
-        pitch_to_hz(HIGH_NOTE),
-        FFT_LEN,
-    );
+    let alias_db = alias_db(&samples[..FFT_LEN], RATE, pitch_to_hz(HIGH_NOTE));
     assert!(
         alias_db < ALIAS_LIMIT_DB,
         "loudest alias is {alias_db} dB, limit {ALIAS_LIMIT_DB} dB"
@@ -248,7 +244,7 @@ fn aliasing_measure_catches_a_naive_saw() {
             (2.0 * phase - 1.0) as f32
         })
         .collect();
-    let alias_db = loudest_alias_db(&spectrum(&naive), frequency, FFT_LEN);
+    let alias_db = alias_db(&naive, RATE, frequency);
     assert!(
         alias_db > ALIAS_LIMIT_DB + 8.0,
         "a naive saw's loudest alias is only {alias_db} dB"
@@ -1276,7 +1272,7 @@ fn sync_sweep_aliasing_is_below_the_limit() {
         for (octave, semitones) in sync_sweep() {
             let settings = synced(wave, octave, semitones);
             let samples = held_note(settings, HIGH_NOTE, 127, 1.2)[seconds(0.4)..].to_vec();
-            let alias_db = loudest_alias_db(&spectrum(&samples[..FFT_LEN]), frequency, FFT_LEN);
+            let alias_db = alias_db(&samples[..FFT_LEN], RATE, frequency);
             assert!(
                 alias_db <= limit,
                 "{wave:?} at octave {octave} and {semitones}: {alias_db} dB, limit {limit} dB"
@@ -1321,7 +1317,7 @@ fn sync_aliasing_measure_catches_a_naive_sync() {
                         value as f32
                     })
                     .collect();
-                loudest_alias_db(&spectrum(&naive), frequency, FFT_LEN)
+                alias_db(&naive, RATE, frequency)
             })
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(

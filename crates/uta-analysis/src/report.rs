@@ -7,8 +7,9 @@
 //!
 //! - `file`: the file it measured, as it was named on the command line;
 //! - `sample_rate`: in Hz;
-//! - `channels`: the file's channels (a stereo file is measured as its mid,
-//!   half of left plus right);
+//! - `channels`: the file's channels. A stereo file is measured as its mid,
+//!   half of left plus right, except for the loudness in LUFS and the
+//!   stereo measurements, which take each channel;
 //! - `seconds`: how long the file is;
 //! - `note`: the note `pitch_cents` is measured from, such as `"C3"`: the
 //!   one `--pitch` names, or else the nearest to the measured pitch. `null`
@@ -28,8 +29,10 @@ use std::fmt::Write;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::{
-    attack_seconds, crest_factor, decay_seconds, first_sound, hit_loudness_db, max_jump, peak,
-    pitch_track, rms, share_above, smoothed_pitch, spectral_centroid, steady_pitch, while_loud,
+    MOMENTARY_SECONDS, SHORT_TERM_SECONDS, alias_db, attack_seconds, correlation, crest_factor,
+    decay_seconds, first_sound, hit_loudness_db, inharmonicity, integrated_loudness,
+    loudest_stretch, loudness_over_time, max_jump, peak, pitch_track, rms, share_above,
+    smoothed_pitch, spectral_centroid, spectral_flatness, steady_pitch, stereo_width, while_loud,
 };
 
 /// One measurement in the report.
@@ -84,14 +87,48 @@ pub const MEASUREMENTS: &[Measurement] = &[
         label: "loudness",
         unit: "dB",
         decimals: 1,
-        about: "How loud it sounds: the K-weighted RMS (the filter of ITU-R BS.1770) from \
-                the first sound to the end. Not yet BS.1770's gated loudness in LUFS.",
+        about: "How loud it sounds as a hit: the K-weighted RMS (the filter of ITU-R \
+                BS.1770) of the mid from the first sound to the end, as the drum tests measure \
+                a hit's balance. For a loudness to compare with other files, use the LUFS below.",
         measure: |sound| {
             let samples = sound.since_first_sound();
             (peak(samples) > 0.0).then(|| {
-                hit_loudness_db(samples, samples.len() as f64 / f64::from(sound.sample_rate))
+                hit_loudness_db(
+                    samples,
+                    sound.sample_rate,
+                    samples.len() as f64 / f64::from(sound.sample_rate),
+                )
             })
         },
+    },
+    Measurement {
+        key: "loudness_momentary_lufs",
+        label: "loudness, momentary max",
+        unit: "LUFS",
+        decimals: 1,
+        about: "The loudest 400 ms, by ITU-R BS.1770's momentary loudness: every channel \
+                K-weighted, their energy added, in LUFS. A stereo 1 kHz sine at -23 dBFS reads \
+                -23.0. A file under 400 ms is measured with silence after it.",
+        measure: |sound| sound.loudest(MOMENTARY_SECONDS),
+    },
+    Measurement {
+        key: "loudness_short_term_lufs",
+        label: "loudness, short-term max",
+        unit: "LUFS",
+        decimals: 1,
+        about: "The loudest 3 s, by BS.1770's short-term loudness, measured the same way.",
+        measure: |sound| sound.loudest(SHORT_TERM_SECONDS),
+    },
+    Measurement {
+        key: "loudness_integrated_lufs",
+        label: "loudness, integrated",
+        unit: "LUFS",
+        decimals: 1,
+        about: "The loudness of the whole file, by BS.1770's gated integrated loudness: its \
+                400 ms blocks (every 100 ms), leaving out silence under -70 LUFS and then \
+                blocks more than 10 LU under the rest. `null` for silence or a file under \
+                400 ms.",
+        measure: |sound| integrated_loudness(&sound.channels(), sound.sample_rate),
     },
     Measurement {
         key: "brightness_hz",
@@ -110,6 +147,70 @@ pub const MEASUREMENTS: &[Measurement] = &[
         about: "The share of the whole file's energy above `above_hz`.",
         measure: |sound| {
             finite(100.0 * share_above(&sound.samples, sound.sample_rate, sound.above_hz))
+        },
+    },
+    Measurement {
+        key: "flatness",
+        label: "noisiness (flatness)",
+        unit: "",
+        decimals: 3,
+        about: "The spectral flatness of the whole file: from 0 for pure tones to 1 for white \
+                noise. The geometric mean of its average power spectrum (40 ms frames, \
+                overlapping by half) over the arithmetic mean, from 20 Hz to 20 kHz.",
+        measure: |sound| spectral_flatness(&sound.samples, sound.sample_rate),
+    },
+    Measurement {
+        key: "inharmonicity",
+        label: "inharmonicity",
+        unit: "",
+        decimals: 3,
+        about: "How far the whole file's partials sit from whole-number multiples of the pitch \
+                (the measured pitch, or else `--pitch`'s note), from 0 (harmonic, as a saw is) \
+                to 1: each spectral peak's distance from its nearest harmonic, weighted by its \
+                power, doubled. Metallic and bell-like sounds read well above 0. `null` \
+                without a pitch.",
+        measure: |sound| inharmonicity(&sound.samples, sound.sample_rate, sound.harmonic_hz()?),
+    },
+    Measurement {
+        key: "alias_db",
+        label: "loudest alias",
+        unit: "dB re harmonics",
+        decimals: 1,
+        about: "The loudest partial between the pitch's harmonics, in dB relative to the \
+                loudest harmonic: aliasing folds back between the harmonics. A naive saw on a \
+                high note reads high; a clean tone reads its noise floor. From the spectrum of \
+                the loudest 500 ms (or the whole file, if it's shorter), so it reads the same \
+                however long the file is. Needs a steady pitch: the measured pitch, or else \
+                `--pitch`'s note. `null` without a pitch.",
+        measure: |sound| {
+            let stretch = loudest_stretch(&sound.samples, sound.sample_rate, ALIAS_SECONDS);
+            finite(alias_db(stretch, sound.sample_rate, sound.harmonic_hz()?))
+        },
+    },
+    Measurement {
+        key: "stereo_correlation",
+        label: "stereo correlation",
+        unit: "",
+        decimals: 2,
+        about: "How alike the left and right channels are, from -1 to 1: 1 for mono (left = \
+                right), near 0 for unrelated channels, -1 for left = -right, which cancels in \
+                mono. `null` for a mono file or a silent channel.",
+        measure: |sound| {
+            let [left, right] = sound.left_right()?;
+            finite(correlation(left, right))
+        },
+    },
+    Measurement {
+        key: "stereo_width_percent",
+        label: "stereo width",
+        unit: "%",
+        decimals: 1,
+        about: "The share of the energy in the side (left - right) rather than the mid (left + \
+                right): 0 for mono, 50 for unrelated channels, 100 for left = -right. `null` \
+                for a mono file.",
+        measure: |sound| {
+            let [left, right] = sound.left_right()?;
+            finite(100.0 * stereo_width(left, right))
         },
     },
     Measurement {
@@ -214,9 +315,19 @@ pub const MEASUREMENTS: &[Measurement] = &[
     },
 ];
 
-/// The sound a report measures: one channel, and what it's measured with.
+/// How long a stretch `alias_db` is measured over, in seconds. Its spectrum
+/// has bins 2 Hz apart, so the harmonics' allowance is 12 Hz whatever the
+/// file's length, which a pitch measured to a fraction of a cent is well
+/// within at the top harmonic.
+const ALIAS_SECONDS: f64 = 0.5;
+
+/// The sound a report measures: its mid, its channels, and what it's
+/// measured with.
 pub struct Sound {
+    /// The mid, which most measurements are taken from.
     samples: Vec<f32>,
+    /// Each channel, for the loudness and the stereo measurements.
+    each_channel: Vec<Vec<f32>>,
     sample_rate: u32,
     channels: u16,
     note: Option<Note>,
@@ -229,11 +340,17 @@ impl Sound {
     /// A sound from interleaved samples. More than one channel is measured
     /// as the mid: their average, which for a sound in the centre is the
     /// same as either channel.
+    /// The loudness and the stereo measurements are taken from each
+    /// channel.
     pub fn new(interleaved: &[f32], channels: u16, sample_rate: u32) -> Self {
+        let count = usize::from(channels.max(1));
         let samples = interleaved
-            .chunks(usize::from(channels.max(1)))
+            .chunks(count)
             .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
             .collect::<Vec<f32>>();
+        let each_channel = (0..count)
+            .map(|c| interleaved.iter().skip(c).step_by(count).copied().collect())
+            .collect();
         let track = while_loud(
             pitch_track(&samples, sample_rate),
             &samples,
@@ -242,6 +359,7 @@ impl Sound {
         );
         Self {
             samples,
+            each_channel,
             sample_rate,
             channels,
             note: None,
@@ -260,6 +378,33 @@ impl Sound {
     pub fn with_above_hz(mut self, hz: f64) -> Self {
         self.above_hz = hz;
         self
+    }
+
+    fn channels(&self) -> Vec<&[f32]> {
+        self.each_channel.iter().map(Vec::as_slice).collect()
+    }
+
+    /// The left and right channels, if it's stereo.
+    fn left_right(&self) -> Option<[&[f32]; 2]> {
+        match self.channels().as_slice() {
+            &[left, right] => Some([left, right]),
+            _ => None,
+        }
+    }
+
+    /// The loudest `window_seconds` of it, in LUFS, from
+    /// [`loudness_over_time`].
+    fn loudest(&self, window_seconds: f64) -> Option<f64> {
+        let loudness = loudness_over_time(&self.channels(), self.sample_rate, window_seconds);
+        finite(loudness.into_iter().fold(f64::NEG_INFINITY, f64::max))
+    }
+
+    /// The pitch the harmonics are measured from, for the aliasing and the
+    /// inharmonicity: the measured pitch, which is where a tone's harmonics
+    /// really are, or else, for a sound with no steady pitch of its own,
+    /// the note it was given (`--pitch`).
+    fn harmonic_hz(&self) -> Option<f64> {
+        self.pitch().or_else(|| self.note.map(Note::frequency))
     }
 
     fn since_first_sound(&self) -> &[f32] {
@@ -412,7 +557,8 @@ impl Report {
         let width = labels.iter().map(String::len).max().unwrap_or(0);
         for ((measurement, label), value) in MEASUREMENTS.iter().zip(&labels).zip(&self.values) {
             let value = show(*value, measurement.decimals, false);
-            writeln!(text, "{label:<width$}  {value:>10} {}", measurement.unit).unwrap();
+            let line = format!("{label:<width$}  {value:>10} {}", measurement.unit);
+            writeln!(text, "{}", line.trim_end()).unwrap();
         }
         text
     }
@@ -458,8 +604,7 @@ impl Report {
         )
         .unwrap();
         for ((m, label), row) in MEASUREMENTS.iter().zip(&labels).zip(&rows) {
-            writeln!(
-                text,
+            let line = format!(
                 "{label:<width$}  {:>a$}  {:>b$}  {:>c$} {}",
                 row[0],
                 row[1],
@@ -468,17 +613,17 @@ impl Report {
                 a = widths[0],
                 b = widths[1],
                 c = widths[2]
-            )
-            .unwrap();
+            );
+            writeln!(text, "{}", line.trim_end()).unwrap();
         }
         text
     }
 
-    /// `kick.wav: 48000 Hz, 2 channels (measured as their mid), 1.250 s`.
+    /// `kick.wav: 48000 Hz, 2 channels (most measured as their mid), 1.250 s`.
     fn describe(&self) -> String {
         let channels = match self.channels {
             1 => "mono".to_string(),
-            n => format!("{n} channels (measured as their mid)"),
+            n => format!("{n} channels (most measured as their mid)"),
         };
         format!(
             "{}: {} Hz, {channels}, {:.3} s",
@@ -583,6 +728,33 @@ mod tests {
             .collect()
     }
 
+    /// A second of white noise, from -0.5 to 0.5.
+    fn noise() -> Vec<f32> {
+        let mut state = 1u32;
+        (0..RATE)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 8) as f32 / (1 << 24) as f32 - 0.5
+            })
+            .collect()
+    }
+
+    /// A second of a band-limited saw at 110 Hz (A2), with its harmonics up
+    /// to 20 kHz.
+    fn saw() -> Vec<f32> {
+        (0..RATE)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(RATE);
+                let sum: f64 = (1..=180)
+                    .map(|k| {
+                        (std::f64::consts::TAU * 110.0 * f64::from(k) * t).sin() / f64::from(k)
+                    })
+                    .sum();
+                (0.3 * sum) as f32
+            })
+            .collect()
+    }
+
     #[test]
     fn every_measurement_has_its_own_key() {
         for (i, a) in MEASUREMENTS.iter().enumerate() {
@@ -634,14 +806,7 @@ mod tests {
 
     #[test]
     fn noise_has_no_pitch() {
-        let mut state = 1u32;
-        let noise: Vec<f32> = (0..RATE)
-            .map(|_| {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                (state >> 8) as f32 / (1 << 24) as f32 - 0.5
-            })
-            .collect();
-        let report = Report::measure("noise", &Sound::new(&noise, 1, RATE));
+        let report = Report::measure("noise", &Sound::new(&noise(), 1, RATE));
         for key in [
             "pitch_hz",
             "pitch_cents",
@@ -667,9 +832,86 @@ mod tests {
         let mid: Vec<f32> = left.iter().map(|s| s * 0.5).collect();
         let a = Report::measure("mid", &Sound::new(&mid, 1, RATE));
         let b = Report::measure("stereo", &Sound::new(&stereo, 2, RATE));
-        assert_eq!(a.values, b.values);
+        // Except the loudness in LUFS and the stereo measurements, which
+        // take each channel.
+        let each_channel = [
+            "loudness_momentary_lufs",
+            "loudness_short_term_lufs",
+            "loudness_integrated_lufs",
+            "stereo_correlation",
+            "stereo_width_percent",
+        ];
+        for (m, (a, b)) in MEASUREMENTS.iter().zip(a.values.iter().zip(&b.values)) {
+            if !each_channel.contains(&m.key) {
+                assert_eq!(a, b, "{}", m.key);
+            }
+        }
         let peak = b.get("peak_dbfs").unwrap();
         assert!((peak - 20.0 * 0.25f64.log10()).abs() < 1e-3, "{peak} dBFS");
+        // BS.1770 adds the channels' energy: the tone at full level in one
+        // channel is 6 dB louder than at half level in a mono file's one.
+        for key in ["loudness_momentary_lufs", "loudness_integrated_lufs"] {
+            let louder = b.get(key).unwrap() - a.get(key).unwrap();
+            assert!(
+                (louder - 20.0 * 2f64.log10()).abs() < 1e-3,
+                "{key} {louder} LU louder"
+            );
+        }
+        // A tone in one channel and silence in the other: half its energy is
+        // side, and the silent channel has no correlation.
+        assert_eq!(b.get("stereo_width_percent"), Some(50.0));
+        assert_eq!(b.get("stereo_correlation"), None);
+        assert_eq!(
+            a.get("stereo_width_percent"),
+            None,
+            "a mono file has no width"
+        );
+    }
+
+    #[test]
+    fn a_pitch_gives_the_aliasing_and_the_inharmonicity() {
+        // The saw from `a_saw_reads_its_fundamental` has a pitch, so it has
+        // both: harmonic, with nothing between its harmonics.
+        let saw = Report::measure("saw", &Sound::new(&saw(), 1, RATE));
+        let inharmonicity = saw.get("inharmonicity").unwrap();
+        assert!(inharmonicity < 0.01, "{inharmonicity}");
+        let alias = saw.get("alias_db").unwrap();
+        assert!(alias < -80.0, "{alias} dB");
+        // Noise has no pitch, so neither, unless it's told one.
+        let noise_alone = Report::measure("noise", &Sound::new(&noise(), 1, RATE));
+        assert_eq!(noise_alone.get("inharmonicity"), None);
+        assert_eq!(noise_alone.get("alias_db"), None);
+        let flatness = noise_alone.get("flatness").unwrap();
+        assert!(flatness > 0.95, "noise reads {flatness}");
+        let told = Report::measure("noise", &Sound::new(&noise(), 1, RATE).with_note(Note(48)));
+        let inharmonicity = told.get("inharmonicity").unwrap();
+        assert!(inharmonicity > 0.3, "noise told C3 reads {inharmonicity}");
+    }
+
+    #[test]
+    fn a_clean_tone_reads_no_aliasing_however_long_it_is() {
+        // A band-limited saw at 220 Hz, up to 20 kHz: from one spectrum of
+        // the whole file, its 90th harmonic's allowance would shrink to
+        // under 1 Hz at 10 s, less than the measured pitch's tiny error is
+        // there, and the clean saw would read as aliased.
+        let saw = |seconds: f64| -> Vec<f32> {
+            (0..(seconds * f64::from(RATE)) as usize)
+                .map(|i| {
+                    let t = i as f64 / f64::from(RATE);
+                    let sum: f64 = (1..=90)
+                        .map(|k| {
+                            (std::f64::consts::TAU * 220.0 * f64::from(k) * t).sin() / f64::from(k)
+                        })
+                        .sum();
+                    (0.3 * sum) as f32
+                })
+                .collect()
+        };
+        for seconds in [1.0, 10.0] {
+            let report = Report::measure("saw", &Sound::new(&saw(seconds), 1, RATE));
+            let alias = report.get("alias_db").unwrap();
+            assert!(alias < -80.0, "{seconds} s reads {alias} dB");
+        }
     }
 
     #[test]
@@ -690,20 +932,8 @@ mod tests {
 
     #[test]
     fn a_saw_reads_its_fundamental() {
-        // A band-limited saw at 110 Hz (A2), with its harmonics up to
-        // 20 kHz: it reads its fundamental, not a harmonic.
-        let saw: Vec<f32> = (0..RATE)
-            .map(|i| {
-                let t = f64::from(i) / f64::from(RATE);
-                let sum: f64 = (1..=180)
-                    .map(|k| {
-                        (std::f64::consts::TAU * 110.0 * f64::from(k) * t).sin() / f64::from(k)
-                    })
-                    .sum();
-                (0.3 * sum) as f32
-            })
-            .collect();
-        let report = Report::measure("saw", &Sound::new(&saw, 1, RATE));
+        // It reads its fundamental, not a harmonic.
+        let report = Report::measure("saw", &Sound::new(&saw(), 1, RATE));
         assert_eq!(report.note, Some(Note(45)));
         for key in ["pitch_cents", "pitch_drift_cents"] {
             let cents = report.get(key).unwrap();

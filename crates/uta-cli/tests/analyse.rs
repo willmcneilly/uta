@@ -216,14 +216,12 @@ fn a_render_against_itself_shows_no_difference() {
     let text = uta(&["analyse", &wav, "--against", &wav]);
     let header = text.lines().nth(3).unwrap();
     assert!(header.trim_end().ends_with("difference"), "{header}");
-    for line in text.lines().skip(4) {
+    let lines: Vec<&str> = text.lines().skip(4).collect();
+    assert_eq!(lines.len(), MEASUREMENTS.len(), "{text}");
+    for (measurement, line) in MEASUREMENTS.iter().zip(lines) {
         let columns: Vec<&str> = line.split_whitespace().collect();
-        let unit = MEASUREMENTS
-            .iter()
-            .find(|m| line.trim_end().ends_with(m.unit))
-            .unwrap()
-            .unit;
-        let difference = columns[columns.len() - 1 - unit.split(' ').count()];
+        let unit_words = measurement.unit.split_whitespace().count();
+        let difference = columns[columns.len() - 1 - unit_words];
         assert_eq!(difference, "0", "{line}");
     }
 }
@@ -233,7 +231,14 @@ fn a_quieter_copy_differs_only_in_level() {
     let wav = render_sine(&folder("against_quieter"));
     let quieter = quieter_copy(&wav);
     let both = json(&["analyse", &wav, "--against", &quieter, "--json"]);
-    let level = ["peak_dbfs", "rms_dbfs", "loudness_db"];
+    let level = [
+        "peak_dbfs",
+        "rms_dbfs",
+        "loudness_db",
+        "loudness_momentary_lufs",
+        "loudness_short_term_lufs",
+        "loudness_integrated_lufs",
+    ];
     let six_db = 20.0 * 2f64.log10();
     for (key, value) in both["difference"].as_object().unwrap() {
         let difference = value.as_f64().unwrap();
@@ -315,6 +320,82 @@ fn against_measures_both_pitches_from_the_first_ones_note() {
         .as_f64()
         .unwrap();
     assert!((cents - 200.0).abs() < 2.0, "D3 reads {cents} cents off C3");
+}
+
+/// Writes interleaved stereo `frames` to a float WAV at `sample_rate`.
+fn write_stereo(path: &Path, sample_rate: u32, frames: &[[f32; 2]]) {
+    let config = EngineConfig {
+        channels: 2,
+        sample_rate,
+    };
+    let samples: Vec<f32> = frames.iter().flatten().copied().collect();
+    write_wav(path, config, &samples).unwrap();
+}
+
+#[test]
+fn a_wav_at_44_1_khz_is_measured_at_its_rate() {
+    // EBU Tech 3341's first test signal at 44.1 kHz: a 1 kHz sine at
+    // -23 dBFS in both channels reads -23.0 LUFS.
+    let path = folder("44_1_khz").join("tone.wav");
+    let amplitude = 10f64.powf(-23.0 / 20.0);
+    let frames: Vec<[f32; 2]> = (0..5 * 44_100)
+        .map(|i| {
+            let s = amplitude * (std::f64::consts::TAU * 1000.0 * f64::from(i) / 44_100.0).sin();
+            [s as f32; 2]
+        })
+        .collect();
+    write_stereo(&path, 44_100, &frames);
+    let report = json(&["analyse", path.to_str().unwrap(), "--json"]);
+    assert_eq!(report["sample_rate"], 44_100);
+    assert!((report["seconds"].as_f64().unwrap() - 5.0).abs() < 1e-9);
+    let m = &report["measurements"];
+    let cents = 1200.0 * (m["pitch_hz"].as_f64().unwrap() / 1000.0).log2();
+    assert!(cents.abs() < 1.0, "1 kHz reads {cents} cents off");
+    for key in [
+        "loudness_momentary_lufs",
+        "loudness_short_term_lufs",
+        "loudness_integrated_lufs",
+    ] {
+        let lufs = m[key].as_f64().unwrap();
+        assert!((lufs + 23.0).abs() <= 0.1, "{key} {lufs}");
+    }
+    assert_eq!(m["stereo_correlation"].as_f64(), Some(1.0));
+    assert_eq!(m["stereo_width_percent"].as_f64(), Some(0.0));
+}
+
+#[test]
+fn noise_has_aliasing_and_inharmonicity_only_when_told_its_pitch() {
+    // Unrelated noise in each channel: flat, uncorrelated and half side,
+    // with no pitch of its own. Told it's a C3, its peaks are measured
+    // against C3's harmonics, and they're nowhere near them.
+    let path = folder("noise").join("noise.wav");
+    let mut state = 1u32;
+    let mut next = || {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (state >> 8) as f32 / (1 << 24) as f32 - 0.5
+    };
+    let frames: Vec<[f32; 2]> = (0..48_000).map(|_| [next(), next()]).collect();
+    write_stereo(&path, 48_000, &frames);
+    let path = path.to_str().unwrap();
+
+    let report = json(&["analyse", path, "--json"]);
+    let m = &report["measurements"];
+    assert!(m["pitch_hz"].is_null());
+    assert!(m["inharmonicity"].is_null());
+    assert!(m["alias_db"].is_null());
+    assert!(m["flatness"].as_f64().unwrap() > 0.95, "{}", m["flatness"]);
+    assert!(m["stereo_correlation"].as_f64().unwrap().abs() < 0.05);
+    let width = m["stereo_width_percent"].as_f64().unwrap();
+    assert!((width - 50.0).abs() < 5.0, "{width}%");
+
+    let told = json(&["analyse", path, "--json", "--pitch", "C3"]);
+    let inharmonicity = told["measurements"]["inharmonicity"].as_f64().unwrap();
+    assert!(inharmonicity > 0.3, "noise reads {inharmonicity}");
+    let alias = told["measurements"]["alias_db"].as_f64().unwrap();
+    assert!(
+        alias > -10.0,
+        "noise between the harmonics reads {alias} dB"
+    );
 }
 
 #[test]
