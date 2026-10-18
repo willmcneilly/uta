@@ -76,7 +76,8 @@ function ask(state: State, context: AudioContext, buffers: AudioBuffer[]): void 
   setPlayKey(false);
 
   const showPosition = () => {
-    const at = (context.currentTime - startedAt) % length;
+    // Before the first beat (it starts a moment after Play), count from the top.
+    const at = Math.max(0, context.currentTime - startedAt) % length;
     if (loop.bpm) {
       const beat = Math.floor((at * loop.bpm) / 60);
       position.textContent = `${Math.floor(beat / 4) + 1}.${(beat % 4) + 1}`;
