@@ -117,7 +117,7 @@ Several lines play together as a list: `pattern.verse = [{ notes = "…" }, { no
 | `.` | a rest |
 | spaces and `\|` | to read by: not steps |
 
-Each hit lasts its step. The table can also have `step` and `velocity`, as a synth line does.
+Each hit lasts its step, so a drum table has no `length`. It can also have `step` and `velocity`, as a synth line does.
 
 ### Sections and the arrangement
 

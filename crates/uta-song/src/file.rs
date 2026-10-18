@@ -19,7 +19,7 @@ pub(crate) struct SongFile {
     pub tempo: Spanned<f32>,
     /// The sections in the order they play, by name. Each section once, in
     /// the order they're written, if it's left out.
-    pub arrangement: Option<Vec<Spanned<String>>>,
+    pub arrangement: Option<Spanned<Vec<Spanned<String>>>>,
     /// Whether the loop is on, round the whole arrangement. On if it's left
     /// out.
     #[serde(rename = "loop")]

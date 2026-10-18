@@ -206,7 +206,7 @@ effects = [{{ delay = {{ sync = true, division = \"1/8d\", feedback = 0.35 }}, m
 [[track]]
 name = \"Drums\"
 kind = \"drums\"
-settings.kick = {{ tune_hz = 60, model = \"909\" }}
+settings.kick = {{ attack = 0.5, model = \"909\" }}
 
 [[section]]
 name = \"verse\"
@@ -256,7 +256,7 @@ bars = 1
         Command::SetDrumParam {
             track: drums,
             sound: DrumSound::Kick,
-            param: DrumParam::TuneHz(60.0),
+            param: DrumParam::Attack(0.5),
         },
     ];
     for command in &wanted {
@@ -267,9 +267,10 @@ bars = 1
         place(&wanted[0]) < place(&wanted[1]),
         "the sound, then its settings"
     );
+    // Attack is the 909's alone, and sorts before the model.
     assert!(
         place(&wanted[7]) < place(&wanted[8]),
-        "the model, then the tune"
+        "the model, then the attack"
     );
     let Source::Synth(settings) = project.tracks()[0].source() else {
         panic!("a synth");
@@ -552,4 +553,55 @@ pattern.verse = {{ notes = \"C2 C2 C2 C2 C2\", step = \"1/4\" }}
     ));
     assert_eq!(error.line, 11, "{error}");
     assert!(error.message.contains("longer than its section"), "{error}");
+}
+
+#[test]
+fn a_mistake_after_a_line_continuation_is_on_its_line() {
+    let error = error(&format!(
+        "{HEADER}
+[[section]]
+name = \"verse\"
+bars = 2
+
+[[track]]
+name = \"Bass\"
+kind = \"synth\"
+pattern.verse = \"\"\"C2 . E2 . \\
+  G2 . H2 .\"\"\"
+"
+    ));
+    assert_eq!(error.line, 12, "{error}");
+    assert!(error.message.contains("`H2` isn't a note"), "{error}");
+}
+
+#[test]
+fn an_empty_arrangement_is_an_error_on_its_line() {
+    let error = error(
+        "name = \"Test\"\ntempo = 120\narrangement = []\n\n[[section]]\nname = \"verse\"\nbars = 1\n",
+    );
+    assert_eq!(error.line, 3, "{error}");
+    assert!(error.message.contains("at least one section"), "{error}");
+}
+
+#[test]
+fn a_drum_pattern_has_no_length() {
+    let error = error(&format!(
+        "{HEADER}
+[[section]]
+name = \"verse\"
+bars = 1
+
+[[track]]
+name = \"Beat\"
+kind = \"drums\"
+pattern.verse = {{ kick = \"x...\", length = \"1/4\" }}
+"
+    ));
+    assert_eq!(error.line, 11, "{error}");
+    assert!(
+        error
+            .message
+            .contains("`length` isn't part of a line: it has step, velocity"),
+        "{error}"
+    );
 }

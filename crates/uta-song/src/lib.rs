@@ -192,7 +192,11 @@ impl Compiler<'_> {
         }
         let order: Vec<usize> = match &song.arrangement {
             None => (0..song.sections.len()).collect(),
+            Some(names) if names.get_ref().is_empty() => {
+                return Err(self.error(names.span(), "an arrangement names at least one section"));
+            }
             Some(names) => names
+                .get_ref()
                 .iter()
                 .map(|name| self.section(song, name))
                 .collect::<Result<_, _>>()?,
@@ -587,7 +591,7 @@ impl Compiler<'_> {
                 }
             }
             (Kind::Synth, PatternFile::Table(entries)) => {
-                let options = self.options(entries, &["notes"])?;
+                let options = self.options(entries, &["notes"], true)?;
                 let notes = entries
                     .0
                     .iter()
@@ -607,7 +611,7 @@ impl Compiler<'_> {
             }
             (Kind::Drums, PatternFile::Table(entries)) => {
                 let rows: Vec<&str> = KIT.iter().map(|row| sound_name(row.sound)).collect();
-                let options = self.options(entries, &rows)?;
+                let options = self.options(entries, &rows, false)?;
                 for (key, value) in &entries.0 {
                     let Some(row) = KIT
                         .iter()
@@ -632,9 +636,15 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    /// A line's `step`, `length` and `velocity`, from a table whose other
-    /// keys must be in `others`.
-    fn options(&self, entries: &Entries<Value>, others: &[&str]) -> Result<Options, SongError> {
+    /// A line's `step`, `velocity` and, if it `has_length`, `length`, from a
+    /// table whose other keys must be in `others`. A drum's hits last their
+    /// step, so a drum pattern has no `length`.
+    fn options(
+        &self,
+        entries: &Entries<Value>,
+        others: &[&str],
+        has_length: bool,
+    ) -> Result<Options, SongError> {
         let mut options = Options {
             step: division_ticks(DEFAULT_STEP),
             length: None,
@@ -656,7 +666,7 @@ impl Compiler<'_> {
                         .map(NoteDivision::ticks)
                         .ok_or_else(|| wrong("a note length, from 1/32 to 1/1: \"1/8\", \"1/8d\" or \"1/8 dotted\", \"1/8t\""))?;
                 }
-                "length" => {
+                "length" if has_length => {
                     let ticks = match value.get_ref() {
                         Value::String(text) => division(text).map(NoteDivision::ticks),
                         &Value::Integer(ticks) => u64::try_from(ticks).ok().filter(|&t| t > 0),
@@ -686,7 +696,11 @@ impl Compiler<'_> {
                 }
                 other if others.contains(&other) => {}
                 other => {
-                    let mut known = vec!["step", "length", "velocity"];
+                    let mut known = vec!["step"];
+                    if has_length {
+                        known.push("length");
+                    }
+                    known.push("velocity");
                     known.extend_from_slice(others);
                     return Err(self.error(
                         key.span(),
@@ -811,16 +825,22 @@ impl Compiler<'_> {
 
     /// A mistake in a line of steps, on the line of the file it's on.
     fn step_error(&self, span: Range<usize>, text: &str, error: steps::StepError) -> SongError {
+        // The step as written is found in the file by how many times it
+        // comes before, since escapes and line continuations mean the string
+        // TOML read isn't the text in the file.
         let raw = &self.text[span.clone()];
-        // A multi-line string that starts with a line break doesn't keep it.
-        let skipped = usize::from(
-            (raw.starts_with("\"\"\"") || raw.starts_with("'''"))
-                && raw[3..].starts_with(['\n', '\r']),
-        );
+        let step = text[error.offset..]
+            .split_whitespace()
+            .next()
+            .unwrap_or_default();
+        let before = text[..error.offset].matches(step).count();
+        let found = if step.is_empty() {
+            None
+        } else {
+            raw.match_indices(step).nth(before).map(|(at, _)| at)
+        };
         SongError {
-            line: line_of(self.text, span.start)
-                + skipped
-                + text[..error.offset].matches('\n').count(),
+            line: line_of(self.text, span.start + found.unwrap_or(0)),
             message: error.message,
         }
     }

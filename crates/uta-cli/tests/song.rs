@@ -116,6 +116,7 @@ fn song_and_commands_cant_both_be_given() {
         "a.json",
     ]);
     assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
     let output = uta(&["play", "--song", "a.toml", "--commands", "a.json"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
