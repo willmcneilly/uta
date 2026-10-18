@@ -87,16 +87,6 @@ export const JOBS: readonly Job[] = [
     env: { RTSAN_ENABLE: "1", CARGO_TARGET_DIR: "target/rtsan" },
     cargo: true,
   },
-  // Ignored in `rust: test`, since rendering every song takes minutes in a
-  // debug build; CI runs it in release too, in the Timing reports job. After
-  // the release build: both build in target/release, and cargo locks it.
-  {
-    name: "rust: demo renders",
-    inputs: DEMO_RENDERS,
-    command: ["cargo", "test", "-p", "uta-song", "--release", "--test", "demos", "--", "--ignored"],
-    after: ["app: release build"],
-    cargo: true,
-  },
   // CI checks the committed token files match DESIGN.md. Here the tree may
   // not be committed yet, so compare the files before and after generating.
   {
@@ -149,6 +139,17 @@ export const JOBS: readonly Job[] = [
     command: ["sh", "-c", "npm run tauri build -- --ci && npm run check:release"],
     after: ["frontend: typecheck"],
     nodeModules: true,
+    cargo: true,
+  },
+  // Ignored in `rust: test`, since rendering every song takes minutes in a
+  // debug build; CI runs it in release too, in its "Timing reports and demo
+  // renders" job. Last, after the release build: both build in
+  // target/release, and cargo locks it.
+  {
+    name: "rust: demo renders",
+    inputs: DEMO_RENDERS,
+    command: ["cargo", "test", "-p", "uta-song", "--release", "--test", "demos", "--", "--ignored"],
+    after: ["app: release build"],
     cargo: true,
   },
 ];

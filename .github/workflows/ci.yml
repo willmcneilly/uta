@@ -37,7 +37,7 @@ jobs:
   # here, in release (RFC-009, "The demo song"). Its own job, so it runs
   # alongside the tests instead of after them.
   timing:
-    name: Timing reports
+    name: Timing reports and demo renders
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5

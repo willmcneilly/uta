@@ -9,7 +9,7 @@ cargo run -p uta-cli -- render beat.wav --song examples/demos/beat.toml     # re
 cargo run -p uta-cli -- play --song examples/demos/loop.toml                # play it round its loop
 ```
 
-Every `cargo test` compiles and builds every `.toml` file here (`every_demo_song_compiles_and_builds` in `crates/uta-song/tests/demos.rs`). CI also renders each, from the top to the end with the loop off, and checks it doesn't clip and that each track played on its own isn't silent (`every_demo_song_plays_without_clipping_and_has_no_silent_track`). That takes minutes in a debug build, so it's ignored by `cargo test`, and runs in release, in CI's Timing reports job and in `scripts/check` when a song or the audio path changed. To run it yourself:
+Every `cargo test` compiles and builds every `.toml` file here (`every_demo_song_compiles_and_builds` in `crates/uta-song/tests/demos.rs`). CI also renders each, from the top to the end with the loop off, and checks it doesn't clip and that each track played on its own isn't silent (`every_demo_song_plays_without_clipping_and_has_no_silent_track`). That takes minutes in a debug build, so it's ignored by `cargo test`, and runs in release, in CI's "Timing reports and demo renders" job and in `scripts/check` when a song or the audio path changed. To run it yourself:
 
 ```bash
 cargo test -p uta-song --release --test demos -- --ignored

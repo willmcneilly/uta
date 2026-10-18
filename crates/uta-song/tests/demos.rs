@@ -4,7 +4,7 @@
 //!
 //! Building is quick, so every `cargo test` does it. Rendering every song,
 //! and every track on its own, takes minutes in a debug build, so that test
-//! is ignored, and CI runs it with `--release` in the Timing reports job:
+//! is ignored, and CI runs it with `--release` in its "Timing reports and demo renders" job:
 //! `cargo test -p uta-song --release --test demos -- --ignored`.
 
 use std::path::{Path, PathBuf};

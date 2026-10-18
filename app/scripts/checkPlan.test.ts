@@ -136,6 +136,15 @@ describe("plan", () => {
   });
 });
 
+describe("JOBS", () => {
+  it("lists each job after the jobs it waits for, since only those are waited on", () => {
+    JOBS.forEach((job, index) => {
+      const before = JOBS.slice(0, index).map((other) => other.name);
+      for (const name of job.after ?? []) expect(before, `${job.name} waits for ${name}`).toContain(name);
+    });
+  });
+});
+
 describe("inputKey", () => {
   const job: Job = { name: "a", inputs: ["a/"], command: ["true"] };
   const tree: TreeFile[] = [
