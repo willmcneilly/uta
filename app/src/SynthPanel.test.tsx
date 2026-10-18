@@ -201,10 +201,10 @@ describe("SynthPanel's Sound menu", () => {
     expect(menu()).toHaveValue("");
   });
 
-  it("sits at the start of the panel, before the stages", () => {
+  it("sits at the foot of the panel, after the stage's page (D-32)", () => {
     renderPanel();
-    const tabs = screen.getByRole("tablist", { name: "Synth stages" });
-    expect(menu().compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const page = screen.getByRole("tabpanel");
+    expect(menu().compareDocumentPosition(page) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
 

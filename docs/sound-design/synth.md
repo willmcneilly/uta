@@ -59,4 +59,6 @@ The measurements can say a sound is as bright, as fast, as long and as loud as i
 - **Bell:** glassy rather than metallic? The inharmonic partial is gone within about 150 ms.
 - **Balance:** do they sound equally loud when switched in a loop, given the pads' chords?
 
-Will's answers, and what changed because of them, go here.
+**Will's verdict (2026-10-18, UTA-82): "The sounds themselves are good."** He asked for no changes to any sound, so the settings above are what the brief-and-measure loop landed on, unadjusted by ear. The questions above stay open for the tuning pass (UTA-83).
+
+What listening taught about the loop itself: judging a sound needs **a consistent canvas** of parts to play it in. Writing chords, basslines and lead lines to test each sound takes Will a lot of work, and which ones he picks can mask what needs fixing. The listening renders (`examples/listen/factory/`) give each sound one phrase in its role, but they're files to play, not parts to try sounds against in the app. A fixed set of parts, one per role, to switch sounds under is on the scratchpad, and RFC-009's demo songs (UTA-91, UTA-92) are the nearest planned thing.

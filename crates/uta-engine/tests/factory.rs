@@ -512,10 +512,11 @@ fn mono() -> uta_engine::EngineConfig {
 
 /// How choosing `to` sounds while `from` plays [`struck_chords`], against
 /// carrying on with `from`: the switch's difference, `from` then `to` minus
-/// `from` throughout, sample by sample, from the switch on. Both play the
-/// same up to it, which this checks. Also fails if `from` is silent there,
-/// where the switch would be tested against nothing.
-fn switch_difference(from: &FactorySound, to: &FactorySound) -> Vec<f32> {
+/// `from` throughout, sample by sample, from the switch on, and `from`
+/// carrying on, from the switch on. Both play the same up to it, which
+/// this checks. Also fails if `from` is silent there, where the switch
+/// would be tested against nothing.
+fn switch_difference(from: &FactorySound, to: &FactorySound) -> (Vec<f32>, Vec<f32>) {
     let at = SWITCH_SAMPLES + SWITCH_OFFSET;
     let switched = switching(&[from.clone(), to.clone()]);
     let stayed = switching(&[from.clone(), from.clone()]);
@@ -527,11 +528,12 @@ fn switch_difference(from: &FactorySound, to: &FactorySound) -> Vec<f32> {
         from.key,
         to.key
     );
-    switched[at..]
+    let difference = switched[at..]
         .iter()
         .zip(&stayed[at..])
         .map(|(a, b)| a - b)
-        .collect()
+        .collect();
+    (difference, stayed[at..].to_vec())
 }
 
 /// The synth's smoothing time, in samples: how long a changed setting
@@ -544,7 +546,11 @@ fn smoothing() -> usize {
 /// sound to every other, each switch glides in. In the first tenth of the
 /// synth's smoothing time it has made under 30% of the difference it makes
 /// over twice that time, as every control's glide is checked
-/// ([`assert_glides`]); a click makes its whole difference at once. It's
+/// ([`assert_glides`]); a click makes its whole difference at once. And in
+/// that first tenth the difference is under [`MOST_OF_THE_SOUND`] of the
+/// first sound's own level: a chord's beating can make the difference over
+/// twice the smoothing time no bigger than its start, so a hard stop of
+/// every voice could pass the first check alone. It's
 /// measured against carrying on with the first sound, so it holds however
 /// bright or loud the two sounds are, and through the moment the voice is
 /// a mix of both (the Pad's saws at the Bell's struck level, say). Between
@@ -559,18 +565,32 @@ fn smoothing() -> usize {
 /// `no_clicks_when_the_oscillators_and_mixer_change_while_notes_sound` in
 /// `tests/synth.rs`.
 #[test]
-fn switching_factory_sounds_while_notes_sound_stays_under_the_click_limit() {
+fn switching_factory_sounds_while_notes_sound_glides_in() {
     let all = FactorySound::all();
+    let early = smoothing() / 10;
     for from in &all {
         for to in all.iter().filter(|to| to.key != from.key) {
             let mut to = to.clone();
             to.settings.osc1_octave = from.settings.osc1_octave;
             to.settings.osc2_octave = from.settings.osc2_octave;
             let what = format!("{} to {}", from.key, to.key);
-            assert_glides(&switch_difference(from, &to), smoothing(), &what);
+            let (difference, stayed) = switch_difference(from, &to);
+            assert_glides(&difference, smoothing(), &what);
+            let share = peak(&difference[..early]) / peak(&stayed[..early]);
+            assert!(
+                share < MOST_OF_THE_SOUND,
+                "{what}: {:.0}% of the first sound's level gone or changed at once",
+                100.0 * share
+            );
         }
     }
 }
+
+/// How much of the first sound's level a switch may change in its first
+/// tenth of the smoothing time: three quarters. Real switches change at
+/// most about half (a release starting, a crossfade under way); a hard stop
+/// changes all of it.
+const MOST_OF_THE_SOUND: f32 = 0.75;
 
 /// Guards the switching test: cutting from the Pad to the Bell at a
 /// switch, sample to sample, as a sound that changed at once would, must

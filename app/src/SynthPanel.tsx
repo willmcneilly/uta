@@ -490,27 +490,6 @@ export function SynthPanel({
 
   return (
     <section className="synth" aria-label="Synth">
-      {/* The factory sounds, at the start of the panel as the sound flows.
-          It names no sound: which one a track started from isn't kept, and
-          every setting can move from it. provisional: D-37 */}
-      <div className="sound-row">
-        <Menu
-          aria-label="Sound"
-          value=""
-          onChange={(event) => {
-            if (event.target.value) onSound(event.target.value);
-          }}
-        >
-          <option value="" disabled>
-            Sound
-          </option>
-          {sounds.map((sound) => (
-            <option key={sound.value} value={sound.value}>
-              {sound.label}
-            </option>
-          ))}
-        </Menu>
-      </div>
       <div className="stages" role="tablist" aria-label="Synth stages">
         {STAGES.map(([name, title], index) => (
           <span key={name} className="stage">
@@ -549,6 +528,28 @@ export function SynthPanel({
         aria-labelledby={`${group}-tab-${stage}`}
       >
         {pages[stage]()}
+      </div>
+      {/* The factory sounds, at the foot of the panel, out of line with the
+          tabs (D-32: in the tab strip it took too much width). It names no
+          sound: which one a track started from isn't kept, and every
+          setting can move from it. provisional: D-32 */}
+      <div className="sound-row">
+        <Menu
+          aria-label="Sound"
+          value=""
+          onChange={(event) => {
+            if (event.target.value) onSound(event.target.value);
+          }}
+        >
+          <option value="" disabled>
+            Sound
+          </option>
+          {sounds.map((sound) => (
+            <option key={sound.value} value={sound.value}>
+              {sound.label}
+            </option>
+          ))}
+        </Menu>
       </div>
     </section>
   );
