@@ -43,11 +43,12 @@ function utaTools(): Tools {
 }
 
 function parseArgs(argv: string[]) {
-  const args = { sessions: [] as string[], list: false, again: false, open: true, port: 0, help: false };
+  const args = { sessions: [] as string[], list: false, prepare: false, again: false, open: true, port: 0, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") args.help = true;
     else if (arg === "--list") args.list = true;
+    else if (arg === "--prepare") args.prepare = true;
     else if (arg === "--again") args.again = true;
     else if (arg === "--no-open") args.open = false;
     else if (arg === "--port") {
@@ -98,6 +99,13 @@ async function main() {
     prepared.push(prepare(session, tools, (line) => console.error(line)));
   }
   if (prepared.length === 0) return;
+  if (args.prepare) {
+    for (const { session, candidates, loop } of prepared) {
+      const gains = candidates.map((c) => `${c.id} ${c.gainDb >= 0 ? "+" : ""}${c.gainDb} dB`).join(", ");
+      console.log(`Ready: ${session.name} (${session.kind}), looping ${loop.start.toFixed(2)}–${loop.end.toFixed(2)} s, gains ${gains}`);
+    }
+    return;
+  }
 
   const { handle, done } = listening(prepared, { onVerdict: (path) => console.log(`Wrote ${path}`) });
   const server = createServer(handle);

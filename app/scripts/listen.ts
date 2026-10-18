@@ -23,7 +23,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type TomlTable, type TomlValue, parseToml, stringifyToml } from "./toml.ts";
 
-export const HELP = `Usage: scripts/listen [<session> …] [--list] [--port <n>] [--no-open]
+export const HELP = `Usage: scripts/listen [<session> …] [--list] [--prepare] [--port <n>] [--no-open]
 
 Asks Will one question at a time, in a local page. Each <session> is a folder
 name in the listening folder, or a path to one. With none, it asks every
@@ -37,6 +37,8 @@ The listening folder is ~/.uta/listening/, or $UTA_LISTENING_DIR. It's outside
 the repo on purpose: verdicts hold Will's own words.
 
   --list        list the sessions there, and which have a verdict, then stop
+  --prepare     render and measure, print each session's loop and gains, then
+                stop without serving: to check a session before handing it over
   --again       ask a session again even though it has a verdict (the old one
                 is replaced)
   --port <n>    serve on this port (default: any free one)
@@ -659,7 +661,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 
 // The page's markup and look. Its behaviour is in listenPage.ts. It follows
 // DESIGN.md's Key and Segmented choice: `live` (orange) marks the candidate
-// you're hearing, `selected` (blue) your pick.
+// you're hearing, `selected` (blue) your pick. provisional: D-38
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>

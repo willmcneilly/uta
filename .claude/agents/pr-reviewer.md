@@ -82,6 +82,14 @@ Each finding gets a severity:
    - The ticket's ticks and Verification notes are made from the PR body by `scripts/ticket sync`, so the PR body is the record. If the ticks or notes don't match it, the implementer didn't sync after a change: **should fix**.
 10. **Golden WAVs.** Did any file under a `golden` directory change? CLAUDE.md says a human approves every change to one, so it always goes to Will.
 
+### Listening steps
+
+On a ticket that changes how something sounds (RFC-009, part 3):
+- **Each listening step is a session.** Every place the PR asks for Will's ear says `scripts/listen <session>`, not render instructions or a folder of WAVs. A listening step that isn't a session is **should fix**. You can't see the sessions (they're private, outside the repo), so check the PR's word for it: a question, its kind, and that a prediction was written first.
+- **Measured before asking.** The PR shows `uta analyse` of the renders it asks about, and says what changed because of the numbers. Missing is **should fix**.
+- **A test made from verdicts carries its range and a one-line reason** in the test itself, saying it came from listening. One with neither is **blocking**, because nobody but Will can check where its numbers came from. Will's own words in the repo (a quoted note) are **blocking** too: verdicts stay private.
+- **In "What only Will can check",** a listening session is **High**, given as the `scripts/listen` command and its question.
+
 ### On a re-review
 
 - Go through every earlier finding. Decide whether it's resolved by looking at the new code and running the test that proves it, not by reading the implementer's reply. `review-setup` shows what changed since the last review.
