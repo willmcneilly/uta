@@ -408,3 +408,159 @@ fn a_wav_that_isnt_there_is_an_error() {
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(error.contains("couldn't read no-such-file.wav"), "{error}");
 }
+
+/// The size every image is drawn at.
+const IMAGE_SIZE: (u32, u32) = (1200, 640);
+
+/// Checks `<dir>/<name>.svg` parses as SVG and `<name>.png` as PNG, both at
+/// the images' size, and returns the SVG.
+fn assert_image(dir: &Path, name: &str) -> String {
+    let svg_path = dir.join(format!("{name}.svg"));
+    let svg = std::fs::read_to_string(&svg_path)
+        .unwrap_or_else(|error| panic!("{}: {error}", svg_path.display()));
+    let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())
+        .unwrap_or_else(|error| panic!("{name}.svg isn't SVG: {error}"));
+    let size = tree.size().to_int_size();
+    assert_eq!((size.width(), size.height()), IMAGE_SIZE, "{name}.svg");
+    let png = std::fs::read(dir.join(format!("{name}.png"))).unwrap();
+    let pixmap = resvg::tiny_skia::Pixmap::decode_png(&png)
+        .unwrap_or_else(|error| panic!("{name}.png isn't PNG: {error}"));
+    assert_eq!((pixmap.width(), pixmap.height()), IMAGE_SIZE, "{name}.png");
+    svg
+}
+
+/// Runs `uta` with `args` and returns what it printed to stderr. It must
+/// succeed.
+fn uta_stderr(args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_uta"))
+        .args(args)
+        .output()
+        .expect("uta runs");
+    assert!(
+        output.status.success(),
+        "uta {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stderr).unwrap()
+}
+
+/// `--png` draws each image as SVG and PNG at its size, with the file's
+/// name and its key numbers as real text, and leaves `--json` as data.
+#[test]
+fn png_draws_every_image_with_its_numbers() {
+    let folder = folder("png");
+    let wav = render_sine(&folder);
+    let dir = folder.join("images");
+    let printed = uta(&["analyse", &wav, "--json", "--png", dir.to_str().unwrap()]);
+    let report: Value = serde_json::from_str(&printed).expect("--json is still data");
+    let m = &report["measurements"];
+    // As the text report shows them.
+    let shown = |key: &str, decimals: usize| format!("{:.*}", decimals, m[key].as_f64().unwrap());
+    let images = [
+        (
+            "spectrogram-short",
+            vec!["3 ms window", "peak", "loudness", "pitch"],
+        ),
+        (
+            "spectrogram-long",
+            vec!["50 ms window", "peak", "brightness"],
+        ),
+        ("level", vec!["attack", "decay -20", "-40"]),
+        ("clicks", vec!["largest step", "clicks"]),
+        ("harmonics", vec!["loudest alias", "inharmonicity"]),
+    ];
+    for (image, words) in images {
+        let svg = assert_image(&dir, &format!("sine-{image}"));
+        assert!(svg.contains(">sine.wav · "), "{image} names its file");
+        for word in words {
+            assert!(svg.contains(word), "{image} has {word:?}");
+        }
+        match image {
+            "spectrogram-short" | "spectrogram-long" => {
+                assert!(svg.contains(&format!("peak {} dBFS", shown("peak_dbfs", 1))));
+                assert!(svg.contains("C3 131"), "{image} has note names");
+                assert!(svg.contains("-90 dB"), "{image} has its fixed scale");
+            }
+            "level" => {
+                assert!(svg.contains(&format!("attack {} ms", shown("attack_ms", 1))));
+                assert!(svg.contains(&format!("+{} s", shown("decay_20db_s", 3))));
+            }
+            "harmonics" => {
+                // The mark on the loudest red bar, not the header's number.
+                assert!(svg.contains(&format!(">loudest alias {} dB<", shown("alias_db", 1))));
+                assert!(svg.contains("harmonics of 130.8"), "{image}");
+            }
+            _ => {}
+        }
+    }
+    let difference = dir.join("sine-vs-sine-difference.svg");
+    assert!(!difference.exists(), "only with --against");
+}
+
+/// With `--against`, a difference spectrogram too, named after both, with
+/// the differences in level printed on it.
+#[test]
+fn against_draws_a_difference_spectrogram() {
+    let folder = folder("png_against");
+    let wav = render_sine(&folder);
+    let quieter = quieter_copy(&wav);
+    let dir = folder.join("images");
+    let said = uta_stderr(&[
+        "analyse",
+        &wav,
+        "--against",
+        &quieter,
+        "--png",
+        dir.to_str().unwrap(),
+    ]);
+    assert!(said.starts_with("Drew 6 images in "), "{said}");
+    let svg = assert_image(&dir, "sine-vs-sine-quieter-difference");
+    assert!(svg.contains(">sine.wav minus sine-quieter.wav · difference"));
+    assert!(svg.contains("peak +6.0 dB"), "6 dB louder");
+    assert!(
+        svg.contains("+24 dB") && svg.contains("-24 dB"),
+        "its fixed scale"
+    );
+}
+
+/// A close-up is drawn at each click found, and a sound with no pitch has
+/// no harmonics to draw.
+#[test]
+fn clicks_are_drawn_where_they_were_found() {
+    // Quiet noise that jumps up by 0.5 at 0.25 s and back down at 0.75 s:
+    // two clicks in a sound with no pitch.
+    let path = folder("png_clicks").join("clicky.wav");
+    let mut state = 1u32;
+    let mut next = || {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        ((state >> 8) as f32 / (1 << 24) as f32 - 0.5) * 0.02
+    };
+    let frames: Vec<[f32; 2]> = (0..48_000)
+        .map(|i| {
+            let jump = if (12_000..36_000).contains(&i) {
+                0.5
+            } else {
+                0.0
+            };
+            let s = next() + jump;
+            [s, s]
+        })
+        .collect();
+    write_stereo(&path, 48_000, &frames);
+    let dir = path.parent().unwrap().join("images");
+    let said = uta_stderr(&[
+        "analyse",
+        path.to_str().unwrap(),
+        "--png",
+        dir.to_str().unwrap(),
+    ]);
+    assert!(
+        said.starts_with("Drew 4 images in "),
+        "no harmonics: {said}"
+    );
+    assert!(!dir.join("clicky-harmonics.svg").exists());
+    let svg = assert_image(&dir, "clicky-clicks");
+    assert!(svg.contains("clicks 2"), "two clicks found");
+    assert!(svg.contains(">0.2500 s · step"), "the first, at 0.25 s");
+    assert!(svg.contains(">0.7500 s · step"), "the second, at 0.75 s");
+}

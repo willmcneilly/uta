@@ -54,6 +54,7 @@ cargo run -p uta-cli -- render out.wav --commands examples/demo-loop.json   # th
 cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # loop it on the default output until Ctrl-C
 cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 cargo run --release -p uta-cli -- analyse out.wav --pitch C3 --against before.wav   # measure a render (--json for data); the measurements are uta-analysis's
+cargo run --release -p uta-cli -- analyse out.wav --png target/images              # also draw its images (spectrograms, level, clicks, harmonics) as SVG and PNG
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report, against the committed baseline
 UTA_TIMING_BASELINE=1 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # re-record that baseline

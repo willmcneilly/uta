@@ -10,6 +10,7 @@
 //     session.toml          the question, the candidates, Claude's prediction
 //     short.json …          each candidate's command list
 //     short.wav …           its render, made here (and short.analysis.json)
+//     images/short-level.png …   its images (uta analyse --png), for the reveal
 //     verdict.toml          Will's answer, written by the page
 //
 // The formats are in HELP, which `scripts/listen --help` prints.
@@ -28,10 +29,10 @@ export const HELP = `Usage: scripts/listen [<session> …] [--list] [--prepare] 
 Asks Will one question at a time, in a local page. Each <session> is a folder
 name in the listening folder, or a path to one. With none, it asks every
 session there that has no verdict yet, oldest first. For each session it
-renders any candidate not yet rendered (uta render), measures each one
-(uta analyse --json), then serves the page, opens it in the browser, and exits
-once the last question's Finish is pressed. Each verdict's path is printed as
-it's written.
+renders any candidate not yet rendered (uta render), measures each one and
+draws its images (uta analyse --json --png), then serves the page, opens it
+in the browser, and exits once the last question's Finish is pressed. Each
+verdict's path is printed as it's written.
 
 The listening folder is ~/.uta/listening/, or $UTA_LISTENING_DIR. It's outside
 the repo on purpose: verdicts hold Will's own words.
@@ -50,7 +51,7 @@ loudness (BS.1770, from uta analyse) matches the quietest; they're lined up and
 play the same loop together, so switching is instant and lands on the same
 beat; and they're labelled A, B, C in a shuffled order that isn't in anything
 the page receives until Finish. Then it shows which was which, Claude's
-prediction, and each candidate's numbers.
+prediction, and each candidate's numbers and images.
 
 session.toml, written by Claude before Will listens:
 
@@ -395,8 +396,8 @@ export function withGain(bytes: Buffer, gainDb: number): Buffer {
 export interface Tools {
   /** Renders a command list to a WAV, as `uta render`. */
   render(commands: string, wav: string, seconds?: number): void;
-  /** Measures a WAV, as `uta analyse --json`. */
-  analyse(wav: string): Analysis;
+  /** Measures a WAV, as `uta analyse --json`, and draws its images into `images`, as `--png`. */
+  analyse(wav: string, images: string): Analysis;
 }
 
 export interface Analysis {
@@ -413,9 +414,22 @@ export interface Prepared {
     gainDb: number;
     seconds: number;
     sampleRate: number;
+    /** The images drawn of it, of IMAGES, in that order: `uta analyse` draws the harmonics only when there's a pitch. */
+    images: Image[];
   }[];
   loop: { start: number; end: number; bpm: number | null };
 }
+
+/**
+ * The images the reveal shows of each candidate, as `uta analyse --png` names
+ * them after the WAV (`<id>-level.png`), in the order shown: the spectrogram
+ * and level curve first, as RFC-009's reveal has them.
+ */
+export const IMAGES = ["spectrogram-long", "level", "spectrogram-short", "clicks", "harmonics"] as const;
+export type Image = (typeof IMAGES)[number];
+
+/** Where a candidate's image is: in the session's images folder. */
+export const imagePath = (dir: string, id: string, image: Image) => join(dir, "images", `${id}-${image}.png`);
 
 const newer = (file: string, than: string[]) => existsSync(file) && than.every((other) => statSync(file).mtimeMs >= statSync(other).mtimeMs);
 
@@ -433,13 +447,18 @@ export function prepare(session: Session, tools: Tools, log: (line: string) => v
     }
     const analysisFile = join(session.dir, `${candidate.id}.analysis.json`);
     let analysis: Analysis;
-    if (newer(analysisFile, [wav])) analysis = JSON.parse(readFileSync(analysisFile, "utf8")) as Analysis;
+    // Every image but the harmonics is always drawn, so those say whether they're all up to date.
+    const always = IMAGES.filter((image) => image !== "harmonics").map((image) => imagePath(session.dir, candidate.id, image));
+    if (newer(analysisFile, [wav]) && always.every((image) => newer(image, [wav])))
+      analysis = JSON.parse(readFileSync(analysisFile, "utf8")) as Analysis;
     else {
-      analysis = tools.analyse(wav);
+      log(`Measuring ${session.name}/${candidate.id}…`);
+      analysis = tools.analyse(wav, join(session.dir, "images"));
       writeFileSync(analysisFile, JSON.stringify(analysis, null, 2) + "\n");
     }
     const info = readWav(readFileSync(wav));
-    return { id: candidate.id, wav, analysis, sampleRate: info.sampleRate, seconds: info.frames / info.sampleRate };
+    const images = IMAGES.filter((image) => newer(imagePath(session.dir, candidate.id, image), [wav]));
+    return { id: candidate.id, wav, analysis, images, sampleRate: info.sampleRate, seconds: info.frames / info.sampleRate };
   });
   if (new Set(candidates.map((c) => c.sampleRate)).size > 1) throw new SessionError(`${session.name}: the renders' sample rates differ.`);
   const gains = matchGains(
@@ -566,14 +585,19 @@ export function listening(prepared: Prepared[], options: ServeOptions = {}): Lis
     };
   };
 
+  // The images go in the reply itself, as data URLs: after the last
+  // question's Finish the server stops, so the page couldn't fetch them later.
   const reveal = (ask: Asked) => {
     const { session } = ask.prepared;
+    const dataUrl = (id: string, image: Image) => `data:image/png;base64,${readFileSync(imagePath(session.dir, id, image)).toString("base64")}`;
     return {
       verdict: ask.verdict,
       prediction: session.prediction,
       candidates: ask.order.map((index, position) => {
         const c = ask.prepared.candidates[index];
-        return { label: LABELS[position], id: c.id, gainDb: c.gainDb, measurements: c.analysis.measurements ?? {} };
+        const label = LABELS[position];
+        const images = c.images.map((image) => ({ name: image, src: dataUrl(c.id, image) }));
+        return { label, id: c.id, gainDb: c.gainDb, measurements: c.analysis.measurements ?? {}, images };
       }),
       next: current < asked.length,
     };
@@ -714,6 +738,10 @@ const PAGE = `<!doctype html>
   tr.relied td { color: var(--ink); }
   td { color: var(--ink-2); }
   .prediction { background: var(--sheet); border-radius: var(--rounded-md); padding: var(--space-5); }
+  .images { display: grid; gap: var(--space-4); }
+  .images h3 { font: var(--font-name); margin: var(--space-4) 0 0; }
+  .images img { display: block; width: 100%; height: auto; border-radius: var(--rounded-md); }
+  .images summary { font: var(--font-label); color: var(--ink-2); cursor: pointer; }
   [hidden] { display: none !important; }
 </style>
 </head>
