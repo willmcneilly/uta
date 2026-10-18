@@ -35,6 +35,7 @@ pub const SONGS: &[DemoSong] = &[
     demo!("beat", "Beat"),
     demo!("lofi", "Lo-fi"),
     demo!("house", "House"),
+    demo!("techno", "Techno"),
     demo!("ambient", "Ambient"),
 ];
 
