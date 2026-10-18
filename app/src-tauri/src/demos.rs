@@ -33,6 +33,8 @@ macro_rules! demo {
 pub const SONGS: &[DemoSong] = &[
     demo!("loop", "Loop"),
     demo!("beat", "Beat"),
+    demo!("lofi", "Lo-fi"),
+    demo!("house", "House"),
     demo!("techno", "Techno"),
 ];
 

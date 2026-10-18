@@ -1,0 +1,105 @@
+# The house demo: a 909 kick on every beat, an open hat on every off-beat,
+# claps on 2 and 4, a seventh-chord stab through a Delay, and a rolling mono
+# bass that slides where its notes touch.
+# 32 bars at 124 BPM, in sections that build: intro, build, groove, break, drop.
+name = "House"
+tempo = 124
+arrangement = ["intro", "build", "groove", "break", "drop"]
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Drums"
+kind = "drums"
+mixer = { volume_db = 6 }
+settings.kick = { model = "909", tune_hz = 55, decay_seconds = 0.4 }
+settings.open_hat = { decay_seconds = 0.2 }
+settings.closed_hat = { decay_seconds = 0.04 }
+
+# Kick and hats only, the open hat on every off-beat.
+[track.pattern.intro]
+kick       = "x... x... x... x..."
+open_hat   = "..x. ..x. ..x. ..x."
+closed_hat = "x60.x50. x60.x50. x60.x50. x60.x50."
+
+# The clap comes in on 2 and 4, and the closed hats fill in the sixteenths.
+[track.pattern.build]
+kick       = "x... x... x... x..."
+open_hat   = "..x. ..x. ..x. ..x."
+closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
+clap       = ".... x... .... x..."
+
+[track.pattern.groove]
+kick       = "x... x... x... x..."
+open_hat   = "..x. ..x. ..x. ..x."
+closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
+clap       = ".... x... .... x..."
+
+# The kick drops out; the hats thin to a tick, and a snare roll in eighths
+# leads back in over the last bar.
+[[track.pattern.break]]
+closed_hat = "..x50. ..x50. ..x50. ..x50."
+[[track.pattern.break]]
+step = "1/8"
+snare = "........ | ........ | ........ | ........ | ........ | ........ | ........ | x40x50x60x70 x80x95x110X"
+
+# Everything, with a crash at the top and a snare under the clap.
+[[track.pattern.drop]]
+kick       = "X... x... x... x..."
+open_hat   = "..x. ..x. ..x. ..x."
+closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
+clap       = ".... x... .... x..."
+snare      = ".... x70... .... x70..."
+[[track.pattern.drop]]
+step = "1/1"
+cymbal = "x . . . . . . ."
+
+[[track]]
+name = "Bass"
+kind = "synth"
+sound = "glide_bass"
+mixer = { volume_db = -4 }
+# Sixteenths, each held half a sixteenth past its step, so two notes side
+# by side overlap and slide; a note after a rest starts fresh. It follows
+# the stab's roots, Am7, Dm7, Fmaj7, Em7, a bar each.
+pattern.build = { notes = "A2 . . A2 . . A2 A3 . . A2 . . G2 A2 . | D2 . . D2 . . D2 D3 . . D2 . . C3 D3 . | F2 . . F2 . . F2 F3 . . F2 . . E2 F2 . | E2 . . E2 . . E2 E3 . . E2 . . G2 B2 .", length = 360 }
+pattern.groove = { notes = "A2 . . A2 . . A2 A3 . . A2 . . G2 A2 . | D2 . . D2 . . D2 D3 . . D2 . . C3 D3 . | F2 . . F2 . . F2 F3 . . F2 . . E2 F2 . | E2 . . E2 . . E2 E3 . . E2 . . G2 B2 .", length = 360 }
+# Just the roots, a bar each, under the break.
+pattern.break = { notes = "A2 | D2 | F2 | E2", step = "1/1", length = "1/2", velocity = 80 }
+pattern.drop = { notes = "A2 . . A2 . . A2 A3 . . A2 . . G2 A2 . | D2 . . D2 . . D2 D3 . . D2 . . C3 D3 . | F2 . . F2 . . F2 F3 . . F2 . . E2 F2 . | E2 . . E2 . . E2 E3 . . E2 . . G2 B2 .", length = 360 }
+
+[[track]]
+name = "Stab"
+kind = "synth"
+sound = "pluck"
+settings = { cutoff_hz = 600 }
+mixer = { volume_db = -8 }
+effects = [{ delay = { sync = true, division = "1/8d", feedback = 0.4, mode = "ping_pong" }, mix = 0.2 }]
+# A seventh-chord stab a bar, Am7, Dm7, Fmaj7, Em7: on the and of 1, the last
+# sixteenth of 2 and the and of 3.
+pattern.groove = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . . . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . . . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . . . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . . .", velocity = 90 }
+# One stab a bar in the break, so the Delay's echoes fill the space.
+pattern.break = { notes = ". . A3+C4+E4+G4 . . . . . . . . . . . . . | . . F3+A3+C4+D4 . . . . . . . . . . . . . | . . F3+A3+C4+E4 . . . . . . . . . . . . . | . . E3+G3+B3+D4 . . . . . . . . . . . . .", velocity = 100 }
+# The drop adds a stab on the last sixteenth but one, into the next bar.
+pattern.drop = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . A3+C4+E4+G4 . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . F3+A3+C4+D4 . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . F3+A3+C4+E4 . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . E3+G3+B3+D4 .", velocity = 90 }
+
+[[section]]
+name = "intro"
+bars = 4
+
+[[section]]
+name = "build"
+bars = 4
+
+[[section]]
+name = "groove"
+bars = 8
+
+[[section]]
+name = "break"
+bars = 8
+
+[[section]]
+name = "drop"
+bars = 8
