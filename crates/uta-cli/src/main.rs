@@ -678,8 +678,15 @@ mod tests {
 
     #[test]
     fn no_loop_switches_the_loop_off() {
-        assert!(load(None, false).unwrap().transport().loop_enabled());
-        assert!(!load(None, true).unwrap().transport().loop_enabled());
+        assert!(load(None, None, false).unwrap().transport().loop_enabled());
+        assert!(!load(None, None, true).unwrap().transport().loop_enabled());
+        let beat = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/demos/beat.toml");
+        assert!(
+            !load(None, Some(&beat), true)
+                .unwrap()
+                .transport()
+                .loop_enabled()
+        );
     }
 
     #[test]
@@ -811,7 +818,7 @@ mod tests {
             let lists = command_lists(&folder).unwrap();
             assert!(lists.len() >= 8, "{sound}: {lists:?}");
             for list in lists {
-                let project = load(Some(&list), false).unwrap();
+                let project = load(Some(&list), None, false).unwrap();
                 assert!(default_seconds(&project) > 1.0, "{}", list.display());
                 // A note's start is from its clip's start, so one past the
                 // clip's length never plays.

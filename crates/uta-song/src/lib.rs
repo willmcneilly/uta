@@ -513,7 +513,13 @@ impl Compiler<'_> {
         let mut lines = Vec::new();
         self.lines(kind, pattern, &mut lines)?;
         let mut notes = Vec::new();
-        for (line, step, note_length, span) in lines {
+        for PatternLine {
+            line,
+            step,
+            length: note_length,
+            span,
+        } in lines
+        {
             let line_length = line.steps * step;
             if line_length > length {
                 return Err(self.error(
@@ -547,21 +553,24 @@ impl Compiler<'_> {
         Ok(notes)
     }
 
-    /// Reads a pattern's lines: each with its step, the length every note
-    /// in it has if it says, and where it is in the file.
-    #[allow(clippy::type_complexity)]
+    /// Reads a pattern's lines.
     fn lines(
         &self,
         kind: Kind,
         pattern: &Spanned<PatternFile>,
-        lines: &mut Vec<(Line, Ticks, Option<Ticks>, Range<usize>)>,
+        lines: &mut Vec<PatternLine>,
     ) -> Result<(), SongError> {
         let span = pattern.span();
         match (kind, pattern.get_ref()) {
             (Kind::Synth, PatternFile::Steps(text)) => {
                 let line = steps::notes(text, DEFAULT_VELOCITY)
                     .map_err(|error| self.step_error(span.clone(), text, error))?;
-                lines.push((line, division_ticks(DEFAULT_STEP), None, span));
+                lines.push(PatternLine {
+                    line,
+                    step: division_ticks(DEFAULT_STEP),
+                    length: None,
+                    span,
+                });
             }
             (Kind::Drums, PatternFile::Steps(_)) => {
                 return Err(self.error(
@@ -589,7 +598,12 @@ impl Compiler<'_> {
                 };
                 let line = steps::notes(text, options.velocity)
                     .map_err(|error| self.step_error(notes.1.span(), text, error))?;
-                lines.push((line, options.step, options.length, notes.1.span()));
+                lines.push(PatternLine {
+                    line,
+                    step: options.step,
+                    length: options.length,
+                    span: notes.1.span(),
+                });
             }
             (Kind::Drums, PatternFile::Table(entries)) => {
                 let rows: Vec<&str> = KIT.iter().map(|row| sound_name(row.sound)).collect();
@@ -606,7 +620,12 @@ impl Compiler<'_> {
                     };
                     let line = steps::hits(text, row.pitch, options.velocity)
                         .map_err(|error| self.step_error(value.span(), text, error))?;
-                    lines.push((line, options.step, Some(options.step), value.span()));
+                    lines.push(PatternLine {
+                        line,
+                        step: options.step,
+                        length: Some(options.step),
+                        span: value.span(),
+                    });
                 }
             }
         }
@@ -805,6 +824,15 @@ impl Compiler<'_> {
             message: error.message,
         }
     }
+}
+
+/// A line of a pattern, read: its hits, its step, the length every note in
+/// it has if it says, and where it is in the file.
+struct PatternLine {
+    line: Line,
+    step: Ticks,
+    length: Option<Ticks>,
+    span: Range<usize>,
 }
 
 /// A line's step, the length its notes have if it says, and its velocity.

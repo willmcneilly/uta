@@ -113,8 +113,7 @@ bars = 1
 
 #[test]
 fn a_section_repeats_in_the_arrangement() {
-    let text = format!(
-        "name = \"Test\"
+    let text = "name = \"Test\"
 tempo = 120
 arrangement = [\"verse\", \"chorus\", \"verse\"]
 
@@ -130,9 +129,8 @@ bars = 1
 [[section]]
 name = \"chorus\"
 bars = 2
-"
-    );
-    let project = build(&text);
+";
+    let project = build(text);
     let bass = &project.tracks()[0];
     let clips: Vec<_> = bass
         .clips()
