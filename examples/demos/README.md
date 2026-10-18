@@ -59,6 +59,25 @@ What house wanted that Uta doesn't have yet:
 - **Reverb**, for the claps and the stab's tail in the break.
 - **A shaker or ride.** The kit has a closed and an open hat and a crash; a groove usually has a ride or a shaker on top in the drop.
 
+### Techno
+
+`techno.toml`: 32 bars at 130 BPM in A minor, in five sections that build: intro (kick and hats), groove (the clap, a rolling off-beat bass and the line), break (no kick or bass: the line, the hats, a clap on beat 4 and a dub chord into a long delay), rise (everything back, the line's filter opening over eight bars) and peak (open hats, toms, the chord again, the filter open).
+
+The line is the Pluck reworked into a resonant pulse. A triangle LFO synced to a dotted bar moves its cutoff and its pulse's width against the one-bar line all the way through. The filter opens over the rise with a mod slot: velocity → cutoff, with the rise's velocities written out to climb from 64 to 121, note by note. A second slot turns the level down with velocity, so it gets brighter more than louder.
+
+What techno wanted that Uta doesn't have yet:
+
+- **Automation.** The filter opening is velocities written out by hand, 72 notes of them. It moves only as each note starts, can't keep going across a section's edge, and velocity also sets the level, so a second mod slot has to undo some of that. A synced LFO can't do it: its slowest is a dotted bar. A free LFO can go slower (20 s at 0.05 Hz), but isn't tied to the bars, and starts wherever Play does.
+- **Distortion or saturation,** on the line and the kick: the line stays clean and polite, where techno would drive it.
+- **EQ,** to clear the low mids and give the kick room: the bottom end is muddy and lacks punch, with the kick, the bass and the line's sub all around 50–110 Hz.
+- **Sidechain ducking,** so the bass ducks under the kick rather than blurring with it.
+- **A bus compressor or limiter,** to make it loud and punchy. The engine plays the master at no more than 0 dB, though a project can hold up to +6, and the line is at its track's +6 dB limit already: the song peaks at -7 dBFS, -25.5 LUFS.
+- **Reverb,** for the dub chord and the clap.
+- **A crash at a section's start** needs a drum pattern as long as the section, since a pattern repeats; there's no fill or one-off hit across sections.
+- **Swing** on the hats, less needed than in house.
+
+The factory sounds, as they are (not tuned by ear yet, UTA-83): none is a techno line, so the Pluck needed most of its filter, envelope and LFO settings changed. Its detuned second oscillator measures as aliasing (-13.6 dB re harmonics on a held A2, -28 dB with it in tune), but it's the detune, not aliasing.
+
 ## The song file
 
 A song is its tempo, its tracks, what each plays in each section, the sections, and the order they play in. It covers notes, drum patterns, sections, sounds and effect settings, and nothing else on purpose: anything else is written as [raw commands](#raw-commands) inside the file.
