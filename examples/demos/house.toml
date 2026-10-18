@@ -1,7 +1,7 @@
 # The house demo: a 909 kick on every beat, an open hat on every off-beat,
-# claps on 2 and 4, a seventh-chord stab through a ping-pong Delay, and
-# a rolling mono bass that slides where its notes touch. 32 bars at 124 BPM,
-# in sections that build: intro, build, groove, break, drop.
+# claps on 2 and 4, a seventh-chord stab through a Delay, a rolling mono bass
+# that slides where its notes touch, and a pad over the break and the drop.
+# 32 bars at 124 BPM, in sections that build: intro, build, groove, break, drop.
 name = "House"
 tempo = 124
 arrangement = ["intro", "build", "groove", "break", "drop"]
@@ -75,7 +75,7 @@ kind = "synth"
 sound = "pluck"
 settings = { cutoff_hz = 600 }
 mixer = { volume_db = -8 }
-effects = [{ delay = { sync = true, division = "1/8d", feedback = 0.4, mode = "ping_pong" }, mix = 0.3 }]
+effects = [{ delay = { sync = true, division = "1/8d", feedback = 0.4, mode = "ping_pong" }, mix = 0.2 }]
 # A seventh-chord stab a bar, Am7, Dm7, Fmaj7, Em7: on the and of 1, the last
 # sixteenth of 2 and the and of 3.
 pattern.groove = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . . . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . . . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . . . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . . .", velocity = 90 }
@@ -83,6 +83,16 @@ pattern.groove = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 
 pattern.break = { notes = ". . A3+C4+E4+G4 . . . . . . . . . . . . . | . . F3+A3+C4+D4 . . . . . . . . . . . . . | . . F3+A3+C4+E4 . . . . . . . . . . . . . | . . E3+G3+B3+D4 . . . . . . . . . . . . .", velocity = 100 }
 # The drop adds a stab on the last sixteenth but one, into the next bar.
 pattern.drop = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . A3+C4+E4+G4 . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . F3+A3+C4+D4 . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . F3+A3+C4+E4 . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . E3+G3+B3+D4 .", velocity = 90 }
+
+[[track]]
+name = "Pad"
+kind = "synth"
+sound = "pad"
+mixer = { volume_db = -6 }
+# Held chords above the stab, a bar each, in the break and the drop: the
+# same four chords, voiced from E4 to C5, for something in the upper register.
+pattern.break = { notes = "E4+G4+C5 | F4+A4+C5 | E4+A4+C5 | D4+G4+B4", step = "1/1", velocity = 80 }
+pattern.drop = { notes = "E4+G4+C5 | F4+A4+C5 | E4+A4+C5 | D4+G4+B4", step = "1/1", velocity = 70 }
 
 [[section]]
 name = "intro"
