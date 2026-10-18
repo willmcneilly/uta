@@ -2,11 +2,13 @@
 //! items, not the system's, so ⌘Z, ⇧⌘Z, ⌘C, ⌘V and ⌘D reach the project
 //! core, the timeline and the piano roll instead of the web view's text
 //! editing. The Track menu adds synth and drum tracks, and deletes and
-//! duplicates them.
+//! duplicates them. The Develop menu loads the demo songs, and has tools
+//! for testing Uta itself.
 
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};
 
+use crate::demos::{self, DemoSong};
 use crate::uta::MenuView;
 
 pub const UNDO: &str = "undo";
@@ -20,6 +22,14 @@ pub const DELETE_TRACK: &str = "delete-track";
 pub const DUPLICATE_TRACK: &str = "duplicate-track";
 pub const ADD_STRESS_NOTES: &str = "add-stress-notes";
 pub const RUN_BENCHMARK: &str = "run-benchmark";
+/// The start of each Develop → Load Demo Song item's ID, followed by the
+/// song's (see [`demo_song`]).
+pub const DEMO_SONG: &str = "demo-song:";
+
+/// The demo song a menu item's ID names, if it's one of Load Demo Song's.
+pub fn demo_song(id: &str) -> Option<&'static DemoSong> {
+    demos::find(id.strip_prefix(DEMO_SONG)?)
+}
 
 /// The menu items that are enabled or not by the project's state, kept to
 /// update them as it changes.
@@ -104,7 +114,15 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, MenuStat
         .item(&duplicate_track)
         .item(&delete_track)
         .build()?;
+    let mut demo_songs = SubmenuBuilder::new(app, "Load Demo Song");
+    for song in demos::SONGS {
+        let id = format!("{DEMO_SONG}{}", song.id);
+        demo_songs =
+            demo_songs.item(&MenuItemBuilder::with_id(id, format!("{}…", song.name)).build(app)?);
+    }
     let develop = SubmenuBuilder::new(app, "Develop")
+        .item(&demo_songs.build()?)
+        .separator()
         .item(&MenuItemBuilder::with_id(ADD_STRESS_NOTES, "Add Stress Notes").build(app)?)
         .item(&MenuItemBuilder::with_id(RUN_BENCHMARK, "Run Benchmark…").build(app)?)
         .build()?;

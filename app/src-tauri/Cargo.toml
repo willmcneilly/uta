@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 uta-core = { path = "../../crates/uta-core" }
 uta-engine = { path = "../../crates/uta-engine" }
+uta-song = { path = "../../crates/uta-song" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 tauri-plugin-window-state = "2"

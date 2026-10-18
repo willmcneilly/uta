@@ -11,6 +11,8 @@ cargo run -p uta-cli -- play --song examples/demos/loop.toml                # pl
 
 CI renders every `.toml` file here, from the top to the end with the loop off, and checks it builds, doesn't clip, and that each track played on its own isn't silent (`every_demo_song_builds_plays_without_clipping_and_has_no_silent_track` in `crates/uta-song/tests/demos.rs`). Not a golden WAV: the songs are meant to change.
 
+**In the app.** Every song here is built into the app and loads from Develop → Load Demo Song, which replaces the project with it as one undo step and plays it from the start of its loop. A new song needs its file here and one line in `SONGS` in `app/src-tauri/src/demos.rs`, with its file's name and what the menu calls it: `demo!("lo-fi", "Lo-fi"),`. A test fails if a file here isn't listed (`every_song_in_examples_demos_is_in_the_menu_once`).
+
 **Keeping them up.** Each ticket's PR says `Demo song: added`, `not yet` or `doesn't apply` (the `work-ticket` skill). A feature that a song could use gets added to one, or says why not yet.
 
 ## The songs
