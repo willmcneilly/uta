@@ -18,14 +18,14 @@ kind = "synth"
 sound = "pad"
 settings = { attack_seconds = 2.5, release_seconds = 3.5, filter_attack_seconds = 3.0, filter_release_seconds = 3.5, filter_lfo_octaves = 1.0, lfo_rate_hz = 0.08 }
 mixer = { volume_db = 0 }
-effects = [{ delay = { time_seconds = 1.2, mode = "ping_pong", feedback = 0.2, low_cut_hz = 200, high_cut_hz = 2500 }, mix = 0.2 }]
+effects = [{ delay = { sync = false, time_seconds = 1.2, mode = "ping_pong", feedback = 0.2, low_cut_hz = 200, high_cut_hz = 2500 }, mix = 0.2 }]
 # Four chords, two bars each: Dmaj9, Bm7, Gmaj7, A6/9.
 pattern.drift = { notes = "D3+F#3+A3+E4 - | B2+D3+F#3+A3 - | G2+B2+D3+F#3 - | A2+C#3+E3+B3 -", step = "1/1", velocity = 90 }
 pattern.bloom = { notes = "D3+F#3+A3+E4 - | B2+D3+F#3+A3 - | G2+B2+D3+F#3 - | A2+C#3+E3+B3 -", step = "1/1", velocity = 90 }
 pattern.fade = { notes = "D3+F#3+A3+E4 - - -", step = "1/1", velocity = 80 }
 
-# A low D under it all, held across the first two sections: the Bass with the
-# bite and most of its sub taken out, and a gentle swell.
+# A low D under it all, through the first two sections (restarting at the seam,
+# a clip a section): the Bass with its bite and most of its sub taken out.
 [[track]]
 name = "Drone"
 kind = "synth"

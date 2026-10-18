@@ -32,7 +32,7 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 **What it wanted and Uta lacks:**
 - **Reverb.** The biggest gap by far: without it there's no space, and every note ends where the synth's release ends.
 - **Sends.** The Delay and a reverb would be shared by several tracks on a send; today each track has its own chain, so the Bell's echoes can't feed the Pad's space.
-- **Stereo width on a synth** (unison voices spread across the field, or a chorus). The Pad is mono, so the mix measures 4% wide; only the pans and the ping-pong Delay give it any width.
+- **Stereo width on a synth** (unison voices spread across the field, or a chorus). The Pad is mono, so the mix measures 5% wide; only the pans and the ping-pong Delay give it any width.
 - **A note held across sections.** Each section's clip starts its notes afresh, so the drone restarts at the drift → bloom seam, with a short dip.
 - **Automation.** The filter and levels can only move with the LFO, so the song can't open up over the bloom or thin out over the fade.
 - **A slower synced LFO.** Synced, the LFO's longest cycle is a dotted whole note, a bar and a half; the Pad's drift wants one over the 8-bar chord cycle, so it uses the free rate instead and doesn't line up with the chords.
