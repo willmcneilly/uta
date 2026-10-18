@@ -25,7 +25,7 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 
 ### House
 
-`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a minor-seventh stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth, and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
+`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a seventh-chord stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth, and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
 
 What house wanted that Uta doesn't have yet:
 - **Swing.** House hats and bass are pushed off the grid; every step here is straight, so it sits stiffer than the genre.
