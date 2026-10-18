@@ -43,7 +43,7 @@ pattern.outro = { step = "1/32", velocity = 70, notes = """
 name = "Bass"
 kind = "synth"
 sound = "bass"
-mixer = { volume_db = -6 }
+mixer = { volume_db = -9 }
 pattern.groove = { step = "1/32", notes = """
   G2 - - - - - - - - - - - - . . . . . . . . G2 - - D3 - - - - . . . |
   C3 - - - - - - - - - - - - . . . . . . . . C3 - - G2 - - - - . . . |
