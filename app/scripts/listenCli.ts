@@ -2,8 +2,10 @@
 // in listen.ts.
 
 import { execFileSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   HELP,
@@ -92,7 +94,7 @@ async function main() {
   const prepared: Prepared[] = [];
   for (const sessionPath of dirs) {
     const session = readSession(sessionPath);
-    if (!args.again && listSessions(dir).some((s) => s.dir === sessionPath && s.answered)) {
+    if (!args.again && existsSync(join(sessionPath, "verdict.toml"))) {
       console.log(`Skipping ${session.name}: it has a verdict (use --again to ask it again).`);
       continue;
     }

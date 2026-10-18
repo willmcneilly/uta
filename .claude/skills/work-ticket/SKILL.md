@@ -81,7 +81,6 @@ Before opening the PR:
 
 5. **New concepts.** Did this work bring in a concept that isn't in the Glossary, something you had to reach for that the RFC didn't name? Usually the answer is no. If yes, add an entry (see the `uta-notion` skill), with `Introduced in` set to the ticket's RFC, and list the new terms in the PR.
 
-
 ### Sound tickets: measure, predict, then ask
 
 A ticket that changes how something sounds asks Will's ear only after the numbers have had their say, and only through a listening session (RFC-009, part 3). Never ask him to render WAVs or compare files in Finder.

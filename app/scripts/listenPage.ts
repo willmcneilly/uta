@@ -195,7 +195,7 @@ function ask(state: State, context: AudioContext, buffers: AudioBuffer[]): void 
   finishKey.addEventListener("click", async () => {
     if (!ready()) return;
     finishKey.disabled = true;
-    const body: { note: string; choice?: string; ratings?: Record<string, number> } = { note: note.value };
+    const body: { question: number; note: string; choice?: string; ratings?: Record<string, number> } = { question: state.index, note: note.value };
     if (choice !== null) body.choice = labels[choice];
     if (state.kind === "rate each") body.ratings = ratings;
     const response = await fetch("/api/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

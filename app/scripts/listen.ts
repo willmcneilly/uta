@@ -460,6 +460,8 @@ export function prepare(session: Session, tools: Tools, log: (line: string) => v
 
 /** What the page sends when Finish is pressed, by label. */
 export interface Answer {
+  /** Which question the page was showing (its index in the queue), so a stale page can't answer the next one. */
+  question?: number;
   choice?: string;
   ratings?: Record<string, number>;
   note?: string;
@@ -601,6 +603,9 @@ export function listening(prepared: Prepared[], options: ServeOptions = {}): Lis
     if (request.method === "POST" && path === "/api/finish") {
       void readAnswer(request, response).then((answer) => {
         if (!answer) return;
+        // Another tab, or a second press, may have finished this question while the answer was arriving.
+        if (answer.question !== asked.indexOf(ask) || current >= asked.length || asked[current] !== ask)
+          return json(response, 409, { error: "That question has already been answered. Reload the page for the next one." });
         const verdict = verdictFor(ask.prepared, ask.labels, answer, now());
         if (typeof verdict === "string") return json(response, 400, { error: verdict });
         const file = join(ask.prepared.session.dir, "verdict.toml");
@@ -672,7 +677,7 @@ const PAGE = `<!doctype html>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: var(--font-text); }
-  main { max-width: 720px; margin: 0 auto; padding: var(--space-7) var(--space-6); display: grid; gap: var(--space-7); }
+  main { max-width: calc(30 * var(--space-7)); margin: 0 auto; padding: var(--space-7) var(--space-6); display: grid; gap: var(--space-7); }
   .progress { font: var(--font-label); color: var(--ink-2); }
   h1 { font: var(--font-title); margin: var(--space-2) 0 0; }
   h2 { font: var(--font-label); color: var(--ink-2); margin: 0 0 var(--space-3); text-transform: none; }
@@ -687,8 +692,8 @@ const PAGE = `<!doctype html>
   button.key .mark { display: inline-block; margin-right: var(--space-3); }
   .playing button.key.play .mark { color: var(--live); }
   .segments { display: inline-flex; border: var(--stroke-grid) solid var(--ink-3); border-radius: var(--rounded-md); }
-  .segments button { font: var(--font-name); color: var(--ink-2); background: none; border: var(--stroke-grid) solid transparent;
-    border-radius: var(--rounded-md); min-width: 56px; min-height: 40px; cursor: pointer; }
+  .segments button { font: var(--font-text); color: var(--ink-2); background: none; border: var(--stroke-grid) solid transparent;
+    border-radius: var(--rounded-md); min-width: calc(2 * var(--space-7)); min-height: var(--space-7); padding: 0 var(--space-5); cursor: pointer; }
   .segments button:hover { background: var(--line); color: var(--ink); }
   .segments button:active { background: var(--line-2); }
   .segments button:focus-visible { outline: var(--stroke-clip-selected) solid var(--selected); }
@@ -697,8 +702,8 @@ const PAGE = `<!doctype html>
   .position { font: var(--font-position); font-family: var(--font-position-family), monospace; color: var(--ink-3); min-width: 5ch; }
   .playing .position { color: var(--ink); }
   .hint { font: var(--font-label); color: var(--ink-2); }
-  .rate { display: grid; grid-template-columns: 2ch auto; gap: var(--space-4); align-items: center; font: var(--font-name); }
-  textarea { width: 100%; min-height: 72px; font: var(--font-text); color: var(--ink); background: var(--sheet);
+  .rate { display: grid; grid-template-columns: 2ch auto; gap: var(--space-4); align-items: center; font: var(--font-text); }
+  textarea { width: 100%; min-height: calc(3 * var(--space-7)); font: var(--font-text); color: var(--ink); background: var(--sheet);
     border: var(--stroke-grid) solid var(--line-2); border-radius: var(--rounded-md); padding: var(--space-4); resize: vertical; }
   textarea:focus-visible { outline: var(--stroke-clip-selected) solid var(--selected); }
   .error { color: var(--error); }
@@ -706,7 +711,7 @@ const PAGE = `<!doctype html>
   th, td { text-align: right; padding: var(--space-2) var(--space-4); border-bottom: var(--stroke-grid) solid var(--line-2); }
   th:first-child, td:first-child { text-align: left; }
   thead th { font: var(--font-name); }
-  tr.relied td { color: var(--ink); font-weight: 600; }
+  tr.relied td { color: var(--ink); }
   td { color: var(--ink-2); }
   .prediction { background: var(--sheet); border-radius: var(--rounded-md); padding: var(--space-5); }
   [hidden] { display: none !important; }

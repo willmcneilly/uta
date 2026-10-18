@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -185,6 +185,19 @@ describe("matching and lining up", () => {
     expect(loopRegion({ loop: [1, 2] }, [transport], [6])).toEqual({ start: 1, end: 2, bpm: 120 });
   });
 
+  it("reads the loop from set_loop and set_loop_enabled, and loops the whole render with the loop off", () => {
+    const list = (...commands: Record<string, unknown>[]) => ({ commands: commands.map((command) => ({ format: 3, command })) });
+    const moved = transportOf(list({ type: "set_tempo", bpm: 120 }, { type: "set_loop", start_bar: 1, bars: 2 }));
+    expect(moved).toEqual({ bpm: 120, loopEnabled: true, loopStart: 2, loopLength: 4 });
+    // Into the loop at 2 s, then the second time round it, from 6 s.
+    expect(loopRegion({}, [moved], [10.2])).toEqual({ start: 6, end: 10, bpm: 120 });
+    const off = transportOf(list({ type: "set_loop_enabled", enabled: false }));
+    expect(off).toMatchObject({ loopEnabled: false });
+    expect(loopRegion({}, [off, off], [7.5, 7.25])).toEqual({ start: 0, end: 7.25, bpm: 120 });
+    // A new project's defaults: 120 BPM, a 4-bar loop from bar 1.
+    expect(transportOf(list())).toEqual({ bpm: 120, loopEnabled: true, loopStart: 0, loopLength: 8 });
+  });
+
   it("refuses candidates whose loops differ, unless the session says what to loop", () => {
     const a = transportOf(JSON.parse(commandList(120, 2)));
     const b = transportOf(JSON.parse(commandList(100, 2)));
@@ -198,6 +211,16 @@ describe("matching and lining up", () => {
 });
 
 describe("preparing a session", () => {
+  it("renders every candidate again when session.toml changes, since it can change how long they render", () => {
+    const dir = writeSession("s");
+    const { tools, calls } = fakeUta(LEVELS);
+    prepare(readSession(dir), tools);
+    const later = new Date(Date.now() + 5000);
+    utimesSync(join(dir, "session.toml"), later, later);
+    prepare(readSession(dir), tools);
+    expect(calls.render).toHaveLength(6);
+  });
+
   it("renders and measures each candidate once, and again when its command list changes", () => {
     const dir = writeSession("s");
     const { tools, calls } = fakeUta(LEVELS);
@@ -237,8 +260,13 @@ describe("the listening page's server", () => {
   });
 
   const prepared = (name: string, draft: Draft = {}) => prepare(readSession(writeSession(name, draft)), fakeUta(LEVELS).tools);
-  const finish = (body: unknown, headers: Record<string, string> = {}) =>
-    fetch(`${base}/api/finish`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  /** Presses Finish on question 1 (index 0), unless the answer says which. */
+  const finish = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    fetch(`${base}/api/finish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ question: 0, ...body }),
+    });
 
   /** Everything the page can fetch before Finish, by path: its status, headers and body, as text. */
   async function everythingSent(): Promise<Record<string, string>> {
@@ -353,14 +381,23 @@ describe("the listening page's server", () => {
 
     // The next question in the queue.
     expect(await (await fetch(`${base}/api/session`)).json()).toMatchObject({ index: 1, total: 2, kind: "listen and describe", labels: ["A"] });
-    expect((await finish({ note: "  " })).status).toBe(400);
-    expect((await finish({ note: "The tail clicks." })).status).toBe(200);
+    expect((await finish({ question: 1, note: "  " })).status).toBe(400);
+    expect((await finish({ question: 1, note: "The tail clicks." })).status).toBe(200);
     expect(parseToml(readFileSync(join(root, "describe", "verdict.toml"), "utf8"))).toMatchObject({
       kind: "listen and describe",
       note: "The tail clicks.",
       labels: { A: "only" },
     });
     expect(await done).toEqual([join(root, "rate", "verdict.toml"), join(root, "describe", "verdict.toml")]);
+  });
+
+  it("refuses a second Finish for a question, so a stale page can't answer the next one", async () => {
+    await serve([prepared("first"), prepared("second")], (n) => n - 1);
+    const [one, two] = await Promise.all([finish({ choice: "A", note: "one" }), finish({ choice: "B", note: "two" })]);
+    expect([one.status, two.status].sort()).toEqual([200, 409]);
+    expect(existsSync(join(root, "second", "verdict.toml"))).toBe(false);
+    expect((await finish({ choice: "A", note: "late" })).status).toBe(409);
+    expect((await finish({ question: 1, choice: "A", note: "" })).status).toBe(200);
   });
 
   it("refuses an answer without a pick, or from another page", async () => {
@@ -376,7 +413,11 @@ async function answerWith(listen: ReturnType<typeof listening>, answer: unknown)
   const server = createServer(listen.handle);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  await fetch(`${base}/api/finish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(answer) });
+  await fetch(`${base}/api/finish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: 0, ...(answer as object) }),
+  });
   const [file] = await listen.done;
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
