@@ -4,7 +4,9 @@
 //! or to the song's end. They build the project from a command list
 //! (`--commands`) or a song file (`--song`). `song` compiles a song file to
 //! its command list with `uta-song`. `analyse` measures a WAV with
-//! `uta-analysis`.
+//! `uta-analysis`, and with `--png` draws its [`images`].
+
+mod images;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -88,6 +90,13 @@ enum Command {
         /// The frequency to measure the share of the energy above, in Hz.
         #[arg(long, default_value_t = 5000.0, value_parser = positive_hz)]
         above: f64,
+        /// Also draw the images into this folder, as SVG and PNG: two
+        /// spectrograms, the level over time, the clicks close up, the
+        /// harmonics when there's a pitch, and with `--against` the
+        /// difference. Each is named after the WAV, such as
+        /// `kick-level.png`.
+        #[arg(long, value_name = "DIR")]
+        png: Option<PathBuf>,
     },
     /// Play the project through the default output: round the loop until
     /// Ctrl-C, or with the loop off (or starting after it) to the end of the
@@ -142,7 +151,15 @@ fn main() -> ExitCode {
             json,
             pitch,
             above,
-        } => analyse(&file, against.as_deref(), json, pitch, above),
+            png,
+        } => analyse(
+            &file,
+            against.as_deref(),
+            json,
+            pitch,
+            above,
+            png.as_deref(),
+        ),
         Command::Play {
             commands,
             song,
@@ -329,25 +346,29 @@ fn describe_project(project: &Project) -> String {
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Prints the report on `file`, or on it and `against` side by side, as
-/// text or JSON.
+/// text or JSON, and draws the images into `png` if it's given.
 fn analyse(
     file: &Path,
     against: Option<&Path>,
     json: bool,
     pitch: Option<Note>,
     above_hz: f64,
+    png: Option<&Path>,
 ) -> Result<(), String> {
-    let this = measure(file, pitch, above_hz)?;
+    let (this, this_mid) = measure(file, pitch, above_hz)?;
     let Some(against) = against else {
         if json {
             println!("{}", to_json(&this));
         } else {
             print!("{}", this.text());
         }
+        if let Some(dir) = png {
+            draw(dir, images::Sound::new(file, this_mid, &this), None)?;
+        }
         return Ok(());
     };
     // Both pitches are measured from the same note, so their cents compare.
-    let that = measure(against, pitch.or(this.note), above_hz)?;
+    let (that, that_mid) = measure(against, pitch.or(this.note), above_hz)?;
     if json {
         let difference = this.difference(&that);
         println!(
@@ -361,6 +382,24 @@ fn analyse(
     } else {
         print!("{}", this.text_against(&that));
     }
+    if let Some(dir) = png {
+        draw(
+            dir,
+            images::Sound::new(file, this_mid, &this),
+            Some(images::Sound::new(against, that_mid, &that)),
+        )?;
+    }
+    Ok(())
+}
+
+/// Draws the [`images`] of a measured WAV, and of its difference from
+/// another, and says where they went, on stderr so `--json` stays data.
+fn draw(dir: &Path, this: images::Sound, against: Option<images::Sound>) -> Result<(), String> {
+    let drawn = images::draw(dir, &this, against.as_ref())?;
+    eprintln!("Drew {} images in {}:", drawn.len(), dir.display());
+    for png in drawn {
+        eprintln!("  {}", png.display());
+    }
     Ok(())
 }
 
@@ -372,15 +411,18 @@ struct Against<'a> {
     difference: Values<'a>,
 }
 
-/// Reads a WAV and measures it.
-fn measure(file: &Path, note: Option<Note>, above_hz: f64) -> Result<Report, String> {
+/// Reads a WAV and measures it: its report, and its mid, for the images.
+fn measure(file: &Path, note: Option<Note>, above_hz: f64) -> Result<(Report, Vec<f32>), String> {
     let (spec, samples) =
         read_wav(file).map_err(|error| format!("couldn't read {}: {error}", file.display()))?;
     let mut sound = Sound::new(&samples, spec.channels, spec.sample_rate).with_above_hz(above_hz);
     if let Some(note) = note {
         sound = sound.with_note(note);
     }
-    Ok(Report::measure(file.display().to_string(), &sound))
+    Ok((
+        Report::measure(file.display().to_string(), &sound),
+        sound.mid().to_vec(),
+    ))
 }
 
 /// A WAV's format and interleaved samples, from -1 to 1: float, as Uta

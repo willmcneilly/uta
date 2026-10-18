@@ -1,0 +1,4 @@
+#!/bin/sh
+# Asks Will one listening question at a time, in a local page that's fair by
+# default. `scripts/listen --help` says how. The logic is in app/scripts/listen.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/listenCli.ts" "$@"

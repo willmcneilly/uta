@@ -83,6 +83,14 @@ Each finding gets a severity:
    - **The demo song line.** The body has one `Demo song:` line (`scripts/ticket sync` refuses a body without one): `added` (a song in `examples/demos/` now uses the change), `not yet` (a song could use it, but doesn't yet, and why), or `doesn't apply` (there's nothing for a song to use: tooling, docs, a fix that doesn't change what a song can do). Check the answer against the diff. `added` with no change under `examples/demos/` is an overstated claim: **blocking**. `doesn't apply` on a change a song could use (a new sound, setting, effect or way to play notes) is **should fix**: it should be `added` or `not yet`.
 10. **Golden WAVs.** Did any file under a `golden` directory change? CLAUDE.md says a human approves every change to one, so it always goes to Will.
 
+### Listening steps
+
+On a ticket that changes how something sounds (RFC-009, part 3):
+- **Each listening step is a session.** Every place the PR asks for Will's ear says `scripts/listen <session>`, not render instructions or a folder of WAVs. A listening step that isn't a session is **should fix**. You can't see the sessions (they're private, outside the repo), so check the PR's word for it: a question, its kind, and that a prediction was written first.
+- **Measured before asking.** The PR shows `uta analyse` of the renders it asks about, and says what changed because of the numbers. Missing is **should fix**.
+- **A test made from verdicts carries its range and a one-line reason** in the test itself, saying it came from listening. One with neither is **blocking**, because nobody but Will can check where its numbers came from. Will's own words in the repo (a quoted note) are **blocking** too: verdicts stay private.
+- **In "What only Will can check",** a listening session is **High**, given as the `scripts/listen` command and its question.
+
 ### On a re-review
 
 - Go through every earlier finding. Decide whether it's resolved by looking at the new code and running the test that proves it, not by reading the implementer's reply. `review-setup` shows what changed since the last review.

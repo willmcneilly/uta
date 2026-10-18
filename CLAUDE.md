@@ -16,7 +16,7 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound; examples/demos: the demo songs, for `--song`
-scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
+scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`, `listen`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
@@ -44,6 +44,7 @@ scripts/ticket ready                                # a ticket's Notion and GitH
 scripts/review-setup <pr>                           # a review round's PR, history, CI and worktree, in one go
 scripts/ci-wait <pr> [--commit <sha>]               # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
 scripts/mutate --named rt-alloc                     # break the code on purpose, run its tests, put it back: CAUGHT or MISSED
+scripts/listen <session>                            # ask Will one listening question in a fair, blind page; writes verdict.toml (~/.uta/listening/)
 
 # Rust
 cargo fmt --all                                     # format
@@ -55,6 +56,7 @@ cargo run -p uta-cli -- play --commands examples/demo-loop.json --buffer 64 # lo
 cargo run -p uta-cli -- song examples/demos/beat.toml   # compile a song file to its command list (--out to write it); render/play take --song
 cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 cargo run --release -p uta-cli -- analyse out.wav --pitch C3 --against before.wav   # measure a render (--json for data); the measurements are uta-analysis's
+cargo run --release -p uta-cli -- analyse out.wav --png target/images              # also draw its images (spectrograms, level, clicks, harmonics) as SVG and PNG
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report, against the committed baseline
 UTA_TIMING_BASELINE=1 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # re-record that baseline

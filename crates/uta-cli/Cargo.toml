@@ -19,3 +19,8 @@ ctrlc = "3"
 hound = "3.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Draws `analyse --png`'s images: SVG to PNG, with real text from the
+# system's fonts. Only the CLI has it, so the app and the engine don't grow.
+# `raster-images` decodes the spectrograms' heat maps, embedded as PNG.
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "raster-images"] }
+base64 = "0.23"
