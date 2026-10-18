@@ -185,7 +185,13 @@ describe("what changed", () => {
   it("names the checks whose files changed", () => {
     expect(checksCovering(["docs/new.md"])).toEqual([]);
     expect(checksCovering(["app/src/DrumPanel.tsx"])).toContain("frontend: test");
-    expect(checksCovering(["crates/uta-engine/src/processor.rs"])).toEqual(["rust: fmt", "rust: clippy", "rust: test", "rtsan"]);
+    expect(checksCovering(["crates/uta-engine/src/processor.rs"])).toEqual([
+      "rust: fmt",
+      "rust: clippy",
+      "rust: test",
+      "rtsan",
+      "rust: demo renders",
+    ]);
   });
 
   it("finds the golden WAVs", () => {

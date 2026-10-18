@@ -31,10 +31,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
-  # Reported in the job summary, never gating (RFC-001). Its own job, so it
-  # runs alongside the tests instead of after them.
+  # The timing reports are reported in the job summary, never gating
+  # (RFC-001). The demo songs' renders are a check, and fail the job: they
+  # take minutes in a debug build, so `cargo test` skips them and they run
+  # here, in release (RFC-009, "The demo song"). Its own job, so it runs
+  # alongside the tests instead of after them.
   timing:
-    name: Timing reports
+    name: Timing reports and demo renders
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -47,6 +50,8 @@ jobs:
         run: cargo test -p uta-engine --release --test timing -- --ignored --nocapture
       - name: Copy-on-write timing report
         run: cargo test -p uta-core --release --test timing -- --ignored --nocapture
+      - name: Demo songs don't clip and have no silent track
+        run: cargo test -p uta-song --release --test demos -- --ignored
 
   # The engine's tests again, built with RealtimeSanitizer: any allocation,
   # lock or system call inside a #[nonblocking] function aborts the run.
