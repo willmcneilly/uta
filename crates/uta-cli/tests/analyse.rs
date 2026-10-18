@@ -486,7 +486,8 @@ fn png_draws_every_image_with_its_numbers() {
                 assert!(svg.contains(&format!("+{} s", shown("decay_20db_s", 3))));
             }
             "harmonics" => {
-                assert!(svg.contains(&format!("loudest alias {} dB", shown("alias_db", 1))));
+                // The mark on the loudest red bar, not the header's number.
+                assert!(svg.contains(&format!(">loudest alias {} dB<", shown("alias_db", 1))));
                 assert!(svg.contains("harmonics of 130.8"), "{image}");
             }
             _ => {}

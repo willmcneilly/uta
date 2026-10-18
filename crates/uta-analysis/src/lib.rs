@@ -1667,6 +1667,19 @@ mod tests {
         assert!(found[1].abs_diff(stop) <= 1, "{found:?}");
     }
 
+    /// Two steps within 10 ms are one click, at the larger.
+    #[test]
+    fn steps_close_together_are_one_click_at_the_largest() {
+        let samples: Vec<f32> = (0..RATE as usize)
+            .map(|i| match i {
+                ..12_000 => 0.0,
+                12_000..12_100 => 0.2,
+                _ => 0.7,
+            })
+            .collect();
+        assert_eq!(clicks(&samples, RATE), vec![12_100]);
+    }
+
     #[test]
     fn a_harmonic_is_on_its_line_and_an_alias_between() {
         // Bins 1 Hz apart, harmonics of 100 Hz.

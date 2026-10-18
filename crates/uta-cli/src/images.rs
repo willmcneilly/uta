@@ -235,21 +235,7 @@ fn spectrogram_image(sound: &Sound, window_seconds: f64) -> String {
 fn difference_image(this: &Sound, against: &Sound) -> String {
     let seconds = this.seconds().max(against.seconds());
     let top_hz = highest_hz(this.sample_rate.min(against.sample_rate));
-    let levels = |sound: &Sound| {
-        let spectrogram = spectrogram(
-            &sound.mid,
-            sound.sample_rate,
-            LONG_WINDOW_SECONDS,
-            hop_seconds(seconds, LONG_WINDOW_SECONDS),
-        );
-        heat_map(&spectrogram, seconds, top_hz)
-    };
-    let (a, b) = (levels(this), levels(against));
-    let difference: Vec<f64> = a
-        .iter()
-        .zip(&b)
-        .map(|(&a, &b)| a.max(FLOOR_DB) - b.max(FLOOR_DB))
-        .collect();
+    let difference = difference_levels(this, against, seconds, top_hz);
     let heat = encode_heat(&difference, |db| difference_colour(db / DIFFERENCE_DB));
     let (r1, r2) = (this.report, against.report);
     let mut svg = Svg::new();
@@ -624,6 +610,26 @@ fn highest_hz(sample_rate: u32) -> f64 {
     HIGHEST_HZ.min(f64::from(sample_rate) / 2.0)
 }
 
+/// The difference spectrogram's levels: `this`'s long spectrogram minus
+/// `against`'s, pixel by pixel, each floored at -90 dB first, over
+/// `seconds` (the longer file's length).
+fn difference_levels(this: &Sound, against: &Sound, seconds: f64, top_hz: f64) -> Vec<f64> {
+    let levels = |sound: &Sound| {
+        let spectrogram = spectrogram(
+            &sound.mid,
+            sound.sample_rate,
+            LONG_WINDOW_SECONDS,
+            hop_seconds(seconds, LONG_WINDOW_SECONDS),
+        );
+        heat_map(&spectrogram, seconds, top_hz)
+    };
+    levels(this)
+        .iter()
+        .zip(&levels(against))
+        .map(|(&a, &b)| a.max(FLOOR_DB) - b.max(FLOOR_DB))
+        .collect()
+}
+
 /// The level in each pixel of the plot, in dB, row by row from the top: the
 /// loudest frame in its time and the loudest bin in its band of the log
 /// frequency axis (interpolated between bins where a pixel is narrower
@@ -649,10 +655,14 @@ fn heat_map(spectrogram: &Spectrogram, seconds: f64, top_hz: f64) -> Vec<f64> {
         let range = if first < last {
             first..last
         } else {
-            let nearest = (((t0 + t1) / 2.0 / spectrogram.hop_seconds).round() as usize)
-                .min(frames.len() - 1);
+            let nearest = ((t0 + t1) / 2.0 / spectrogram.hop_seconds).round() as usize;
             nearest..nearest + 1
         };
+        // Past the sound's last frame (a shorter file drawn against a
+        // longer one) is silence.
+        if range.start >= frames.len() {
+            continue;
+        }
         column.fill(f32::MIN);
         for frame in &frames[range] {
             for (to, &db) in column.iter_mut().zip(frame) {
@@ -1118,6 +1128,61 @@ mod tests {
         assert_eq!(full_scale_ladder(0.15), 0.2);
         assert_eq!(full_scale_ladder(0.01), 0.01);
         assert_eq!(trim_number(full_scale_ladder(0.004)), "0.005");
+    }
+
+    /// A 1 kHz sine for `seconds`, at 48 kHz.
+    fn sine(seconds: f64) -> Vec<f32> {
+        (0..(seconds * 48_000.0) as usize)
+            .map(|i| (std::f64::consts::TAU * 1000.0 * i as f64 / 48_000.0).sin() as f32 * 0.5)
+            .collect()
+    }
+
+    /// A file that stops mid-tone, drawn against a longer one, is silent
+    /// past its end: quieter there, never louder.
+    #[test]
+    fn a_shorter_file_is_silent_past_its_end() {
+        let (short, long) = (sine(1.0), sine(2.0));
+        let report = |mid: &[f32]| {
+            let sound = uta_analysis::report::Sound::new(mid, 1, 48_000);
+            Report::measure("sine.wav", &sound)
+        };
+        let (short_report, long_report) = (report(&short), report(&long));
+        let short = Sound::new(Path::new("short.wav"), short, &short_report);
+        let long = Sound::new(Path::new("long.wav"), long, &long_report);
+        let width = (RIGHT - LEFT) as usize;
+        let columns = |levels: &[f64], range: std::ops::Range<usize>| {
+            levels
+                .chunks(width)
+                .flat_map(|row| row[range.clone()].to_vec())
+                .collect::<Vec<f64>>()
+        };
+        // The last quarter is well past the short file's end and its window.
+        let after = 3 * width / 4..width;
+        let difference = difference_levels(&short, &long, 2.0, 20_000.0);
+        let past = columns(&difference, after.clone());
+        assert!(
+            past.iter().all(|&db| db <= 0.0),
+            "never louder past its end"
+        );
+        let loudest_quieter = past.iter().fold(0.0f64, |a, &b| a.min(b));
+        assert!(
+            loudest_quieter <= -DIFFERENCE_DB,
+            "quieter by {loudest_quieter} dB at 1 kHz"
+        );
+        // Where both play, the same.
+        let both = columns(&difference, width / 8..3 * width / 8);
+        assert!(
+            both.iter().all(|&db| db.abs() < 1e-6),
+            "the same where both play"
+        );
+        // And on its own, past its end it's silent.
+        let spectrogram = spectrogram(&short.mid, 48_000, LONG_WINDOW_SECONDS, 0.01);
+        let levels = heat_map(&spectrogram, 2.0, 20_000.0);
+        assert!(
+            columns(&levels, after)
+                .iter()
+                .all(|&db| db == f64::from(uta_analysis::SILENT_DB))
+        );
     }
 
     #[test]

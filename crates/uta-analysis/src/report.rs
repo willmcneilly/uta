@@ -546,6 +546,7 @@ impl Report {
 
     /// The measurement whose key is `key` as the text report shows it, with
     /// its unit, such as `-3.1 dBFS`, or `-` if it couldn't be taken.
+    /// Panics if no measurement has that key.
     pub fn shown(&self, key: &str) -> String {
         self.shown_with(key, |index| self.values[index], false)
     }
@@ -564,9 +565,10 @@ impl Report {
         value: impl Fn(usize) -> Option<f64>,
         difference: bool,
     ) -> String {
-        let Some(index) = MEASUREMENTS.iter().position(|m| m.key == key) else {
-            return "-".to_string();
-        };
+        let index = MEASUREMENTS
+            .iter()
+            .position(|m| m.key == key)
+            .unwrap_or_else(|| panic!("no measurement is called {key:?}"));
         let measurement = &MEASUREMENTS[index];
         let shown = show(value(index), measurement.decimals, difference);
         if shown == "-" || measurement.unit.is_empty() {
