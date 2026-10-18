@@ -4303,6 +4303,7 @@ dependencies = [
  "uta-analysis",
  "uta-core",
  "uta-engine",
+ "uta-song",
 ]
 
 [[package]]
@@ -4327,6 +4328,19 @@ dependencies = [
  "serde_json",
  "uta-analysis",
  "uta-core",
+ "uuid",
+]
+
+[[package]]
+name = "uta-song"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml 1.1.6+spec-1.1.0",
+ "uta-analysis",
+ "uta-core",
+ "uta-engine",
  "uuid",
 ]
 

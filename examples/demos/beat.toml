@@ -1,0 +1,25 @@
+# The demo beat: every sound of the kit in a 2-bar groove, with a fill.
+# Rewritten from examples/demo-beat.json, and builds the same track and notes.
+name = "Beat"
+tempo = 112
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Beat"
+kind = "drums"
+
+[track.pattern.beat]
+kick       = "X... ...x96 x110... .... | X... ...x96 x110.x100. ...."
+snare      = ".... x115... .... x115..x70 | .... x115... .x70.. ...."
+clap       = ".... .... .... x105... | .... .... .... ...."
+closed_hat = "x112.x92. x112... x112.x92. x112... | x112.x92. x112... x112.x92. ...."
+open_hat   = ".... ..x105. .... ..x105. | .... ..x105. .... ...."
+high_tom   = ".... .... .... .... | .... .... .... x110x96.."
+low_tom    = ".... .... .... .... | .... .... .... ..x110x122"
+cymbal     = "x120... .... .... .... | .... .... .... ...."
+
+[[section]]
+name = "beat"
+bars = 2

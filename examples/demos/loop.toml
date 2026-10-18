@@ -1,0 +1,22 @@
+# The demo loop: a bass line and chords on one synth, round a 2-bar loop.
+# Rewritten from examples/demo-loop.json, and builds the same track and notes.
+name = "Loop"
+tempo = 112
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Synth 1"
+kind = "synth"
+settings = { cutoff_hz = 2400, resonance = 0.25, decay_seconds = 0.3, sustain = 0.5, release_seconds = 0.15 }
+# The bass in eighths, each a little short of its step, leaning on each
+# half bar; the chords over it, three eighths each.
+pattern.loop = [
+  { notes = "A2@105 A2 A3 A2  G2@105 G2 G3 G2 | F2@105 F2 F3 F2  E2@105 E2 E3 G#2", step = "1/8", length = 400, velocity = 80 },
+  { notes = "A3+C4+E4 - - .  G3+B3+D4 - - . | F3+A3+C4 - - .  E3+G#3+B3 - - .", step = "1/8", velocity = 64 },
+]
+
+[[section]]
+name = "loop"
+bars = 2

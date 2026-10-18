@@ -13,6 +13,7 @@ path = "src/main.rs"
 uta-analysis = { path = "../uta-analysis" }
 uta-core = { path = "../uta-core" }
 uta-engine = { path = "../uta-engine" }
+uta-song = { path = "../uta-song" }
 clap = { version = "4.6", features = ["derive", "string"] }
 ctrlc = "3"
 hound = "3.5"
