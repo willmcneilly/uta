@@ -1,0 +1,139 @@
+# Techno: a driving 909 kick, a rolling bass and a hypnotic one-bar line in
+# A minor, 32 bars at 130 BPM. The line's filter is moved by a slow synced
+# LFO all the way through, and opens over the rise: a mod slot sends each
+# note's velocity to the cutoff, and the rise's velocities climb note by note.
+name = "Techno"
+tempo = 130
+arrangement = ["intro", "groove", "break", "rise", "peak"]
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Drums"
+kind = "drums"
+settings.kick = { model = "909", tune_hz = 50, decay_seconds = 0.45 }
+settings.closed_hat = { decay_seconds = 0.04 }
+settings.open_hat = { decay_seconds = 0.25 }
+mixer = { volume_db = 3 }
+
+[track.pattern.intro]
+kick       = "X... x... x... x..."
+closed_hat = "..x. ..x. ..x. ..x."
+
+[track.pattern.groove]
+kick       = "X... x... x... x..."
+clap       = ".... x... .... x..."
+closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
+
+[track.pattern.break]
+clap       = ".... .... .... x..."
+closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
+
+[track.pattern.rise]
+kick       = "X... x... x... x..."
+clap       = ".... x... .... x..."
+closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
+open_hat   = "..x. ..x. ..x. ..x."
+
+[track.pattern.peak]
+kick       = "X... x... x... x..."
+clap       = ".... x... .... x..."
+closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
+open_hat   = "..x. ..x. ..x. ..x."
+low_tom    = "...x70 .... ..x70. ...."
+high_tom   = ".... ..x60. .... .x60.."
+
+[[track]]
+name = "Bass"
+kind = "synth"
+sound = "Bass"
+settings = { cutoff_hz = 220 }
+mixer = { volume_db = -3 }
+pattern.groove = ". A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90"
+pattern.rise = ". A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90"
+pattern.peak = ". A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90 | . A1@90 A1@75 A1@90"
+
+# The line. Velocity opens the filter (mod 1, up to 8 octaves at 127) and
+# turns the level down a little (mod 2), so the rise gets brighter without
+# getting much louder. The LFO, synced to a dotted bar, moves the cutoff and
+# the pulse's width against the one-bar line.
+[[track]]
+name = "Line"
+kind = "synth"
+sound = "Pluck"
+mixer = { volume_db = 6 }
+effects = [{ delay = { sync = true, division = "1/8d", feedback = 0.35, mode = "ping_pong" }, mix = 0.2 }]
+
+[track.settings]
+osc1_wave = "pulse"
+osc2_wave = "saw"
+cutoff_hz = 25
+resonance = 0.5
+filter_key = 0
+filter_env_octaves = 2
+filter_decay_seconds = 0.18
+decay_seconds = 0.3
+sustain = 0.2
+release_seconds = 0.08
+lfo_shape = "triangle"
+lfo_sync = true
+lfo_division = "1/1d"
+filter_lfo_octaves = 1.5
+mod1_source = "velocity"
+mod1_destination = "cutoff"
+mod1_amount = 0.8
+mod2_source = "velocity"
+mod2_destination = "volume"
+mod2_amount = -0.75
+mod3_source = "lfo"
+mod3_destination = "osc1_width"
+mod3_amount = 0.3
+
+[track.pattern]
+groove = { notes = "A2 . A2 C3  . A2 . G2  A2 . A3 .  A2 . E3 .", velocity = 64 }
+break = { notes = "A2 . A2 C3  . A2 . G2  A2 . A3 .  A2 . E3 .", velocity = 64 }
+# Each note a little higher than the last, from 64 to 121: the filter opens
+# over the eight bars.
+rise = """
+A2@64 . A2@65 C3@66  . A2@66 . G2@67  A2@68 . A3@69 .  A2@70 . E3@70 . |
+A2@71 . A2@72 C3@73  . A2@74 . G2@74  A2@75 . A3@76 .  A2@77 . E3@78 . |
+A2@78 . A2@79 C3@80  . A2@81 . G2@82  A2@82 . A3@83 .  A2@84 . E3@85 . |
+A2@86 . A2@86 C3@87  . A2@88 . G2@89  A2@90 . A3@90 .  A2@91 . E3@92 . |
+A2@93 . A2@94 C3@94  . A2@95 . G2@96  A2@97 . A3@97 .  A2@98 . E3@99 . |
+A2@100 . A2@101 C3@101  . A2@102 . G2@103  A2@104 . A3@105 .  A2@105 . E3@106 . |
+A2@107 . A2@108 C3@109  . A2@109 . G2@110  A2@111 . A3@112 .  A2@113 . E3@113 . |
+A2@114 . A2@115 C3@116  . A2@117 . G2@117  A2@118 . A3@119 .  A2@120 . E3@121 .
+"""
+peak = { notes = "A2@127 . A2 C3  . A2 . G2  A2@127 . A3 .  A2 . E3 .", velocity = 120 }
+
+# A dub chord on the off-beat every two bars, thrown into a long delay.
+[[track]]
+name = "Stab"
+kind = "synth"
+sound = "Pluck"
+settings = { cutoff_hz = 400 }
+mixer = { volume_db = -9, pan = 0.2 }
+effects = [{ delay = { sync = true, division = "1/4d", feedback = 0.5, mode = "ping_pong" }, mix = 0.35 }]
+pattern.break = ". . A3+C4+E4 . . . . . . . . . . . . . | . . . . . . . . . . . . . . . ."
+pattern.peak = ". . A3+C4+E4 . . . . . . . . . . . . . | . . . . . . . . . . . . . . . ."
+
+[[section]]
+name = "intro"
+bars = 4
+
+[[section]]
+name = "groove"
+bars = 8
+
+[[section]]
+name = "break"
+bars = 4
+
+[[section]]
+name = "rise"
+bars = 8
+
+[[section]]
+name = "peak"
+bars = 8
