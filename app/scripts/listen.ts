@@ -30,9 +30,9 @@ Asks Will one question at a time, in a local page. Each <session> is a folder
 name in the listening folder, or a path to one. With none, it asks every
 session there that has no verdict yet, oldest first. For each session it
 renders any candidate not yet rendered (uta render), measures each one and
-draws its images (uta analyse --json --png), then serves the page, opens it in the browser, and exits
-once the last question's Finish is pressed. Each verdict's path is printed as
-it's written.
+draws its images (uta analyse --json --png), then serves the page, opens it
+in the browser, and exits once the last question's Finish is pressed. Each
+verdict's path is printed as it's written.
 
 The listening folder is ~/.uta/listening/, or $UTA_LISTENING_DIR. It's outside
 the repo on purpose: verdicts hold Will's own words.
@@ -447,8 +447,9 @@ export function prepare(session: Session, tools: Tools, log: (line: string) => v
     }
     const analysisFile = join(session.dir, `${candidate.id}.analysis.json`);
     let analysis: Analysis;
-    // The level image is always drawn, so it says whether they're up to date.
-    if (newer(analysisFile, [wav]) && newer(imagePath(session.dir, candidate.id, "level"), [wav]))
+    // Every image but the harmonics is always drawn, so those say whether they're all up to date.
+    const always = IMAGES.filter((image) => image !== "harmonics").map((image) => imagePath(session.dir, candidate.id, image));
+    if (newer(analysisFile, [wav]) && always.every((image) => newer(image, [wav])))
       analysis = JSON.parse(readFileSync(analysisFile, "utf8")) as Analysis;
     else {
       log(`Measuring ${session.name}/${candidate.id}…`);

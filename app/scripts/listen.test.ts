@@ -255,9 +255,27 @@ describe("preparing a session", () => {
     expect(prepared.candidates[1].images).toEqual(["spectrogram-long", "level", "spectrogram-short", "clicks"]);
     expect(readFileSync(imagePath(dir, "zebra-dark", "level"), "utf8")).toBe("png of zebra-dark level");
 
-    rmSync(imagePath(dir, "only", "level"));
-    prepare(readSession(dir), tools);
-    expect(calls.analyse).toEqual([join(dir, "zebra-dark.wav"), join(dir, "only.wav"), join(dir, "only.wav")]);
+    for (const image of ["spectrogram-long", "level", "spectrogram-short", "clicks"] as const) {
+      rmSync(imagePath(dir, "only", image));
+      prepare(readSession(dir), tools);
+      expect(calls.analyse.at(-1), image).toBe(join(dir, "only.wav"));
+    }
+    expect(calls.analyse).toHaveLength(6);
+  });
+
+  it("leaves out an image older than its render: one the render no longer has", () => {
+    // zebra-dark is drawn with harmonics, then re-rendered with no pitch: its old harmonics image stays on disk.
+    const dir = writeSession("s", { ids: ["zebra-dark", "only"] });
+    const levels = { ...LEVELS, only: { amplitude: 0.3, lufs: -22 } };
+    prepare(readSession(dir), fakeUta(levels).tools);
+    const earlier = new Date(Date.now() - 60_000);
+    utimesSync(imagePath(dir, "zebra-dark", "harmonics"), earlier, earlier);
+    const later = new Date(Date.now() + 5000);
+    utimesSync(join(dir, "zebra-dark.json"), later, later);
+    const prepared = prepare(readSession(dir), fakeUta({ ...levels, "zebra-dark": { amplitude: 0.5, lufs: null } }).tools);
+    expect(existsSync(imagePath(dir, "zebra-dark", "harmonics"))).toBe(true);
+    expect(prepared.candidates[0].images).toEqual(["spectrogram-long", "level", "spectrogram-short", "clicks"]);
+    expect(prepared.candidates[1].images).toContain("harmonics");
   });
 });
 
