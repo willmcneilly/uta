@@ -37,7 +37,7 @@ Not a golden WAV: the songs are meant to change.
 
 What the genre wanted and Uta lacks:
 
-- **Swing**, as a setting. The song swings by hand: every part steps in 32nds, with each off-beat eighth one 32nd late. That gives 62.5%, the only amount a 1/32 grid allows, on the heavy side of lo-fi's; a swing setting would let it be dialled in, and leave the lines readable at a sixteenth a step.
+- **Swing**, as a setting. The song swings by hand: every part steps in 1/32 triplets, twelve to a beat, with each off-beat eighth one step late, a 58.3% swing. The finest step the song file has allows only that or 62.5% (on a 1/32 grid), and 62.5% felt unravelled; a swing setting would let it be dialled in, and leave the lines readable at a sixteenth a step instead of 48 steps a bar.
 - **Saturation or a bitcrusher**, for the dusty, worn sound. The Delay's Drive warms only the echoes.
 - **Vinyl noise**, crackle and hiss under everything.
 - **Reverb**, so the keys and snare sit in a room. Only the Delay gives the keys any space, and the mix is nearly mono apart from its echoes.
