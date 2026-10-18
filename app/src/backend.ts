@@ -564,6 +564,15 @@ export const DEVELOP_MENU = "develop-menu";
 
 export type DevelopMenuItem = "add-stress-notes" | "run-benchmark";
 
+/** Sent with the song when one is chosen from Develop → Load Demo Song. */
+export const DEMO_SONG_MENU = "demo-song-menu";
+
+/** A demo song built into the app, from `examples/demos/`: its file's name and what the menu calls it. */
+export interface DemoSongItem {
+  id: string;
+  name: string;
+}
+
 /** The update, for when the UI has none to go on: when it opens, and after `project-changed`. */
 export function getProject(): Promise<Update> {
   return invoke<Update>("get_project");
@@ -776,6 +785,14 @@ export function buildTestSong(song: TestSong): Promise<Update> {
   return invoke<Update>("build_test_song", { song });
 }
 
+/**
+ * Replaces the whole project with a demo song, as one undo step, and plays
+ * it from the start of its loop. Rust builds it from the song file.
+ */
+export function loadDemoSong(song: string): Promise<Update> {
+  return invoke<Update>("load_demo_song", { song });
+}
+
 /** Adds notes to a clip. Each note's ID is picked here, before Rust applies it. */
 export function addNotes(clip: string, notes: NoteView[], gesture?: number): Promise<Update> {
   return invoke<Update>("add_notes", { clip, notes, gesture: gesture ?? null });
@@ -858,6 +875,10 @@ export function onTrackMenu(handler: (item: TrackMenuItem) => void): Promise<Unl
 
 export function onDevelopMenu(handler: (item: DevelopMenuItem) => void): Promise<UnlistenFn> {
   return listen<DevelopMenuItem>(DEVELOP_MENU, (event) => handler(event.payload));
+}
+
+export function onDemoSongMenu(handler: (song: DemoSongItem) => void): Promise<UnlistenFn> {
+  return listen<DemoSongItem>(DEMO_SONG_MENU, (event) => handler(event.payload));
 }
 
 /** Starts the stream of frames. Rust keeps only the latest subscriber. */

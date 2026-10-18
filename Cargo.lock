@@ -4630,6 +4630,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "uta-core",
  "uta-engine",
+ "uta-song",
 ]
 
 [[package]]

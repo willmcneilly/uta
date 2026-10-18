@@ -1,0 +1,49 @@
+/*
+ * Develop → Load Demo Song asks in a dialog like the benchmark's: a sheet
+ * edged in a faint line, set apart by the scrim alone, and keys for its
+ * buttons, the one that goes ahead outlined in ink.
+ * provisional: D-16
+ */
+.demo-song-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--scrim);
+  z-index: 10;
+}
+
+.demo-song {
+  max-width: min(480px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  box-sizing: border-box;
+  padding: var(--space-6) var(--space-7);
+  background: var(--sheet);
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-lg);
+  color: var(--ink);
+  font: var(--font-text);
+}
+
+.demo-song h2 {
+  margin: 0;
+  font: var(--font-title);
+}
+
+.demo-song p {
+  margin: 0;
+}
+
+.demo-song-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.demo-song-actions .key {
+  padding: 0 var(--space-5);
+}

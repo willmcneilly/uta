@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./design/tokens.css";
 import "./App.css";
@@ -28,9 +28,11 @@ import {
   duplicateTrack,
   getNotes,
   getProject,
+  loadDemoSong,
   locate,
   moveEffect,
   moveTrack,
+  onDemoSongMenu,
   onDevelopMenu,
   onEditMenu,
   onProjectChanged,
@@ -61,6 +63,7 @@ import {
   stop,
   subscribe,
   trimNotes,
+  type DemoSongItem,
 } from "./backend";
 import { Benchmark } from "./benchmark/Benchmark";
 import {
@@ -72,6 +75,7 @@ import {
   runBenchmark,
 } from "./benchmark/run";
 import { ChainMap, ChainRow } from "./chain/ChainRow";
+import { LoadDemoSong } from "./demo/LoadDemoSong";
 import { Divider } from "./Divider";
 import { DragSteps } from "./dragSteps";
 import { FrameLoop } from "./frameLoop";
@@ -173,6 +177,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [changingBuffer, setChangingBuffer] = useState(false);
   const [benchmarking, setBenchmarking] = useState(false);
+  // The demo song chosen from the Develop menu, while the UI asks about it.
+  const [askingSong, setAskingSong] = useState<DemoSongItem | null>(null);
   // What's selected, which tab is open, how tall the editor is, and when
   // the clip light was last clicked are the UI's own: none is project data.
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -466,6 +472,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       ),
       onTrackMenu((item) => menus.current[item]()),
       onDevelopMenu((item) => menus.current[item]()),
+      onDemoSongMenu(setAskingSong),
     ];
     return () => {
       for (const unlisten of listeners) void unlisten.then((stopListening) => stopListening());
@@ -582,6 +589,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
       benchmark?.options ?? DEFAULT_OPTIONS,
       benchmark?.clock ?? browserClock,
     );
+
+  const closeAskingSong = useCallback(() => setAskingSong(null), []);
 
   const clipped = clipLit(status?.clips ?? 0, seenClips);
   const maxEditorHeight = Math.max(MIN_EDITOR_HEIGHT, windowHeight - ABOVE_EDITOR);
@@ -797,6 +806,20 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
 
       <FrameTime stats={stats} />
 
+      {askingSong && (
+        <LoadDemoSong
+          song={askingSong}
+          onLoad={() => {
+            setAskingSong(null);
+            // The old tracks are gone: select the song's first.
+            loadDemoSong(askingSong.id).then(
+              (update) => showAndSelect(update.outline.tracks[0]?.id ?? null)(update),
+              report,
+            );
+          }}
+          onCancel={closeAskingSong}
+        />
+      )}
       {benchmarking && (
         <Benchmark run={startBenchmark} onClose={() => setBenchmarking(false)} />
       )}
