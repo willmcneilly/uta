@@ -25,13 +25,13 @@ CI renders every `.toml` file here, from the top to the end with the loop off, a
 
 ### Techno
 
-`techno.toml`: 32 bars at 130 BPM in A minor, in five sections that build: intro (kick and hats), groove (the clap, a rolling off-beat bass and the line), break (no kick or bass: the line, the hats and a dub chord into a long delay), rise (everything back, the line's filter opening over eight bars) and peak (open hats, toms, the chord again, the filter open).
+`techno.toml`: 32 bars at 130 BPM in A minor, in five sections that build: intro (kick and hats), groove (the clap, a rolling off-beat bass and the line), break (no kick or bass: the line, the hats, a clap on beat 4 and a dub chord into a long delay), rise (everything back, the line's filter opening over eight bars) and peak (open hats, toms, the chord again, the filter open).
 
 The line is the Pluck reworked into a resonant pulse. A triangle LFO synced to a dotted bar moves its cutoff and its pulse's width against the one-bar line all the way through. The filter opens over the rise with a mod slot: velocity → cutoff, with the rise's velocities written out to climb from 64 to 121, note by note. A second slot turns the level down with velocity, so it gets brighter more than louder.
 
 What techno wanted that Uta doesn't have yet:
 
-- **Automation.** The filter opening is velocities written out by hand, 80 notes of them. It moves only as each note starts, can't keep going across a section's edge, and velocity also sets the level, so a second mod slot has to undo some of that. A synced LFO can't do it: its slowest is a dotted bar. A free LFO can go slower (20 s at 0.05 Hz), but isn't tied to the bars, and starts wherever Play does.
+- **Automation.** The filter opening is velocities written out by hand, 72 notes of them. It moves only as each note starts, can't keep going across a section's edge, and velocity also sets the level, so a second mod slot has to undo some of that. A synced LFO can't do it: its slowest is a dotted bar. A free LFO can go slower (20 s at 0.05 Hz), but isn't tied to the bars, and starts wherever Play does.
 - **Distortion or saturation,** on the line and the kick: the line stays clean and polite, where techno would drive it.
 - **Sidechain ducking,** so the bass ducks under the kick rather than blurring with it.
 - **A bus compressor or limiter,** to make it loud and punchy. The engine plays the master at no more than 0 dB, though a project can hold up to +6, and the line is at its track's +6 dB limit already: the song peaks at -7 dBFS, -25.5 LUFS.
