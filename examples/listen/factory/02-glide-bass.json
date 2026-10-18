@@ -1,0 +1,167 @@
+{
+  "project": "00000000-0000-0000-0000-0000fac70001",
+  "commands": [
+    {
+      "format": 14,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_loop_length",
+        "bars": 2
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "set_synth_settings",
+        "track": "888a2edf-a70c-5403-9ab7-3104c4956a82",
+        "settings": {
+          "osc1_wave": "saw",
+          "osc1_octave": 0,
+          "osc1_width": 0.5,
+          "osc2_wave": "pulse",
+          "osc2_octave": -1,
+          "osc2_pitch_semitones": 0.0,
+          "osc2_sync": false,
+          "sub_octave": -1,
+          "osc1_level": 0.8,
+          "osc2_level": 0.4,
+          "sub_level": 0.0,
+          "noise_level": 0.0,
+          "filter_mode": "low_pass",
+          "cutoff_hz": 260.0,
+          "resonance": 0.55,
+          "filter_env_octaves": 3.5,
+          "filter_key": 0.3,
+          "filter_lfo_octaves": 0.0,
+          "filter_attack_seconds": 0.001,
+          "filter_decay_seconds": 0.22,
+          "filter_sustain": 0.1,
+          "filter_release_seconds": 0.06,
+          "attack_seconds": 0.002,
+          "decay_seconds": 0.4,
+          "sustain": 0.75,
+          "release_seconds": 0.05,
+          "lfo_shape": "sine",
+          "lfo_rate_hz": 5.0,
+          "lfo_sync": false,
+          "lfo_division": "1/4",
+          "lfo_retrigger": false,
+          "lfo_vibrato_semitones": 0.0,
+          "lfo_width": 0.0,
+          "voice_mode": "mono",
+          "legato": true,
+          "glide_seconds": 0.08,
+          "osc_retrigger": true,
+          "mod1_source": "velocity",
+          "mod1_destination": "off",
+          "mod1_amount": 0.0,
+          "mod2_source": "filter_env",
+          "mod2_destination": "off",
+          "mod2_amount": 0.0,
+          "mod3_source": "lfo",
+          "mod3_destination": "off",
+          "mod3_amount": 0.0
+        }
+      }
+    },
+    {
+      "format": 14,
+      "command": {
+        "type": "add_notes",
+        "clip": "376e7802-0968-56bd-873b-aec275cddd4b",
+        "notes": [
+          {
+            "id": "00000000-0000-0000-0000-0000fac71000",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 0,
+            "length": 960
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71001",
+            "pitch": 48,
+            "velocity": 100,
+            "start": 720,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71002",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 1440,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71003",
+            "pitch": 39,
+            "velocity": 100,
+            "start": 2400,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71004",
+            "pitch": 43,
+            "velocity": 100,
+            "start": 2880,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71005",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 3360,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71006",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 3840,
+            "length": 480
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71007",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 4800,
+            "length": 960
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71008",
+            "pitch": 51,
+            "velocity": 100,
+            "start": 5520,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac71009",
+            "pitch": 48,
+            "velocity": 100,
+            "start": 6000,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100a",
+            "pitch": 43,
+            "velocity": 100,
+            "start": 6480,
+            "length": 720
+          },
+          {
+            "id": "00000000-0000-0000-0000-0000fac7100b",
+            "pitch": 36,
+            "velocity": 100,
+            "start": 6960,
+            "length": 720
+          }
+        ]
+      }
+    }
+  ]
+}

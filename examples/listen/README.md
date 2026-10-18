@@ -281,6 +281,33 @@ What to listen for:
 - **More routes:** with Key on the cutoff the As in every octave sound about equally bright, as the filter's own Key at full makes them, rather than the high ones dull. Velocity on the volume makes the hard eighths stand out much more against the soft ones. The width moving under the pulse chord is a slow shimmer, as the LFO's own Width gives. The resonance follows the amp envelope: each chord swells into a ringing, vocal "wah" as it attacks, and calms as it decays. The vibrato is faster on the hard notes and slower on the soft ones.
 - **Mono bassline:** in Poly the long notes smear into the next. In Mono the three notes that run into the next slide up or down to it without re-plucking: the squelchy, rubbery slide of an acid bass. The notes with a gap before them pluck afresh and don't slide, so it should be clear by ear which notes slide and which don't.
 
+## Factory sounds
+
+The synth's eight factory sounds (RFC-008), in `factory/`, each as the Sound menu chooses it, playing a 2-bar loop at 120 BPM of the part it's for. The lists are written from the sounds' settings by `tests/factory.rs` (`UTA_GOLDEN=1` rewrites them), so they always play the sounds as they are. Each sound's brief, the targets it was measured against and what making them taught are in [the voicing guide](../../docs/sound-design/synth.md).
+
+| Render | What it plays |
+|---|---|
+| `01-bass` | A synth-pop bassline around C2: roots, octaves and fifths in 16ths and 8ths. |
+| `02-glide-bass` | A line around C2 whose overlapping notes slide and whose fresh notes pluck. Also a golden WAV. |
+| `03-pluck` | 8th-note arpeggios over Cmaj7, then Am7, around middle C. |
+| `04-pad` | Cmaj7, then Am7, a bar each. |
+| `05-strings` | The Pad's chords, so the two compare. Also a golden WAV. |
+| `06-lead` | A tune around G4: a held note for the vibrato, overlapping notes that glide, fresh notes after rests. |
+| `07-sync-lead` | A line around C4 with a gap before most notes, so each tears in afresh. Also a golden WAV. |
+| `08-bell` | A sparse tune around C5 with room to ring. |
+
+What to listen for, against each brief:
+
+- **Bass:** round and solid, a Juno or Moog bass: warm rather than buzzy, a little bite at the start of each note that settles while it's held. It should be felt, and still be a clear note on small speakers.
+- **Glide bass:** an SH-101 or 303 line: the overlapping notes slide in about 80 ms without re-attacking, rubbery and squelchy; the notes after a gap snap open afresh. The resonance should squelch without whistling.
+- **Pluck:** a round, short Juno pluck: each note bright for its first tenth of a second and closing fast, never harsh, gone within about half a second. It should sit under a chord rather than poke out.
+- **Pad:** warm and slow: the chord swells in over about half a second, shimmers from the two detuned saws, opens a little after the start and drifts gently, with a faint breath of noise, and fades over about a second. Soft enough to sit behind everything.
+- **PWM strings:** a string machine: brighter and thinner than the Pad, a bowed start of about a quarter of a second, and a slow breathing in the tone, as if several players were on each note.
+- **Lead:** a singing Minimoog-style lead: present and clear, with a gentle vibrato on the held notes and short slides between overlapping ones. It should cut through without being shrill.
+- **Sync lead:** each fresh note starts with a bright, tearing "yow" that sweeps down over about a third of a second into a steady, nasal tone, at the note's pitch throughout.
+- **Bell:** glassy, like an FM tine or a music box: a brief inharmonic shimmer at the strike that fades fast, leaving a pure tone ringing for a couple of seconds. Clear, not clangy.
+- **All of them:** about equally loud. The pads play 4-note chords here and measure 2 to 3 dB louder than the single-note sounds; say if they sound it.
+
 ## Delay
 
 The Delay's tape loop (RFC-007), in `delay/`. Each list is one synth track per setting, each with its own Delay and playing in its own two bars at 120 BPM: a plucked A minor stab, then the echoes. The track is at -6 dB and the master at 0 dB. Settings a list doesn't name are at the Delay's defaults: synced to a dotted eighth, 40% Feedback, Low cut 100 Hz, High cut 8 kHz, Drive 20% and Wobble 10%.

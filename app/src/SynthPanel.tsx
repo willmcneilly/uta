@@ -4,6 +4,7 @@ import type {
   FilterMode,
   LfoShape,
   NumberSettingView,
+  SoundChoice,
   SynthNumber,
   SynthParam,
   SynthSettingView,
@@ -56,8 +57,12 @@ interface Props {
    * before a device is open.
    */
   sampleRate: number | null;
+  /** The factory sounds the Sound menu offers, as Rust lists them. */
+  sounds: SoundChoice[];
   /** `gesture` is the same for every change in one drag. */
   onChange: (param: SynthParam, gesture?: number) => void;
+  /** Chooses a factory sound, by its key: every setting at once. */
+  onSound: (sound: string) => void;
 }
 
 /** The synth's stages, in the order the sound flows through them, as its tabs name them. */
@@ -120,7 +125,9 @@ export function SynthPanel({
   barSeconds,
   beatsPerBar,
   sampleRate,
+  sounds,
   onChange,
+  onSound,
 }: Props) {
   const [stage, setStage] = useState<Stage>("osc");
   // The knob or fader being dragged: gesture state, gone when the drag ends.
@@ -521,6 +528,28 @@ export function SynthPanel({
         aria-labelledby={`${group}-tab-${stage}`}
       >
         {pages[stage]()}
+      </div>
+      {/* The factory sounds, at the foot of the panel, out of line with the
+          tabs (D-32: in the tab strip it took too much width). It names no
+          sound: which one a track started from isn't kept, and every
+          setting can move from it. provisional: D-32 */}
+      <div className="sound-row">
+        <Menu
+          aria-label="Sound"
+          value=""
+          onChange={(event) => {
+            if (event.target.value) onSound(event.target.value);
+          }}
+        >
+          <option value="" disabled>
+            Sound
+          </option>
+          {sounds.map((sound) => (
+            <option key={sound.value} value={sound.value}>
+              {sound.label}
+            </option>
+          ))}
+        </Menu>
       </div>
     </section>
   );

@@ -348,6 +348,23 @@ impl Project {
                     param: previous,
                 })
             }
+            &Command::SetSynthSettings { track, settings } => {
+                let track = self
+                    .tracks
+                    .iter_mut()
+                    .find(|candidate| candidate.id == track)
+                    .ok_or(CommandError::UnknownTrack(track))?;
+                let Source::Synth(current) = &mut track.source else {
+                    return Err(CommandError::NotASynthTrack(track.id));
+                };
+                settings
+                    .validate()
+                    .map_err(CommandError::SynthParamOutOfRange)?;
+                Ok(Command::SetSynthSettings {
+                    track: track.id,
+                    settings: std::mem::replace(current, settings),
+                })
+            }
             &Command::SetDrumParam {
                 track,
                 sound,
@@ -1451,6 +1468,69 @@ mod tests {
                 CommandError::LoopLengthOutOfRange(bars),
             );
         }
+    }
+
+    #[test]
+    fn set_synth_settings_sets_every_setting_and_undoes_them_all() {
+        let project = testing::project();
+        let track = track_id(&project);
+        for sound in crate::FactorySound::all() {
+            let settings = sound.settings;
+            let changed =
+                apply_and_check_undo(&project, Command::SetSynthSettings { track, settings });
+            assert_eq!(
+                changed.track(track).unwrap().source(),
+                &Source::Synth(settings),
+                "{}",
+                sound.key
+            );
+        }
+
+        // Out of range anywhere refuses the whole command, naming the setting.
+        let settings = SynthSettings {
+            resonance: 2.0,
+            ..crate::FactorySound::all()[0].settings
+        };
+        assert_rejected(
+            &project,
+            Command::SetSynthSettings { track, settings },
+            CommandError::SynthParamOutOfRange(SynthParam::Resonance(2.0)),
+        );
+        let mut attempt = project.clone();
+        let nan = SynthSettings {
+            cutoff_hz: f32::NAN,
+            ..SynthSettings::default()
+        };
+        assert!(matches!(
+            attempt.apply(&Command::SetSynthSettings { track, settings: nan }),
+            Err(CommandError::SynthParamOutOfRange(SynthParam::CutoffHz(hz))) if hz.is_nan()
+        ));
+        assert_eq!(attempt, project);
+
+        let unknown = TrackId::random();
+        let settings = SynthSettings::default();
+        assert_rejected(
+            &project,
+            Command::SetSynthSettings {
+                track: unknown,
+                settings,
+            },
+            CommandError::UnknownTrack(unknown),
+        );
+        let drums = project
+            .tracks()
+            .iter()
+            .find(|track| matches!(track.source(), Source::Drums(_)))
+            .expect("a new project has a drum track")
+            .id();
+        assert_rejected(
+            &project,
+            Command::SetSynthSettings {
+                track: drums,
+                settings,
+            },
+            CommandError::NotASynthTrack(drums),
+        );
     }
 
     #[test]

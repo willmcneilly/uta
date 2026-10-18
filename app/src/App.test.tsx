@@ -34,6 +34,7 @@ import {
   drumTrackView,
   SYNTH_DEFAULTS,
   SYNTH_FIELDS,
+  SYNTH_SOUNDS,
   recordingFactory,
   type SynthValues,
   synthSource,
@@ -166,6 +167,12 @@ beforeEach(() => {
           );
           return updates.send(project);
         }
+        case "set_synth_sound":
+          // A factory sound sets every setting; this stands in for the Pluck's.
+          project = changeTrack(args.track as string, (track) =>
+            withSynth(track, { cutoffHz: Math.fround(250), filterEnvOctaves: 4 }),
+          );
+          return updates.send(project);
         case "set_track_mixer": {
           const mixer = args.mixer as MixerView;
           // Rust stores f32s, so what comes back isn't quite what was sent.
@@ -688,6 +695,24 @@ describe("App", () => {
       await renderApp();
       fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
     }
+
+    it("chooses a factory sound from the Sound menu with one call, and shows what comes back", async () => {
+      await renderSound();
+      const menu = synth().getByRole("combobox", { name: "Sound" });
+      expect(within(menu).getAllByRole("option").map((option) => option.textContent)).toEqual([
+        "Sound",
+        ...SYNTH_SOUNDS.map((sound) => sound.label),
+      ]);
+      fireEvent.change(menu, { target: { value: "pluck" } });
+      stage("Filter");
+      await waitFor(() => expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "250 Hz"));
+      expect(calls.filter((c) => c.cmd === "set_synth_sound").map((c) => c.args)).toEqual([
+        { track: "track-1", sound: "pluck" },
+      ]);
+      expect(synthCalls()).toEqual([]);
+      // It names no sound: which one the track started from isn't kept.
+      expect(menu).toHaveValue("");
+    });
 
     it("shows the synth settings Rust sends", async () => {
       await renderSound();

@@ -53,6 +53,7 @@ import {
   setNotes,
   setDrumParam,
   setSynthParam,
+  setSynthSound,
   setTempo,
   setTrackMixer,
   setVolume,
@@ -478,6 +479,12 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     drags.step(gesture, () => setSynthParam(id, param, gesture).then(show, report));
   };
 
+  // The Sound menu chooses a factory sound for the selected synth track.
+  const chooseSound = (sound: string) => {
+    if (!track) return;
+    setSynthSound(track.id, sound).then(show, report);
+  };
+
   // The drum panel edits the selected drum track's kit.
   const changeDrum = (sound: DrumSound, param: DrumParam, gesture?: number) => {
     if (!track) return;
@@ -739,7 +746,9 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                             barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
                             beatsPerBar={project.beatsPerBar}
                             sampleRate={status?.output.sampleRate ?? null}
+                            sounds={track.source.sounds}
                             onChange={changeSynth}
+                            onSound={chooseSound}
                           />
                         ) : (
                           <DrumPanel

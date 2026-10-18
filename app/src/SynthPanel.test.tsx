@@ -4,7 +4,13 @@ import type { SynthParam, SynthSettingView } from "./backend";
 import { SynthPanel } from "./SynthPanel";
 import { press } from "./design/faderTesting";
 import { knobAt, pressKnob } from "./design/knobTesting";
-import { SYNTH_DEFAULTS, type SynthValues, synthSettings, synthSource } from "./pianoRoll/testing";
+import {
+  SYNTH_DEFAULTS,
+  SYNTH_SOUNDS,
+  type SynthValues,
+  synthSettings,
+  synthSource,
+} from "./pianoRoll/testing";
 import { envelopeShape } from "./synth/envelopeShape";
 import { type Point, filterCurve, reachHz, xOfFrequency } from "./synth/filterCurve";
 import { SIZES } from "./synth/sizes";
@@ -43,6 +49,7 @@ function renderPanel(values: SynthValues = SYNTH) {
 
 function renderSettings(settings: SynthSettingView[], lfoSeconds = 0.25) {
   const onChange = vi.fn<(param: SynthParam, gesture?: number) => void>();
+  const onSound = vi.fn<(sound: string) => void>();
   const panel = (next: SynthSettingView[], seconds: number) => (
     <SynthPanel
       settings={next}
@@ -50,13 +57,15 @@ function renderSettings(settings: SynthSettingView[], lfoSeconds = 0.25) {
       barSeconds={BAR}
       beatsPerBar={4}
       sampleRate={48_000}
+      sounds={SYNTH_SOUNDS}
       onChange={onChange}
+      onSound={onSound}
     />
   );
   const view = render(panel(settings, lfoSeconds));
   const rerender = (values: SynthValues) =>
     view.rerender(panel(synthSource(values).settings, synthSource(values).lfoSeconds));
-  return { onChange, rerender };
+  return { onChange, onSound, rerender };
 }
 
 const stage = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
@@ -167,6 +176,35 @@ describe("SynthPanel's stages", () => {
     expect(screen.getByRole("tab", { name: "Mod" })).toHaveAttribute("aria-selected", "true");
     // Only the chosen tab is in the Tab order.
     expect(screen.getAllByRole("tab").filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
+  });
+});
+
+describe("SynthPanel's Sound menu", () => {
+  const menu = () => screen.getByRole("combobox", { name: "Sound" });
+
+  it("lists the factory sounds Rust sends, in its order, under a prompt that names none", () => {
+    renderPanel();
+    const options = within(menu()).getAllByRole("option");
+    expect(options.map((option) => [option.getAttribute("value"), option.textContent])).toEqual([
+      ["", "Sound"],
+      ...SYNTH_SOUNDS.map((sound) => [sound.value, sound.label]),
+    ]);
+    expect(options[0]).toBeDisabled();
+    expect(menu()).toHaveValue("");
+  });
+
+  it("sends the chosen sound once, by its key, and changes no setting itself", () => {
+    const { onChange, onSound } = renderPanel();
+    fireEvent.change(menu(), { target: { value: "pad" } });
+    expect(onSound.mock.calls).toEqual([["pad"]]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(menu()).toHaveValue("");
+  });
+
+  it("sits at the foot of the panel, after the stage's page (D-32)", () => {
+    renderPanel();
+    const page = screen.getByRole("tabpanel");
+    expect(menu().compareDocumentPosition(page) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
 

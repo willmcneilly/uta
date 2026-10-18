@@ -391,3 +391,11 @@
 .slots .slot-add:focus-visible {
   outline: var(--stroke-clip-selected) solid var(--selected);
 }
+
+/* ---- The Sound menu, at the panel's foot, out of line with the tabs.
+   provisional: D-32 ---- */
+
+.synth .sound-row {
+  display: flex;
+  margin-top: auto;
+}
