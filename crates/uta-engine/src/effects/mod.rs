@@ -21,6 +21,7 @@
 
 pub(crate) mod chain;
 mod delay;
+mod glide;
 mod reverb;
 
 pub use chain::{CHAIN_CAPACITY, EFFECT_FADE_SECONDS};
