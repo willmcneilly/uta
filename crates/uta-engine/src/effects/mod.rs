@@ -123,7 +123,10 @@ impl EffectSnapshot {
 /// audio thread. It always comes back to the control side to be freed.
 pub struct EffectState(Kind);
 
-/// The state of each kind of effect.
+/// The state of each kind of effect. Each state is boxed on its own when
+/// it's made ([`EffectState::new`]), so a small one's room for a large one
+/// is never copied, only set aside once.
+#[allow(clippy::large_enum_variant)]
 enum Kind {
     Delay(Delay),
     Reverb(Reverb),

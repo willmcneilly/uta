@@ -26,9 +26,9 @@ use crate::VOLUME_SMOOTHING_SECONDS;
 use crate::drums::filter::{Svf, prewarp};
 use crate::ramp::Ramp;
 
-use super::glide::{Glide, cubic};
 #[cfg(test)]
 use super::glide::MAX_REPITCH;
+use super::glide::{Glide, cubic};
 
 /// The longest echo the tape holds, in seconds: the core's longest Delay
 /// time.
