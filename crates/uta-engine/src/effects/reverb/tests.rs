@@ -1,7 +1,7 @@
 //! The Reverb's own tests, on impulse responses: a click through its real
 //! process path, measured with `uta-analysis`'s reverb measurements
-//! (RFC-010, "How we'll verify it"). Modulation is off throughout: it's
-//! UTA-100's.
+//! (RFC-010, "How we'll verify it"). Modulation is off unless the test is
+//! about it.
 
 use super::*;
 use uta_analysis::impulse::{self, OCTAVE_BANDS_HZ};

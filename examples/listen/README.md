@@ -343,7 +343,7 @@ What to listen for, against Ableton's Echo on the same sound:
 
 ## Reverb
 
-The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impulse-response` rather than for the ear. Each list is one synth track playing a click (white noise for about 2 ms, the shortest a synth note makes) through a Reverb at Mix 100%, so only the reverb is heard, with the track and the master at 0 dB. Settings a list doesn't name are at the Reverb's defaults: Room, Predelay 10 ms, Decay 2 s, Depth 50%, Early Size 30 ms, Diffusion 80%, Early Send 90%, Late Size 50%.
+The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impulse-response` rather than for the ear. Each list is one synth track playing a click (white noise for about 2 ms, the shortest a synth note makes) through a Reverb at Mix 100%, so only the reverb is heard, with the track and the master at 0 dB. Settings a list doesn't name are at the Reverb's defaults: Room, Predelay 10 ms, Decay 2 s, Depth 50%, Early Size 30 ms, Diffusion 80%, Early Send 90%, Late Size 50%, Bass Mult 1 and High Mult 0.5 (at 500 Hz and 4 kHz), both cuts open, both crosses full, and no drift.
 
 | Render | What it plays |
 |---|---|
@@ -354,6 +354,13 @@ The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impul
 | `05-decay-10` | Decay 10 s: it rings on past the song's end. |
 | `06-depth-0` | Depth 0%: only the early burst, over in about 40 ms. |
 | `07-depth-100` | Depth 100%: only the tail, which starts with the shortest line's first lap, 42 ms after the Predelay. |
+| `08-bass-mult-2` | Bass Mult 2: the octaves below 500 Hz ring about twice as long as the mids. |
+| `09-high-mult-1` | High Mult 1: the highs ring as long as the mids, brighter than the defaults, whose highs last half as long. |
+| `10-high-cut-2k` | High Cut 2 kHz: everything above falls 12 dB an octave. |
+| `11-low-cut-500` | Low Cut 500 Hz: the lows turned down 24 dB, a thinner space. |
+| `12-crosses-0` | Both crosses at 0: each side its own reverb. With the same click on both sides, it's as wide as the defaults; a sound on one side would stay there. |
+| `13-drift` | Both drifts full on, at 0.5 Hz: the lines' lengths wander slowly, smearing the resonances. |
+| `14-drift-fast` | Both drifts full on, at 5 Hz: fast enough to waver like a chorus. |
 
 Render and measure them:
 
