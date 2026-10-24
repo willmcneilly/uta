@@ -15,19 +15,27 @@
 //!   one `--pitch` names, or else the nearest to the measured pitch. `null`
 //!   when there's no pitch to measure from;
 //! - `above_hz`: the frequency `share_above_percent` is measured above;
+//! - `impulse_response`: whether it was measured as an impulse response
+//!   (`uta analyse --impulse-response`);
 //! - `measurements`: an object with one number for each entry in
-//!   [`MEASUREMENTS`], under its `key`, in its `unit`, in the table's order.
-//!   A measurement that can't be taken (the pitch of noise, the decay of a
-//!   sound that never dies away, anything of silence) is `null`.
+//!   [`MEASUREMENTS`], then, for an impulse response, each in
+//!   [`IMPULSE_MEASUREMENTS`], under its `key`, in its `unit`, in the
+//!   tables' order. A measurement that can't be taken (the pitch of noise,
+//!   the decay of a sound that never dies away, anything of silence) is
+//!   `null`.
 //!
 //! With `--against`, it prints `{"this": <report>, "against": <report>,
 //! "difference": {...}}`, where `difference` has each measurement's key and
 //! `this` minus `against`, or `null` if either is.
 
+use std::cell::OnceCell;
 use std::fmt::Write;
 
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
+use crate::impulse::{
+    band_decay_times, colouration_db, dense_after, early_and_late_correlation, echo_density, onset,
+};
 use crate::{
     MOMENTARY_SECONDS, SHORT_TERM_SECONDS, alias_db, attack_seconds, correlation, crest_factor,
     decay_seconds, first_sound, hit_loudness_db, inharmonicity, integrated_loudness,
@@ -315,6 +323,151 @@ pub const MEASUREMENTS: &[Measurement] = &[
     },
 ];
 
+/// The measurements of an impulse response (RFC-010), in the order they're
+/// printed after [`MEASUREMENTS`], for a sound marked as one with
+/// [`Sound::as_impulse_response`]. They're from [`crate::impulse`].
+pub const IMPULSE_MEASUREMENTS: &[Measurement] = &[
+    Measurement {
+        key: "onset_ms",
+        label: "onset",
+        unit: "ms",
+        decimals: 3,
+        about: "When the first sound arrives, to the sample, from the start of the file: the \
+                first sample in either channel no more than 40 dB below the loudest. A \
+                reverb's predelay.",
+        measure: |sound| {
+            let at = sound.impulse().onset?;
+            Some(at as f64 * 1000.0 / f64::from(sound.sample_rate))
+        },
+    },
+    Measurement {
+        key: "decay_mid_s",
+        label: "decay time, mid (500 Hz-1 kHz)",
+        unit: "s",
+        decimals: 3,
+        about: "How long it rings: the time to fall 60 dB, from a straight line fitted to its \
+                decay curve (the energy summed backwards from the end, Schroeder's method) from \
+                -5 to -35 dB, ISO 3382's T30. The average of the 500 Hz and 1 kHz octave \
+                bands', as a reverb's Decay is set. `null` if either never falls 35 dB.",
+        measure: |sound| {
+            let bands = &sound.impulse().band_decays;
+            Some((bands[3]? + bands[4]?) / 2.0)
+        },
+    },
+    Measurement {
+        key: "decay_63hz_s",
+        label: "decay time at 63 Hz",
+        unit: "s",
+        decimals: 3,
+        about: "The decay time in the octave band around 63 Hz (62.5 Hz exactly), from its \
+                own decay curve, as above. Each band's edges are half an octave either side of \
+                its centre, falling 96 dB an octave beyond them. `null` for a band with nothing \
+                in it, or that never falls 35 dB.",
+        measure: |sound| sound.impulse().band_decays[0],
+    },
+    Measurement {
+        key: "decay_125hz_s",
+        label: "decay time at 125 Hz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 125 Hz.",
+        measure: |sound| sound.impulse().band_decays[1],
+    },
+    Measurement {
+        key: "decay_250hz_s",
+        label: "decay time at 250 Hz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 250 Hz.",
+        measure: |sound| sound.impulse().band_decays[2],
+    },
+    Measurement {
+        key: "decay_500hz_s",
+        label: "decay time at 500 Hz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 500 Hz.",
+        measure: |sound| sound.impulse().band_decays[3],
+    },
+    Measurement {
+        key: "decay_1khz_s",
+        label: "decay time at 1 kHz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 1 kHz.",
+        measure: |sound| sound.impulse().band_decays[4],
+    },
+    Measurement {
+        key: "decay_2khz_s",
+        label: "decay time at 2 kHz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 2 kHz.",
+        measure: |sound| sound.impulse().band_decays[5],
+    },
+    Measurement {
+        key: "decay_4khz_s",
+        label: "decay time at 4 kHz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 4 kHz.",
+        measure: |sound| sound.impulse().band_decays[6],
+    },
+    Measurement {
+        key: "decay_8khz_s",
+        label: "decay time at 8 kHz",
+        unit: "s",
+        decimals: 3,
+        about: "The same in the octave band around 8 kHz.",
+        measure: |sound| sound.impulse().band_decays[7],
+    },
+    Measurement {
+        key: "dense_after_ms",
+        label: "echo density near 1 after",
+        unit: "ms",
+        decimals: 1,
+        about: "How long after the onset the tail becomes a smooth wash: when its echo \
+                density (Abel and Huang's, over 20 ms windows every 1 ms) first reaches 0.9. \
+                Echo density is the share of samples further from zero than the window's \
+                standard deviation, over Gaussian noise's: near 0 for a few separate echoes, \
+                1 for a smooth wash. `null` if it never gets there.",
+        measure: |sound| {
+            let impulse = sound.impulse();
+            let onset = impulse.onset? as f64 / f64::from(sound.sample_rate);
+            dense_after(&impulse.echo_density, onset).map(|s| s * 1000.0)
+        },
+    },
+    Measurement {
+        key: "stereo_correlation_early",
+        label: "stereo correlation, early",
+        unit: "",
+        decimals: 2,
+        about: "How alike the left and right are in the first 80 ms after the onset, from -1 \
+                to 1: 1 for mono, near 0 for a wide space. `null` for a mono file.",
+        measure: |sound| sound.impulse().correlation[0],
+    },
+    Measurement {
+        key: "stereo_correlation_late",
+        label: "stereo correlation, late",
+        unit: "",
+        decimals: 2,
+        about: "The same, for everything after the first 80 ms: the tail.",
+        measure: |sound| sound.impulse().correlation[1],
+    },
+    Measurement {
+        key: "colouration_db",
+        label: "colouration",
+        unit: "dB",
+        decimals: 2,
+        about: "How bumpy the tail's spectrum is, from 200 Hz to 10 kHz: the RMS of its \
+                spectrum (averaged over the tail from -5 to -60 dB, each 100 ms frame scaled \
+                alike) against its own average over the octave around each point. A metallic \
+                ring sticks out and reads higher; a smooth tail reads under a dB or so. Our own \
+                measure, with no limit set yet. `null` if the tail is under 100 ms.",
+        measure: |sound| sound.impulse().colouration,
+    },
+];
+
 /// How long a stretch `alias_db` is measured over, in seconds. Its spectrum
 /// has bins 2 Hz apart, so the harmonics' allowance is 12 Hz whatever the
 /// file's length, which a pitch measured to a fraction of a cent is well
@@ -334,6 +487,23 @@ pub struct Sound {
     above_hz: f64,
     /// Its pitch track within 40 dB of its loudest, from [`pitch_track`].
     track: Vec<(f64, f64)>,
+    /// Whether it's an impulse response, measured with
+    /// [`IMPULSE_MEASUREMENTS`] too.
+    impulse_response: bool,
+    /// The impulse response measurements, taken once, when first asked for.
+    impulse: OnceCell<Impulse>,
+}
+
+/// The measurements of an impulse response that more than one entry in
+/// [`IMPULSE_MEASUREMENTS`] reads, taken once.
+struct Impulse {
+    onset: Option<usize>,
+    /// One for each of [`crate::impulse::OCTAVE_BANDS_HZ`].
+    band_decays: Vec<Option<f64>>,
+    echo_density: Vec<(f64, f64)>,
+    /// Early and late.
+    correlation: [Option<f64>; 2],
+    colouration: Option<f64>,
 }
 
 impl Sound {
@@ -365,7 +535,36 @@ impl Sound {
             note: None,
             above_hz: 5000.0,
             track,
+            impulse_response: false,
+            impulse: OnceCell::new(),
         }
+    }
+
+    /// Measures it as an impulse response too: the sound of a single click
+    /// through a reverb or another effect, with [`IMPULSE_MEASUREMENTS`].
+    pub fn as_impulse_response(mut self) -> Self {
+        self.impulse_response = true;
+        self
+    }
+
+    /// The impulse response measurements, taken the first time they're
+    /// asked for. The decay, echo density and colouration are of the mid;
+    /// the onset and correlation take each channel.
+    fn impulse(&self) -> &Impulse {
+        self.impulse.get_or_init(|| {
+            let channels = self.channels();
+            let correlation = match self.left_right() {
+                Some([left, right]) => early_and_late_correlation(left, right, self.sample_rate),
+                None => [None, None],
+            };
+            Impulse {
+                onset: onset(&channels),
+                band_decays: band_decay_times(&self.samples, self.sample_rate),
+                echo_density: echo_density(&self.samples, self.sample_rate),
+                correlation,
+                colouration: colouration_db(&self.samples, self.sample_rate),
+            }
+        })
     }
 
     /// The mid it's measured from: the average of its channels.
@@ -517,7 +716,10 @@ pub struct Report {
     /// The note `pitch_cents` is measured from.
     pub note: Option<Note>,
     pub above_hz: f64,
-    /// One for each entry in [`MEASUREMENTS`], in its order.
+    /// Whether it was measured as an impulse response, with
+    /// [`IMPULSE_MEASUREMENTS`] too.
+    pub impulse_response: bool,
+    /// One for each of its [`Report::measurements`], in their order.
     pub values: Vec<Option<f64>>,
 }
 
@@ -531,16 +733,24 @@ impl Report {
             seconds: sound.samples.len() as f64 / f64::from(sound.sample_rate),
             note: sound.note(),
             above_hz: sound.above_hz,
-            values: MEASUREMENTS
+            impulse_response: sound.impulse_response,
+            values: measurements(sound.impulse_response)
                 .iter()
                 .map(|measurement| (measurement.measure)(sound))
                 .collect(),
         }
     }
 
-    /// The value of the measurement whose key is `key`.
+    /// The measurements it took, in order: [`MEASUREMENTS`], then for an
+    /// impulse response [`IMPULSE_MEASUREMENTS`].
+    pub fn measurements(&self) -> Vec<&'static Measurement> {
+        measurements(self.impulse_response)
+    }
+
+    /// The value of the measurement whose key is `key`, or `None` if it
+    /// couldn't be taken or wasn't.
     pub fn get(&self, key: &str) -> Option<f64> {
-        let index = MEASUREMENTS.iter().position(|m| m.key == key)?;
+        let index = self.measurements().iter().position(|m| m.key == key)?;
         self.values[index]
     }
 
@@ -565,11 +775,12 @@ impl Report {
         value: impl Fn(usize) -> Option<f64>,
         difference: bool,
     ) -> String {
-        let index = MEASUREMENTS
+        let measurements = self.measurements();
+        let index = measurements
             .iter()
             .position(|m| m.key == key)
             .unwrap_or_else(|| panic!("no measurement is called {key:?}"));
-        let measurement = &MEASUREMENTS[index];
+        let measurement = measurements[index];
         let shown = show(value(index), measurement.decimals, difference);
         if shown == "-" || measurement.unit.is_empty() {
             shown
@@ -579,8 +790,12 @@ impl Report {
     }
 
     /// Each measurement here minus the same in `other`, or `None` if either
-    /// is.
+    /// is. Both have to be measured alike: as impulse responses, or not.
     pub fn difference(&self, other: &Report) -> Vec<Option<f64>> {
+        assert_eq!(
+            self.impulse_response, other.impulse_response,
+            "both or neither measured as impulse responses"
+        );
         self.values
             .iter()
             .zip(&other.values)
@@ -592,9 +807,10 @@ impl Report {
     /// measurement, with its unit.
     pub fn text(&self) -> String {
         let mut text = format!("{}\n", self.describe());
-        let labels: Vec<String> = MEASUREMENTS.iter().map(|m| self.label(m)).collect();
+        let measurements = self.measurements();
+        let labels: Vec<String> = measurements.iter().map(|m| self.label(m)).collect();
         let width = labels.iter().map(String::len).max().unwrap_or(0);
-        for ((measurement, label), value) in MEASUREMENTS.iter().zip(&labels).zip(&self.values) {
+        for ((measurement, label), value) in measurements.iter().zip(&labels).zip(&self.values) {
             let value = show(*value, measurement.decimals, false);
             let line = format!("{label:<width$}  {value:>10} {}", measurement.unit);
             writeln!(text, "{}", line.trim_end()).unwrap();
@@ -606,9 +822,10 @@ impl Report {
     /// minus other) in a third column.
     pub fn text_against(&self, other: &Report) -> String {
         let mut text = format!("{}\n{}\n\n", self.describe(), other.describe());
-        let labels: Vec<String> = MEASUREMENTS.iter().map(|m| self.label(m)).collect();
+        let measurements = self.measurements();
+        let labels: Vec<String> = measurements.iter().map(|m| self.label(m)).collect();
         let width = labels.iter().map(String::len).max().unwrap_or(0);
-        let rows: Vec<[String; 3]> = MEASUREMENTS
+        let rows: Vec<[String; 3]> = measurements
             .iter()
             .zip(self.values.iter().zip(&other.values))
             .zip(self.difference(other))
@@ -642,7 +859,7 @@ impl Report {
             c = widths[2]
         )
         .unwrap();
-        for ((m, label), row) in MEASUREMENTS.iter().zip(&labels).zip(&rows) {
+        for ((m, label), row) in measurements.iter().zip(&labels).zip(&rows) {
             let line = format!(
                 "{label:<width$}  {:>a$}  {:>b$}  {:>c$} {}",
                 row[0],
@@ -658,15 +875,23 @@ impl Report {
         text
     }
 
-    /// `kick.wav: 48000 Hz, 2 channels (most measured as their mid), 1.250 s`.
+    /// `kick.wav: 48000 Hz, 2 channels (most measured as their mid), 1.250 s`,
+    /// and `, an impulse response` if it's measured as one.
     fn describe(&self) -> String {
         let channels = match self.channels {
             1 => "mono".to_string(),
             n => format!("{n} channels (most measured as their mid)"),
         };
         format!(
-            "{}: {} Hz, {channels}, {:.3} s",
-            self.file, self.sample_rate, self.seconds
+            "{}: {} Hz, {channels}, {:.3} s{}",
+            self.file,
+            self.sample_rate,
+            self.seconds,
+            if self.impulse_response {
+                ", an impulse response"
+            } else {
+                ""
+            }
         )
     }
 
@@ -683,30 +908,57 @@ impl Report {
 
 impl Serialize for Report {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(7))?;
+        let mut map = serializer.serialize_map(Some(8))?;
         map.serialize_entry("file", &self.file)?;
         map.serialize_entry("sample_rate", &self.sample_rate)?;
         map.serialize_entry("channels", &self.channels)?;
         map.serialize_entry("seconds", &self.seconds)?;
         map.serialize_entry("note", &self.note.map(|note| note.to_string()))?;
         map.serialize_entry("above_hz", &self.above_hz)?;
-        map.serialize_entry("measurements", &Values(&self.values))?;
+        map.serialize_entry("impulse_response", &self.impulse_response)?;
+        map.serialize_entry("measurements", &self.values_as_data(&self.values))?;
         map.end()
     }
 }
 
-/// Values for each entry in [`MEASUREMENTS`], as data: an object with each
-/// one under its key, in the table's order.
-pub struct Values<'a>(pub &'a [Option<f64>]);
+impl Report {
+    /// `values`, one for each of this report's measurements (its own, or
+    /// its [`Report::difference`] from another), as data.
+    pub fn values_as_data<'a>(&self, values: &'a [Option<f64>]) -> Values<'a> {
+        Values {
+            measurements: self.measurements(),
+            values,
+        }
+    }
+}
+
+/// Values for each of a report's measurements, as data: an object with each
+/// one under its key, in the tables' order. Made by
+/// [`Report::values_as_data`].
+pub struct Values<'a> {
+    measurements: Vec<&'static Measurement>,
+    values: &'a [Option<f64>],
+}
 
 impl Serialize for Values<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for (measurement, value) in MEASUREMENTS.iter().zip(self.0) {
+        let mut map = serializer.serialize_map(Some(self.values.len()))?;
+        for (measurement, value) in self.measurements.iter().zip(self.values) {
             map.serialize_entry(measurement.key, value)?;
         }
         map.end()
     }
+}
+
+/// The measurements a report takes: [`MEASUREMENTS`], then for an impulse
+/// response [`IMPULSE_MEASUREMENTS`].
+fn measurements(impulse_response: bool) -> Vec<&'static Measurement> {
+    let impulse: &'static [Measurement] = if impulse_response {
+        IMPULSE_MEASUREMENTS
+    } else {
+        &[]
+    };
+    MEASUREMENTS.iter().chain(impulse).collect()
 }
 
 /// `value` with `decimals` places, `-` if there isn't one, and with a sign
@@ -796,9 +1048,10 @@ mod tests {
 
     #[test]
     fn every_measurement_has_its_own_key() {
-        for (i, a) in MEASUREMENTS.iter().enumerate() {
+        let all = measurements(true);
+        for (i, a) in all.iter().enumerate() {
             assert!(
-                MEASUREMENTS[i + 1..].iter().all(|b| b.key != a.key),
+                all[i + 1..].iter().all(|b| b.key != a.key),
                 "{} is there twice",
                 a.key
             );
@@ -1016,6 +1269,91 @@ mod tests {
         assert!(drift.abs() < 20.0, "drifts {drift} cents");
         let end = report.get("pitch_end_hz").unwrap();
         assert!((end - 110.0).abs() < 1.0, "ends at {end} Hz");
+    }
+
+    /// `seconds` of stereo Gaussian noise decaying 60 dB in `decay` seconds,
+    /// after `silence` seconds of silence: the same in both channels for
+    /// the first 80 ms, unrelated after. A stand-in for a reverb's impulse
+    /// response, interleaved.
+    fn impulse_response(silence: f64, seconds: f64, decay: f64) -> Vec<f32> {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut uniform = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let mut gaussian = move || {
+            let (a, b) = (uniform(), uniform());
+            (-2.0 * a.ln()).sqrt() * (std::f64::consts::TAU * b).cos()
+        };
+        let rate = f64::from(RATE);
+        let before = (silence * rate) as usize;
+        let mut frames = vec![0.0f32; 2 * before];
+        for i in 0..(seconds * rate) as usize {
+            let t = i as f64 / rate;
+            let level = 0.25 * 10f64.powf(-3.0 * t / decay);
+            let left = gaussian();
+            let right = if t < 0.08 { left } else { gaussian() };
+            frames.extend([(level * left) as f32, (level * right) as f32]);
+        }
+        frames
+    }
+
+    #[test]
+    fn an_impulse_response_is_measured_with_the_reverb_measurements() {
+        // 25 ms of silence (a predelay), then a 1 s decay.
+        let ir = impulse_response(0.025, 1.5, 1.0);
+        let report = Report::measure("ir", &Sound::new(&ir, 2, RATE).as_impulse_response());
+        assert!(report.impulse_response);
+        assert_eq!(
+            report.measurements().len(),
+            MEASUREMENTS.len() + IMPULSE_MEASUREMENTS.len()
+        );
+        assert!(
+            report
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .ends_with("an impulse response")
+        );
+        let get = |key: &str| report.get(key).unwrap_or_else(|| panic!("{key}"));
+        assert!((get("onset_ms") - 25.0).abs() < 1e-9, "{}", get("onset_ms"));
+        // One noise's decay reads a few percent off by chance.
+        for key in [
+            "decay_mid_s",
+            "decay_500hz_s",
+            "decay_1khz_s",
+            "decay_4khz_s",
+        ] {
+            assert!((get(key) - 1.0).abs() < 0.06, "{key} {}", get(key));
+        }
+        let dense = get("dense_after_ms");
+        assert!(dense < 15.0, "dense after {dense} ms");
+        assert!((get("stereo_correlation_early") - 1.0).abs() < 1e-6);
+        assert!(get("stereo_correlation_late").abs() < 0.05);
+        assert!(get("colouration_db") < 1.0, "{}", get("colouration_db"));
+        // Measured as an ordinary sound, it has none of them.
+        let plain = Report::measure("ir", &Sound::new(&ir, 2, RATE));
+        assert!(!plain.impulse_response);
+        assert_eq!(plain.measurements().len(), MEASUREMENTS.len());
+        assert_eq!(plain.get("decay_mid_s"), None);
+    }
+
+    #[test]
+    fn a_mono_impulse_response_has_no_stereo_and_silence_has_nothing() {
+        let stereo = impulse_response(0.0, 1.0, 0.5);
+        let mono: Vec<f32> = stereo.iter().step_by(2).copied().collect();
+        let report = Report::measure("ir", &Sound::new(&mono, 1, RATE).as_impulse_response());
+        assert_eq!(report.get("stereo_correlation_early"), None);
+        assert_eq!(report.get("stereo_correlation_late"), None);
+        assert_eq!(report.get("onset_ms"), Some(0.0));
+        let silence = Report::measure(
+            "silence",
+            &Sound::new(&[0.0; 4800], 2, RATE).as_impulse_response(),
+        );
+        assert_eq!(silence.values, vec![None; silence.measurements().len()]);
     }
 
     #[test]

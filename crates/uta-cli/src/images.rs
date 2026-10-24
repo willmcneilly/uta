@@ -1,10 +1,12 @@
 //! The images `uta analyse --png <dir>` draws: two spectrograms, the level
-//! over time, close-ups of the clicks, the harmonics (when there's a pitch)
-//! and, with `--against`, a difference spectrogram.
+//! over time, close-ups of the clicks, the harmonics (when there's a pitch),
+//! with `--against` a difference spectrogram, and for an impulse response
+//! the impulse response, its decay by frequency and its echo density.
 //!
 //! They're a sanity check on the numbers, not the evidence, so each has its
-//! file's name and its key numbers printed on it, labelled axes, and fixed
-//! scales, so two images compare at a glance. Each is drawn as SVG, with
+//! file's name and its key numbers printed on it, a line under its title
+//! saying what to look for, labelled axes, and fixed scales, so two images
+//! compare at a glance. Each is drawn as SVG, with
 //! real text, and turned into a PNG of the same name with `resvg`; both are
 //! kept. Every image is [`WIDTH`] by [`HEIGHT`].
 //!
@@ -16,6 +18,9 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use resvg::{tiny_skia, usvg};
+use uta_analysis::impulse::{
+    DENSE, EARLY_SECONDS, OCTAVE_BANDS_HZ, echo_density, energy_decay_relief,
+};
 use uta_analysis::report::{ALIAS_SECONDS, Note, Report};
 use uta_analysis::{
     Spectrogram, attack, clicks, envelope_db, harmonic_at, loudest_stretch, max_jump, peak,
@@ -29,7 +34,7 @@ pub const HEIGHT: u32 = 640;
 /// The plot's edges, in pixels from the image's.
 const LEFT: f64 = 84.0;
 const RIGHT: f64 = 1080.0;
-const TOP: f64 = 104.0;
+const TOP: f64 = 124.0;
 const BOTTOM: f64 = 590.0;
 
 /// The spectrograms' fixed dB scale, from full scale down.
@@ -45,6 +50,16 @@ const HIGHEST_HZ: f64 = 20_000.0;
 /// which frequencies (a tone and its tail).
 const SHORT_WINDOW_SECONDS: f64 = 0.003;
 const LONG_WINDOW_SECONDS: f64 = 0.05;
+/// The decay by frequency's fixed scale, from each frequency's total down.
+const DECAY_FLOOR_DB: f64 = -60.0;
+/// The impulse response's spectrogram window: short enough to show its
+/// early reflections apart, long enough to show its lows.
+const IMPULSE_WINDOW_SECONDS: f64 = 0.01;
+/// The echo density's fixed scale, from 0 up: a smooth wash is 1, and
+/// anything steadier than Gaussian noise reads over it (a sine, 1.58).
+const DENSITY_TOP: f64 = 2.0;
+/// How long after the onset the echo density's close-up shows, in seconds.
+const DENSITY_CLOSE_UP_SECONDS: f64 = 0.3;
 /// How many clicks are shown close up, at most: the largest.
 const MOST_CLICKS: usize = 6;
 /// How many samples either side of a click its close-up shows.
@@ -133,6 +148,11 @@ pub fn draw(dir: &Path, this: &Sound, against: Option<&Sound>) -> Result<Vec<Pat
     if let Some(harmonics) = harmonics_image(this) {
         images.push(("harmonics", harmonics));
     }
+    if this.report.impulse_response {
+        images.push(("impulse", impulse_image(this)));
+        images.push(("decay", decay_image(this)));
+        images.push(("echo-density", echo_density_image(this)));
+    }
     let mut named: Vec<(String, String)> = images
         .into_iter()
         .map(|(image, svg)| (format!("{}-{image}", this.stem()), svg))
@@ -208,6 +228,11 @@ fn spectrogram_image(sound: &Sound, window_seconds: f64) -> String {
             sound.name(),
             window_seconds * 1000.0
         ),
+        if window_seconds < LONG_WINDOW_SECONDS {
+            "Look for: when things happen. A hit is a bright column at its start; a thin column where nothing starts is a click."
+        } else {
+            "Look for: which frequencies. A tone's harmonics are evenly spaced lines; noise is a smear; a line that isn't a harmonic is aliasing."
+        },
         &[
             ("peak", report.shown("peak_dbfs")),
             ("loudness", report.shown("loudness_integrated_lufs")),
@@ -246,6 +271,7 @@ fn difference_image(this: &Sound, against: &Sound) -> String {
             against.name(),
             LONG_WINDOW_SECONDS * 1000.0
         ),
+        "Look for: black where the two agree. Red is where this one is louder, blue where it's quieter: when, and at which frequencies.",
         &[
             ("peak", r1.shown_difference(r2, "peak_dbfs")),
             (
@@ -278,6 +304,7 @@ fn level_image(sound: &Sound) -> String {
     let mut svg = Svg::new();
     svg.header(
         &format!("{} · level over time", sound.name()),
+        "Look for: a smooth rise and fall. A step or a notch in the line is a click or a gap; the decay marks show how long it lasts.",
         &[
             ("peak", report.shown("peak_dbfs")),
             ("RMS", report.shown("rms_dbfs")),
@@ -413,6 +440,7 @@ fn clicks_image(sound: &Sound) -> String {
     let mut svg = Svg::new();
     svg.header(
         &format!("{} · clicks close up", sound.name()),
+        "Look for: a dot far off the curve the others draw, a jump the sound itself doesn't make. A smooth curve through the band is no click.",
         &[
             ("largest step", report.shown("click_step_db")),
             ("at", report.shown("click_at_s")),
@@ -518,6 +546,7 @@ fn harmonics_image(sound: &Sound) -> Option<String> {
                 .note
                 .map_or(String::new(), |note| format!(" ({note})"))
         ),
+        "Look for: grey bars on the lines only. A red bar standing up between them is aliasing, or a partial that isn't a harmonic.",
         &[
             ("pitch", pitch_text(report)),
             ("loudest alias", report.shown("alias_db")),
@@ -583,6 +612,253 @@ fn harmonics_image(sound: &Sound) -> Option<String> {
     Some(svg.finish())
 }
 
+/// The impulse response itself: its waveform above, each pixel's highest
+/// and lowest sample, and its spectrogram below, with the onset and the end
+/// of the early part (80 ms after it) marked on both.
+fn impulse_image(sound: &Sound) -> String {
+    let rate = sound.sample_rate;
+    let seconds = sound.seconds();
+    let report = sound.report;
+    let mut svg = Svg::new();
+    svg.header(
+        &format!("{} · impulse response", sound.name()),
+        "Look for: silence until the onset (the predelay), then separate early reflections melting into a tail that fades smoothly, with no streaks or gaps.",
+        &[
+            ("onset", report.shown("onset_ms")),
+            ("decay mid", report.shown("decay_mid_s")),
+            ("dense after", report.shown("dense_after_ms")),
+            ("correlation early", report.shown("stereo_correlation_early")),
+            ("late", report.shown("stereo_correlation_late")),
+        ],
+        &format!(
+            "{}. Above, the waveform; below, a spectrogram with a {:.0} ms window, 0 to -90 dB.",
+            sound.describe(),
+            IMPULSE_WINDOW_SECONDS * 1000.0
+        ),
+    );
+    let wave = Plot::new(LEFT, RIGHT, TOP, 250.0);
+    let below = Plot::new(LEFT, RIGHT, 276.0, BOTTOM);
+
+    // The waveform, on a round scale that holds its peak.
+    let scale = full_scale_ladder(f64::from(peak(&sound.mid)).max(1e-6));
+    svg.frame(&wave);
+    let y = |sample: f64| wave.y(0.5 + 0.5 * sample / scale);
+    svg.hline(wave.left, wave.right, y(0.0), "guide");
+    let (columns, _) = wave.pixels();
+    let mut path = String::new();
+    for column in 0..columns {
+        let first = column * sound.mid.len() / columns;
+        let last = ((column + 1) * sound.mid.len() / columns).max(first + 1);
+        let Some(samples) = sound.mid.get(first..last.min(sound.mid.len())) else {
+            continue;
+        };
+        if samples.is_empty() {
+            continue;
+        }
+        let (low, high) = samples
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(lo, hi), &s| (lo.min(s), hi.max(s)));
+        let px = wave.left + column as f64 + 0.5;
+        // At least a pixel tall, so a lone sample shows.
+        let (top, bottom) = (y(f64::from(high)), y(f64::from(low)));
+        write!(path, "M{px:.1} {:.1}V{:.1}", top.min(bottom - 1.0), bottom).unwrap();
+    }
+    svg.path(&path, "wave");
+    svg.text(
+        wave.right - 4.0,
+        wave.top + 14.0,
+        &format!("±{}", trim_number(scale)),
+        "label end",
+    );
+
+    // The spectrogram.
+    let spectrogram = spectrogram(
+        &sound.mid,
+        rate,
+        IMPULSE_WINDOW_SECONDS,
+        hop_seconds(seconds, IMPULSE_WINDOW_SECONDS),
+    );
+    let top_hz = highest_hz(rate);
+    let levels = heat_map_on(&spectrogram, seconds, top_hz, &below);
+    let heat = encode_heat_on(&levels, &below, |db| {
+        spectrogram_colour((db - FLOOR_DB) / -FLOOR_DB)
+    });
+    svg.image_on(&below, &heat);
+    svg.frequency_axis_on(&below, top_hz);
+    svg.time_axis_on(&below, seconds);
+
+    // The onset and the end of the early part, on both.
+    if let Some(at) = report.get("onset_ms") {
+        let onset = at / 1000.0;
+        let x = |t: f64| wave.x(t / seconds.max(1e-9));
+        // The onset's label at the top, the split's at the bottom, so they
+        // don't overlap when the onset is early.
+        for (t, class, label, label_y) in [
+            (
+                onset,
+                "mark",
+                format!("onset {}", report.shown("onset_ms")),
+                wave.top + 14.0,
+            ),
+            (
+                onset + EARLY_SECONDS,
+                "guide",
+                format!("early | late, +{:.0} ms", EARLY_SECONDS * 1000.0),
+                wave.bottom - 6.0,
+            ),
+        ] {
+            if t <= seconds {
+                svg.vline(x(t), wave.top, below.bottom, class);
+                svg.text(x(t) + 4.0, label_y, &label, "label mark-text tag");
+            }
+        }
+    }
+    svg.finish()
+}
+
+/// The decay by frequency, its energy decay relief: how each frequency's
+/// energy from then to the end falls, in dB from its own total, 0 to -60.
+/// A frequency that rings longer stays bright longer. Each octave band's
+/// decay time is printed at its centre.
+fn decay_image(sound: &Sound) -> String {
+    let seconds = sound.seconds();
+    let relief = energy_decay_relief(
+        &sound.mid,
+        sound.sample_rate,
+        LONG_WINDOW_SECONDS,
+        hop_seconds(seconds, LONG_WINDOW_SECONDS),
+    );
+    let top_hz = highest_hz(sound.sample_rate);
+    let levels = heat_map(&relief, seconds, top_hz);
+    let heat = encode_heat(&levels, |db| {
+        spectrogram_colour((db - DECAY_FLOOR_DB) / -DECAY_FLOOR_DB)
+    });
+    let report = sound.report;
+    let mut svg = Svg::new();
+    svg.header(
+        &format!("{} · decay by frequency", sound.name()),
+        "Look for: each frequency fading smoothly. A Bass Mult that works shows the lows lasting longer; a metallic ring is a line that outlives the rest.",
+        &[
+            ("decay mid", report.shown("decay_mid_s")),
+            ("colouration", report.shown("colouration_db")),
+        ],
+        &format!(
+            "{}. The energy decay relief, {:.0} ms window: each frequency's energy from then on, re its own total. Each octave's decay time is on its centre.",
+            sound.describe(),
+            LONG_WINDOW_SECONDS * 1000.0
+        ),
+    );
+    svg.image(&heat);
+    svg.frequency_axis(top_hz);
+    svg.time_axis(seconds);
+    let plot = Plot::new(LEFT, RIGHT, TOP, BOTTOM);
+    let ratio = (top_hz / LOWEST_HZ).ln();
+    for (index, &centre) in OCTAVE_BANDS_HZ.iter().enumerate() {
+        if centre > top_hz {
+            continue;
+        }
+        let (name, key) = BANDS[index];
+        let y = plot.y((centre / LOWEST_HZ).ln() / ratio);
+        svg.dot(plot.left + 8.0, y, 3.0, "mark");
+        svg.text(
+            plot.left + 16.0,
+            y + 4.0,
+            &format!("{name} Hz {}", report.shown(key)),
+            "label tag",
+        );
+    }
+    svg.colour_bar(
+        &[(0.0, "0 dB"), (0.5, "-30"), (1.0, "-60 dB")],
+        "decay",
+        "re each frequency's total",
+    );
+    svg.finish()
+}
+
+/// Each of [`OCTAVE_BANDS_HZ`]: its name, and the report's key for its
+/// decay time.
+const BANDS: [(&str, &str); 8] = [
+    ("63", "decay_63hz_s"),
+    ("125", "decay_125hz_s"),
+    ("250", "decay_250hz_s"),
+    ("500", "decay_500hz_s"),
+    ("1k", "decay_1khz_s"),
+    ("2k", "decay_2khz_s"),
+    ("4k", "decay_4khz_s"),
+    ("8k", "decay_8khz_s"),
+];
+
+/// The echo density over time, from 0 to 2, with [`DENSE`] (near 1, a
+/// smooth wash) dashed and when it first reaches it marked; the first
+/// 300 ms after the onset close up beneath.
+fn echo_density_image(sound: &Sound) -> String {
+    let rate = sound.sample_rate;
+    let seconds = sound.seconds();
+    let report = sound.report;
+    let profile = echo_density(&sound.mid, rate);
+    let onset = report.get("onset_ms").map_or(0.0, |ms| ms / 1000.0);
+    let dense = report.get("dense_after_ms").map(|ms| onset + ms / 1000.0);
+    let mut svg = Svg::new();
+    svg.header(
+        &format!("{} · echo density over time", sound.name()),
+        "Look for: the line rising to 1, a smooth wash, soon after the onset and staying there. A slow rise is a sparse, grainy start; dips later are flutter.",
+        &[
+            ("dense after", report.shown("dense_after_ms")),
+            ("onset", report.shown("onset_ms")),
+            ("decay mid", report.shown("decay_mid_s")),
+        ],
+        &format!(
+            "{}. Abel and Huang's normalised echo density, 20 ms windows every 1 ms: near 0 is a few separate echoes, 1 is Gaussian noise.",
+            sound.describe()
+        ),
+    );
+    let whole = Plot::new(LEFT, RIGHT, TOP, 400.0);
+    let close = Plot::new(LEFT, RIGHT, 460.0, BOTTOM);
+    let (close_from, close_to) = (onset, onset + DENSITY_CLOSE_UP_SECONDS);
+    for (plot, from, to) in [(&whole, 0.0, seconds), (&close, close_from, close_to)] {
+        let span = (to - from).max(1e-9);
+        let x = |t: f64| plot.x((t - from) / span);
+        let y = |density: f64| plot.y(density / DENSITY_TOP);
+        svg.frame(plot);
+        for level in [0.0, 0.5, 1.0, 1.5, 2.0] {
+            svg.hline(plot.left, plot.right, y(level), "grid");
+            svg.text(
+                plot.left - 6.0,
+                y(level) + 4.0,
+                &trim_number(level),
+                "label end",
+            );
+        }
+        svg.hline(plot.left, plot.right, y(DENSE), "guide");
+        let points: Vec<(f64, f64)> = profile
+            .iter()
+            .filter(|&&(t, _)| (from..=to).contains(&t))
+            .map(|&(t, density)| (x(t), y(density)))
+            .collect();
+        svg.polyline(&points, "trace");
+        svg.time_axis_between(plot, from, to);
+        if let Some(at) = dense.filter(|at| (from..=to).contains(at)) {
+            svg.vline(x(at), plot.top, plot.bottom, "mark");
+            svg.text(
+                x(at) + 4.0,
+                y(DENSITY_TOP) + 14.0,
+                &format!("{DENSE} after {}", report.shown("dense_after_ms")),
+                "label mark-text tag",
+            );
+        }
+    }
+    svg.text(
+        close.left,
+        close.top - 8.0,
+        &format!(
+            "close up: the first {:.0} ms after the onset; dashed at {DENSE}, near 1",
+            DENSITY_CLOSE_UP_SECONDS * 1000.0
+        ),
+        "label",
+    );
+    svg.finish()
+}
+
 /// The pitch, and how far off its note, as one piece of text.
 fn pitch_text(report: &Report) -> String {
     match (report.get("pitch_hz"), report.note) {
@@ -635,7 +911,17 @@ fn difference_levels(this: &Sound, against: &Sound, seconds: f64, top_hz: f64) -
 /// frequency axis (interpolated between bins where a pixel is narrower
 /// than a bin), so a click or a partial is never lost between pixels.
 fn heat_map(spectrogram: &Spectrogram, seconds: f64, top_hz: f64) -> Vec<f64> {
-    let (width, height) = ((RIGHT - LEFT) as usize, (BOTTOM - TOP) as usize);
+    heat_map_on(
+        spectrogram,
+        seconds,
+        top_hz,
+        &Plot::new(LEFT, RIGHT, TOP, BOTTOM),
+    )
+}
+
+/// [`heat_map`], for a plot of any size.
+fn heat_map_on(spectrogram: &Spectrogram, seconds: f64, top_hz: f64, plot: &Plot) -> Vec<f64> {
+    let (width, height) = plot.pixels();
     let frames = &spectrogram.frames;
     let bins = frames.first().map_or(0, Vec::len);
     let mut levels = vec![f64::from(uta_analysis::SILENT_DB); width * height];
@@ -690,9 +976,16 @@ fn heat_map(spectrogram: &Spectrogram, seconds: f64, top_hz: f64) -> Vec<f64> {
     levels
 }
 
-/// A heat map as a PNG data URL, each level coloured by `colour`.
+/// A heat map filling the main plot as a PNG data URL, each level coloured
+/// by `colour`.
 fn encode_heat(levels: &[f64], colour: impl Fn(f64) -> [u8; 3]) -> String {
-    let (width, height) = ((RIGHT - LEFT) as u32, (BOTTOM - TOP) as u32);
+    encode_heat_on(levels, &Plot::new(LEFT, RIGHT, TOP, BOTTOM), colour)
+}
+
+/// [`encode_heat`], for a plot of any size.
+fn encode_heat_on(levels: &[f64], plot: &Plot, colour: impl Fn(f64) -> [u8; 3]) -> String {
+    let (width, height) = plot.pixels();
+    let (width, height) = (width as u32, height as u32);
     let mut pixmap = tiny_skia::Pixmap::new(width, height).expect("the plot has a size");
     for (pixel, &level) in pixmap
         .data_mut()
@@ -845,6 +1138,14 @@ impl Plot {
     fn y(&self, fraction: f64) -> f64 {
         self.bottom - fraction.clamp(0.0, 1.0) * (self.bottom - self.top)
     }
+
+    /// How many pixels wide and high it is.
+    fn pixels(&self) -> (usize, usize) {
+        (
+            (self.right - self.left) as usize,
+            (self.bottom - self.top) as usize,
+        )
+    }
 }
 
 /// An SVG image being drawn, [`WIDTH`] by [`HEIGHT`].
@@ -856,6 +1157,8 @@ struct Svg {
 const STYLE: &str = "
     .background { fill: #121216; }
     .title { fill: #f2f2f5; font: 600 17px 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .look { fill: #ffd28a; font: italic 13px 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .tag { paint-order: stroke; stroke: #121216; stroke-width: 3px; stroke-linejoin: round; }
     .numbers { fill: #f2f2f5; font: 14px Menlo, 'SF Mono', monospace; }
     .about { fill: #9a9aa6; font: 12px 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     .label { fill: #c4c4cc; font: 11px Menlo, 'SF Mono', monospace; }
@@ -866,6 +1169,7 @@ const STYLE: &str = "
     .note-line { stroke: #ffffff; stroke-opacity: 0.18; stroke-width: 1; }
     .guide { stroke: #8a8a96; stroke-width: 1; stroke-dasharray: 4 4; }
     .trace { fill: none; stroke: #6ec6ff; stroke-width: 1.5; }
+    .wave { fill: none; stroke: #6ec6ff; stroke-width: 1; }
     .thin { fill: none; stroke: #6ec6ff; stroke-opacity: 0.5; stroke-width: 1; }
     .sample { fill: #6ec6ff; }
     .mark { fill: #ffb454; stroke: #ffb454; stroke-width: 1.5; }
@@ -892,16 +1196,18 @@ impl Svg {
         self.body
     }
 
-    /// The title, the key numbers, and a line about the file.
-    fn header(&mut self, title: &str, numbers: &[(&str, String)], about: &str) {
+    /// The title, a line under it saying what to look for, the key
+    /// numbers, and a line about the file.
+    fn header(&mut self, title: &str, look_for: &str, numbers: &[(&str, String)], about: &str) {
         self.text(LEFT, 30.0, title, "title");
+        self.text(LEFT, 52.0, look_for, "look");
         let numbers = numbers
             .iter()
             .map(|(name, value)| format!("{name} {value}"))
             .collect::<Vec<_>>()
             .join(" · ");
-        self.text(LEFT, 56.0, &numbers, "numbers");
-        self.text(LEFT, 78.0, about, "about");
+        self.text(LEFT, 78.0, &numbers, "numbers");
+        self.text(LEFT, 100.0, about, "about");
     }
 
     fn text(&mut self, x: f64, y: f64, text: &str, class: &str) {
@@ -913,13 +1219,20 @@ impl Svg {
         .unwrap();
     }
 
-    /// The heat map, filling the plot.
+    /// The heat map, filling the main plot.
     fn image(&mut self, href: &str) {
+        self.image_on(&Plot::new(LEFT, RIGHT, TOP, BOTTOM), href);
+    }
+
+    /// A heat map, filling `plot`.
+    fn image_on(&mut self, plot: &Plot, href: &str) {
         write!(
             self.body,
-            r#"<image x="{LEFT}" y="{TOP}" width="{}" height="{}" preserveAspectRatio="none" href="{href}"/>"#,
-            RIGHT - LEFT,
-            BOTTOM - TOP
+            r#"<image x="{}" y="{}" width="{}" height="{}" preserveAspectRatio="none" href="{href}"/>"#,
+            plot.left,
+            plot.top,
+            plot.right - plot.left,
+            plot.bottom - plot.top
         )
         .unwrap();
     }
@@ -987,7 +1300,11 @@ impl Svg {
     /// The log-frequency axis on the left of the main plot: a line and the
     /// note's name at every C, with its frequency.
     fn frequency_axis(&mut self, top_hz: f64) {
-        let plot = Plot::new(LEFT, RIGHT, TOP, BOTTOM);
+        self.frequency_axis_on(&Plot::new(LEFT, RIGHT, TOP, BOTTOM), top_hz);
+    }
+
+    /// [`Svg::frequency_axis`], on any plot.
+    fn frequency_axis_on(&mut self, plot: &Plot, top_hz: f64) {
         let ratio = (top_hz / LOWEST_HZ).ln();
         for octave in 0..=10 {
             let note = Note(12 * (octave + 1));
@@ -1026,10 +1343,17 @@ impl Svg {
     }
 
     fn time_axis_on(&mut self, plot: &Plot, seconds: f64) {
-        let step = tick_step(seconds, 12);
-        let mut t = 0.0;
-        while t <= seconds + 1e-9 {
-            let x = plot.x(t / seconds.max(1e-9));
+        self.time_axis_between(plot, 0.0, seconds);
+    }
+
+    /// A time axis along the bottom of `plot`, which runs from `from` to
+    /// `to` seconds into the file.
+    fn time_axis_between(&mut self, plot: &Plot, from: f64, to: f64) {
+        let span = (to - from).max(1e-9);
+        let step = tick_step(span, 12);
+        let mut t = (from / step).ceil() * step;
+        while t <= to + 1e-9 {
+            let x = plot.x((t - from) / span);
             self.vline(x, plot.bottom, plot.bottom + 5.0, "grid");
             self.text(x, plot.bottom + 18.0, &time_label(t, step), "label middle");
             t += step;
