@@ -1,7 +1,7 @@
 //! The Reverb's own tests, on impulse responses: a click through its real
 //! process path, measured with `uta-analysis`'s reverb measurements
-//! (RFC-010, "How we'll verify it"). Modulation is off throughout: it's
-//! UTA-100's.
+//! (RFC-010, "How we'll verify it"). Modulation is off unless the test is
+//! about it.
 
 use super::*;
 use uta_analysis::impulse::{self, OCTAVE_BANDS_HZ};
@@ -54,12 +54,17 @@ fn mid_decay(samples: &[f32], rate: f64) -> f64 {
 
 /// The decay time Decay sets is the tail's: every resonance loses exactly
 /// its share each lap, so the mid band falls 60 dB in Decay, from a small
-/// room to a cathedral.
+/// room to a cathedral. It's measured on the tail alone, at Depth 100%: at
+/// a short Decay the early burst, a tenth as long, bends the fit (at 0.3 s
+/// and Depth 50%, one side read 15% long).
 #[test]
 fn the_mid_band_decays_in_decay_within_10_percent() {
     for decay in [0.3, 2.0, 10.0] {
         let response = impulse_response(
-            settings(|s| s.decay_seconds = decay as f32),
+            settings(|s| {
+                s.decay_seconds = decay as f32;
+                s.depth = 1.0;
+            }),
             48_000.0,
             1.2 * decay + 0.5,
         );
@@ -111,8 +116,9 @@ fn burst_samples(settings: ReverbSettings, rate: f64) -> usize {
         .sum()
 }
 
-/// At Depth 0% you hear only the early burst: nothing at all after it
-/// ends, though the tail rings on inside. At 100% you hear only the tail:
+/// At Depth 0% you hear only the early burst: nothing after it ends but
+/// the High Cut's own ring, under −120 dB within a millisecond, though the
+/// tail rings on inside. At 100% you hear only the tail:
 /// nothing until the shortest line's first lap, though the early burst has
 /// long since begun. Halfway, both are heard.
 #[test]
@@ -130,11 +136,12 @@ fn depth_0_is_only_the_early_burst_and_100_only_the_tail() {
     let mut reverb = Reverb::new(at(0.0), rate);
     let [left, right] = response_to(&mut reverb, [1.0, 1.0], rate, 1.0);
     assert!(left[..burst_ends].iter().any(|&s| s != 0.0));
+    let rung = burst_ends + (0.001 * rate) as usize;
     assert!(
-        left[burst_ends..]
+        left[rung..]
             .iter()
-            .chain(&right[burst_ends..])
-            .all(|&s| s == 0.0),
+            .chain(&right[rung..])
+            .all(|&s| s.abs() <= SILENCE),
         "Depth 0% has a late tail"
     );
     assert!(reverb.is_ringing(), "the tail rings on unheard");
@@ -237,28 +244,50 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
     }
 }
 
-/// At the longest Decay, with every setting the engine plays at each of its
-/// ends, a full-scale click never makes more than full scale, and once the
-/// tail has built up it never grows.
+/// At the longest Decay, with every setting at each of its ends, a
+/// full-scale click never makes more than full scale, and once the tail has
+/// built up it never grows. Each set of sizes and blends is tried with the
+/// tone, the crosses and the drift at their defaults, and again at their
+/// extremes: both Mults at their longest with the crossovers crossed, the
+/// crosses at either end, the drift full on and fast, and the cuts at
+/// their highest.
 #[test]
 fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale() {
+    use ReverbSettings as S;
     let rate = 48_000.0;
-    for (depth, diffusion, send, early, late, predelay) in [
+    let sizes = [
         (0.0, 0.0, 0.0, 0.002, 0.0, 0.0),
         (1.0, 1.0, 1.0, 1.0, 1.0, 0.5),
         (1.0, 0.0, 0.0, 0.002, 1.0, 0.0),
         (1.0, 1.0, 1.0, 0.002, 0.0, 0.0),
         (0.5, 1.0, 0.0, 1.0, 0.0, 0.5),
         (0.5, 0.0, 1.0, 0.002, 1.0, 0.0),
-    ] {
+    ];
+    for (n, (depth, diffusion, send, early, late, predelay)) in
+        sizes.into_iter().cycle().take(2 * sizes.len()).enumerate()
+    {
+        let extremes = n >= sizes.len();
         let reverb = settings(|s| {
-            s.decay_seconds = ReverbSettings::MAX_DECAY_SECONDS;
+            s.decay_seconds = S::MAX_DECAY_SECONDS;
             s.depth = depth;
             s.diffusion = diffusion;
             s.early_send = send;
             s.early_size_seconds = early;
             s.late_size = late;
             s.predelay_seconds = predelay;
+            if extremes {
+                s.bass_mult = S::MAX_BASS_MULT;
+                s.high_mult = S::MAX_HIGH_MULT;
+                s.bass_xover_hz = S::MAX_BASS_XOVER_HZ;
+                s.high_xover_hz = S::MIN_HIGH_XOVER_HZ;
+                s.early_cross = (n % 2) as f32;
+                s.late_cross = ((n + 1) % 2) as f32;
+                s.early_mod_depth = 1.0;
+                s.late_mod_depth = 1.0;
+                s.early_mod_rate_hz = S::MAX_MOD_RATE_HZ;
+                s.late_mod_rate_hz = S::MAX_MOD_RATE_HZ;
+                s.low_cut_hz = S::MAX_LOW_CUT_HZ;
+            }
         });
         let case = format!("{reverb:?}");
         let response = impulse_response(reverb, rate, 6.0);
@@ -298,37 +327,56 @@ fn every_line_holds_the_longest_sizes_at_every_rate() {
     for rate in RATES {
         let reverb = Reverb::new(largest, rate);
         let samples = |seconds: f64| (seconds * rate).round() as usize;
-        assert_eq!(reverb.predelay_samples, samples(0.5), "{rate} Hz");
-        for (step, delays) in ROOM.steps.iter().zip(reverb.lane_samples.iter()) {
-            for (lane, &delay) in delays.iter().enumerate() {
-                assert_eq!(delay, samples(lane_seconds(step, lane, 1.0)), "{rate} Hz");
+        let length = |head: &Glide| head.value() as usize;
+        assert_eq!(length(&reverb.predelay_head), samples(0.5), "{rate} Hz");
+        for (step, heads) in ROOM.steps.iter().zip(reverb.lane_heads.iter()) {
+            for (lane, head) in heads.iter().enumerate() {
+                assert_eq!(
+                    length(head),
+                    samples(lane_seconds(step, lane, 1.0)),
+                    "{rate} Hz"
+                );
             }
         }
-        for (&seconds, &delay) in ROOM.lines.iter().zip(reverb.line_samples.iter()) {
-            assert_eq!(delay, samples(seconds * 2.0), "{rate} Hz");
+        for (&seconds, head) in ROOM.lines.iter().zip(reverb.line_heads.iter()) {
+            assert_eq!(length(head), samples(seconds * 2.0), "{rate} Hz");
         }
     }
 }
 
-/// The diffuser's mix keeps the lanes' energy at every Diffusion, and at
-/// full it's an even mix: a click in one lane comes out in all eight at
-/// the same level.
+/// The diffuser's mix keeps the lanes' energy at every Diffusion and Early
+/// Cross; at full both it's an even mix: a click in one lane comes out in
+/// all eight at the same level. With no cross, a click in a left lane
+/// stays in the left's lanes.
 #[test]
 fn the_mix_keeps_the_energy_and_at_full_spreads_it_evenly() {
-    for diffusion in [0.0f64, 0.3, 0.8, 1.0] {
-        let angle = diffusion * FRAC_PI_4;
-        let butterfly = (angle.cos() as f32, angle.sin() as f32);
-        let mut lanes = [0.3, -1.0, 0.5, 0.0, 0.25, 0.7, -0.2, 0.1];
-        let before: f32 = lanes.iter().map(|x| x * x).sum();
-        mix(&mut lanes, butterfly);
-        let after: f32 = lanes.iter().map(|x| x * x).sum();
-        assert!((after - before).abs() < 1e-5, "Diffusion {diffusion}");
+    for diffusion in [0.0, 0.3, 0.8, 1.0] {
+        for cross in [0.0, 0.5, 1.0] {
+            let mut lanes = [0.3, -1.0, 0.5, 0.0, 0.25, 0.7, -0.2, 0.1];
+            let before: f32 = lanes.iter().map(|x| x * x).sum();
+            mix(&mut lanes, turn(diffusion), turn(cross));
+            let after: f32 = lanes.iter().map(|x| x * x).sum();
+            assert!(
+                (after - before).abs() < 1e-5,
+                "Diffusion {diffusion}, Early Cross {cross}"
+            );
+        }
     }
     let mut lanes = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    let even = (FRAC_PI_4.cos() as f32, FRAC_PI_4.sin() as f32);
-    mix(&mut lanes, even);
+    mix(&mut lanes, turn(1.0), turn(1.0));
     for lane in lanes {
         assert!((lane.abs() - 8f32.sqrt().recip()).abs() < 1e-6, "{lanes:?}");
+    }
+    let mut lanes = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    mix(&mut lanes, turn(1.0), turn(0.0));
+    assert!(lanes[4..].iter().all(|&lane| lane == 0.0), "{lanes:?}");
+    // The shuffle keeps each lane on its side.
+    for (lane, &(to, _)) in ROOM.shuffle.iter().enumerate() {
+        assert_eq!(
+            lane < LANES / 2,
+            to < LANES / 2,
+            "lane {lane} moves to {to}"
+        );
     }
 }
 
@@ -382,4 +430,568 @@ fn it_rings_until_the_tail_dies_away_then_sleeps() {
     let [left, right] = response_to(&mut reverb, [0.0, 0.0], rate, 1.0);
     assert!(left.iter().chain(&right).all(|&s| s == 0.0));
     assert!(!reverb.is_ringing());
+}
+
+/// Each octave band's decay time at 48 kHz, in seconds, by its centre in
+/// Hz.
+fn decays(samples: &[f32]) -> impl Fn(f64) -> f64 {
+    let decays = impulse::band_decay_times(samples, 48_000);
+    move |hz| {
+        let band = OCTAVE_BANDS_HZ.iter().position(|&b| b == hz).unwrap();
+        decays[band].expect("the band decays")
+    }
+}
+
+/// Bass Mult and High Mult set the lows' and highs' decay as a multiple of
+/// the mids', which is Decay, within 15%: below Bass Xover, the octaves at
+/// 63 and 125 Hz; above High Xover, the octave at 8 kHz. Every line's
+/// shelves take its share of the band's loss for its own length, so every
+/// resonance in a band fades at the band's rate. A Mult under 1 is tested
+/// at a longer Decay, so its band's tail is long enough to measure: the
+/// 63 Hz octave of a 1 s tail reads up to 12% long with no Mult at all.
+#[test]
+fn the_mults_set_the_lows_and_highs_decay_as_a_multiple_of_the_mids() {
+    let rate = 48_000.0;
+    for (bass_mult, high_mult, decay) in [
+        (2.0, 1.0, 2.0),
+        (1.0, 0.5, 2.0),
+        (0.5, 1.0, 4.0),
+        (1.0, 2.0, 2.0),
+    ] {
+        let reverb = settings(|s| {
+            s.depth = 1.0;
+            s.decay_seconds = decay;
+            s.bass_mult = bass_mult;
+            s.high_mult = high_mult;
+            s.bass_xover_hz = 500.0;
+            s.high_xover_hz = 2_000.0;
+        });
+        let response = impulse_response(reverb, rate, 9.0);
+        for side in &response {
+            let decays = decays(side);
+            for (hz, mult) in [(62.5, bass_mult), (125.0, bass_mult), (8000.0, high_mult)] {
+                let ratio = decays(hz) / f64::from(decay);
+                assert!(
+                    (ratio / f64::from(mult) - 1.0).abs() < 0.15,
+                    "Bass Mult {bass_mult}, High Mult {high_mult}: {hz} Hz decays in {ratio:.2} times Decay"
+                );
+            }
+        }
+    }
+}
+
+/// The gain at `hz` of `process`, from a steady sine through it at 48 kHz.
+fn gain_at(mut process: impl FnMut(f64) -> f64, hz: f64) -> f64 {
+    let rate = 48_000.0;
+    let samples = (rate * 0.2) as usize;
+    let mut peak: f64 = 0.0;
+    for n in 0..samples {
+        let out = process((std::f64::consts::TAU * hz * n as f64 / rate).sin());
+        if n > samples / 2 {
+            peak = peak.max(out.abs());
+        }
+    }
+    peak
+}
+
+/// However the Mults and crossovers are set, no line's tone keeps more of
+/// any frequency than the band that lasts longest: its shelves go from one
+/// level to the other without overshooting, and when both let their band
+/// last longer the high shelf sits an octave above the low one at least,
+/// so the two never add up to a gain of 1 or more, which would ring for
+/// ever. Its longest line at the longest Decay is the closest to 1.
+#[test]
+fn no_line_keeps_more_than_its_longest_lasting_band_at_any_settings() {
+    let rate = 48_000.0;
+    use ReverbSettings as S;
+    for (bass_mult, high_mult) in [
+        (S::MAX_BASS_MULT, S::MAX_HIGH_MULT),
+        (S::MIN_BASS_MULT, S::MAX_HIGH_MULT),
+        (S::MAX_BASS_MULT, S::MIN_HIGH_MULT),
+    ] {
+        for (bass_xover, high_xover) in [
+            (S::MAX_BASS_XOVER_HZ, S::MIN_HIGH_XOVER_HZ),
+            (S::MIN_BASS_XOVER_HZ, S::MIN_HIGH_XOVER_HZ),
+            (S::MAX_BASS_XOVER_HZ, S::MAX_HIGH_XOVER_HZ),
+        ] {
+            let reverb = Reverb::new(
+                settings(|s| {
+                    s.decay_seconds = S::MAX_DECAY_SECONDS;
+                    s.late_size = 1.0;
+                    s.bass_mult = bass_mult;
+                    s.high_mult = high_mult;
+                    s.bass_xover_hz = bass_xover;
+                    s.high_xover_hz = high_xover;
+                }),
+                rate,
+            );
+            let longest = reverb.line_heads.len() - 1;
+            let lap = reverb.line_lengths[longest] / rate;
+            let kept = |mult: f32| 10f64.powf(-3.0 * lap / (30.0 * f64::from(mult)));
+            let most = kept(bass_mult.max(high_mult).max(1.0));
+            for step in 0..=40 {
+                let hz = 20.0 * 1000f64.powf(f64::from(step) / 40.0);
+                let (mut low, mut high) = (reverb.low_shelves, reverb.high_shelves);
+                let gain = gain_at(
+                    |x| {
+                        let mut samples = [0.0; MAX_LINES];
+                        samples[longest] = reverb.gains[longest] * x as f32;
+                        low.process(&mut samples);
+                        high.process(&mut samples);
+                        f64::from(samples[longest])
+                    },
+                    hz,
+                );
+                assert!(
+                    gain < 1.0 && gain <= most * 1.001,
+                    "Mults {bass_mult} and {high_mult}, crossovers {bass_xover} and {high_xover}: \
+                     it keeps {gain:.4} at {hz:.0} Hz, the longest-lasting band {most:.4}"
+                );
+            }
+        }
+    }
+}
+
+/// How much of `samples`' energy is in each octave band.
+fn band_energies(samples: &[f32], rate: f64) -> Vec<f64> {
+    impulse::octave_bands(samples, rate as u32)
+        .iter()
+        .map(|band| band.iter().map(|s| s * s).sum())
+        .collect()
+}
+
+/// How much louder, in dB, `changed`'s impulse response is than
+/// `reference`'s in each octave band, on the left.
+fn band_changes(reference: ReverbSettings, changed: ReverbSettings) -> Vec<f64> {
+    let rate = 48_000.0;
+    let before = band_energies(&impulse_response(reference, rate, 3.0)[0], rate);
+    let after = band_energies(&impulse_response(changed, rate, 3.0)[0], rate);
+    before
+        .iter()
+        .zip(&after)
+        .map(|(before, after)| 10.0 * (after / before).log10())
+        .collect()
+}
+
+/// High Cut is a −12 dB an octave low-pass on the whole reverb: at 1 kHz,
+/// the octave at 4 kHz, two above, is about 24 dB down, 8 kHz's 12 dB
+/// further, and 250 Hz's untouched.
+#[test]
+fn high_cut_falls_12_db_an_octave() {
+    let open = ReverbSettings::default();
+    let changes = band_changes(open, settings(|s| s.high_cut_hz = 1_000.0));
+    let at = |hz| changes[OCTAVE_BANDS_HZ.iter().position(|&b| b == hz).unwrap()];
+    assert!(at(250.0).abs() < 0.5, "250 Hz changes {:.1} dB", at(250.0));
+    assert!(
+        (at(4000.0) + 24.0).abs() < 3.0,
+        "4 kHz changes {:.1} dB",
+        at(4000.0)
+    );
+    let slope = at(4000.0) - at(8000.0);
+    assert!((slope - 12.0).abs() < 2.0, "{slope:.1} dB from 4 to 8 kHz");
+}
+
+/// Low Cut is a low shelf on the whole reverb, turning the lows down by
+/// [`LOW_CUT_DB`]: at 500 Hz the octaves two and three below are about
+/// that much down, and 4 kHz's untouched. At its lowest it's off: its
+/// shelf passes everything exactly as it is.
+#[test]
+fn low_cut_is_a_low_shelf_off_at_its_lowest() {
+    let open = ReverbSettings::default();
+    let changes = band_changes(open, settings(|s| s.low_cut_hz = 500.0));
+    let at = |hz| changes[OCTAVE_BANDS_HZ.iter().position(|&b| b == hz).unwrap()];
+    for hz in [62.5, 125.0] {
+        assert!(
+            (at(hz) - LOW_CUT_DB).abs() < 3.0,
+            "{hz} Hz changes {:.1} dB",
+            at(hz)
+        );
+    }
+    assert!(at(4000.0).abs() < 0.5, "4 kHz changes {:.1} dB", at(4000.0));
+
+    let off = Reverb::new(open, 48_000.0).low_cut_shelf;
+    assert_eq!((off.input, off.band, off.low), (1.0, 0.0, 0.0));
+}
+
+/// The left's and right's energy in `samples`.
+fn side_energies([left, right]: &[Vec<f32>; 2]) -> [f64; 2] {
+    [left, right].map(|side| side.iter().map(|&s| f64::from(s).powi(2)).sum())
+}
+
+/// Each cross on its own sets how far a sound on the left spreads to the
+/// right: Early Cross in the early burst (Depth 0%), Late Cross in the
+/// tail (Depth 100%), each with the other at 0, so neither leaks through
+/// the other. At 0 a sound only on the left stays on the left: two
+/// separate reverbs, one a side. Halfway the right has some of it. At
+/// full the two sides are within 1 dB of each other, and unlike each other
+/// (their correlation is near 0, the stereo spread at its widest).
+#[test]
+fn each_cross_sets_how_far_a_sound_on_the_left_spreads_to_the_right() {
+    let rate = 48_000.0;
+    for (name, depth) in [("Early Cross", 0.0), ("Late Cross", 1.0)] {
+        let at = |cross: f32| {
+            let reverb = settings(|s| {
+                s.depth = depth;
+                (s.early_cross, s.late_cross) = if depth == 0.0 {
+                    (cross, 0.0)
+                } else {
+                    (0.0, cross)
+                };
+            });
+            response_to(&mut Reverb::new(reverb, rate), [1.0, 0.0], rate, 3.0)
+        };
+        let [left, right] = side_energies(&at(0.0));
+        assert!(left > 0.0);
+        assert!(right < 1e-9 * left, "{name} 0: {right} on the right");
+
+        let [left, right] = side_energies(&at(0.5));
+        let db = 10.0 * (right / left).log10();
+        assert!((-12.0..-1.0).contains(&db), "{name} halfway: {db:.1} dB");
+
+        let crossed = at(1.0);
+        let [left, right] = side_energies(&crossed);
+        let db = 10.0 * (right / left).log10();
+        assert!(
+            db.abs() < 1.0,
+            "{name} full: the right is {db:.1} dB from the left"
+        );
+        let [early, late] = impulse::early_and_late_correlation(&crossed[0], &crossed[1], 48_000);
+        let correlation = if depth == 0.0 { early } else { late }.unwrap();
+        assert!(
+            correlation.abs() < 0.2,
+            "{name} full: correlation {correlation:.2}"
+        );
+    }
+}
+
+/// The tail's level follows its energy however its settings get there:
+/// after Late Size, or Decay, glides while the tail rings, its level is a
+/// new Reverb's at the same settings, so what you hear is what a render
+/// from there plays.
+#[test]
+fn after_a_glide_the_tails_level_is_a_new_reverbs() {
+    let rate = 48_000.0;
+    let turns: [fn(&mut ReverbSettings); 3] = [
+        |s| s.late_size = 1.0,
+        |s| s.late_size = 0.0,
+        |s| s.decay_seconds = 30.0,
+    ];
+    for turn in turns {
+        let mut reverb = Reverb::new(settings(|s| s.decay_seconds = 10.0), rate);
+        response_to(&mut reverb, [1.0, 1.0], rate, 0.5);
+        let turned = settings(|s| {
+            s.decay_seconds = 10.0;
+            turn(s);
+        });
+        reverb.set_settings(turned);
+        response_to(&mut reverb, [0.0, 0.0], rate, 2.0);
+        assert!(reverb.is_ringing());
+        let new = Reverb::new(turned, rate);
+        let apart = reverb.late_gain / new.late_gain - 1.0;
+        assert!(apart.abs() < 1e-4, "{turned:?}: {apart}");
+    }
+}
+
+/// Depth's balance stays where it is whatever the Decay: in the mids, the
+/// 1 kHz octave, which Decay sets, the tail's energy at Depth 100% against
+/// the early burst's at 0% is within 1 dB of even, from 0.1 s to 30 s. The
+/// Mults change the lows and highs on top: with the default High Mult of
+/// 0.5, a short tail is darker than the burst, and a long one less so.
+#[test]
+fn changing_decay_does_not_change_the_balance_depth_sets() {
+    let rate = 48_000.0;
+    let mids = |response: [Vec<f32>; 2]| -> f64 {
+        response
+            .iter()
+            .map(|side| band_energies(side, rate)[4])
+            .sum()
+    };
+    for decay in [0.1, 0.3, 2.0, 10.0, 30.0] {
+        let at = |depth| {
+            let reverb = settings(|s| {
+                s.decay_seconds = decay;
+                s.depth = depth;
+            });
+            mids(impulse_response(reverb, rate, 2.5 * f64::from(decay) + 0.5))
+        };
+        let db = 10.0 * (at(1.0) / at(0.0)).log10();
+        assert!(
+            db.abs() < 1.0,
+            "Decay {decay} s: the tail is {db:.1} dB from the burst"
+        );
+    }
+}
+
+/// The drift's steepest slope, in its whole range a cycle: each cycle it
+/// moves to a new random place on a smoothstep curve, whose steepest slope
+/// is 1.5 times its average, across a range of 2 (−1 to 1) at most.
+const DRIFT_STEEPEST: f64 = 3.0;
+
+/// Modulation full on, fast: both depths at full and both rates at their
+/// fastest.
+fn drifting(change: impl FnOnce(&mut ReverbSettings)) -> ReverbSettings {
+    settings(|s| {
+        s.early_mod_depth = 1.0;
+        s.late_mod_depth = 1.0;
+        s.early_mod_rate_hz = ReverbSettings::MAX_MOD_RATE_HZ;
+        s.late_mod_rate_hz = ReverbSettings::MAX_MOD_RATE_HZ;
+        s.early_size_seconds = 0.1;
+        change(s);
+    })
+}
+
+/// How fast its lines and lanes are read moving through them, at most, in
+/// samples a sample, over `seconds` of a click and its tail, from the
+/// second sample on.
+fn fastest_drift(reverb: ReverbSettings, rate: f64, seconds: f64) -> f64 {
+    let mut reverb = Reverb::new(reverb, rate);
+    response_to(&mut reverb, [1.0, 1.0], rate, 1.0 / rate);
+    reverb.fastest = 0.0;
+    response_to(&mut reverb, [0.0, 0.0], rate, seconds);
+    reverb.fastest
+}
+
+/// The drift moves where each line and lane is read no faster than its
+/// depth and rate allow, so it bends the pitch no further: at most
+/// [`DRIFT_STEEPEST`] × the rate × the line's share of it × the reach in
+/// seconds, as a share of the pitch (at full Late Mod Depth and 5 Hz,
+/// about 6%, a semitone; at 0.5 Hz, a tenth of that). Half the depth,
+/// half the bend. It does move, at every rate.
+#[test]
+fn the_drift_bends_the_pitch_no_more_than_its_depth_and_rate_allow() {
+    let fastest_line = ROOM.line_rates.iter().copied().fold(0.0, f64::max);
+    let fastest_lane = ROOM.lane_rates.iter().copied().fold(0.0, f64::max);
+    for rate in [48_000.0, 96_000.0] {
+        for (depth, mod_rate) in [(1.0, 5.0), (0.5, 5.0), (1.0, 0.5)] {
+            let late = drifting(|s| {
+                s.early_mod_depth = 0.0;
+                s.late_mod_depth = depth;
+                s.late_mod_rate_hz = mod_rate;
+            });
+            let allowed =
+                DRIFT_STEEPEST * f64::from(mod_rate * depth) * fastest_line * LATE_MOD_SECONDS;
+            let fastest = fastest_drift(late, rate, 2.0);
+            assert!(
+                fastest <= allowed && fastest > 0.3 * allowed,
+                "the lines at {rate} Hz, depth {depth}, {mod_rate} Hz: {fastest:.5}, allowed {allowed:.5}"
+            );
+            let early = drifting(|s| {
+                s.late_mod_depth = 0.0;
+                s.early_mod_depth = depth;
+                s.early_mod_rate_hz = mod_rate;
+            });
+            let allowed =
+                DRIFT_STEEPEST * f64::from(mod_rate * depth) * fastest_lane * EARLY_MOD_SECONDS;
+            let fastest = fastest_drift(early, rate, 2.0);
+            assert!(
+                fastest <= allowed && fastest > 0.3 * allowed,
+                "the lanes at {rate} Hz, depth {depth}, {mod_rate} Hz: {fastest:.5}, allowed {allowed:.5}"
+            );
+        }
+    }
+}
+
+/// With the drift full on, two Reverbs given the same click give the same
+/// samples: the drift comes from seeded noise, not from anything that
+/// differs between runs.
+#[test]
+fn with_modulation_two_renders_are_identical() {
+    let reverb = drifting(|_| {});
+    let first = impulse_response(reverb, 48_000.0, 2.0);
+    let again = impulse_response(reverb, 48_000.0, 2.0);
+    assert_eq!(first, again);
+    // And the drift changes the sound: it's on.
+    assert_ne!(
+        first,
+        impulse_response(ReverbSettings::default(), 48_000.0, 2.0)
+    );
+}
+
+/// Play starts the drift again from the same point: after a restart while
+/// the tail rings, once the glide back is over, every line and lane drifts
+/// as a new Reverb's does: on the same curve, from the same noise. Meanwhile it glides there rather than
+/// jumping: nothing is read moving faster than the drift itself moves.
+#[test]
+fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
+    let rate = 48_000.0;
+    let reverb = drifting(|_| {});
+    let mut played = Reverb::new(reverb, rate);
+    response_to(&mut played, [1.0, 1.0], rate, 1.3);
+    played.fastest = 0.0;
+    played.restart();
+    let mut new = Reverb::new(reverb, rate);
+    // Woken by the same click a sample before, so both drifts move on from
+    // here.
+    response_to(&mut new, [1.0, 1.0], rate, 1.0 / rate);
+    new.restart();
+    let after = MOD_GLIDE_SECONDS + 0.1;
+    response_to(&mut played, [0.0, 0.0], rate, after);
+    response_to(&mut new, [0.0, 0.0], rate, after);
+    for (played, new) in played
+        .line_drifts
+        .iter()
+        .chain(&played.lane_drifts)
+        .zip(new.line_drifts.iter().chain(&new.lane_drifts))
+    {
+        assert_eq!(
+            (played.phase, played.from, played.to),
+            (new.phase, new.from, new.to)
+        );
+        // Where each is between the curve's points differs only by
+        // rounding, from where each started its straight lines.
+        let apart = (played.value() - new.value()).abs();
+        assert!(apart < 1e-5, "{apart}");
+    }
+    let allowed = DRIFT_STEEPEST * 5.0 * 1.42 * LATE_MOD_SECONDS;
+    assert!(played.fastest <= allowed, "{}", played.fastest);
+}
+
+/// The steepest step from one sample to the next a full-scale sine at
+/// `hz` makes at `rate`.
+fn sine_steepest(hz: f64, rate: f64) -> f32 {
+    (2.0 * (std::f64::consts::PI * hz / rate).sin()) as f32
+}
+
+/// The steepest step from one sample to the next in `samples`.
+fn steepest(samples: &[f32]) -> f32 {
+    samples
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f32::max)
+}
+
+/// A setting's name, and how to set it `f` of the way from its default to
+/// one of its ends.
+type Turn = (&'static str, fn(&mut ReverbSettings, f32));
+
+/// Every setting glides while the tail rings: turning any of them from its
+/// default to either end, a step every block over a quarter of a second
+/// or all at once, with a held A3 going in, never makes a step from one
+/// sample to the next more than twice the steepest a sine as loud as what
+/// comes out could make at 330 Hz: the A3 bent up by half again, as far as
+/// a gliding size or Predelay can bend it. A setting that jumped would
+/// jump the tail by a share of its own level: a click.
+#[test]
+fn turning_every_setting_while_the_tail_rings_does_not_click() {
+    let rate = 48_000.0;
+    let block = 128;
+    let turns: Vec<Turn> = vec![
+        ("Late Size up", |s, f| s.late_size = 0.5 + 0.5 * f),
+        ("Late Size down", |s, f| s.late_size = 0.5 - 0.5 * f),
+        ("Early Size up", |s, f| {
+            s.early_size_seconds = 0.03 + 0.97 * f
+        }),
+        ("Early Size down", |s, f| {
+            s.early_size_seconds = 0.03 - 0.028 * f
+        }),
+        ("Predelay", |s, f| s.predelay_seconds = 0.01 + 0.49 * f),
+        ("Decay up", |s, f| s.decay_seconds = 2.0 + 28.0 * f),
+        ("Decay down", |s, f| s.decay_seconds = 2.0 - 1.9 * f),
+        ("Depth up", |s, f| s.depth = 0.5 + 0.5 * f),
+        ("Depth down", |s, f| s.depth = 0.5 - 0.5 * f),
+        ("High Cut", |s, f| s.high_cut_hz = 20_000.0 - 19_000.0 * f),
+        ("Low Cut", |s, f| s.low_cut_hz = 20.0 + 980.0 * f),
+        ("Early Cross", |s, f| s.early_cross = 1.0 - f),
+        ("Late Cross", |s, f| s.late_cross = 1.0 - f),
+        ("Diffusion", |s, f| s.diffusion = 0.8 - 0.8 * f),
+        ("Early Send", |s, f| s.early_send = 0.9 - 0.9 * f),
+        ("Early Mod Depth", |s, f| s.early_mod_depth = f),
+        ("Late Mod Depth", |s, f| s.late_mod_depth = f),
+        ("Early Mod Rate", |s, f| {
+            s.early_mod_depth = 1.0;
+            s.early_mod_rate_hz = 0.5 + 4.5 * f;
+        }),
+        ("Late Mod Rate", |s, f| {
+            s.late_mod_depth = 1.0;
+            s.late_mod_rate_hz = 0.5 + 4.5 * f;
+        }),
+        ("Bass Mult up", |s, f| s.bass_mult = 1.0 + 3.0 * f),
+        ("Bass Mult down", |s, f| s.bass_mult = 1.0 - 0.75 * f),
+        ("High Mult", |s, f| s.high_mult = 0.5 + 1.5 * f),
+        ("Bass Xover", |s, f| s.bass_xover_hz = 500.0 + 1500.0 * f),
+        ("High Xover", |s, f| s.high_xover_hz = 4_000.0 - 3_000.0 * f),
+    ];
+    let tone = |n: usize| (0.5 * (std::f64::consts::TAU * 220.0 * n as f64 / rate).sin()) as f32;
+    for ((name, turn), at_once) in turns
+        .iter()
+        .flat_map(|turn| [(*turn, false), (*turn, true)])
+    {
+        // Mod rates are turned with the drift on from the start.
+        let mut start = ReverbSettings::default();
+        turn(&mut start, 0.0);
+        let mut reverb = Reverb::new(start, rate);
+        let mut n = 0;
+        let mut run = |reverb: &mut Reverb, seconds: f64| {
+            let frames = (seconds * rate) as usize;
+            let mut left: Vec<f32> = (n..n + frames).map(tone).collect();
+            let mut right = left.clone();
+            for (left, right) in left.chunks_mut(block).zip(right.chunks_mut(block)) {
+                reverb.process(left, right);
+            }
+            n += frames;
+            [left, right]
+        };
+        run(&mut reverb, 1.5);
+        let steps = if at_once {
+            1
+        } else {
+            (0.25 * rate) as usize / block
+        };
+        let mut turned = [Vec::new(), Vec::new()];
+        for step in 1..=steps {
+            let mut settings = start;
+            turn(&mut settings, step as f32 / steps as f32);
+            reverb.set_settings(settings);
+            let [left, right] = run(&mut reverb, block as f64 / rate);
+            turned[0].extend(left);
+            turned[1].extend(right);
+        }
+        let [left, right] = run(&mut reverb, 2.0);
+        turned[0].extend(&left);
+        turned[1].extend(&right);
+        let peak = turned
+            .iter()
+            .flatten()
+            .fold(0.0f32, |peak, s| peak.max(s.abs()));
+        let limit = 2.0 * peak * sine_steepest(330.0, rate);
+        let jump = steepest(&turned[0]).max(steepest(&turned[1]));
+        assert!(
+            jump <= limit,
+            "{name}, at once {at_once}: a step of {jump:.5}, the limit {limit:.5}"
+        );
+    }
+}
+
+/// The mod depths glide over half a second: turned from a fifth to full
+/// at once while the drift moves, nothing is read moving faster than the
+/// depth's glide and the drift itself allow together (four fifths of the
+/// reach over the glide, plus the drift's own steepest at 0.5 Hz). Over a
+/// few milliseconds the turn would move a line a hundred samples in a few
+/// hundred, bending the pitch by a fifth.
+#[test]
+fn the_mod_depths_glide_over_half_a_second() {
+    let rate = 48_000.0;
+    let mut reverb = Reverb::new(
+        settings(|s| {
+            s.early_mod_depth = 0.2;
+            s.late_mod_depth = 0.2;
+        }),
+        rate,
+    );
+    response_to(&mut reverb, [1.0, 1.0], rate, 1.0);
+    reverb.fastest = 0.0;
+    reverb.set_settings(settings(|s| {
+        s.early_mod_depth = 1.0;
+        s.late_mod_depth = 1.0;
+    }));
+    response_to(&mut reverb, [0.0, 0.0], rate, 1.0);
+    let glide = 0.8 * LATE_MOD_SECONDS / MOD_GLIDE_SECONDS;
+    let drift = DRIFT_STEEPEST * 0.5 * 1.42 * LATE_MOD_SECONDS;
+    assert!(reverb.fastest > 0.0);
+    assert!(
+        reverb.fastest <= glide + drift,
+        "{} against {}",
+        reverb.fastest,
+        glide + drift
+    );
 }

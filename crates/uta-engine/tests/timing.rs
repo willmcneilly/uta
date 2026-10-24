@@ -18,7 +18,7 @@ use uta_core::time::{TICKS_PER_QUARTER, Ticks};
 use uta_core::{
     Chain, Clip, ClipId, Command, DelayMode, DelaySettings, DrumParam, DrumSound, Effect, EffectId,
     EffectSettings, FilterMode, KIT, KickModel, Note, NoteId, PlacedClip, PlacedEffect,
-    PlacedTrack, Project, SynthParam, TrackId, VoiceMode, Waveform,
+    PlacedTrack, Project, ReverbSettings, SynthParam, TrackId, VoiceMode, Waveform,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EngineConfig, NoteKey, Snapshot, SynthSettings, TrackSound, VOICES};
@@ -70,6 +70,11 @@ enum Load {
     /// its tape loop is working, and never asleep. See RFC-007, "Risks &
     /// unknowns" (CPU).
     Delays,
+    /// [`Load::Tracks`] with a Reverb on every track and on the master,
+    /// at its defaults but with both drifts on, so every part of it is
+    /// working, and never asleep. See RFC-010, "Risks & unknowns" (Long
+    /// tails cost CPU).
+    Reverbs,
     /// Make a song's manual check 7, the stress ceiling: 7 tracks × 28
     /// one-bar clips × 3,000 stress notes, 588,000 notes in all, with the
     /// volume gliding. See RFC-004, "What we measured".
@@ -101,6 +106,7 @@ impl Load {
             Self::FullTracks => "32 tracks × 8 full voices",
             Self::FullMonoTracks => "32 tracks × a full voice in Mono, gliding",
             Self::Delays => "32 tracks × 8 voices, a Delay on each and the master",
+            Self::Reverbs => "32 tracks × 8 voices, a Reverb on each and the master",
             Self::Check7 => "Check 7 (588k notes)",
             Self::Drums => "32 drum tracks × every sound",
             Self::Drums909 => "32 drum tracks × every sound, 909 kick",
@@ -270,12 +276,29 @@ fn tracks_playing(params: &[SynthParam], notes: Vec<Note>) -> Project {
 
 /// `project` with a Delay on every track's chain and on the master's: the
 /// defaults, in ping-pong and with Wobble at half.
-fn with_delays(mut project: Project) -> Project {
+fn with_delays(project: Project) -> Project {
     let settings = DelaySettings {
         mode: DelayMode::PingPong,
         wobble: 0.5,
         ..DelaySettings::default()
     };
+    with_everywhere(project, EffectSettings::Delay(settings))
+}
+
+/// `project` with a Reverb on every track's chain and on the master's: the
+/// defaults, with both drifts at half depth.
+fn with_reverbs(project: Project) -> Project {
+    let settings = ReverbSettings {
+        early_mod_depth: 0.5,
+        late_mod_depth: 0.5,
+        ..ReverbSettings::default()
+    };
+    with_everywhere(project, EffectSettings::Reverb(settings))
+}
+
+/// `project` with an effect with `settings` on every track's chain and on
+/// the master's.
+fn with_everywhere(mut project: Project, settings: EffectSettings) -> Project {
     let effects = project
         .tracks()
         .iter()
@@ -284,7 +307,7 @@ fn with_delays(mut project: Project) -> Project {
         .map(|chain| PlacedEffect {
             chain,
             index: 0,
-            effect: Effect::new(EffectId::random(), EffectSettings::Delay(settings)),
+            effect: Effect::new(EffectId::random(), settings),
         })
         .collect();
     project.apply(&Command::AddEffects { effects }).unwrap();
@@ -412,6 +435,7 @@ fn snapshot(load: Load) -> Snapshot {
             Snapshot::from(&mono_line_tracks(&params))
         }
         Load::Delays => Snapshot::from(&with_delays(many_tracks(&[]))),
+        Load::Reverbs => Snapshot::from(&with_reverbs(many_tracks(&[]))),
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
         Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
         Load::Drums909 => Snapshot::from(&drum_tracks(KickModel::Tr909)),
@@ -465,6 +489,7 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                 | Load::FullTracks
                 | Load::FullMonoTracks
                 | Load::Delays
+                | Load::Reverbs
                 | Load::Check7 => renderer
                     .controller
                     .set_volume_db(-(((i / 64) % 24) as f32))
@@ -673,6 +698,7 @@ fn report_block_timing() {
         Load::FullTracks,
         Load::FullMonoTracks,
         Load::Delays,
+        Load::Reverbs,
         Load::Check7,
         Load::Check7FirstBlock,
         Load::Drums,

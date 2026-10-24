@@ -40,12 +40,26 @@ fn kit_effect(kind: EffectKind, n: u128) -> Effect {
         .with_mix(0.5),
         EffectKind::Reverb => Effect::new(
             id,
-            // Every part the engine plays at work: a predelay, a burst sent
-            // into the tail, both heard, and a tail of a second.
+            // Every part at work: a predelay, a burst sent into the tail,
+            // both heard, a tail of a second whose lows last longer and
+            // highs shorter, both cuts, the crosses partway, and the drift
+            // moving every line and lane it can.
             EffectSettings::Reverb(ReverbSettings {
                 predelay_seconds: 0.02,
                 decay_seconds: 1.0,
                 early_size_seconds: 0.05,
+                high_cut_hz: 8_000.0,
+                low_cut_hz: 100.0,
+                early_cross: 0.6,
+                late_cross: 0.7,
+                early_mod_rate_hz: 1.5,
+                early_mod_depth: 0.8,
+                late_mod_rate_hz: 0.8,
+                late_mod_depth: 0.8,
+                bass_mult: 1.5,
+                bass_xover_hz: 300.0,
+                high_mult: 0.6,
+                high_xover_hz: 3_000.0,
                 ..ReverbSettings::default()
             }),
         )

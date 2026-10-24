@@ -8,7 +8,8 @@ mod common;
 
 use common::{PLAIN_SINE, note, peak, project};
 use uta_core::{
-    Chain, Command, Effect, EffectId, EffectSettings, PlacedEffect, Project, ReverbSettings,
+    Chain, Command, Effect, EffectId, EffectSettings, PlacedEffect, Project, ReverbParam,
+    ReverbSettings,
 };
 use uta_engine::offline::{self, MAX_TAIL_SECONDS};
 use uta_engine::{EngineConfig, Snapshot};
@@ -103,4 +104,29 @@ fn a_30_second_tail_is_cut_off_at_the_limit_and_says_so() {
     );
     let end = song.samples.len();
     assert!(peak(&song.samples[end - 2 * 48_000..]) > SILENCE);
+}
+
+/// With its drift full on, a render through the whole engine is the same
+/// every time: the drift comes from seeded noise and starts again on Play
+/// (RFC-010, "Modulation is repeatable").
+#[test]
+fn with_its_drift_on_two_renders_are_identical() {
+    let mut project = stab();
+    let chain = Chain::Track(project.tracks()[0].id());
+    project = with_reverb(project, chain, 2.0);
+    let effect = EffectId::from_uuid(Uuid::from_u128(9000));
+    for param in [
+        ReverbParam::EarlyModDepth(1.0),
+        ReverbParam::LateModDepth(1.0),
+        ReverbParam::EarlyModRateHz(ReverbSettings::MAX_MOD_RATE_HZ),
+        ReverbParam::LateModRateHz(ReverbSettings::MAX_MOD_RATE_HZ),
+    ] {
+        project
+            .apply(&Command::SetReverbParam { effect, param })
+            .unwrap();
+    }
+    let render = || offline::render_song(stereo(), Snapshot::from(&project), 0.5).samples;
+    let first = render();
+    assert!(peak(&first) > 0.01);
+    assert_eq!(first, render());
 }
