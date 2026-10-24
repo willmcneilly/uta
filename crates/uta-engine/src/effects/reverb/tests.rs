@@ -995,3 +995,67 @@ fn the_mod_depths_glide_over_half_a_second() {
         glide + drift
     );
 }
+
+/// A setting's name, and a change to it.
+type Change = (&'static str, fn(&mut ReverbSettings));
+
+/// Each tone setting, and Depth, glides over a few milliseconds rather than
+/// jumping, at frequencies a 220 Hz tone wouldn't show: with noise going
+/// in, the difference a turn makes against the same render without it is
+/// still small in the first tenth of the glide, under half as loud (RMS)
+/// as once it has landed. Measured: from 0.03 to 0.36 gliding (High Cut
+/// the most, gliding in octaves through the noise's loud top octave), and
+/// from 0.81 to 1.2 with every setting jumping instead. The crossovers are
+/// turned with Bass Mult at 2, where they do something.
+#[test]
+fn depth_and_the_tone_settings_glide_in() {
+    let rate = 48_000.0;
+    let glide = (crate::VOLUME_SMOOTHING_SECONDS * rate).round() as usize;
+    let base = |s: &mut ReverbSettings| s.bass_mult = 2.0;
+    let turns: [Change; 7] = [
+        ("Depth", |s| s.depth = 1.0),
+        ("High Cut", |s| s.high_cut_hz = 1_000.0),
+        ("Low Cut", |s| s.low_cut_hz = 1_000.0),
+        ("Bass Mult", |s| s.bass_mult = 4.0),
+        ("High Mult", |s| s.high_mult = 2.0),
+        ("Bass Xover", |s| s.bass_xover_hz = 2_000.0),
+        ("High Xover", |s| s.high_xover_hz = 1_000.0),
+    ];
+    let at = 48_000;
+    let mut noise = crate::noise::Noise::new();
+    let input: Vec<f32> = (0..at + 2 * glide)
+        .map(|_| 0.5 * noise.next_sample())
+        .collect();
+    let render = |turn: Option<fn(&mut ReverbSettings)>| {
+        let mut reverb = Reverb::new(settings(base), rate);
+        let mut left = input.clone();
+        let mut right = input.clone();
+        let (before, after) = left.split_at_mut(at);
+        let (right_before, right_after) = right.split_at_mut(at);
+        reverb.process(before, right_before);
+        if let Some(turn) = turn {
+            reverb.set_settings(settings(|s| {
+                base(s);
+                turn(s);
+            }));
+        }
+        reverb.process(after, right_after);
+        left.split_off(at)
+    };
+    let rms = |samples: &[f32]| {
+        (samples.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>() / samples.len() as f64).sqrt()
+    };
+    let without = render(None);
+    for (name, turn) in turns {
+        let with = render(Some(turn));
+        let difference: Vec<f32> = with.iter().zip(&without).map(|(a, b)| a - b).collect();
+        let early = rms(&difference[..glide / 10]);
+        let landed = rms(&difference[glide..2 * glide]);
+        assert!(landed > 1e-5, "{name}: the turn changed nothing");
+        assert!(
+            early < 0.5 * landed,
+            "{name}: its difference in the first tenth of the glide is {:.2} of its landed one",
+            early / landed
+        );
+    }
+}
