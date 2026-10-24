@@ -1,6 +1,7 @@
 //! Measurements of rendered audio, taken from the waveform: pitch, level,
 //! loudness, clicks, brightness, noisiness, inharmonicity, aliasing,
-//! stereo, attack and decay. The sound tests check
+//! stereo, attack and decay, and, in [`impulse`], a reverb's impulse
+//! response. The sound tests check
 //! Uta's renders with them, and `uta analyse` prints them as a [`report`],
 //! so the numbers read from a render are the numbers the tests check.
 //!
@@ -18,10 +19,12 @@
 //!    it), with a doc comment saying what it measures and how.
 //! 2. Test it on a synthetic signal whose answer is known, such as a sine
 //!    of a known frequency or a decay of a known rate.
-//! 3. Add an entry to [`report::MEASUREMENTS`], with its key, unit and what
-//!    it measures. The text report, `--against` and `--json` all come from
-//!    that table, so nothing else changes.
+//! 3. Add an entry to [`report::MEASUREMENTS`] (or, for a measurement of
+//!    an impulse response, [`report::IMPULSE_MEASUREMENTS`]), with its key,
+//!    unit and what it measures. The text report, `--against` and `--json`
+//!    all come from those tables, so nothing else changes.
 
+pub mod impulse;
 pub mod report;
 
 use std::f64::consts::TAU;
