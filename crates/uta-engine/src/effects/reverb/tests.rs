@@ -618,47 +618,77 @@ fn side_energies([left, right]: &[Vec<f32>; 2]) -> [f64; 2] {
     [left, right].map(|side| side.iter().map(|&s| f64::from(s).powi(2)).sum())
 }
 
-/// With the crosses at 0, a sound only on the left stays on the left: the
-/// early burst, and the tail, are two separate reverbs, one a side. At
-/// full the two sides are about equal, within 1 dB, and unlike each other
-/// (their correlation is near 0, the stereo spread at its widest); halfway,
-/// the right has some of it.
+/// Each cross on its own sets how far a sound on the left spreads to the
+/// right: Early Cross in the early burst (Depth 0%), Late Cross in the
+/// tail (Depth 100%), each with the other at 0, so neither leaks through
+/// the other. At 0 a sound only on the left stays on the left: two
+/// separate reverbs, one a side. Halfway the right has some of it. At
+/// full the two sides are within 1 dB of each other, and unlike each other
+/// (their correlation is near 0, the stereo spread at its widest).
 #[test]
-fn the_crosses_set_how_far_a_sound_on_the_left_spreads_to_the_right() {
+fn each_cross_sets_how_far_a_sound_on_the_left_spreads_to_the_right() {
     let rate = 48_000.0;
-    for depth in [0.0, 1.0] {
+    for (name, depth) in [("Early Cross", 0.0), ("Late Cross", 1.0)] {
         let at = |cross: f32| {
             let reverb = settings(|s| {
                 s.depth = depth;
-                s.early_cross = cross;
-                s.late_cross = cross;
+                (s.early_cross, s.late_cross) = if depth == 0.0 {
+                    (cross, 0.0)
+                } else {
+                    (0.0, cross)
+                };
             });
             response_to(&mut Reverb::new(reverb, rate), [1.0, 0.0], rate, 3.0)
         };
         let [left, right] = side_energies(&at(0.0));
         assert!(left > 0.0);
-        assert!(right < 1e-9 * left, "Depth {depth}: {right} on the right");
+        assert!(right < 1e-9 * left, "{name} 0: {right} on the right");
 
         let [left, right] = side_energies(&at(0.5));
         let db = 10.0 * (right / left).log10();
-        assert!(
-            (-12.0..-1.0).contains(&db),
-            "Depth {depth}, halfway: {db:.1} dB"
-        );
+        assert!((-12.0..-1.0).contains(&db), "{name} halfway: {db:.1} dB");
 
         let crossed = at(1.0);
         let [left, right] = side_energies(&crossed);
         let db = 10.0 * (right / left).log10();
         assert!(
             db.abs() < 1.0,
-            "Depth {depth}: the right is {db:.1} dB from the left"
+            "{name} full: the right is {db:.1} dB from the left"
         );
         let [early, late] = impulse::early_and_late_correlation(&crossed[0], &crossed[1], 48_000);
         let correlation = if depth == 0.0 { early } else { late }.unwrap();
         assert!(
             correlation.abs() < 0.2,
-            "Depth {depth}: correlation {correlation:.2}"
+            "{name} full: correlation {correlation:.2}"
         );
+    }
+}
+
+/// The tail's level follows its energy however its settings get there:
+/// after Late Size, or Decay, glides while the tail rings, its level is a
+/// new Reverb's at the same settings, so what you hear is what a render
+/// from there plays.
+#[test]
+fn after_a_glide_the_tails_level_is_a_new_reverbs() {
+    let rate = 48_000.0;
+    let turns: [fn(&mut ReverbSettings); 3] = [
+        |s| s.late_size = 1.0,
+        |s| s.late_size = 0.0,
+        |s| s.decay_seconds = 30.0,
+    ];
+    for turn in turns {
+        let mut reverb = Reverb::new(settings(|s| s.decay_seconds = 10.0), rate);
+        response_to(&mut reverb, [1.0, 1.0], rate, 0.5);
+        let turned = settings(|s| {
+            s.decay_seconds = 10.0;
+            turn(s);
+        });
+        reverb.set_settings(turned);
+        response_to(&mut reverb, [0.0, 0.0], rate, 2.0);
+        assert!(reverb.is_ringing());
+        let new = Reverb::new(turned, rate);
+        let apart = reverb.late_gain / new.late_gain - 1.0;
+        assert!(apart.abs() < 1e-4, "{turned:?}: {apart}");
     }
 }
 
@@ -816,6 +846,12 @@ fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
     assert!(played.fastest <= allowed, "{}", played.fastest);
 }
 
+/// The steepest step from one sample to the next a full-scale sine at
+/// `hz` makes at `rate`.
+fn sine_steepest(hz: f64, rate: f64) -> f32 {
+    (2.0 * (std::f64::consts::PI * hz / rate).sin()) as f32
+}
+
 /// The steepest step from one sample to the next in `samples`.
 fn steepest(samples: &[f32]) -> f32 {
     samples
@@ -829,11 +865,12 @@ fn steepest(samples: &[f32]) -> f32 {
 type Turn = (&'static str, fn(&mut ReverbSettings, f32));
 
 /// Every setting glides while the tail rings: turning any of them from its
-/// default to either end, a step every block over a quarter of a second,
-/// with a held A3 going in, never makes a step from one sample to the next
-/// more than twice the steepest the Reverb makes of that tone, steady,
-/// before or after. That's the sizes and Predelay too, which bend the pitch
-/// of what's ringing as they glide, never by more than half again.
+/// default to either end, a step every block over a quarter of a second
+/// or all at once, with a held A3 going in, never makes a step from one
+/// sample to the next more than twice the steepest a sine as loud as what
+/// comes out could make at 330 Hz: the A3 bent up by half again, as far as
+/// a gliding size or Predelay can bend it. A setting that jumped would
+/// jump the tail by a share of its own level: a click.
 #[test]
 fn turning_every_setting_while_the_tail_rings_does_not_click() {
     let rate = 48_000.0;
@@ -875,7 +912,10 @@ fn turning_every_setting_while_the_tail_rings_does_not_click() {
         ("High Xover", |s, f| s.high_xover_hz = 4_000.0 - 3_000.0 * f),
     ];
     let tone = |n: usize| (0.5 * (std::f64::consts::TAU * 220.0 * n as f64 / rate).sin()) as f32;
-    for (name, turn) in turns {
+    for ((name, turn), at_once) in turns
+        .iter()
+        .flat_map(|turn| [(*turn, false), (*turn, true)])
+    {
         // Mod rates are turned with the drift on from the start.
         let mut start = ReverbSettings::default();
         turn(&mut start, 0.0);
@@ -891,10 +931,12 @@ fn turning_every_setting_while_the_tail_rings_does_not_click() {
             n += frames;
             [left, right]
         };
-        let ringing = run(&mut reverb, 1.5);
-        let before =
-            steepest(&ringing[0][rate as usize..]).max(steepest(&ringing[1][rate as usize..]));
-        let steps = (0.25 * rate) as usize / block;
+        run(&mut reverb, 1.5);
+        let steps = if at_once {
+            1
+        } else {
+            (0.25 * rate) as usize / block
+        };
         let mut turned = [Vec::new(), Vec::new()];
         for step in 1..=steps {
             let mut settings = start;
@@ -907,12 +949,49 @@ fn turning_every_setting_while_the_tail_rings_does_not_click() {
         let [left, right] = run(&mut reverb, 2.0);
         turned[0].extend(&left);
         turned[1].extend(&right);
-        let after = steepest(&run(&mut reverb, 0.5)[0]);
-        let limit = 2.0 * before.max(after);
+        let peak = turned
+            .iter()
+            .flatten()
+            .fold(0.0f32, |peak, s| peak.max(s.abs()));
+        let limit = 2.0 * peak * sine_steepest(330.0, rate);
         let jump = steepest(&turned[0]).max(steepest(&turned[1]));
         assert!(
             jump <= limit,
-            "{name}: a step of {jump:.5}, twice the steady tone's steepest {limit:.5}"
+            "{name}, at once {at_once}: a step of {jump:.5}, the limit {limit:.5}"
         );
     }
+}
+
+/// The mod depths glide over half a second: turned from a fifth to full
+/// at once while the drift moves, nothing is read moving faster than the
+/// depth's glide and the drift itself allow together (four fifths of the
+/// reach over the glide, plus the drift's own steepest at 0.5 Hz). Over a
+/// few milliseconds the turn would move a line a hundred samples in a few
+/// hundred, bending the pitch by a fifth.
+#[test]
+fn the_mod_depths_glide_over_half_a_second() {
+    let rate = 48_000.0;
+    let mut reverb = Reverb::new(
+        settings(|s| {
+            s.early_mod_depth = 0.2;
+            s.late_mod_depth = 0.2;
+        }),
+        rate,
+    );
+    response_to(&mut reverb, [1.0, 1.0], rate, 1.0);
+    reverb.fastest = 0.0;
+    reverb.set_settings(settings(|s| {
+        s.early_mod_depth = 1.0;
+        s.late_mod_depth = 1.0;
+    }));
+    response_to(&mut reverb, [0.0, 0.0], rate, 1.0);
+    let glide = 0.8 * LATE_MOD_SECONDS / MOD_GLIDE_SECONDS;
+    let drift = DRIFT_STEEPEST * 0.5 * 1.42 * LATE_MOD_SECONDS;
+    assert!(reverb.fastest > 0.0);
+    assert!(
+        reverb.fastest <= glide + drift,
+        "{} against {}",
+        reverb.fastest,
+        glide + drift
+    );
 }

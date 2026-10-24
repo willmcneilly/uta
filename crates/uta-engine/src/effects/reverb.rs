@@ -20,7 +20,8 @@
 //!   go round again. Each side's lines are mixed by a Householder
 //!   reflection, then each left line with its right partner, as far as
 //!   Late Cross says: at 0 they're two separate reverbs, at full each lap
-//!   spreads every line's sound evenly over both sides. Each line loses
+//!   spreads every line's sound evenly over both sides. The tail is heard
+//!   from there, once crossed. Each line loses
 //!   exactly as much per lap as its length takes at the Decay, so every
 //!   resonance fades at the same rate (Jot, 1991) and no single one sings
 //!   on; and its two shelves take as much more or less from the lows and
@@ -513,6 +514,76 @@ impl Shelves {
     }
 }
 
+/// A long glide in a straight line, over a fixed number of steps, like a
+/// [`Ramp`], but with each value worked out from where it started, not
+/// added up a step at a time: over half a second of steps, adding up in
+/// `f32` drifts far enough from the line that landing on its end would
+/// jump the drift a twentieth of a sample.
+#[derive(Debug, Clone, Copy)]
+struct Slide {
+    from: f64,
+    to: f64,
+    /// Its steps, and how many it has taken.
+    length: u32,
+    taken: u32,
+}
+
+impl Slide {
+    /// A slide resting at `value` that takes `length` steps (at least one)
+    /// to reach each new target.
+    fn new(value: f32, length: u32) -> Self {
+        Self {
+            from: f64::from(value),
+            to: f64::from(value),
+            length: length.max(1),
+            taken: length.max(1),
+        }
+    }
+
+    /// Starts moving towards `target` from wherever it is now.
+    fn set_target(&mut self, target: f32) {
+        let target = f64::from(target);
+        if target == self.to {
+            return;
+        }
+        self.from = f64::from(self.value());
+        self.to = target;
+        self.taken = 0;
+    }
+
+    /// Jumps straight to `value`.
+    fn jump_to(&mut self, value: f32) {
+        self.from = f64::from(value);
+        self.to = f64::from(value);
+        self.taken = self.length;
+    }
+
+    /// The value the next step will have.
+    #[inline]
+    fn value(&self) -> f32 {
+        if self.taken >= self.length {
+            self.to as f32
+        } else {
+            (self.from + (self.to - self.from) * f64::from(self.taken) / f64::from(self.length))
+                as f32
+        }
+    }
+
+    fn is_moving(&self) -> bool {
+        self.taken < self.length
+    }
+
+    /// Returns the value for this step and moves on by one.
+    #[inline]
+    fn next_value(&mut self) -> f32 {
+        let value = self.value();
+        if self.taken < self.length {
+            self.taken += 1;
+        }
+        value
+    }
+}
+
 /// A slow random drift from −1 to 1: each cycle it moves along a
 /// smoothstep curve, which eases away and eases in, from where it is to a
 /// new place taken from its own seeded noise. Its speed never jumps, so the
@@ -533,7 +604,7 @@ struct Drift {
     /// After Play restarts it while the tail rings: how far it was from
     /// its start, gliding to nothing, a step each time the curve is worked
     /// out.
-    restart: Ramp,
+    restart: Slide,
     /// Where it is now, and how far it moves each sample until the curve
     /// is worked out again.
     now: f32,
@@ -548,7 +619,7 @@ impl Drift {
             step: 0.0,
             from: 0.0,
             to: 0.0,
-            restart: Ramp::new(0.0, 1),
+            restart: Slide::new(0.0, 1),
             now: 0.0,
             slope: 0.0,
         };
@@ -662,8 +733,8 @@ pub(crate) struct Reverb {
     early_cross: Ramp,
     late_cross: Ramp,
     /// The mod depths, gliding over [`MOD_GLIDE_SECONDS`].
-    early_mod_depth: Ramp,
-    late_mod_depth: Ramp,
+    early_mod_depth: Slide,
+    late_mod_depth: Slide,
     /// Each line's drift, and each lane's of the drifting step, and how
     /// many samples until their curves are worked out again.
     line_drifts: Box<[Drift]>,
@@ -700,9 +771,9 @@ pub(crate) struct Reverb {
     quiet: u32,
     #[cfg(test)]
     processed: u64,
-    /// The fastest any line or lane has been read moving through it since
-    /// its length last glided, in samples a sample, and where each was read
-    /// last.
+    /// The fastest any line or lane has been read moving through it, while
+    /// its length isn't gliding, in samples a sample; and where each was
+    /// read last, if it was on the sample before.
     #[cfg(test)]
     fastest: f64,
     #[cfg(test)]
@@ -784,8 +855,8 @@ impl Reverb {
             early_send: Ramp::new(0.0, 1),
             early_cross: Ramp::new(0.0, 1),
             late_cross: Ramp::new(0.0, 1),
-            early_mod_depth: Ramp::new(0.0, 1),
-            late_mod_depth: Ramp::new(0.0, 1),
+            early_mod_depth: Slide::new(0.0, 1),
+            late_mod_depth: Slide::new(0.0, 1),
             line_drifts: arrangement
                 .lines
                 .iter()
@@ -815,7 +886,7 @@ impl Reverb {
             #[cfg(test)]
             fastest: 0.0,
             #[cfg(test)]
-            last_reads: [0.0; MAX_LINES + LANES],
+            last_reads: [f64::NAN; MAX_LINES + LANES],
         };
         reverb.prepare(sample_rate);
         reverb
@@ -907,7 +978,9 @@ impl Reverb {
     #[cfg(test)]
     fn watch(&mut self, index: usize, read: f64, gliding: bool) {
         let last = std::mem::replace(&mut self.last_reads[index], read);
-        if !gliding {
+        // The first read since it was made, or since it last drifted, has
+        // nothing to be compared with.
+        if !gliding && !last.is_nan() {
             self.fastest = self.fastest.max((read - last).abs());
         }
     }
@@ -1168,14 +1241,14 @@ impl Effect for Reverb {
         ] {
             *ramp = Ramp::new(0.0, smoothing);
         }
-        self.early_mod_depth = Ramp::new(0.0, slow);
-        self.late_mod_depth = Ramp::new(0.0, slow);
+        self.early_mod_depth = Slide::new(0.0, slow);
+        self.late_mod_depth = Slide::new(0.0, slow);
         for drift in self
             .line_drifts
             .iter_mut()
             .chain(self.lane_drifts.iter_mut())
         {
-            drift.restart = Ramp::new(0.0, slow / DRIFT_STEP_SAMPLES);
+            drift.restart = Slide::new(0.0, slow / DRIFT_STEP_SAMPLES);
         }
         self.predelay_head = Glide::new(0.0, sample_rate);
         for head in self
@@ -1221,7 +1294,8 @@ impl Effect for Reverb {
         }
         // Bounded by the block.
         for (left, right) in left.iter_mut().zip(right.iter_mut()) {
-            let mut tones_move = self.gliding;
+            // Only the lines' lengths change their tones.
+            let mut tones_move = self.gliding && self.line_heads.iter().any(Glide::is_moving);
             if self.gliding {
                 self.glide_lengths();
             }
@@ -1240,8 +1314,12 @@ impl Effect for Reverb {
             if tones_move {
                 self.set_tones();
             }
-            if self.depth.is_moving() || self.decay_rate.is_moving() {
+            // The tail's level follows its energy, which the tones set.
+            let depth_moves = self.depth.is_moving();
+            if depth_moves {
                 self.depth.next_value();
+            }
+            if depth_moves || tones_move {
                 self.set_depth();
             }
             if self.diffusion.is_moving() {
@@ -1339,8 +1417,8 @@ impl Effect for Reverb {
             // Round the network: each line's output, read where its drift
             // has it, given its tone for the lap; each side's Householder
             // reflection, each less twice their average; each left line
-            // crossed with its right partner; then each line written with
-            // what comes round and what goes in.
+            // crossed with its right partner, which is the tail heard; then
+            // each line written with what comes round and what goes in.
             let mut outputs = [0.0f32; MAX_LINES];
             let mut reads = self.line_lengths;
             if late_drifting {
@@ -1364,8 +1442,9 @@ impl Effect for Reverb {
                     watched[index] = Some((read, self.line_heads[index].is_moving()));
                 }
                 for (index, read) in watched.into_iter().enumerate() {
-                    if let Some((read, gliding)) = read {
-                        self.watch(index, read, gliding);
+                    match read {
+                        Some((read, gliding)) => self.watch(index, read, gliding),
+                        None => self.last_reads[index] = f64::NAN,
                     }
                 }
             }
@@ -1380,6 +1459,24 @@ impl Effect for Reverb {
             for (&l, &r) in lefts.iter().zip(rights) {
                 (mixed[l], mixed[r]) = butterfly(mixed[l], mixed[r], self.late_crossing);
             }
+            // The tail is heard from here, once crossed, so a sound on one
+            // side spreads to the other as far as Late Cross says from its
+            // first lap. The right's lines are summed with every other one
+            // flipped, so what the cross gives both sides comes out unlike
+            // on each, not as the same sound twice.
+            let late = [0, 1].map(|side| {
+                arrangement.late_out[side]
+                    .iter()
+                    .enumerate()
+                    .map(|(n, &line)| {
+                        if side == 1 && n % 2 == 1 {
+                            -mixed[line]
+                        } else {
+                            mixed[line]
+                        }
+                    })
+                    .sum::<f32>()
+            });
             for (side, lines) in arrangement.late_out.iter().enumerate() {
                 for (n, &line) in lines.iter().enumerate() {
                     let lane = side * LANES / 2 + n % (LANES / 2);
@@ -1392,9 +1489,6 @@ impl Effect for Reverb {
                 written |= sample != 0.0;
                 line.write(sample);
             }
-            let late = arrangement
-                .late_out
-                .map(|side| side.iter().map(|&line| outputs[line]).sum::<f32>());
             let out = [0, 1].map(|side| {
                 let mut wet =
                     f64::from(self.early_gain * early[side] + self.late_gain * late[side]);
