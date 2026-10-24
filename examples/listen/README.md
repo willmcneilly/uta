@@ -342,3 +342,26 @@ What to listen for, against Ableton's Echo on the same sound:
 - **Feedback 100%:** the echoes go on and on, getting darker and thinner each time round (the cuts are still in the loop), but not quieter for a long while.
 - **Feedback 110%:** they swell for a few seconds, then hold about as loud as the first echoes, still separate echoes of the stab, slowly getting darker and rounder: never an ever louder blast, and never a wall of thuds. If it's still painful, the top of the range should come down (RFC-007 risk).
 - **No clicks anywhere,** and no zipper noise as echoes go round.
+
+## Reverb
+
+The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impulse-response` rather than for the ear. Each list is one synth track playing a click (white noise for about 2 ms, the shortest a synth note makes) through a Reverb at Mix 100%, so only the reverb is heard, with the track and the master at 0 dB. Settings a list doesn't name are at the Reverb's defaults: Room, Predelay 10 ms, Decay 2 s, Depth 50%, Early Size 30 ms, Diffusion 80%, Early Send 90%, Late Size 50%.
+
+| Render | What it plays |
+|---|---|
+| `01-defaults` | The click through the Reverb at its defaults. |
+| `02-decay-300ms` | Decay 0.3 s: a small room. |
+| `03-decay-1` | Decay 1 s. |
+| `04-decay-5` | Decay 5 s. |
+| `05-decay-10` | Decay 10 s: it rings on past the song's end. |
+| `06-depth-0` | Depth 0%: only the early burst, over in about 40 ms. |
+| `07-depth-100` | Depth 100%: only the tail, which starts with the shortest line's first lap, 42 ms after the Predelay. |
+
+Render and measure them:
+
+```bash
+cargo run --release -p uta-cli -- render-all examples/listen/reverb target/listen/reverb
+cargo run --release -p uta-cli -- analyse target/listen/reverb/01-defaults.wav --impulse-response --png target/images
+```
+
+The click isn't a single sample, so its own spectrum shows in the colouration, which reads about 2.5 dB here against under 1 dB for a one-sample click. Compare colouration between these renders, not with the Reverb's tests.

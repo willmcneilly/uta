@@ -28,6 +28,7 @@ mod effect;
 mod factory;
 mod id;
 mod project;
+mod reverb;
 mod session;
 mod setting;
 mod synth;
@@ -52,6 +53,7 @@ pub use effect::{
 pub use factory::{Audition, FactorySound, LOUDNESS_SPREAD_DB, Targets};
 pub use id::{ClipId, EffectId, NoteId, ProjectId, TrackId};
 pub use project::{Project, Transport};
+pub use reverb::{ReverbMode, ReverbParam, ReverbSettings};
 pub use session::{Applied, Session};
 pub use setting::{Choice, Description, Kind as SettingKind, Scale, Unit};
 pub use synth::{

@@ -1,0 +1,104 @@
+{
+  "project": "b57bb3c6-63ed-5fa1-92df-6dea990fb8a2",
+  "commands": [
+    {
+      "format": 15,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_loop_enabled",
+        "enabled": false
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 1,
+            "track": {
+              "id": "4a1089c9-c6b8-54b2-b9d2-13d2c51bf7d6",
+              "name": "Defaults",
+              "source": {
+                "synth": {
+                  "osc1_level": 0.0,
+                  "noise_level": 1.0,
+                  "attack_seconds": 0.001,
+                  "decay_seconds": 0.001,
+                  "sustain": 0.0,
+                  "release_seconds": 0.001
+                }
+              },
+              "effects": [
+                {
+                  "id": "9dd91501-eef8-598d-afa3-074d60e49daa",
+                  "settings": {
+                    "reverb": {
+                      "mode": "room",
+                      "predelay_seconds": 0.01,
+                      "decay_seconds": 2.0,
+                      "depth": 0.5,
+                      "high_cut_hz": 20000.0,
+                      "low_cut_hz": 20.0,
+                      "early_size_seconds": 0.03,
+                      "early_cross": 1.0,
+                      "diffusion": 0.8,
+                      "early_send": 0.9,
+                      "early_mod_rate_hz": 0.5,
+                      "early_mod_depth": 0.0,
+                      "late_size": 0.5,
+                      "late_cross": 1.0,
+                      "late_mod_rate_hz": 0.5,
+                      "late_mod_depth": 0.0,
+                      "bass_mult": 1.0,
+                      "bass_xover_hz": 500.0,
+                      "high_mult": 0.5,
+                      "high_xover_hz": 4000.0
+                    }
+                  },
+                  "enabled": true,
+                  "mix": 1.0
+                }
+              ],
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": [
+                {
+                  "id": "965c1545-c31a-5685-a8f1-9fdd9a2d398d",
+                  "start": 0,
+                  "length": 3840,
+                  "notes": [
+                    {
+                      "id": "2d3995d0-73e3-56c3-b80a-aff620376422",
+                      "pitch": 69,
+                      "velocity": 127,
+                      "start": 0,
+                      "length": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

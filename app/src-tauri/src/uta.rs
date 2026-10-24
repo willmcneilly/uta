@@ -17,7 +17,7 @@ use uta_core::{
     Chain, Choice, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description,
     DrumParam, DrumSound, Effect, EffectId, EffectKind, EffectSettings, FactorySound, KIT,
     KickModel, KitSettings, MAX_EFFECTS, MixerStrip, Note, NoteId, PlacedClip, PlacedEffect,
-    PlacedTrack, Project, Session, Source, SynthParam, SynthSettings, Track, TrackId,
+    PlacedTrack, Project, ReverbParam, Session, Source, SynthParam, SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -173,6 +173,9 @@ pub enum EffectKindView {
         #[serde(rename = "echoSeconds")]
         echo_seconds: f64,
     },
+    Reverb {
+        settings: Vec<ReverbParam>,
+    },
 }
 
 impl EffectView {
@@ -187,6 +190,9 @@ impl EffectView {
                 EffectSettings::Delay(settings) => EffectKindView::Delay {
                     settings: settings.params().into(),
                     echo_seconds: settings.time_seconds_at(bpm),
+                },
+                EffectSettings::Reverb(settings) => EffectKindView::Reverb {
+                    settings: settings.params().into(),
                 },
             },
         }
@@ -293,6 +299,11 @@ impl Descriptions {
                 let mix = (name_of(&MixParam::Mix(0.0)), effect.describe_mix());
                 let settings: Vec<_> = match effect.settings() {
                     EffectSettings::Delay(settings) => settings
+                        .params()
+                        .into_iter()
+                        .map(|param| (name_of(&param), param.describe()))
+                        .collect(),
+                    EffectSettings::Reverb(settings) => settings
                         .params()
                         .into_iter()
                         .map(|param| (name_of(&param), param.describe()))
@@ -1445,6 +1456,9 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         max_tracks: Project::MAX_TRACKS,
         effect_kinds: EffectKind::ALL
             .into_iter()
+            // The Reverb has no panel until UTA-105, so the menu doesn't
+            // offer it yet.
+            .filter(|&kind| kind != EffectKind::Reverb)
             .map(|kind| EffectKindChoice {
                 kind,
                 name: kind.name(),
@@ -1956,6 +1970,17 @@ mod tests {
             names(described.effects["delay"].keys().cloned().collect()),
             names(
                 delay
+                    .iter()
+                    .map(name_of)
+                    .chain(["mix".to_owned()])
+                    .collect()
+            )
+        );
+        let reverb = uta_core::ReverbSettings::default().params();
+        assert_eq!(
+            names(described.effects["reverb"].keys().cloned().collect()),
+            names(
+                reverb
                     .iter()
                     .map(name_of)
                     .chain(["mix".to_owned()])

@@ -21,6 +21,7 @@
 
 pub(crate) mod chain;
 mod delay;
+mod reverb;
 
 pub use chain::{CHAIN_CAPACITY, EFFECT_FADE_SECONDS};
 pub use delay::{DELAY_TAPE_SECONDS, DelaySettings, WOBBLE_REACH_SECONDS};
@@ -28,6 +29,7 @@ pub use delay::{DELAY_TAPE_SECONDS, DelaySettings, WOBBLE_REACH_SECONDS};
 use uta_core::EffectId;
 
 use delay::Delay;
+use reverb::Reverb;
 
 /// The five things every effect does on the audio thread (RFC-007, pattern
 /// 6). Nothing here may allocate, free, wait or do I/O, and every loop is
@@ -75,6 +77,8 @@ pub(crate) trait Effect {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EffectSettings {
     Delay(DelaySettings),
+    /// The core's settings as they are: none of them follows the tempo.
+    Reverb(uta_core::ReverbSettings),
 }
 
 impl EffectSettings {
@@ -83,6 +87,7 @@ impl EffectSettings {
     pub fn new(settings: &uta_core::EffectSettings, bpm: f32) -> Self {
         match settings {
             uta_core::EffectSettings::Delay(delay) => Self::Delay(DelaySettings::new(delay, bpm)),
+            uta_core::EffectSettings::Reverb(reverb) => Self::Reverb(*reverb),
         }
     }
 }
@@ -120,12 +125,14 @@ pub struct EffectState(Kind);
 /// The state of each kind of effect.
 enum Kind {
     Delay(Delay),
+    Reverb(Reverb),
 }
 
 impl std::fmt::Debug for EffectState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             Kind::Delay(_) => f.write_str("EffectState::Delay"),
+            Kind::Reverb(_) => f.write_str("EffectState::Reverb"),
         }
     }
 }
@@ -136,18 +143,21 @@ impl EffectState {
     pub(crate) fn new(settings: &EffectSettings, sample_rate: f64) -> Box<Self> {
         Box::new(Self(match *settings {
             EffectSettings::Delay(delay) => Kind::Delay(Delay::new(delay, sample_rate)),
+            EffectSettings::Reverb(reverb) => Kind::Reverb(Reverb::new(reverb, sample_rate)),
         }))
     }
 
     pub(crate) fn prepare(&mut self, sample_rate: f64) {
         match &mut self.0 {
             Kind::Delay(delay) => delay.prepare(sample_rate),
+            Kind::Reverb(reverb) => reverb.prepare(sample_rate),
         }
     }
 
     pub(crate) fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         match &mut self.0 {
             Kind::Delay(delay) => delay.process(left, right),
+            Kind::Reverb(reverb) => reverb.process(left, right),
         }
     }
 
@@ -156,24 +166,31 @@ impl EffectState {
     pub(crate) fn set_settings(&mut self, settings: &EffectSettings) {
         match (&mut self.0, *settings) {
             (Kind::Delay(delay), EffectSettings::Delay(settings)) => delay.set_settings(settings),
+            (Kind::Reverb(reverb), EffectSettings::Reverb(settings)) => {
+                reverb.set_settings(settings)
+            }
+            _ => {}
         }
     }
 
     pub(crate) fn is_ringing(&self) -> bool {
         match &self.0 {
             Kind::Delay(delay) => delay.is_ringing(),
+            Kind::Reverb(reverb) => reverb.is_ringing(),
         }
     }
 
     pub(crate) fn clear(&mut self) {
         match &mut self.0 {
             Kind::Delay(delay) => delay.clear(),
+            Kind::Reverb(reverb) => reverb.clear(),
         }
     }
 
     pub(crate) fn restart(&mut self) {
         match &mut self.0 {
             Kind::Delay(delay) => delay.restart(),
+            Kind::Reverb(reverb) => reverb.restart(),
         }
     }
 
@@ -183,6 +200,7 @@ impl EffectState {
     pub(crate) fn processed(&self) -> u64 {
         match &self.0 {
             Kind::Delay(delay) => delay.processed(),
+            Kind::Reverb(reverb) => reverb.processed(),
         }
     }
 }

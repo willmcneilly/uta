@@ -2,21 +2,21 @@
   "project": "00000000-0000-0000-0000-0000fac70007",
   "commands": [
     {
-      "format": 14,
+      "format": 15,
       "command": {
         "type": "set_tempo",
         "bpm": 120.0
       }
     },
     {
-      "format": 14,
+      "format": 15,
       "command": {
         "type": "set_loop_length",
         "bars": 2
       }
     },
     {
-      "format": 14,
+      "format": 15,
       "command": {
         "type": "set_synth_settings",
         "track": "87847728-931d-5223-94ff-4de8a43e3c2c",
@@ -71,7 +71,7 @@
       }
     },
     {
-      "format": 14,
+      "format": 15,
       "command": {
         "type": "add_notes",
         "clip": "1c285799-b73a-565e-8069-a0a529d67b9b",
