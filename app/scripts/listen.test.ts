@@ -35,17 +35,22 @@ import { parseToml } from "./toml";
  * A 32-bit float stereo WAV, as `uta render` writes, of a sine at
  * `amplitude`. With a `tail`, it holds until `tail.from` seconds, then fades
  * at a steady rate in dB to 60 dB down at `tail.sixtyAt` and on below it;
- * `right` scales the right channel.
+ * `right` scales the right channel, and `rightSixtyAt` gives it its own fade.
  */
-function floatWav(seconds: number, amplitude: number, sampleRate = 8000, tail?: { from: number; sixtyAt: number; right?: number }): Buffer {
+function floatWav(
+  seconds: number,
+  amplitude: number,
+  sampleRate = 8000,
+  tail?: { from: number; sixtyAt: number; right?: number; rightSixtyAt?: number },
+): Buffer {
   const frames = Math.round(seconds * sampleRate);
   const data = Buffer.alloc(frames * 2 * 4);
   for (let i = 0; i < frames; i++) {
     const t = i / sampleRate;
-    const fade = tail && t > tail.from ? 10 ** ((-60 * (t - tail.from)) / (tail.sixtyAt - tail.from) / 20) : 1;
-    const sample = amplitude * fade * Math.sin((2 * Math.PI * 220 * i) / sampleRate);
-    data.writeFloatLE(sample, i * 8);
-    data.writeFloatLE(sample * (tail?.right ?? 1), i * 8 + 4);
+    const fade = (sixtyAt: number) => (tail && t > tail.from ? 10 ** ((-60 * (t - tail.from)) / (sixtyAt - tail.from) / 20) : 1);
+    const sine = amplitude * Math.sin((2 * Math.PI * 220 * i) / sampleRate);
+    data.writeFloatLE(sine * fade(tail?.sixtyAt ?? 1), i * 8);
+    data.writeFloatLE(sine * fade(tail?.rightSixtyAt ?? tail?.sixtyAt ?? 1) * (tail?.right ?? 1), i * 8 + 4);
   }
   const header = Buffer.alloc(44);
   header.write("RIFF", 0, "ascii");
@@ -242,6 +247,10 @@ describe("matching and lining up", () => {
     expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 2 }), -40)).toBeCloseTo(1.5, 2);
     // The louder channel decides it: on its own, the right (20 dB down) would be under -60 dB of the peak a third sooner.
     expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 2, right: 0.1 }))).toBeCloseTo(2, 2);
+    // Either channel can ring on longest, and the peak is the louder channel's.
+    expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 1, rightSixtyAt: 2.5 }))).toBeCloseTo(2.5, 2);
+    // The right is 20 dB louder: measured against the left's peak, it would ring on to 2.5 s.
+    expect(tailSeconds(floatWav(5, 0.05, 8000, { from: 0.5, sixtyAt: 2, right: 10 }))).toBeCloseTo(2, 2);
     expect(tailSeconds(floatWav(5, 0, 8000))).toBe(0);
     expect(TAIL_DB).toBe(-60);
   });
@@ -405,14 +414,19 @@ describe("a canvas session", () => {
     prepare(readSession(dir), tools);
     prepare(readSession(dir), tools);
     expect(calls.render).toHaveLength(3);
+    // A compiled command list gone missing is compiled and rendered again.
+    rmSync(join(dir, "bright.canvas.json"));
+    prepare(readSession(dir), tools);
+    expect(calls.render.slice(3)).toEqual([join(dir, "bright.wav")]);
+    expect(existsSync(join(dir, "bright.canvas.json"))).toBe(true);
     const later = new Date(Date.now() + 5000);
     utimesSync(join(dir, "echo.toml"), later, later);
     prepare(readSession(dir), tools);
-    expect(calls.render.slice(3)).toEqual([join(dir, "echo.wav")]);
+    expect(calls.render.slice(4)).toEqual([join(dir, "echo.wav")]);
     const evenLater = new Date(Date.now() + 10_000);
     utimesSync(join(dir, "canvas.toml"), evenLater, evenLater);
     prepare(readSession(dir), tools);
-    expect(calls.render.slice(4)).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.wav`)));
+    expect(calls.render.slice(5)).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.wav`)));
   });
 
   it("loops from the start until the last candidate's tail is below -60 dB, not the silence the renders ring on into", () => {

@@ -884,23 +884,27 @@ mod tests {
     }
 
     /// The listening canvas's parts each build, with the loop off and one
-    /// track named Part, and a candidate's commands added onto the end, as
-    /// `scripts/listen` adds them, name it as `$track:Part`: an effect on
-    /// any part, and a sound on a synth part.
+    /// track named Part, and each example candidate in `scripts/listen
+    /// --help` (in `app/scripts/listen.ts`), added onto the end as
+    /// `scripts/listen` adds it, names it as `$track:Part`: the effect on
+    /// any part, and the sound on a synth part.
     #[test]
     fn the_canvas_parts_build_with_a_candidate_on_top() {
         let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/canvas");
-        let echo = r#"
-[[command]]
-type = "add_effects"
-effects = [{ chain = { track = "$track:Part" }, index = 0, effect = { id = "9b2f6c1e-0000-4000-8000-000000000001", settings = { delay = { sync = true, division = "1/8d", time_seconds = 0.375, mode = "stereo", feedback = 0.4, low_cut_hz = 100.0, high_cut_hz = 8000.0, drive = 0.2, wobble = 0.1 } }, enabled = true, mix = 0.3 } }]
-"#;
-        let sound = r#"
-[[command]]
-type = "set_synth_settings"
-track = "$track:Part"
-settings = { osc1_wave = "saw", cutoff_hz = 4000, release_seconds = 0.4 }
-"#;
+        let help = include_str!("../../../app/scripts/listen.ts");
+        // An example is the help's indented lines from its `# <name>` comment
+        // to the next blank line.
+        let example = |name: &str| {
+            let lines: Vec<_> = help
+                .lines()
+                .skip_while(|line| !line.trim_start().starts_with(&format!("# {name}")))
+                .take_while(|line| !line.trim().is_empty())
+                .map(|line| line.strip_prefix("  ").unwrap_or(line))
+                .collect();
+            assert!(lines.len() > 2, "no {name} example in the help");
+            lines.join("\n")
+        };
+        let (echo, sound) = (example("echo.toml"), example("bright.toml"));
         for part in ["snare", "chord", "swell", "pad"] {
             let path = folder.join(format!("{part}.toml"));
             let project = load(None, Some(&path), false).unwrap();
@@ -909,7 +913,7 @@ settings = { osc1_wave = "saw", cutoff_hz = 4000, release_seconds = 0.4 }
             assert_eq!(names, ["Part"], "{part}");
             let song = read(&path).unwrap();
             let synth = part != "snare";
-            for commands in [echo].into_iter().chain(synth.then_some(sound)) {
+            for commands in [&echo].into_iter().chain(synth.then_some(&sound)) {
                 let list = uta_song::compile(&format!("{song}\n{commands}"))
                     .unwrap_or_else(|error| panic!("{part}: {error}"));
                 let project = list.build().unwrap();
