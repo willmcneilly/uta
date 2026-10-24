@@ -488,7 +488,7 @@ export function readWav(bytes: Buffer): WavInfo {
 
 /** Where a loop with the loop off ends: once every candidate is this far below its own peak… */
 export const TAIL_DB = -60;
-/** …and this long after, so the next pass doesn't follow straight on from the tail (Will found 2 s of swell "a bit too fast"). */
+/** …and this long after, so the next pass doesn't follow straight on from the tail: chosen by ear, in a listening session on the canvas. */
 export const TAIL_PAUSE_SECONDS = 0.5;
 
 /**
