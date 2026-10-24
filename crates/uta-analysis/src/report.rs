@@ -460,7 +460,7 @@ pub const IMPULSE_MEASUREMENTS: &[Measurement] = &[
         unit: "dB",
         decimals: 2,
         about: "How bumpy the tail's spectrum is, from 200 Hz to 10 kHz: the RMS of its \
-                spectrum (averaged over the tail from -5 to -35 dB, each 100 ms frame scaled \
+                spectrum (averaged over the tail from -5 to -60 dB, each 100 ms frame scaled \
                 alike) against its own average over the octave around each point. A metallic \
                 ring sticks out and reads higher; a smooth tail reads under a dB or so. Our own \
                 measure, with no limit set yet. `null` if the tail is under 100 ms.",

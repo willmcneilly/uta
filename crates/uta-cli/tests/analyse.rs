@@ -761,3 +761,62 @@ fn an_impulse_response_draws_its_own_images() {
         assert_look_for(&assert_image(&dir, &format!("room-{image}")), image);
     }
 }
+
+/// Each octave's decay is reported under its own key and printed on the
+/// decay image under its own name: a sine at each band's centre, each
+/// decaying at its own rate, so a band read from the wrong place shows.
+#[test]
+fn each_octave_is_reported_and_drawn_under_its_own_name() {
+    let bands = [
+        ("63", "decay_63hz_s", 62.5, 0.4),
+        ("125", "decay_125hz_s", 125.0, 0.5),
+        ("250", "decay_250hz_s", 250.0, 0.6),
+        ("500", "decay_500hz_s", 500.0, 0.7),
+        ("1k", "decay_1khz_s", 1000.0, 0.8),
+        ("2k", "decay_2khz_s", 2000.0, 0.9),
+        ("4k", "decay_4khz_s", 4000.0, 1.0),
+        ("8k", "decay_8khz_s", 8000.0, 1.1),
+    ];
+    let path = folder("png_octaves").join("octaves.wav");
+    let frames: Vec<[f32; 2]> = (0..96_000)
+        .map(|i| {
+            let t = f64::from(i) / 48_000.0;
+            let sum: f64 = bands
+                .iter()
+                .map(|&(_, _, hz, decay)| {
+                    (std::f64::consts::TAU * hz * t).sin() * 10f64.powf(-3.0 * t / decay)
+                })
+                .sum();
+            [(0.1 * sum) as f32; 2]
+        })
+        .collect();
+    write_stereo(&path, 48_000, &frames);
+    let dir = path.parent().unwrap().join("images");
+    let path = path.to_str().unwrap();
+    let report = json(&[
+        "analyse",
+        path,
+        "--json",
+        "--ir",
+        "--png",
+        dir.to_str().unwrap(),
+    ]);
+    let m = &report["measurements"];
+    let svg = assert_image(&dir, "octaves-decay");
+    for (name, key, _, decay) in bands {
+        let measured = m[key].as_f64().unwrap();
+        assert!((measured - decay).abs() < 0.02, "{key} {measured} s");
+        assert!(
+            svg.contains(&format!(">{name} Hz {measured:.3} s<")),
+            "the decay image has {name} Hz at {measured:.3} s"
+        );
+    }
+    // The mid band is the average of 500 Hz and 1 kHz, and no other two.
+    let mid = m["decay_mid_s"].as_f64().unwrap();
+    let average =
+        (m["decay_500hz_s"].as_f64().unwrap() + m["decay_1khz_s"].as_f64().unwrap()) / 2.0;
+    assert!(
+        (mid - average).abs() < 1e-12,
+        "mid {mid} s, not {average} s"
+    );
+}

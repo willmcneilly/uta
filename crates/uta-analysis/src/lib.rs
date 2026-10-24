@@ -21,8 +21,8 @@
 //!    of a known frequency or a decay of a known rate.
 //! 3. Add an entry to [`report::MEASUREMENTS`] (or, for a measurement of
 //!    an impulse response, [`report::IMPULSE_MEASUREMENTS`]), with its key,
-//!    unit and what it measures. The text report, `--against` and `--json` all come from
-//!    that table, so nothing else changes.
+//!    unit and what it measures. The text report, `--against` and `--json`
+//!    all come from those tables, so nothing else changes.
 
 pub mod impulse;
 pub mod report;

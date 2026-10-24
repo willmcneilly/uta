@@ -296,14 +296,13 @@ pub fn early_and_late_correlation(
 /// (RFC-010's Risks), with no limit until it's checked against listening.
 ///
 /// The tail is the stretch where the [`decay_curve_db`] falls from
-/// [`FIT_FROM_DB`] to -60 dB (or to the end). Its spectrum is averaged over 100 ms
-/// frames (Hann, overlapping by half), each scaled to the same power first,
-/// so the end of the tail counts as much as its start, and a ring that
-/// outlives the rest stands out. That spectrum is read in dB at 48 points
-/// an octave, each the average of the bins in the 48th of an octave around
-/// it, and
-/// compared with its own average over the octave around it (its broad
-/// shape, which is the reverb's tone, not its colouration). The colouration
+/// [`FIT_FROM_DB`] to -60 dB (or to the end). Its spectrum is averaged over
+/// 100 ms frames (Hann, overlapping by half), each scaled to the same power
+/// first, so the end of the tail counts as much as its start, and a ring
+/// that outlives the rest stands out. That spectrum is read in dB at 48
+/// points an octave, each the average of the bins in the 48th of an octave
+/// around it, and compared with its own average over the octave around it
+/// (its broad shape, which is the reverb's tone, not its colouration). The colouration
 /// is the RMS of the difference from [`COLOURATION_LOWEST_HZ`] to
 /// [`COLOURATION_HIGHEST_HZ`] (or as high as the sample rate allows).
 ///
@@ -532,6 +531,47 @@ mod tests {
                 "{decay} s reads {measured} s"
             );
         }
+    }
+
+    #[test]
+    fn the_fit_is_from_5_to_35_db_down() {
+        // A curve that falls 5 dB at once, then 15 dB at 100 dB a second,
+        // then 15 dB at 50, then 40 dB at once: the fit is the straight line
+        // through the points from -5 to -35 dB, and no more or fewer.
+        let rate = 1000;
+        let mut curve = vec![0.0];
+        curve.extend((0..150).map(|i| -5.0 - 0.1 * f64::from(i)));
+        curve.extend((0..=300).map(|i| -20.0 - 0.05 * f64::from(i)));
+        curve.extend([-75.0; 100]);
+        let fitted: Vec<(f64, f64)> = curve
+            .iter()
+            .enumerate()
+            .skip_while(|&(_, &db)| db > -5.0)
+            .take_while(|&(_, &db)| db >= -35.0)
+            .map(|(i, &db)| (i as f64, db))
+            .collect();
+        let n = fitted.len() as f64;
+        let (mean_x, mean_y) = (
+            fitted.iter().map(|p| p.0).sum::<f64>() / n,
+            fitted.iter().map(|p| p.1).sum::<f64>() / n,
+        );
+        let slope = fitted
+            .iter()
+            .map(|&(x, y)| (x - mean_x) * (y - mean_y))
+            .sum::<f64>()
+            / fitted
+                .iter()
+                .map(|&(x, _)| (x - mean_x).powi(2))
+                .sum::<f64>();
+        let expected = -60.0 / slope / f64::from(rate);
+        let decay = decay_time(&curve, rate).unwrap();
+        assert!(
+            (decay - expected).abs() < 1e-9,
+            "{decay} s, expected {expected} s"
+        );
+        // Between a 0.6 s and a 1.2 s decay, nearer the longer, which lasts
+        // twice as long.
+        assert!((0.9..1.2).contains(&decay), "{decay} s");
     }
 
     #[test]

@@ -788,9 +788,9 @@ const BANDS: [(&str, &str); 8] = [
     ("8k", "decay_8khz_s"),
 ];
 
-/// The echo density over time, from 0 to 1.5, with 1 (a smooth wash) and
-/// [`DENSE`] marked, and when it first reaches it; the first 300 ms after
-/// the onset close up beneath.
+/// The echo density over time, from 0 to 2, with [`DENSE`] (near 1, a
+/// smooth wash) dashed and when it first reaches it marked; the first
+/// 300 ms after the onset close up beneath.
 fn echo_density_image(sound: &Sound) -> String {
     let rate = sound.sample_rate;
     let seconds = sound.seconds();
