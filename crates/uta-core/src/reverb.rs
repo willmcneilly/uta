@@ -2,9 +2,7 @@
 //! mode's arrangement. See RFC-010, "The controls".
 //!
 //! Every setting RFC-010 lists is here from the start, with its range, unit
-//! and default, so the command format goes up once. UTA-99's engine plays
-//! the Mode, Predelay, Decay, Depth, the sizes, Diffusion and Early Send;
-//! the tone, the crosses and the modulation are played from UTA-100.
+//! and default, so the command format went up once.
 
 use serde::{Deserialize, Serialize};
 
@@ -157,10 +155,9 @@ impl ReverbSettings {
 
 impl Default for ReverbSettings {
     /// RFC-010's starting point: Room, a 2 s Decay, Depth at 50% and a High
-    /// Mult of 0.5 (Mix, 25%, is the effect's). The rest are this ticket's
-    /// first guesses, to be tuned by ear in UTA-101: the cuts open, the
-    /// crosses full and the modulation still, as the engine plays them until
-    /// UTA-100, and a short, fairly smooth burst. Early Send is high because
+    /// Mult of 0.5 (Mix, 25%, is the effect's). The rest are first guesses,
+    /// to be tuned by ear in UTA-101: the cuts open, the crosses full and
+    /// the modulation still, and a short, fairly smooth burst. Early Send is high because
     /// the predelayed sound going straight into the tail is sparse: at 0.5
     /// its echo density took 0.4 s to stay near 1, at 0.9 it does as soon as
     /// the burst ends.

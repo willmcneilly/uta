@@ -1320,8 +1320,8 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
 
         // Turn every Delay's settings and Mix, a snapshot each, so its
         // time, Feedback, Mode, cuts, Drive and Wobble all glide; and every
-        // Reverb's, so its Decay, Depth, Diffusion and Early Send glide and
-        // its sizes and Predelay move.
+        // Reverb's, so every one of its settings glides, its sizes and
+        // Predelay with them, and its drift moves.
         for (n, effect) in effects(&project).into_iter().enumerate() {
             let f = n as f32 / 32.0;
             if project.effect(effect).unwrap().kind() == EffectKind::Reverb {
@@ -1334,6 +1334,18 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
                     set(ReverbParam::EarlySizeSeconds(0.002 + 0.9 * f.min(1.0))),
                     set(ReverbParam::LateSize(f.min(1.0))),
                     set(ReverbParam::PredelaySeconds(0.5 * f.min(1.0))),
+                    set(ReverbParam::HighCutHz(20_000.0 - 19_000.0 * f.min(1.0))),
+                    set(ReverbParam::LowCutHz(20.0 + 980.0 * f.min(1.0))),
+                    set(ReverbParam::EarlyCross(1.0 - f.min(1.0))),
+                    set(ReverbParam::LateCross(f.min(1.0))),
+                    set(ReverbParam::EarlyModRateHz(0.05 + 4.95 * f.min(1.0))),
+                    set(ReverbParam::EarlyModDepth(f.min(1.0))),
+                    set(ReverbParam::LateModRateHz(5.0 - 4.95 * f.min(1.0))),
+                    set(ReverbParam::LateModDepth(1.0 - 0.5 * f.min(1.0))),
+                    set(ReverbParam::BassMult(0.25 + 3.75 * f.min(1.0))),
+                    set(ReverbParam::BassXoverHz(100.0 + 1900.0 * f.min(1.0))),
+                    set(ReverbParam::HighMult(2.0 - 1.9 * f.min(1.0))),
+                    set(ReverbParam::HighXoverHz(1_000.0 + 15_000.0 * f.min(1.0))),
                     Command::SetEffectMix {
                         effect,
                         mix: 1.0 - f.min(1.0),

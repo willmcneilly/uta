@@ -1,42 +1,45 @@
 # The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.
-# Recorded on 17 Oct 2026 at 68ce1cb, on MacBook-Pro.
+# Recorded on 24 Oct 2026 at 6616bdf, on MacBook-Pro.
 load	block	p50_us	p99_us
-Demo loop	32	2.38	3.00
-Demo loop	128	7.96	9.92
-Demo loop	1024	61.54	75.00
-16 voices	32	4.62	5.71
-16 voices	128	17.04	21.62
-16 voices	1024	133.75	150.71
-16 voices, per-voice filter	32	5.00	6.33
-16 voices, per-voice filter	128	18.71	24.46
-16 voices, per-voice filter	1024	144.67	162.50
-16 full voices	32	18.96	23.67
-16 full voices	128	73.33	84.33
-16 full voices	1024	579.62	649.71
-Demo song	32	4.00	5.21
-Demo song	128	15.00	19.83
-Demo song	1024	117.58	153.75
-32 tracks × 8 voices	32	67.46	123.25
-32 tracks × 8 voices	128	271.46	505.29
-32 tracks × 8 voices	1024	2199.29	4052.58
-32 tracks × 8 full voices	32	296.04	573.29
-32 tracks × 8 full voices	128	1180.42	2295.58
-32 tracks × 8 full voices	1024	9475.29	18681.62
-32 tracks × a full voice in Mono, gliding	32	57.08	67.25
-32 tracks × a full voice in Mono, gliding	128	229.21	264.21
-32 tracks × a full voice in Mono, gliding	1024	1836.12	1941.04
-32 tracks × 8 voices, a Delay on each and the master	32	101.96	151.12
-32 tracks × 8 voices, a Delay on each and the master	128	405.12	619.38
-32 tracks × 8 voices, a Delay on each and the master	1024	3270.29	5176.88
-Check 7 (588k notes)	32	27.08	41.50
-Check 7 (588k notes)	128	108.12	155.25
-Check 7 (588k notes)	1024	867.12	944.67
-Check 7, first block after Play from bar 10.5	32	146.25	199.42
-Check 7, first block after Play from bar 10.5	128	227.92	290.88
-Check 7, first block after Play from bar 10.5	1024	988.33	1122.33
-32 drum tracks × every sound	32	72.33	137.33
-32 drum tracks × every sound	128	276.08	563.21
-32 drum tracks × every sound	1024	2188.38	3959.96
-32 drum tracks × every sound, 909 kick	32	80.12	147.17
-32 drum tracks × every sound, 909 kick	128	304.92	563.25
-32 drum tracks × every sound, 909 kick	1024	2429.42	4249.17
+Demo loop	32	2.62	11.21
+Demo loop	128	8.62	56.38
+Demo loop	1024	65.38	130.25
+16 voices	32	4.83	11.29
+16 voices	128	16.46	33.42
+16 voices	1024	133.04	290.04
+16 voices, per-voice filter	32	5.21	13.46
+16 voices, per-voice filter	128	18.67	44.88
+16 voices, per-voice filter	1024	153.71	1227.58
+16 full voices	32	19.42	56.88
+16 full voices	128	74.92	152.75
+16 full voices	1024	586.38	785.92
+Demo song	32	4.38	13.08
+Demo song	128	15.71	39.08
+Demo song	1024	121.79	314.96
+32 tracks × 8 voices	32	69.54	134.50
+32 tracks × 8 voices	128	277.42	626.58
+32 tracks × 8 voices	1024	2343.29	17235.25
+32 tracks × 8 full voices	32	306.21	1381.46
+32 tracks × 8 full voices	128	1217.83	4934.58
+32 tracks × 8 full voices	1024	9583.83	31230.33
+32 tracks × a full voice in Mono, gliding	32	57.38	67.46
+32 tracks × a full voice in Mono, gliding	128	232.88	1577.42
+32 tracks × a full voice in Mono, gliding	1024	1865.50	5841.50
+32 tracks × 8 voices, a Delay on each and the master	32	99.42	159.50
+32 tracks × 8 voices, a Delay on each and the master	128	399.50	670.54
+32 tracks × 8 voices, a Delay on each and the master	1024	3115.75	4897.29
+32 tracks × 8 voices, a Reverb on each and the master	32	279.38	619.33
+32 tracks × 8 voices, a Reverb on each and the master	128	1124.58	2136.58
+32 tracks × 8 voices, a Reverb on each and the master	1024	9224.33	15191.83
+Check 7 (588k notes)	32	26.46	43.38
+Check 7 (588k notes)	128	105.42	154.29
+Check 7 (588k notes)	1024	846.62	944.92
+Check 7, first block after Play from bar 10.5	32	141.42	167.88
+Check 7, first block after Play from bar 10.5	128	216.42	243.17
+Check 7, first block after Play from bar 10.5	1024	996.83	1418.71
+32 drum tracks × every sound	32	79.42	291.62
+32 drum tracks × every sound	128	276.21	534.88
+32 drum tracks × every sound	1024	2205.08	3988.83
+32 drum tracks × every sound, 909 kick	32	86.92	260.58
+32 drum tracks × every sound, 909 kick	128	313.08	1173.92
+32 drum tracks × every sound, 909 kick	1024	2449.58	8580.12
