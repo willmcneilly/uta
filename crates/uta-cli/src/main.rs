@@ -883,6 +883,41 @@ mod tests {
         }
     }
 
+    /// The listening canvas's parts each build, with the loop off and one
+    /// track named Part, and a candidate's commands added onto the end, as
+    /// `scripts/listen` adds them, name it as `$track:Part`: an effect on
+    /// any part, and a sound on a synth part.
+    #[test]
+    fn the_canvas_parts_build_with_a_candidate_on_top() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/canvas");
+        let echo = r#"
+[[command]]
+type = "add_effects"
+effects = [{ chain = { track = "$track:Part" }, index = 0, effect = { id = "9b2f6c1e-0000-4000-8000-000000000001", settings = { delay = { sync = true, division = "1/8d", time_seconds = 0.375, mode = "stereo", feedback = 0.4, low_cut_hz = 100.0, high_cut_hz = 8000.0, drive = 0.2, wobble = 0.1 } }, enabled = true, mix = 0.3 } }]
+"#;
+        let sound = r#"
+[[command]]
+type = "set_synth_settings"
+track = "$track:Part"
+settings = { osc1_wave = "saw", cutoff_hz = 4000, release_seconds = 0.4 }
+"#;
+        for part in ["snare", "chord", "swell", "pad"] {
+            let path = folder.join(format!("{part}.toml"));
+            let project = load(None, Some(&path), false).unwrap();
+            assert!(!project.transport().loop_enabled(), "{part}");
+            let names: Vec<_> = project.tracks().iter().map(|track| track.name()).collect();
+            assert_eq!(names, ["Part"], "{part}");
+            let song = read(&path).unwrap();
+            let synth = part != "snare";
+            for commands in [echo].into_iter().chain(synth.then_some(sound)) {
+                let list = uta_song::compile(&format!("{song}\n{commands}"))
+                    .unwrap_or_else(|error| panic!("{part}: {error}"));
+                let project = list.build().unwrap();
+                assert_eq!(project.tracks().len(), 1, "{part}");
+            }
+        }
+    }
+
     #[test]
     fn render_all_needs_a_folder_of_lists() {
         let empty = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

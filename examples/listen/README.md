@@ -12,6 +12,8 @@ The other sounds are the same with their folder's name in place of `kick`.
 
 Each list sets the master to 0 dB, so a full accent with its Level at 0 dB peaks at -12 dBFS, and an ordinary hit (velocity 100) about 8 dB under it. Each sound's default Level then balances it against the kick (see [The kit](#the-kit)), so a sound at its defaults may be louder or quieter than that. A sweep is one drum track per setting, each playing its own bar, so you hear the steps in order.
 
+[`canvas/`](canvas/README.md) is different: four short parts (a snare hit, a short chord, a sung-like swell and a pad) that a listening session renders every candidate on, so a sound or an effect is judged on the same material each time. Its README says what each part is for.
+
 ## Kick (808)
 
 | Render | What it plays |

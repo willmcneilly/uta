@@ -1,0 +1,22 @@
+# The canvas's chord: a short C major chord, struck and let go after a beat,
+# like a piano's: bright at the start and darkening as it dies away. For
+# hearing a sound's attack and release, and what an effect does to a
+# chord that stops. See README.md.
+name = "Canvas: chord"
+tempo = 120
+loop = false
+
+[master]
+volume_db = 0
+
+# The Pluck, held longer and with no sub, so it rings like a struck string.
+[[track]]
+name = "Part"
+kind = "synth"
+sound = "pluck"
+settings = { sub_level = 0.0, decay_seconds = 2.0, filter_decay_seconds = 0.9, filter_env_octaves = 3.0, release_seconds = 0.5 }
+pattern.chord = { notes = "C3+G3+C4+E4 . . .", step = "1/4", velocity = 100 }
+
+[[section]]
+name = "chord"
+bars = 1

@@ -1,0 +1,19 @@
+# The canvas's pad: a held Cmaj7 chord on the factory Pad, a bar long, for
+# hearing a sustained, moving sound and how an effect thickens and widens it.
+# See README.md.
+name = "Canvas: pad"
+tempo = 120
+loop = false
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Part"
+kind = "synth"
+sound = "pad"
+pattern.pad = { notes = "C3+G3+B3+E4", step = "1/1", velocity = 90 }
+
+[[section]]
+name = "pad"
+bars = 1
