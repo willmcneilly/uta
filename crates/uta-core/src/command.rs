@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::time::Ticks;
 use crate::{
     Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, MixerStrip, Note,
-    NoteId, SynthParam, SynthSettings, Track, TrackId,
+    NoteId, ReverbParam, SynthParam, SynthSettings, Track, TrackId,
 };
 
 /// The command format written by this version of Uta. Bump it when a saved
@@ -46,12 +46,14 @@ use crate::{
 ///   with the slots empty.
 /// - Format 14 adds `set_synth_settings`, which sets every synth setting at
 ///   once, as choosing a factory sound does (RFC-008).
-pub const COMMAND_FORMAT: u32 = 14;
+/// - Format 15 adds the Reverb: an effect of kind `reverb`, with every
+///   setting RFC-010 lists, and `set_reverb_param` (RFC-010).
+pub const COMMAND_FORMAT: u32 = 15;
 
 /// One change to a project.
 ///
 /// Commands serialise with their format version, as
-/// `{"format":14,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
+/// `{"format":15,"command":{"type":"set_master_volume","volume_db":-6.0}}`.
 /// They refer to things by permanent IDs, so replaying the same commands
 /// always rebuilds the same project. A command that adds something carries
 /// the new thing's ID, chosen before the command is applied.
@@ -126,6 +128,11 @@ pub enum Command {
     SetEffectMix { effect: EffectId, mix: f32 },
     /// Set one of a Delay's settings.
     SetDelayParam { effect: EffectId, param: DelayParam },
+    /// Set one of a Reverb's settings.
+    SetReverbParam {
+        effect: EffectId,
+        param: ReverbParam,
+    },
 }
 
 /// A track to add, and where it goes: its index in the order once it's
@@ -221,6 +228,13 @@ impl Command {
             (
                 Self::SetDelayParam { effect, param },
                 Self::SetDelayParam {
+                    effect: other_effect,
+                    param: other_param,
+                },
+            ) => effect == other_effect && param.same_setting(other_param),
+            (
+                Self::SetReverbParam { effect, param },
+                Self::SetReverbParam {
                     effect: other_effect,
                     param: other_param,
                 },
@@ -388,6 +402,12 @@ pub enum CommandError {
     EffectMixOutOfRange(f32),
     /// A Delay setting was outside its range, or not a number.
     DelayParamOutOfRange(DelayParam),
+    /// A Reverb setting was outside its range, or not a number.
+    ReverbParamOutOfRange(ReverbParam),
+    /// A Delay command for an effect that isn't a Delay.
+    NotADelay(EffectId),
+    /// A Reverb command for an effect that isn't a Reverb.
+    NotAReverb(EffectId),
 }
 
 impl std::fmt::Display for CommandError {
@@ -517,6 +537,14 @@ impl std::fmt::Display for CommandError {
                 }
                 None => write!(f, "{param:?} is out of range"),
             },
+            Self::ReverbParamOutOfRange(param) => match param.range() {
+                Some((value, min, max)) => {
+                    write!(f, "{param:?}: {value} is out of range ({min} to {max})")
+                }
+                None => write!(f, "{param:?} is out of range"),
+            },
+            Self::NotADelay(id) => write!(f, "effect {id} isn't a Delay"),
+            Self::NotAReverb(id) => write!(f, "effect {id} isn't a Reverb"),
             Self::NoteOffKit { note, pitch } => write!(
                 f,
                 "note {note}: pitch {pitch} isn't one of the drum kit's notes ({})",
@@ -547,8 +575,9 @@ mod wire {
     use super::{COMMAND_FORMAT, ClipPosition, Command, PlacedClip, PlacedEffect, PlacedTrack};
     use crate::time::Ticks;
     use crate::{
-        Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, EffectSettings,
-        KitSettings, MixerStrip, Note, NoteId, Source, SynthParam, SynthSettings, Track, TrackId,
+        Chain, Clip, ClipId, DelayParam, DrumParam, DrumSound, Effect, EffectId, EffectKind,
+        EffectSettings, KitSettings, MixerStrip, Note, NoteId, ReverbParam, Source, SynthParam,
+        SynthSettings, Track, TrackId,
     };
 
     #[derive(Serialize, Deserialize)]
@@ -654,14 +683,23 @@ mod wire {
             track: TrackId,
             settings: SynthSettings,
         },
+        // Format 15.
+        SetReverbParam {
+            effect: EffectId,
+            param: ReverbParam,
+        },
     }
 
     impl Body {
         /// The first format that has this command, and every kind of track
         /// it adds.
         fn since_format(&self) -> u32 {
+            if self.adds_a_reverb() {
+                return 15;
+            }
             match self {
                 Self::SetMasterVolume { .. } => 1,
+                Self::SetReverbParam { .. } => 15,
                 Self::SetDelayParam { param, .. } => param.since_format(),
                 Self::SetSynthSettings { .. } => 14,
                 Self::MoveEffect { .. } | Self::SetEffectEnabled { .. } => 7,
@@ -693,6 +731,19 @@ mod wire {
                 }
                 Self::SetDrumParam { .. } => 4,
                 _ => 3,
+            }
+        }
+
+        /// Whether it adds a Reverb, alone or on a track: a kind of effect
+        /// format 15 brought.
+        fn adds_a_reverb(&self) -> bool {
+            let reverb = |effect: &EffectBody| effect.settings.kind() == EffectKind::Reverb;
+            match self {
+                Self::AddEffects { effects } => effects.iter().any(|at| reverb(&at.effect)),
+                Self::AddTracks { tracks } => {
+                    tracks.iter().any(|at| at.track.effects.iter().any(reverb))
+                }
+                _ => false,
             }
         }
     }
@@ -926,6 +977,7 @@ mod wire {
                 }
                 Command::SetEffectMix { effect, mix } => Body::SetEffectMix { effect, mix },
                 Command::SetDelayParam { effect, param } => Body::SetDelayParam { effect, param },
+                Command::SetReverbParam { effect, param } => Body::SetReverbParam { effect, param },
             };
             Self {
                 format: COMMAND_FORMAT,
@@ -1017,6 +1069,7 @@ mod wire {
                 }
                 Body::SetEffectMix { effect, mix } => Command::SetEffectMix { effect, mix },
                 Body::SetDelayParam { effect, param } => Command::SetDelayParam { effect, param },
+                Body::SetReverbParam { effect, param } => Command::SetReverbParam { effect, param },
             })
         }
     }
@@ -1059,6 +1112,13 @@ mod tests {
                                 .is_some_and(|(value, _, _)| !value.is_finite())
                         })
                     }
+                    crate::EffectSettings::Reverb(settings) => {
+                        settings.params().iter().any(|param| {
+                            param
+                                .range()
+                                .is_some_and(|(value, _, _)| !value.is_finite())
+                        })
+                    }
                 }
         };
         match command {
@@ -1070,6 +1130,9 @@ mod tests {
             Command::SetDrumParam { param, .. } => param.value().is_some_and(|v| !v.is_finite()),
             Command::SetEffectMix { mix, .. } => !mix.is_finite(),
             Command::SetDelayParam { param, .. } => param
+                .range()
+                .is_some_and(|(value, _, _)| !value.is_finite()),
+            Command::SetReverbParam { param, .. } => param
                 .range()
                 .is_some_and(|(value, _, _)| !value.is_finite()),
             Command::AddEffects { effects } => effects.iter().any(|placed| effect(&placed.effect)),
@@ -1116,7 +1179,7 @@ mod tests {
         let json = serde_json::to_string(&Command::SetMasterVolume { volume_db: -6.0 }).unwrap();
         assert_eq!(
             json,
-            r#"{"format":14,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
+            r#"{"format":15,"command":{"type":"set_master_volume","volume_db":-6.0}}"#
         );
     }
 
@@ -1182,7 +1245,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 2 to 6 lists still load.
@@ -1287,7 +1350,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 3 to 6 lists still load.
@@ -1362,7 +1425,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 4 to 6 lists still load.
@@ -1526,7 +1589,7 @@ mod tests {
             let command = Command::SetSynthParam { track, param };
             let body =
                 format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":{since},"command":{body}}}"#);
@@ -1585,7 +1648,7 @@ mod tests {
             let command = Command::SetSynthParam { track, param };
             let body =
                 format!(r#"{{"type":"set_synth_param","track":"{track}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             let json = format!(r#"{{"format":10,"command":{body}}}"#);
@@ -1663,7 +1726,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // Format 5 to 8 lists still load, with the Delay as they wrote
@@ -1713,7 +1776,7 @@ mod tests {
             ),
         ];
         for (command, body) in cases {
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // They're new in format 7, even in a format 6 command.
@@ -1736,22 +1799,85 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r#"{{"format":14,"command":{{"type":"set_synth_settings","track":"{track}","settings":{settings_json}}}}}"#
+                r#"{{"format":15,"command":{{"type":"set_synth_settings","track":"{track}","settings":{settings_json}}}}}"#
             )
         );
         assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
         // Settings it leaves out take their defaults, as `add_tracks`' do.
         let partial = format!(
-            r#"{{"format":14,"command":{{"type":"set_synth_settings","track":"{track}","settings":{{"cutoff_hz":800.0}}}}}}"#
+            r#"{{"format":15,"command":{{"type":"set_synth_settings","track":"{track}","settings":{{"cutoff_hz":800.0}}}}}}"#
         );
         assert_eq!(serde_json::from_str::<Command>(&partial).unwrap(), command);
         // It's new in format 14.
-        let old = partial.replace(r#""format":14"#, r#""format":13"#);
+        let old = partial.replace(r#""format":15"#, r#""format":13"#);
         let error = serde_json::from_str::<Command>(&old).unwrap_err();
         assert!(
             error.to_string().contains("arrived in format 14"),
             "{error}"
         );
+    }
+
+    /// The Reverb is new in format 15: adding one, alone or on a track, and
+    /// setting one of its settings.
+    #[test]
+    fn the_format_15_commands_serialise_like_this() {
+        let effect = testing::effect_id(0);
+        let reverb = Effect::default_of(effect, crate::EffectKind::Reverb);
+        let settings_json = serde_json::to_string(&crate::ReverbSettings::default()).unwrap();
+        let reverb_json = format!(
+            r#"{{"id":"{effect}","settings":{{"reverb":{settings_json}}},"enabled":true,"mix":0.25}}"#
+        );
+        let new_track = testing::track_id(0);
+        let cases = [
+            (
+                Command::AddEffects {
+                    effects: vec![PlacedEffect {
+                        chain: Chain::Master,
+                        index: 0,
+                        effect: reverb,
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_effects","effects":[{{"chain":"master","index":0,"effect":{reverb_json}}}]}}"#
+                ),
+            ),
+            (
+                Command::AddTracks {
+                    tracks: vec![PlacedTrack {
+                        index: 1,
+                        track: Track::new(
+                            new_track,
+                            "Synth 2",
+                            Source::Synth(SynthSettings::default()),
+                        )
+                        .with_effects([reverb]),
+                    }],
+                },
+                format!(
+                    r#"{{"type":"add_tracks","tracks":[{{"index":1,"track":{{"id":"{new_track}","name":"Synth 2","source":{{"synth":{DEFAULT_SYNTH_JSON}}},"effects":[{reverb_json}],"mixer":{{"volume_db":0.0,"pan":0.0,"mute":false,"solo":false}},"clips":[]}}}}]}}"#
+                ),
+            ),
+            (
+                Command::SetReverbParam {
+                    effect,
+                    param: ReverbParam::DecaySeconds(4.0),
+                },
+                format!(
+                    r#"{{"type":"set_reverb_param","effect":"{effect}","param":{{"name":"decay_seconds","value":4.0}}}}"#
+                ),
+            ),
+        ];
+        for (command, body) in cases {
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
+            assert_eq!(serde_json::to_string(&command).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
+            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let error = serde_json::from_str::<Command>(&json).unwrap_err();
+            assert!(
+                error.to_string().contains("arrived in format 15"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
@@ -1785,7 +1911,7 @@ mod tests {
             let command = Command::SetDelayParam { effect, param };
             let body =
                 format!(r#"{{"type":"set_delay_param","effect":"{effect}","param":{param_json}}}"#);
-            let json = format!(r#"{{"format":14,"command":{body}}}"#);
+            let json = format!(r#"{{"format":15,"command":{body}}}"#);
             assert_eq!(serde_json::to_string(&command).unwrap(), json);
             assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), command);
             // New in format 9, even in a format 8 command.
@@ -1812,6 +1938,11 @@ mod tests {
         assert!(!time.sets_same_as(&set(a, DelayParam::Feedback(0.5))));
         assert!(!time.sets_same_as(&set(b, DelayParam::TimeSeconds(0.5))));
         assert!(!time.sets_same_as(&mix(a, 0.25)));
+        let reverb = |effect, param| Command::SetReverbParam { effect, param };
+        let decay = reverb(a, ReverbParam::DecaySeconds(2.0));
+        assert!(decay.sets_same_as(&reverb(a, ReverbParam::DecaySeconds(3.0))));
+        assert!(!decay.sets_same_as(&reverb(a, ReverbParam::Depth(0.5))));
+        assert!(!decay.sets_same_as(&reverb(b, ReverbParam::DecaySeconds(3.0))));
         // Switching and moving are steps of their own: switching off and on
         // again is two undos, as is moving twice.
         let switch = |enabled| Command::SetEffectEnabled { effect: a, enabled };
@@ -1908,7 +2039,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_format() {
-        for format in [0, 15, 99] {
+        for format in [0, 16, 99] {
             let json = format!(
                 r#"{{"format":{format},"command":{{"type":"set_master_volume","volume_db":-6.0}}}}"#
             );

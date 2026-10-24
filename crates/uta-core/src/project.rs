@@ -466,12 +466,26 @@ impl Project {
                 })
             }
             &Command::SetDelayParam { effect, param } => {
-                // The only kind so far, so every effect is a Delay.
-                let EffectSettings::Delay(settings) = &mut self.effect_mut(effect)?.settings;
+                let EffectSettings::Delay(settings) = &mut self.effect_mut(effect)?.settings else {
+                    return Err(CommandError::NotADelay(effect));
+                };
                 let previous = settings
                     .set(param)
                     .map_err(CommandError::DelayParamOutOfRange)?;
                 Ok(Command::SetDelayParam {
+                    effect,
+                    param: previous,
+                })
+            }
+            &Command::SetReverbParam { effect, param } => {
+                let EffectSettings::Reverb(settings) = &mut self.effect_mut(effect)?.settings
+                else {
+                    return Err(CommandError::NotAReverb(effect));
+                };
+                let previous = settings
+                    .set(param)
+                    .map_err(CommandError::ReverbParamOutOfRange)?;
+                Ok(Command::SetReverbParam {
                     effect,
                     param: previous,
                 })
@@ -3187,7 +3201,9 @@ mod tests {
             crate::DelayParam::Wobble(0.5),
         ] {
             let set = apply_and_check_undo(&project, Command::SetDelayParam { effect, param });
-            let EffectSettings::Delay(settings) = set.effect(effect).unwrap().settings();
+            let EffectSettings::Delay(settings) = set.effect(effect).unwrap().settings() else {
+                panic!("a Delay");
+            };
             assert!(settings.params().contains(&param), "{param:?}");
         }
         for mix in [-0.01, 1.01, f32::NAN] {
@@ -3230,6 +3246,99 @@ mod tests {
         assert_eq!(undone.len(), 1);
         assert_eq!(undone[0].command, time(0.375));
         assert_eq!(session.project(), &with_three_delays());
+    }
+
+    /// The first track with a Delay (0) and a Reverb (1) in its chain.
+    fn with_a_delay_and_a_reverb() -> Project {
+        let mut project = testing::project();
+        let track = track_id(&project);
+        let reverb = Effect::default_of(testing::effect_id(1), crate::EffectKind::Reverb);
+        project
+            .apply(&add_effects(vec![
+                at(track, 0, delay(0)),
+                at(track, 1, reverb),
+            ]))
+            .unwrap();
+        project
+    }
+
+    #[test]
+    fn set_reverb_param_sets_each_setting_and_undoes_exactly() {
+        use crate::ReverbParam as P;
+        let project = with_a_delay_and_a_reverb();
+        let effect = testing::effect_id(1);
+        // Every setting, each changed from its default, but Mode: Room is
+        // the only one so far.
+        for param in [
+            P::PredelaySeconds(0.25),
+            P::DecaySeconds(30.0),
+            P::Depth(1.0),
+            P::HighCutHz(5_000.0),
+            P::LowCutHz(200.0),
+            P::EarlySizeSeconds(0.5),
+            P::EarlyCross(0.2),
+            P::Diffusion(0.0),
+            P::EarlySend(1.0),
+            P::EarlyModRateHz(2.0),
+            P::EarlyModDepth(0.5),
+            P::LateSize(0.9),
+            P::LateCross(0.0),
+            P::LateModRateHz(0.05),
+            P::LateModDepth(1.0),
+            P::BassMult(2.0),
+            P::BassXoverHz(250.0),
+            P::HighMult(0.1),
+            P::HighXoverHz(8_000.0),
+        ] {
+            let set = apply_and_check_undo(&project, Command::SetReverbParam { effect, param });
+            let EffectSettings::Reverb(settings) = set.effect(effect).unwrap().settings() else {
+                panic!("a Reverb");
+            };
+            assert!(settings.params().contains(&param), "{param:?}");
+        }
+        assert_rejected(
+            &project,
+            Command::SetReverbParam {
+                effect,
+                param: P::DecaySeconds(31.0),
+            },
+            CommandError::ReverbParamOutOfRange(P::DecaySeconds(31.0)),
+        );
+        // Each kind's command is only for its own kind.
+        assert_rejected(
+            &project,
+            Command::SetReverbParam {
+                effect: testing::effect_id(0),
+                param: P::Depth(0.2),
+            },
+            CommandError::NotAReverb(testing::effect_id(0)),
+        );
+        assert_rejected(
+            &project,
+            Command::SetDelayParam {
+                effect,
+                param: crate::DelayParam::Feedback(0.2),
+            },
+            CommandError::NotADelay(effect),
+        );
+    }
+
+    #[test]
+    fn a_knob_drag_on_a_reverb_is_one_undo_step() {
+        let mut session = crate::Session::new(with_a_delay_and_a_reverb());
+        let effect = testing::effect_id(1);
+        let decay = |seconds| Command::SetReverbParam {
+            effect,
+            param: crate::ReverbParam::DecaySeconds(seconds),
+        };
+        session.apply(decay(3.0)).unwrap();
+        for seconds in [4.0, 5.0, 6.0] {
+            session.amend(decay(seconds)).unwrap();
+        }
+        let undone = session.undo();
+        assert_eq!(undone.len(), 1);
+        assert_eq!(undone[0].command, decay(2.0));
+        assert_eq!(session.project(), &with_a_delay_and_a_reverb());
     }
 
     #[test]
