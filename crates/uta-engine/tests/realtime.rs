@@ -1229,8 +1229,9 @@ fn fade_blocks(sample_rate: u32) -> usize {
     (uta_engine::EFFECT_FADE_SECONDS * f64::from(sample_rate)) as usize / BLOCK + 2
 }
 
-/// Adding Delays while the song plays, a full chain at once on a track and
-/// on the master and two on each other track; turning their settings and
+/// Adding Delays and Reverbs while the song plays, a full chain at once on
+/// a track and on the master and two on each other track, the second in
+/// each a Reverb; turning their settings and
 /// Mix; moving them within their chains; switching them off and on;
 /// removing some and adding others in the same block; removing a track with
 /// its chain and undoing it; and moving to a new sample rate between
@@ -1241,6 +1242,7 @@ fn fade_blocks(sample_rate: u32) -> usize {
 fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_comes_back() {
     use uta_core::{
         Chain, DelayMode, DelayParam, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect,
+        ReverbParam,
     };
 
     rtsan_standalone::ensure_initialized();
@@ -1250,11 +1252,11 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
     renderer.controller.play().unwrap();
 
     let mut next = 0u128;
-    let mut delay = || {
+    let mut effect = |kind| {
         next += 1;
         Effect::default_of(
             EffectId::from_uuid(uuid::Uuid::from_u128(7000 + next)),
-            EffectKind::Delay,
+            kind,
         )
     };
     let chains = |project: &uta_core::Project| -> Vec<Chain> {
@@ -1289,7 +1291,11 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             placed.extend((0..count).map(|index| PlacedEffect {
                 chain,
                 index,
-                effect: delay(),
+                effect: effect(if index == 1 {
+                    EffectKind::Reverb
+                } else {
+                    EffectKind::Delay
+                }),
             }));
         }
         change(
@@ -1313,9 +1319,31 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
         );
 
         // Turn every Delay's settings and Mix, a snapshot each, so its
-        // time, Feedback, Mode, cuts, Drive and Wobble all glide.
+        // time, Feedback, Mode, cuts, Drive and Wobble all glide; and every
+        // Reverb's, so its Decay, Depth, Diffusion and Early Send glide and
+        // its sizes and Predelay move.
         for (n, effect) in effects(&project).into_iter().enumerate() {
             let f = n as f32 / 32.0;
+            if project.effect(effect).unwrap().kind() == EffectKind::Reverb {
+                let set = |param| Command::SetReverbParam { effect, param };
+                for command in [
+                    set(ReverbParam::DecaySeconds(0.5 + 29.0 * f.min(1.0))),
+                    set(ReverbParam::Depth(1.0 - f.min(1.0))),
+                    set(ReverbParam::Diffusion(f.min(1.0))),
+                    set(ReverbParam::EarlySend(1.0 - f.min(1.0))),
+                    set(ReverbParam::EarlySizeSeconds(0.002 + 0.9 * f.min(1.0))),
+                    set(ReverbParam::LateSize(f.min(1.0))),
+                    set(ReverbParam::PredelaySeconds(0.5 * f.min(1.0))),
+                    Command::SetEffectMix {
+                        effect,
+                        mix: 1.0 - f.min(1.0),
+                    },
+                ] {
+                    change(&mut project, &mut renderer, command);
+                }
+                process_block(renderer.processor(), &mut buffer);
+                continue;
+            }
             let set = |param| Command::SetDelayParam { effect, param };
             for command in [
                 set(DelayParam::Sync(n % 2 == 0)),
@@ -1400,8 +1428,8 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             }
         }
 
-        // Remove half of them and add new ones in their place, two
-        // snapshots in one block.
+        // Remove half of them and add a Reverb at the front of each chain,
+        // two snapshots in one block.
         let all = effects(&project);
         let removed: Vec<_> = all.iter().copied().step_by(2).collect();
         change(
@@ -1414,7 +1442,7 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             .map(|chain| PlacedEffect {
                 chain,
                 index: 0,
-                effect: delay(),
+                effect: effect(EffectKind::Reverb),
             })
             .collect();
         change(

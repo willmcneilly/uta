@@ -12,7 +12,7 @@ mod common;
 use common::{PLAIN_SINE, assert_no_click, demo_loop, note, peak, project, sine_max_step};
 use uta_core::{
     Chain, Command, DelayMode, DelaySettings, Effect, EffectId, EffectKind, EffectSettings,
-    PlacedEffect, Project,
+    PlacedEffect, Project, ReverbSettings,
 };
 use uta_engine::offline::Renderer;
 use uta_engine::{EFFECT_FADE_SECONDS, EngineConfig, Snapshot};
@@ -35,6 +35,18 @@ fn kit_effect(kind: EffectKind, n: u128) -> Effect {
                 drive: 0.5,
                 wobble: 0.5,
                 ..DelaySettings::plain(0.05, 0.6)
+            }),
+        )
+        .with_mix(0.5),
+        EffectKind::Reverb => Effect::new(
+            id,
+            // Every part the engine plays at work: a predelay, a burst sent
+            // into the tail, both heard, and a tail of a second.
+            EffectSettings::Reverb(ReverbSettings {
+                predelay_seconds: 0.02,
+                decay_seconds: 1.0,
+                early_size_seconds: 0.05,
+                ..ReverbSettings::default()
             }),
         )
         .with_mix(0.5),
