@@ -7,7 +7,7 @@ Each part is a song file (the format is in [`examples/demos/README.md`](../../de
 | Part | What it plays | What it's for | Dry, it's below −60 dB after |
 |---|---|---|---|
 | `snare` | One 909 snare hit at its defaults (velocity 110). | A short, bright transient (most of its energy around 5 kHz, down 40 dB in 0.23 s): a room's first reflections, a delay's echoes, and whether an effect smears or clicks on an attack. | 0.42 s |
-| `chord` | A C major chord (C3 G3 C4 E4), struck and let go after a beat, as near a piano as the synth gets: a triangle with a quiet saw an octave up, through a low-pass that snaps open on the strike (brightness 591 Hz) and closes as it rings away (down 40 dB in 0.76 s). | A sound's attack and release on a chord, and what an effect does once a chord stops: the tail you hear on its own. | 1.07 s |
+| `chord` | A C major chord (C3 G3 C4 E4), struck and let go after a beat, as near a piano as the synth gets: soft keys, a triangle with a quiet sine an octave up, through a low-pass that closes as it dies away (brightness 425 Hz, down 40 dB in 0.60 s). Picked by ear from the sounds tried on it. | A sound's attack and release on a chord, and what an effect does once a chord stops: the tail you hear on its own. | 0.76 s |
 | `swell` | One sung-like A3 that fades in over 0.8 s, holds with a slight 5 Hz vibrato, and lets go: two saws through a band-pass near a vowel's first formant, with a breath of noise. | A slow attack and a held pitch that moves: how an effect blooms behind a voice, and whether modulation beats against vibrato. | 2.03 s |
 | `pad` | A Cmaj7 (C3 G3 B3 E4) held for a bar on the factory Pad. | A sustained, moving sound: how an effect thickens and widens it, and whether its tail muddies a held chord. | 2.96 s |
 

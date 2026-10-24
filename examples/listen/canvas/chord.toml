@@ -1,6 +1,6 @@
 # The canvas's chord: a short C major chord, struck and let go after a beat,
-# as near a piano as the synth gets: bright at the strike and darkening as it
-# rings away. For hearing a sound's attack and release, and what an effect
+# as near a piano as the synth gets: soft at the strike and darkening as it
+# dies away. For hearing a sound's attack and release, and what an effect
 # does to a chord that stops. See README.md.
 name = "Canvas: chord"
 tempo = 120
@@ -9,14 +9,13 @@ loop = false
 [master]
 volume_db = 0
 
-# A struck-string keys sound: a triangle, with a quiet saw an octave up for
-# the hammer's brightness, through a low-pass that snaps open on the strike
-# and closes as the note rings away. Let go after a beat, it rings on a
-# little, as a piano does when its damper comes down.
+# Soft keys: a triangle with a quiet sine an octave up, through a low-pass
+# that closes as the note dies away. Picked by ear as the nearest to a piano
+# of the sounds tried on this chord.
 [[track]]
 name = "Part"
 kind = "synth"
-settings = { osc1_wave = "triangle", osc1_level = 1.0, osc2_wave = "saw", osc2_octave = 1, osc2_level = 0.12, cutoff_hz = 700, resonance = 0.1, filter_env_octaves = 3.0, filter_key = 0.5, filter_attack_seconds = 0.001, filter_decay_seconds = 0.35, filter_sustain = 0.0, filter_release_seconds = 0.3, attack_seconds = 0.002, decay_seconds = 2.5, sustain = 0.0, release_seconds = 0.8 }
+settings = { osc1_wave = "triangle", osc2_wave = "sine", osc2_octave = 1, osc1_level = 1.0, osc2_level = 0.3, cutoff_hz = 900, resonance = 0.1, filter_env_octaves = 2.0, filter_key = 0.5, filter_attack_seconds = 0.001, filter_decay_seconds = 0.6, filter_sustain = 0.0, attack_seconds = 0.002, decay_seconds = 1.8, sustain = 0.0, release_seconds = 0.4 }
 pattern.chord = { notes = "C3+G3+C4+E4 . . .", step = "1/4", velocity = 100 }
 
 [[section]]
