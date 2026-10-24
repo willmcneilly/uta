@@ -67,7 +67,8 @@ session.toml, written by Claude before Will listens:
                            # (so it starts with the first pass's tail), or
                            # with the loop off, from the start until every
                            # candidate's tail is below -60 dB (of its own
-                           # peak), measured from the renders
+                           # peak), measured from the renders, and half a
+                           # second more, so each pass starts afresh
   canvas = "chord"         # optional: render every candidate on the same
                            # part of the canvas (below)
 
@@ -380,8 +381,8 @@ export function transportOf(commandList: unknown): Transport {
  * pass's tail, so it loops without a gap), or the first time round if the
  * render stops before that. With the loop off, it's from the start until
  * the last candidate's tail is below TAIL_DB (`tails`, from `tailSeconds`),
- * not the silence a render rings out into; the shorter renders are padded
- * with silence to it. The candidates must share a loop, so they stay lined
+ * then TAIL_PAUSE_SECONDS more, not the silence a render rings out into; the
+ * shorter renders are padded with silence to it. The candidates must share a loop, so they stay lined
  * up.
  */
 export function loopRegion(
@@ -404,7 +405,7 @@ export function loopRegion(
   if (!same) throw new SessionError("The candidates' tempo or loop differ, so they can't loop together: set `loop` in session.toml.");
   if (!first.loopEnabled) {
     const last = Math.max(...tails);
-    return { start: 0, end: last > 0 ? last : shortest, bpm };
+    return { start: 0, end: last > 0 ? last + TAIL_PAUSE_SECONDS : shortest, bpm };
   }
   for (const pass of [1, 0]) {
     const start = first.loopStart + pass * first.loopLength;
@@ -485,8 +486,10 @@ export function readWav(bytes: Buffer): WavInfo {
   throw new Error("a WAV with no data");
 }
 
-/** Where a loop with the loop off ends: once every candidate is this far below its own peak. */
+/** Where a loop with the loop off ends: once every candidate is this far below its own peak… */
 export const TAIL_DB = -60;
+/** …and this long after, so the next pass doesn't follow straight on from the tail (Will found 2 s of swell "a bit too fast"). */
+export const TAIL_PAUSE_SECONDS = 0.5;
 
 /**
  * How long a float WAV goes on before it's below `db` of its own peak for

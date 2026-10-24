@@ -11,6 +11,7 @@ import {
   type Prepared,
   IMAGES,
   TAIL_DB,
+  TAIL_PAUSE_SECONDS,
   type Tools,
   canvasParts,
   imagePath,
@@ -224,8 +225,9 @@ describe("matching and lining up", () => {
     expect(loopRegion({}, [moved], [10.2], [10.2])).toEqual({ start: 6, end: 10, bpm: 120 });
     const off = transportOf(list({ type: "set_loop_enabled", enabled: false }));
     expect(off).toMatchObject({ loopEnabled: false });
-    // With the loop off, until the last tail is below -60 dB, however long the renders ring on after it.
-    expect(loopRegion({}, [off, off], [7.5, 7.25], [2.5, 3.1])).toEqual({ start: 0, end: 3.1, bpm: 120 });
+    // With the loop off, until the last tail is below -60 dB and half a second more, however long the renders ring on after it.
+    expect(TAIL_PAUSE_SECONDS).toBe(0.5);
+    expect(loopRegion({}, [off, off], [7.5, 7.25], [2.5, 3.1])).toEqual({ start: 0, end: 3.6, bpm: 120 });
     expect(loopRegion({}, [off, off], [7.5, 7.25], [0, 0]), "all silent").toEqual({ start: 0, end: 7.25, bpm: 120 });
     // A new project's defaults: 120 BPM, a 4-bar loop from bar 1.
     expect(transportOf(list())).toEqual({ bpm: 120, loopEnabled: true, loopStart: 0, loopLength: 8 });
@@ -429,13 +431,13 @@ describe("a canvas session", () => {
     expect(calls.render.slice(5)).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.wav`)));
   });
 
-  it("loops from the start until the last candidate's tail is below -60 dB, not the silence the renders ring on into", () => {
+  it("loops from the start until the last candidate's tail is below -60 dB, and half a second more, not the silence the renders ring on into", () => {
     const prepared = prepare(readSession(writeCanvasSession("s")), fakeUta(TAILS).tools);
     // Each render rings on 2 s past its own -60 dB point.
     expect(prepared.candidates.map((c) => c.seconds)).toEqual([2.8, 5.4, 3.1]);
     expect(prepared.candidates.map((c) => c.tailSeconds.toFixed(2))).toEqual(["0.80", "3.40", "1.10"]);
     expect(prepared.loop.start).toBe(0);
-    expect(prepared.loop.end).toBeCloseTo(3.4, 2);
+    expect(prepared.loop.end).toBeCloseTo(3.9, 2);
   });
 });
 
@@ -506,11 +508,11 @@ describe("the listening page's server", () => {
     );
     const levels = { short: { amplitude: 0.5, lufs: -20, sixtyAt: 0.5 }, long: { amplitude: 0.5, lufs: -20, sixtyAt: 3 } };
     const p = prepare(readSession(dir), fakeUta(levels).tools);
-    // short renders 2.5 s; the loop runs to long's tail, at 3 s.
+    // short renders 2.5 s; the loop runs to long's tail, at 3 s, and the pause after it.
     expect(p.candidates[0].seconds).toBe(2.5);
     await serve([p], (n) => n - 1);
     const session = await (await fetch(`${base}/api/session`)).json();
-    expect(session.loop.end).toBeCloseTo(3, 2);
+    expect(session.loop.end).toBeCloseTo(3.5, 2);
     for (const label of ["A", "B"]) {
       const info = readWav(Buffer.from(await (await fetch(`${base}/audio/${label}`)).arrayBuffer()));
       expect(info.frames / info.sampleRate, label).toBeGreaterThanOrEqual(session.loop.end);
