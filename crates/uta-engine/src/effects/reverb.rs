@@ -101,6 +101,8 @@ const MOD_GLIDE_SECONDS: f64 = 0.5;
 /// Samples set aside past each line's longest length, for cubic
 /// interpolation's reach past the sample it reads.
 const READ_MARGIN: usize = 3;
+/// How often the drift's curve is worked out, in samples: see [`Drift`].
+const DRIFT_STEP_SAMPLES: u32 = 16;
 /// Where the drift's random numbers start, for the first modulator; every
 /// other one starts at this times its number, one up.
 const MOD_SEED: u32 = 0x9E37_79B9;
@@ -325,7 +327,7 @@ impl Line {
 
     /// The sample written `delay` samples ago, from 1 to the buffer's
     /// length.
-    #[inline]
+    #[inline(always)]
     fn tap(&self, delay: usize) -> f32 {
         if delay > self.filled {
             return 0.0;
@@ -340,7 +342,7 @@ impl Line {
     /// around it (the Delay's cubic interpolation), or a straight line
     /// between the two around it for a delay under 2, which has no sample
     /// newer than both.
-    #[inline]
+    #[inline(always)]
     fn read(&self, delay: f64) -> f32 {
         let whole = delay.ceil();
         let fraction = (whole - delay) as f32;
@@ -348,6 +350,17 @@ impl Line {
         if fraction == 0.0 {
             self.tap(whole)
         } else if whole >= 3 {
+            // The oldest of the four, whole + 1 samples ago.
+            let oldest = match self.write.checked_sub(whole + 1) {
+                Some(at) => at,
+                None => self.write + self.buffer.len() - whole - 1,
+            };
+            if whole < self.filled && oldest + 3 < self.buffer.len() {
+                // All four are sound, side by side in the buffer: the usual
+                // case, read straight.
+                let four = &self.buffer[oldest..oldest + 4];
+                return cubic(four[0], four[1], four[2], four[3], fraction);
+            }
             cubic(
                 self.tap(whole + 1),
                 self.tap(whole),
@@ -397,23 +410,9 @@ impl Line {
     }
 }
 
-/// A line's tone in the loop: how much it keeps of what passes through it
-/// each lap, in the mids, and a low shelf and a high shelf that keep more
-/// or less of the lows and the highs, as a state-variable filter each
-/// (Andrew Simper's shelves, Cytomic's "SVF linear trap optimised 2").
-#[derive(Debug, Clone, Copy, Default)]
-struct LineTone {
-    /// The gain per lap in the mids.
-    gain: f32,
-    /// Each shelf's prewarped gain and the shares of its band-pass and
-    /// low-pass added to what goes in; the high shelf also scales what goes
-    /// in.
-    low: Shelf,
-    high: Shelf,
-    low_filter: Svf,
-    high_filter: Svf,
-}
-
+/// A shelf: a state-variable filter whose band-pass and low-pass are
+/// added to what goes in (Andrew Simper's shelves, Cytomic's "SVF linear
+/// trap optimised 2"), as its prewarped gain and the shares of each.
 #[derive(Debug, Clone, Copy, Default)]
 struct Shelf {
     g: f64,
@@ -457,14 +456,60 @@ impl Shelf {
     }
 }
 
-impl LineTone {
-    /// What comes out of the line, `sample`, as it goes round: its share
-    /// of the mids, with more or less of the lows and the highs.
+/// One shelf in each of the network's lines, all worked at once: each
+/// array holds one number for every line, so the compiler can work on
+/// several lines in one instruction. The same filter as [`Shelf`], in
+/// Simper's own form, with its coefficients worked out when it changes.
+#[derive(Debug, Clone, Copy, Default)]
+struct Shelves {
+    a1: [f32; MAX_LINES],
+    a2: [f32; MAX_LINES],
+    a3: [f32; MAX_LINES],
+    input: [f32; MAX_LINES],
+    band: [f32; MAX_LINES],
+    low: [f32; MAX_LINES],
+    /// Each filter's memory.
+    ic1: [f32; MAX_LINES],
+    ic2: [f32; MAX_LINES],
+}
+
+impl Shelves {
+    /// Line `line`'s shelf becomes `shelf`.
+    fn set(&mut self, line: usize, shelf: Shelf) {
+        let g = shelf.g;
+        let a1 = 1.0 / (1.0 + g * (g + 1.0 / TONE_Q));
+        self.a1[line] = a1 as f32;
+        self.a2[line] = (g * a1) as f32;
+        self.a3[line] = (g * g * a1) as f32;
+        self.input[line] = shelf.input as f32;
+        self.band[line] = shelf.band as f32;
+        self.low[line] = shelf.low as f32;
+    }
+
+    /// Each line's sample through its shelf. Memory too small to matter is
+    /// cleared before it decays into slow "denormal" numbers. One index
+    /// walks every array together, which the compiler turns into work on
+    /// several lines at once.
     #[inline]
-    fn process(&mut self, sample: f32) -> f32 {
-        let mid = f64::from(self.gain * sample);
-        let lows = self.low.process(&mut self.low_filter, mid);
-        self.high.process(&mut self.high_filter, lows) as f32
+    #[allow(clippy::needless_range_loop)]
+    fn process(&mut self, samples: &mut [f32; MAX_LINES]) {
+        let rest = TONE_REST as f32;
+        for i in 0..MAX_LINES {
+            let (ic1, ic2) = (self.ic1[i], self.ic2[i]);
+            let v3 = samples[i] - ic2;
+            let v1 = self.a1[i] * ic1 + self.a2[i] * v3;
+            let v2 = ic2 + self.a2[i] * ic1 + self.a3[i] * v3;
+            let ic1 = 2.0 * v1 - ic1;
+            let ic2 = 2.0 * v2 - ic2;
+            self.ic1[i] = if ic1.abs() < rest { 0.0 } else { ic1 };
+            self.ic2[i] = if ic2.abs() < rest { 0.0 } else { ic2 };
+            samples[i] = self.input[i] * samples[i] + self.band[i] * v1 + self.low[i] * v2;
+        }
+    }
+
+    fn clear(&mut self) {
+        self.ic1 = [0.0; MAX_LINES];
+        self.ic2 = [0.0; MAX_LINES];
     }
 }
 
@@ -472,6 +517,10 @@ impl LineTone {
 /// smoothstep curve, which eases away and eases in, from where it is to a
 /// new place taken from its own seeded noise. Its speed never jumps, so the
 /// pitch it bends never jumps either.
+///
+/// The curve is worked out every [`DRIFT_STEP_SAMPLES`], and the drift
+/// moves in a straight line to it in between, a step a sample: never
+/// steeper than the curve, and too slow for the corners to be heard.
 struct Drift {
     noise: Noise,
     /// How far through the cycle, from 0 to 1, and how far it moves a
@@ -482,8 +531,13 @@ struct Drift {
     from: f32,
     to: f32,
     /// After Play restarts it while the tail rings: how far it was from
-    /// its start, gliding to nothing.
+    /// its start, gliding to nothing, a step each time the curve is worked
+    /// out.
     restart: Ramp,
+    /// Where it is now, and how far it moves each sample until the curve
+    /// is worked out again.
+    now: f32,
+    slope: f32,
 }
 
 impl Drift {
@@ -495,6 +549,8 @@ impl Drift {
             from: 0.0,
             to: 0.0,
             restart: Ramp::new(0.0, 1),
+            now: 0.0,
+            slope: 0.0,
         };
         drift.start_again();
         drift
@@ -508,37 +564,55 @@ impl Drift {
         self.to = self.noise.next_sample();
     }
 
-    /// Where it is now, with what's left of the glide back from a restart:
-    /// never further than 2 either way, however often Play restarts it.
+    /// Where the curve is, with what's left of the glide back from a
+    /// restart: never further than 2 either way, however often Play
+    /// restarts it.
     #[inline]
-    fn value(&self) -> f32 {
+    fn curve(&self) -> f32 {
         let t = self.phase as f32;
         let along = self.from + (self.to - self.from) * t * t * (3.0 - 2.0 * t);
         (along + self.restart.value()).clamp(-2.0, 2.0)
     }
 
-    /// Moves on by a sample.
+    /// Where it is on this sample.
     #[inline]
-    fn advance(&mut self) {
+    fn value(&self) -> f32 {
+        self.now
+    }
+
+    /// Works out where the curve will be [`DRIFT_STEP_SAMPLES`] on, and
+    /// heads there. The fastest rate moves its cycle on by under a
+    /// hundredth in that time, so it passes at most one cycle's end.
+    #[inline]
+    fn aim(&mut self) {
         self.restart.next_value();
-        self.phase += self.step;
+        self.phase += DRIFT_STEP_SAMPLES as f64 * self.step;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
             self.from = self.to;
             self.to = self.noise.next_sample();
         }
+        self.slope = (self.curve() - self.now) / DRIFT_STEP_SAMPLES as f32;
+    }
+
+    /// Moves on by a sample.
+    #[inline]
+    fn advance(&mut self) {
+        self.now += self.slope;
     }
 
     /// Starts again from the same point, gliding there over
     /// [`MOD_GLIDE_SECONDS`] from where it is if `gliding`.
     fn restart(&mut self, gliding: bool) {
-        let before = self.value();
+        let before = self.now;
         self.start_again();
         self.restart.jump_to(0.0);
         if gliding && before != 0.0 {
             self.restart.jump_to(before);
             self.restart.set_target(0.0);
         }
+        self.now = self.curve();
+        self.slope = 0.0;
     }
 }
 
@@ -559,9 +633,20 @@ pub(crate) struct Reverb {
     predelay_head: Glide,
     lane_heads: Box<[[Glide; LANES]]>,
     line_heads: Box<[Glide]>,
-    /// Each line's tone, worked out again only while what it comes from
-    /// glides.
-    tones: Box<[LineTone]>,
+    /// Where each is read from now, in samples: the heads' places, kept
+    /// here so nothing need ask them while none is gliding.
+    predelay_length: f64,
+    lane_lengths: Box<[[f64; LANES]]>,
+    line_lengths: [f64; MAX_LINES],
+    /// Whether any head is gliding.
+    gliding: bool,
+    /// Each line's tone in the loop: how much it keeps of what passes
+    /// through it each lap in the mids, and its low and high shelves, which
+    /// keep more or less of the lows and the highs. Worked out again only
+    /// while what they come from glides.
+    gains: [f32; MAX_LINES],
+    low_shelves: Shelves,
+    high_shelves: Shelves,
     /// One over Decay, in 1/s, gliding as heard.
     decay_rate: Ramp,
     /// The Mults, and the crossovers in octaves above 1 Hz, gliding as
@@ -579,9 +664,11 @@ pub(crate) struct Reverb {
     /// The mod depths, gliding over [`MOD_GLIDE_SECONDS`].
     early_mod_depth: Ramp,
     late_mod_depth: Ramp,
-    /// Each line's drift, and each lane's of the drifting step.
+    /// Each line's drift, and each lane's of the drifting step, and how
+    /// many samples until their curves are worked out again.
     line_drifts: Box<[Drift]>,
     lane_drifts: [Drift; LANES],
+    drift_countdown: u32,
     /// The output's High Cut and Low Cut, in octaves above 1 Hz, gliding as
     /// heard.
     high_cut: Ramp,
@@ -680,7 +767,13 @@ impl Reverb {
                 .into_boxed_slice(),
             line_heads: vec![Glide::new(1.0, sample_rate); arrangement.lines.len()]
                 .into_boxed_slice(),
-            tones: vec![LineTone::default(); arrangement.lines.len()].into_boxed_slice(),
+            predelay_length: 0.0,
+            lane_lengths: vec![[0.0; LANES]; arrangement.steps.len()].into_boxed_slice(),
+            line_lengths: [1.0; MAX_LINES],
+            gliding: false,
+            gains: [0.0; MAX_LINES],
+            low_shelves: Shelves::default(),
+            high_shelves: Shelves::default(),
             decay_rate: Ramp::new(0.0, 1),
             bass_mult: Ramp::new(1.0, 1),
             high_mult: Ramp::new(1.0, 1),
@@ -699,6 +792,7 @@ impl Reverb {
                 .map(|_| Drift::new(seeds.next().unwrap()))
                 .collect(),
             lane_drifts: std::array::from_fn(|_| Drift::new(seeds.next().unwrap())),
+            drift_countdown: 0,
             high_cut: Ramp::new(0.0, 1),
             low_cut: Ramp::new(0.0, 1),
             early_gain: 0.0,
@@ -774,6 +868,38 @@ impl Reverb {
         {
             move_to(head, samples(seconds * scale, line).max(1.0));
         }
+        if jump {
+            self.predelay_length = self.predelay_head.value();
+            for (lengths, heads) in self.lane_lengths.iter_mut().zip(self.lane_heads.iter()) {
+                *lengths = heads.map(|head| head.value());
+            }
+            for (length, head) in self.line_lengths.iter_mut().zip(self.line_heads.iter()) {
+                *length = head.value();
+            }
+            self.gliding = false;
+        } else {
+            self.gliding = true;
+        }
+    }
+
+    /// Every head moves on by a sample, and its place for this sample is
+    /// kept. Once none is moving, nothing need move them again until the
+    /// lengths change.
+    fn glide_lengths(&mut self) {
+        let mut moving = false;
+        self.predelay_length = self.predelay_head.next_value();
+        moving |= self.predelay_head.is_moving();
+        for (lengths, heads) in self.lane_lengths.iter_mut().zip(self.lane_heads.iter_mut()) {
+            for (length, head) in lengths.iter_mut().zip(heads.iter_mut()) {
+                *length = head.next_value();
+                moving |= head.is_moving();
+            }
+        }
+        for (length, head) in self.line_lengths.iter_mut().zip(self.line_heads.iter_mut()) {
+            *length = head.next_value();
+            moving |= head.is_moving();
+        }
+        self.gliding = moving;
     }
 
     /// Notes where line or lane `index` is read from on this sample, and
@@ -801,11 +927,12 @@ impl Reverb {
             .max(SHELVES_APART * bass_hz);
         let bass_t = prewarp(bass_hz, self.sample_rate);
         let high_t = prewarp(high_hz, self.sample_rate);
+        let count = self.lines.len();
         let mut energy = 0.0;
-        for (tone, head) in self.tones.iter_mut().zip(self.line_heads.iter()) {
-            let lap = per_sample * head.value();
+        for line in 0..count {
+            let lap = per_sample * self.line_lengths[line];
             let gain = lap.exp();
-            tone.gain = gain as f32;
+            self.gains[line] = gain as f32;
             // What one sound in the line comes to over every lap, heard
             // after each lap's loss: the gain squared, then its square
             // again, and so on.
@@ -813,11 +940,13 @@ impl Reverb {
             // Each shelf's gain is its band's loss over the mids', and its
             // square root and fourth root are what the shelf is made from.
             let root = (0.25 * lows * lap).exp();
-            tone.low = Shelf::low(bass_t, root * root, root);
+            self.low_shelves
+                .set(line, Shelf::low(bass_t, root * root, root));
             let root = (0.25 * highs * lap).exp();
-            tone.high = Shelf::high(high_t, root * root, root);
+            self.high_shelves
+                .set(line, Shelf::high(high_t, root * root, root));
         }
-        self.tail_energy = (energy / self.tones.len() as f64) as f32;
+        self.tail_energy = (energy / count as f64) as f32;
     }
 
     /// The tail's level: Depth's share of it, scaled so the tail's energy
@@ -919,10 +1048,8 @@ impl Reverb {
         {
             line.clear();
         }
-        for tone in self.tones.iter_mut() {
-            tone.low_filter = Svf::default();
-            tone.high_filter = Svf::default();
-        }
+        self.low_shelves.clear();
+        self.high_shelves.clear();
         self.top = Default::default();
         self.high_cuts = Default::default();
         self.low_cuts = Default::default();
@@ -933,6 +1060,7 @@ impl Reverb {
         {
             drift.restart(false);
         }
+        self.drift_countdown = 0;
         self.quiet = u32::MAX;
         self.jump_to_settings();
     }
@@ -1047,7 +1175,7 @@ impl Effect for Reverb {
             .iter_mut()
             .chain(self.lane_drifts.iter_mut())
         {
-            drift.restart = Ramp::new(0.0, slow);
+            drift.restart = Ramp::new(0.0, slow / DRIFT_STEP_SAMPLES);
         }
         self.predelay_head = Glide::new(0.0, sample_rate);
         for head in self
@@ -1093,7 +1221,10 @@ impl Effect for Reverb {
         }
         // Bounded by the block.
         for (left, right) in left.iter_mut().zip(right.iter_mut()) {
-            let mut tones_move = self.line_heads.iter().any(Glide::is_moving);
+            let mut tones_move = self.gliding;
+            if self.gliding {
+                self.glide_lengths();
+            }
             for ramp in [
                 &mut self.decay_rate,
                 &mut self.bass_mult,
@@ -1134,42 +1265,57 @@ impl Effect for Reverb {
                 self.low_cut.next_value();
                 self.set_low_cut();
             }
+            // Each drift moves on only while it's heard, so with no Mod
+            // Depth it costs nothing.
             let early_drift = f64::from(self.early_mod_depth.next_value()) * early_reach;
             let late_drift = f64::from(self.late_mod_depth.next_value()) * late_reach;
+            let early_drifting = early_drift != 0.0 || self.early_mod_depth.is_moving();
+            let late_drifting = late_drift != 0.0 || self.late_mod_depth.is_moving();
+            let aiming = self.drift_countdown == 0 && quiet != u32::MAX;
+            if aiming && late_drifting {
+                for drift in self.line_drifts.iter_mut() {
+                    drift.aim();
+                }
+            }
+            if aiming && early_drifting {
+                for drift in self.lane_drifts.iter_mut() {
+                    drift.aim();
+                }
+            }
 
             #[cfg(test)]
             let mut watched = [None; MAX_LINES + LANES];
             let input = [*left, *right];
             let mut loud = input[0].abs() > SILENCE || input[1].abs() > SILENCE;
             let mut written = input[0] != 0.0 || input[1] != 0.0;
-            let predelay = self.predelay_head.next_value();
+            let predelay = self.predelay_length;
             let dry = [0, 1].map(|side| self.predelay[side].delay(input[side], predelay));
             // Half of each side into each of its four lanes: the same energy.
             let mut lanes: [f32; LANES] = std::array::from_fn(|lane| 0.5 * dry[lane * 2 / LANES]);
             let mut taps = [0.0; LANES];
             let last = self.diffuser.len() - 1;
-            for (step, (lines, heads)) in self
+            for (step, (lines, lengths)) in self
                 .diffuser
                 .iter_mut()
-                .zip(self.lane_heads.iter_mut())
+                .zip(self.lane_lengths.iter())
                 .enumerate()
             {
-                let drifting = step == arrangement.drifting_step;
-                for (lane, ((sample, line), head)) in lanes
+                let drifting = early_drifting && step == arrangement.drifting_step;
+                for (lane, ((sample, line), &length)) in lanes
                     .iter_mut()
                     .zip(lines.iter_mut())
-                    .zip(heads.iter_mut())
+                    .zip(lengths)
                     .enumerate()
                 {
                     loud |= sample.abs() > SILENCE;
-                    let length = head.next_value();
                     let delay = if drifting && arrangement.lane_rates[lane] > 0.0 {
                         // Never more than half the lane's own length.
                         let drift = early_drift.min(0.5 * length);
                         let delay = length + drift * f64::from(self.lane_drifts[lane].value());
                         #[cfg(test)]
                         {
-                            watched[MAX_LINES + lane] = Some((delay, head.is_moving()));
+                            let gliding = self.lane_heads[step][lane].is_moving();
+                            watched[MAX_LINES + lane] = Some((delay, gliding));
                         }
                         delay
                     } else {
@@ -1196,17 +1342,22 @@ impl Effect for Reverb {
             // crossed with its right partner; then each line written with
             // what comes round and what goes in.
             let mut outputs = [0.0f32; MAX_LINES];
-            let mut reads = [0.0f64; MAX_LINES];
-            for ((((output, read), line), head), (tone, drift)) in outputs
-                .iter_mut()
-                .zip(reads.iter_mut())
-                .zip(self.lines.iter())
-                .zip(self.line_heads.iter_mut())
-                .zip(self.tones.iter_mut().zip(self.line_drifts.iter()))
-            {
-                *read = head.next_value() + late_drift * f64::from(drift.value());
-                *output = tone.process(line.read(*read));
+            let mut reads = self.line_lengths;
+            if late_drifting {
+                for (read, drift) in reads.iter_mut().zip(self.line_drifts.iter()) {
+                    *read += late_drift * f64::from(drift.value());
+                }
             }
+            for (((output, &read), line), &gain) in outputs
+                .iter_mut()
+                .zip(reads.iter())
+                .zip(self.lines.iter())
+                .zip(self.gains.iter())
+            {
+                *output = gain * line.read(read);
+            }
+            self.low_shelves.process(&mut outputs);
+            self.high_shelves.process(&mut outputs);
             #[cfg(test)]
             {
                 for (index, &read) in reads[..count].iter().enumerate() {
@@ -1275,12 +1426,20 @@ impl Effect for Reverb {
             // The drift moves on only while it's awake, so asleep it changes
             // nothing, as the chain expects when it skips it.
             if quiet != u32::MAX {
-                for drift in self
-                    .line_drifts
-                    .iter_mut()
-                    .chain(self.lane_drifts.iter_mut())
-                {
-                    drift.advance();
+                self.drift_countdown = if self.drift_countdown == 0 {
+                    DRIFT_STEP_SAMPLES - 1
+                } else {
+                    self.drift_countdown - 1
+                };
+                if late_drifting {
+                    for drift in self.line_drifts.iter_mut() {
+                        drift.advance();
+                    }
+                }
+                if early_drifting {
+                    for drift in self.lane_drifts.iter_mut() {
+                        drift.advance();
+                    }
                 }
             }
         }
@@ -1338,6 +1497,7 @@ impl Effect for Reverb {
         {
             drift.restart(gliding);
         }
+        self.drift_countdown = 0;
     }
 }
 

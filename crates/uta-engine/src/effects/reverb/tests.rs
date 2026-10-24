@@ -526,14 +526,22 @@ fn no_line_keeps_more_than_its_longest_lasting_band_at_any_settings() {
                 rate,
             );
             let longest = reverb.line_heads.len() - 1;
-            let tone = reverb.tones[longest];
-            let lap = reverb.line_heads[longest].value() / rate;
+            let lap = reverb.line_lengths[longest] / rate;
             let kept = |mult: f32| 10f64.powf(-3.0 * lap / (30.0 * f64::from(mult)));
             let most = kept(bass_mult.max(high_mult).max(1.0));
             for step in 0..=40 {
                 let hz = 20.0 * 1000f64.powf(f64::from(step) / 40.0);
-                let mut tone = tone;
-                let gain = gain_at(|x| f64::from(tone.process(x as f32)), hz);
+                let (mut low, mut high) = (reverb.low_shelves, reverb.high_shelves);
+                let gain = gain_at(
+                    |x| {
+                        let mut samples = [0.0; MAX_LINES];
+                        samples[longest] = reverb.gains[longest] * x as f32;
+                        low.process(&mut samples);
+                        high.process(&mut samples);
+                        f64::from(samples[longest])
+                    },
+                    hz,
+                );
                 assert!(
                     gain < 1.0 && gain <= most * 1.001,
                     "Mults {bass_mult} and {high_mult}, crossovers {bass_xover} and {high_xover}: \
@@ -771,7 +779,7 @@ fn with_modulation_two_renders_are_identical() {
 
 /// Play starts the drift again from the same point: after a restart while
 /// the tail rings, once the glide back is over, every line and lane drifts
-/// exactly as a new Reverb's does. Meanwhile it glides there rather than
+/// as a new Reverb's does: on the same curve, from the same noise. Meanwhile it glides there rather than
 /// jumping: nothing is read moving faster than the drift itself moves.
 #[test]
 fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
@@ -795,7 +803,14 @@ fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
         .chain(&played.lane_drifts)
         .zip(new.line_drifts.iter().chain(&new.lane_drifts))
     {
-        assert_eq!(played.value(), new.value());
+        assert_eq!(
+            (played.phase, played.from, played.to),
+            (new.phase, new.from, new.to)
+        );
+        // Where each is between the curve's points differs only by
+        // rounding, from where each started its straight lines.
+        let apart = (played.value() - new.value()).abs();
+        assert!(apart < 1e-5, "{apart}");
     }
     let allowed = DRIFT_STEEPEST * 5.0 * 1.42 * LATE_MOD_SECONDS;
     assert!(played.fastest <= allowed, "{}", played.fastest);
