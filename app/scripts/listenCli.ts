@@ -11,6 +11,7 @@ import {
   HELP,
   type Prepared,
   SessionError,
+  TAIL_DB,
   type Tools,
   listSessions,
   listening,
@@ -22,7 +23,7 @@ import {
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 
-/** `uta render` and `uta analyse --json --png`, from $UTA_BIN or this checkout's release build. */
+/** `uta render`, `uta song` and `uta analyse --json --png`, from $UTA_BIN or this checkout's release build. */
 function utaTools(): Tools {
   let uta = process.env.UTA_BIN;
   const binary = () => {
@@ -37,6 +38,9 @@ function utaTools(): Tools {
     render(commands, wav, seconds) {
       const args = ["render", wav, "--commands", commands, ...(seconds ? ["--seconds", String(seconds)] : [])];
       execFileSync(binary(), args, { stdio: ["ignore", "ignore", "inherit"] });
+    },
+    song(file, out) {
+      execFileSync(binary(), ["song", file, "--out", out], { stdio: ["ignore", "ignore", "inherit"] });
     },
     analyse(wav, images) {
       // Its list of the images it drew goes to stderr: not needed here.
@@ -106,7 +110,9 @@ async function main() {
   if (args.prepare) {
     for (const { session, candidates, loop } of prepared) {
       const gains = candidates.map((c) => `${c.id} ${c.gainDb >= 0 ? "+" : ""}${c.gainDb} dB`).join(", ");
+      const tails = candidates.map((c) => `${c.id} ${c.tailSeconds.toFixed(2)} s`).join(", ");
       console.log(`Ready: ${session.name} (${session.kind}), looping ${loop.start.toFixed(2)}–${loop.end.toFixed(2)} s, gains ${gains}`);
+      console.log(`  below ${TAIL_DB} dB after: ${tails}`);
     }
     return;
   }

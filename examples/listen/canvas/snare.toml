@@ -1,0 +1,18 @@
+# The canvas's snare: one 909 snare hit at its defaults, for hearing what an
+# effect does to a short, bright transient (a room's first reflections, a
+# delay's echoes). See README.md.
+name = "Canvas: snare"
+tempo = 120
+loop = false
+
+[master]
+volume_db = 0
+
+[[track]]
+name = "Part"
+kind = "drums"
+pattern.hit = { snare = "x110... .... .... ...." }
+
+[[section]]
+name = "hit"
+bars = 1
