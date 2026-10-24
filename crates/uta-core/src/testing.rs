@@ -9,7 +9,8 @@ use crate::{
     Chain, Clip, ClipId, ClipPosition, Command, DelayMode, DelayParam, DelaySettings, DrumParam,
     DrumSound, Effect, EffectId, EffectSettings, FilterMode, KIT, KitSettings, LfoShape,
     MixerStrip, ModDestination, ModSource, Note, NoteId, PlacedClip, PlacedEffect, PlacedTrack,
-    Project, ProjectId, Source, SynthParam, SynthSettings, Track, TrackId, VoiceMode, Waveform,
+    Project, ProjectId, ReverbParam, ReverbSettings, Source, SynthParam, SynthSettings, Track,
+    TrackId, VoiceMode, Waveform,
 };
 
 /// A project with a fixed ID, so its track and clip IDs are known.
@@ -167,6 +168,27 @@ fn any_delay_param() -> impl Strategy<Value = DelayParam> {
     ]
 }
 
+/// A Reverb setting, with values a bit wider than its limits, so some are
+/// rejected.
+fn any_reverb_param() -> impl Strategy<Value = ReverbParam> {
+    prop_oneof![
+        Just(ReverbParam::Mode(crate::ReverbMode::Room)),
+        (-0.05f32..0.55).prop_map(ReverbParam::PredelaySeconds),
+        (0.05f32..31.0).prop_map(ReverbParam::DecaySeconds),
+        Just(ReverbParam::DecaySeconds(f32::NAN)),
+        (-0.1f32..1.1).prop_map(ReverbParam::Depth),
+        (900.0f32..21_000.0).prop_map(ReverbParam::HighCutHz),
+        (10.0f32..1_100.0).prop_map(ReverbParam::LowCutHz),
+        (0.001f32..1.1).prop_map(ReverbParam::EarlySizeSeconds),
+        (-0.1f32..1.1).prop_map(ReverbParam::Diffusion),
+        (-0.1f32..1.1).prop_map(ReverbParam::EarlySend),
+        (-0.1f32..1.1).prop_map(ReverbParam::LateSize),
+        (0.2f32..4.5).prop_map(ReverbParam::BassMult),
+        (0.05f32..2.2).prop_map(ReverbParam::HighMult),
+        (0.04f32..5.5).prop_map(ReverbParam::LateModRateHz),
+    ]
+}
+
 /// A Mix, mostly in range.
 fn any_mix() -> impl Strategy<Value = f32> {
     prop_oneof![10 => 0.0f32..=1.0, 1 => prop_oneof![Just(f32::NAN), 1.01f32..2.0, -1.0f32..-0.01]]
@@ -177,9 +199,9 @@ fn any_chain() -> impl Strategy<Value = Chain> {
     prop_oneof![4 => any_track_id().prop_map(Chain::Track), 1 => Just(Chain::Master)]
 }
 
-/// An effect from the pool: a Delay with a few settings changed, on or off,
-/// at any Mix.
-fn any_effect() -> impl Strategy<Value = Effect> {
+/// A Delay from the pool, with a few settings changed, on or off, at any
+/// Mix.
+fn any_delay() -> impl Strategy<Value = Effect> {
     (
         (0u128..8).prop_map(effect_id),
         prop::collection::vec(any_delay_param(), 0..3),
@@ -195,6 +217,29 @@ fn any_effect() -> impl Strategy<Value = Effect> {
                 .with_enabled(enabled)
                 .with_mix(mix)
         })
+}
+
+/// An effect from the pool: a Delay or a Reverb with a few settings
+/// changed, on or off, at any Mix.
+fn any_effect() -> impl Strategy<Value = Effect> {
+    prop_oneof![
+        any_delay(),
+        (
+            (0u128..8).prop_map(effect_id),
+            prop::collection::vec(any_reverb_param(), 0..3),
+            any::<bool>(),
+            any_mix(),
+        )
+            .prop_map(|(id, params, enabled, mix)| {
+                let mut settings = ReverbSettings::default();
+                for param in params {
+                    let _ = settings.set(param);
+                }
+                Effect::new(id, EffectSettings::Reverb(settings))
+                    .with_enabled(enabled)
+                    .with_mix(mix)
+            }),
+    ]
 }
 
 /// Mostly one or two of something, now and then none (which is rejected).
@@ -413,6 +458,7 @@ pub fn any_command() -> impl Strategy<Value = Command> {
         1 => ((0u128..8).prop_map(effect_id), any::<bool>()).prop_map(|(effect, enabled)| Command::SetEffectEnabled { effect, enabled }),
         1 => ((0u128..8).prop_map(effect_id), any_mix()).prop_map(|(effect, mix)| Command::SetEffectMix { effect, mix }),
         1 => ((0u128..8).prop_map(effect_id), any_delay_param()).prop_map(|(effect, param)| Command::SetDelayParam { effect, param }),
+        1 => ((0u128..8).prop_map(effect_id), any_reverb_param()).prop_map(|(effect, param)| Command::SetReverbParam { effect, param }),
     ]
 }
 
@@ -463,7 +509,7 @@ mod tests {
                 .map(|clip| clip.notes().len())
                 .sum::<usize>();
         }
-        assert_eq!(applied.len(), 24, "every kind of command applies");
+        assert_eq!(applied.len(), 25, "every kind of command applies");
         assert!(most_tracks >= 5, "at most {most_tracks} tracks");
         assert!(most_clips >= 5, "at most {most_clips} clips");
         assert!(notes_elsewhere > 0);

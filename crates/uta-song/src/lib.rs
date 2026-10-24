@@ -26,8 +26,8 @@ use uta_core::time::{NoteDivision, Ticks};
 use uta_core::{
     COMMAND_FORMAT, Chain, Clip, ClipId, Command, CommandList, DelayParam, DrumParam, DrumSound,
     Effect, EffectId, EffectKind, FactorySound, KIT, KitSettings, MixerStrip, Note, NoteId,
-    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, Source, SynthParam, SynthSettings,
-    Track, TrackId,
+    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, ReverbParam, Source, SynthParam,
+    SynthSettings, Track, TrackId,
 };
 use uuid::Uuid;
 
@@ -484,6 +484,11 @@ impl Compiler<'_> {
                     EffectKind::Delay => Command::SetDelayParam {
                         effect: id,
                         param: param::<DelayParam>("Delay", name, setting)
+                            .map_err(|message| self.error(settings.span(), message))?,
+                    },
+                    EffectKind::Reverb => Command::SetReverbParam {
+                        effect: id,
+                        param: param::<ReverbParam>("Reverb", name, setting)
                             .map_err(|message| self.error(settings.span(), message))?,
                     },
                 };

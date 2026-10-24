@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::reverb::ReverbSettings;
 use crate::setting::{Choice, Description, Scale, Unit};
 use crate::time::NoteDivision;
 use crate::{EffectId, TrackId};
@@ -124,6 +125,9 @@ impl Effect {
             EffectSettings::Delay(settings) => settings
                 .validate()
                 .map_err(crate::CommandError::DelayParamOutOfRange),
+            EffectSettings::Reverb(settings) => settings
+                .validate()
+                .map_err(crate::CommandError::ReverbParamOutOfRange),
         }
     }
 }
@@ -137,21 +141,24 @@ pub(crate) fn check_mix(mix: f32) -> Result<(), crate::CommandError> {
     }
 }
 
-/// The kinds of effect there are: just Delay for now.
+/// The kinds of effect there are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectKind {
     Delay,
+    /// Since command format 15 (RFC-010).
+    Reverb,
 }
 
 impl EffectKind {
     /// Every kind, in the order the **+** menu lists them.
-    pub const ALL: [EffectKind; 1] = [Self::Delay];
+    pub const ALL: [EffectKind; 2] = [Self::Delay, Self::Reverb];
 
     /// What the panel and the **+** menu call it.
     pub fn name(self) -> &'static str {
         match self {
             Self::Delay => "Delay",
+            Self::Reverb => "Reverb",
         }
     }
 
@@ -159,16 +166,18 @@ impl EffectKind {
     pub fn default_mix(self) -> f32 {
         match self {
             Self::Delay => 0.3,
+            Self::Reverb => 0.25,
         }
     }
 }
 
 /// An effect's own settings, which also say its kind. Serialises as
-/// `{"delay":{...}}`.
+/// `{"delay":{...}}` or `{"reverb":{...}}`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum EffectSettings {
     Delay(DelaySettings),
+    Reverb(ReverbSettings),
 }
 
 impl EffectSettings {
@@ -176,12 +185,14 @@ impl EffectSettings {
     pub fn default_of(kind: EffectKind) -> Self {
         match kind {
             EffectKind::Delay => Self::Delay(DelaySettings::default()),
+            EffectKind::Reverb => Self::Reverb(ReverbSettings::default()),
         }
     }
 
     pub fn kind(&self) -> EffectKind {
         match self {
             Self::Delay(_) => EffectKind::Delay,
+            Self::Reverb(_) => EffectKind::Reverb,
         }
     }
 }
@@ -549,7 +560,9 @@ mod tests {
         let effect = Effect::default_of(EffectId::random(), EffectKind::Delay);
         assert!(effect.enabled());
         assert_eq!(effect.mix(), 0.3);
-        let EffectSettings::Delay(settings) = *effect.settings();
+        let EffectSettings::Delay(settings) = *effect.settings() else {
+            panic!("a Delay");
+        };
         assert!(settings.sync);
         assert_eq!(settings.division, NoteDivision::DOTTED_EIGHTH);
         assert_eq!(settings.mode, DelayMode::Stereo);
@@ -702,6 +715,20 @@ mod tests {
         assert_eq!(settings.time_seconds_at(300.0), f64::from(0.2f32));
     }
 
+    /// A new Reverb has RFC-010's Mix of 25%.
+    #[test]
+    fn a_new_reverb_is_on_at_a_quarter_mix() {
+        let effect = Effect::default_of(EffectId::random(), EffectKind::Reverb);
+        assert!(effect.enabled());
+        assert_eq!(effect.mix(), 0.25);
+        assert_eq!(effect.kind().name(), "Reverb");
+        assert_eq!(
+            *effect.settings(),
+            EffectSettings::Reverb(ReverbSettings::default())
+        );
+        assert!(effect.validate().is_ok());
+    }
+
     #[test]
     fn a_chain_and_settings_serialise_like_this() {
         let id = TrackId::random();
@@ -738,7 +765,9 @@ mod tests {
         let old: EffectSettings =
             serde_json::from_str(r#"{"delay":{"time_seconds":0.25,"feedback":0.6}}"#).unwrap();
         assert_eq!(old, EffectSettings::Delay(DelaySettings::plain(0.25, 0.6)));
-        let EffectSettings::Delay(plain) = old;
+        let EffectSettings::Delay(plain) = old else {
+            panic!("a Delay");
+        };
         assert!(!plain.sync);
         assert_eq!(plain.time_seconds_at(60.0), 0.25);
         assert_eq!((plain.low_cut_hz, plain.high_cut_hz), (20.0, 20_000.0));

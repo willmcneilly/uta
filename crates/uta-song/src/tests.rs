@@ -278,7 +278,9 @@ bars = 1
     assert_eq!(settings.cutoff_hz, 500.0);
     assert_eq!(settings.glide_seconds, glide.settings.glide_seconds);
     let effect = &project.tracks()[0].effects()[0];
-    let EffectSettings::Delay(delay) = effect.settings();
+    let EffectSettings::Delay(delay) = effect.settings() else {
+        panic!("a Delay");
+    };
     assert_eq!(
         (delay.sync, delay.division, delay.feedback, effect.mix()),
         (true, NoteDivision::DOTTED_EIGHTH, 0.35, 0.2)
@@ -292,7 +294,10 @@ fn master_volume_and_effects() {
         "{HEADER}
 [master]
 volume_db = -3
-effects = [{{ delay = {{ time_seconds = 0.25 }}, enabled = false }}]
+effects = [
+    {{ delay = {{ time_seconds = 0.25 }}, enabled = false }},
+    {{ reverb = {{ mode = \"room\", decay_seconds = 4, depth = 0.8 }}, mix = 0.4 }},
+]
 
 [[track]]
 name = \"Bass\"
@@ -306,8 +311,17 @@ bars = 1
     assert_eq!(project.master_volume_db(), -3.0);
     let delay = &project.master_effects()[0];
     assert!(!delay.enabled());
-    let EffectSettings::Delay(settings) = delay.settings();
+    let EffectSettings::Delay(settings) = delay.settings() else {
+        panic!("a Delay");
+    };
     assert_eq!(settings.time_seconds, 0.25);
+    // A Reverb takes its settings by name, as the Delay does.
+    let reverb = &project.master_effects()[1];
+    let EffectSettings::Reverb(settings) = reverb.settings() else {
+        panic!("a Reverb");
+    };
+    assert_eq!((settings.decay_seconds, settings.depth), (4.0, 0.8));
+    assert_eq!(reverb.mix(), 0.4);
 }
 
 #[test]
