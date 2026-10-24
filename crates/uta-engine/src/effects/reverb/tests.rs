@@ -574,8 +574,8 @@ fn band_changes(reference: ReverbSettings, changed: ReverbSettings) -> Vec<f64> 
 }
 
 /// High Cut is a −12 dB an octave low-pass on the whole reverb: at 1 kHz,
-/// the octave at 4 kHz is about 12 dB down, 8 kHz's 12 dB further, and
-/// 250 Hz's untouched.
+/// the octave at 4 kHz, two above, is about 24 dB down, 8 kHz's 12 dB
+/// further, and 250 Hz's untouched.
 #[test]
 fn high_cut_falls_12_db_an_octave() {
     let open = ReverbSettings::default();
