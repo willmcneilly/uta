@@ -160,7 +160,10 @@ impl Default for ReverbSettings {
     /// Mult of 0.5 (Mix, 25%, is the effect's). The rest are this ticket's
     /// first guesses, to be tuned by ear in UTA-101: the cuts open, the
     /// crosses full and the modulation still, as the engine plays them until
-    /// UTA-100, and a short, fairly smooth burst half sent into the tail.
+    /// UTA-100, and a short, fairly smooth burst. Early Send is high because
+    /// the predelayed sound going straight into the tail is sparse: at 0.5
+    /// its echo density took 0.4 s to stay near 1, at 0.9 it does as soon as
+    /// the burst ends.
     fn default() -> Self {
         Self {
             mode: ReverbMode::Room,
@@ -172,7 +175,7 @@ impl Default for ReverbSettings {
             early_size_seconds: 0.03,
             early_cross: 1.0,
             diffusion: 0.8,
-            early_send: 0.5,
+            early_send: 0.9,
             early_mod_rate_hz: 0.5,
             early_mod_depth: 0.0,
             late_size: 0.5,
@@ -610,7 +613,7 @@ mod tests {
             concat!(
                 r#"{"mode":"room","predelay_seconds":0.01,"decay_seconds":2.0,"depth":0.5,"#,
                 r#""high_cut_hz":20000.0,"low_cut_hz":20.0,"early_size_seconds":0.03,"#,
-                r#""early_cross":1.0,"diffusion":0.8,"early_send":0.5,"early_mod_rate_hz":0.5,"#,
+                r#""early_cross":1.0,"diffusion":0.8,"early_send":0.9,"early_mod_rate_hz":0.5,"#,
                 r#""early_mod_depth":0.0,"late_size":0.5,"late_cross":1.0,"late_mod_rate_hz":0.5,"#,
                 r#""late_mod_depth":0.0,"bass_mult":1.0,"bass_xover_hz":500.0,"high_mult":0.5,"#,
                 r#""high_xover_hz":4000.0}"#
