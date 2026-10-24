@@ -915,6 +915,45 @@ mod tests {
         }
     }
 
+    /// The listening canvas's parts each build, with the loop off and one
+    /// track named Part, and each example candidate in `scripts/listen
+    /// --help` (in `app/scripts/listen.ts`), added onto the end as
+    /// `scripts/listen` adds it, names it as `$track:Part`: the effect on
+    /// any part, and the sound on a synth part.
+    #[test]
+    fn the_canvas_parts_build_with_a_candidate_on_top() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/listen/canvas");
+        let help = include_str!("../../../app/scripts/listen.ts");
+        // An example is the help's indented lines from its `# <name>` comment
+        // to the next blank line.
+        let example = |name: &str| {
+            let lines: Vec<_> = help
+                .lines()
+                .skip_while(|line| !line.trim_start().starts_with(&format!("# {name}")))
+                .take_while(|line| !line.trim().is_empty())
+                .map(|line| line.strip_prefix("  ").unwrap_or(line))
+                .collect();
+            assert!(lines.len() > 2, "no {name} example in the help");
+            lines.join("\n")
+        };
+        let (echo, sound) = (example("echo.toml"), example("bright.toml"));
+        for part in ["snare", "chord", "swell", "pad"] {
+            let path = folder.join(format!("{part}.toml"));
+            let project = load(None, Some(&path), false).unwrap();
+            assert!(!project.transport().loop_enabled(), "{part}");
+            let names: Vec<_> = project.tracks().iter().map(|track| track.name()).collect();
+            assert_eq!(names, ["Part"], "{part}");
+            let song = read(&path).unwrap();
+            let synth = part != "snare";
+            for commands in [&echo].into_iter().chain(synth.then_some(&sound)) {
+                let list = uta_song::compile(&format!("{song}\n{commands}"))
+                    .unwrap_or_else(|error| panic!("{part}: {error}"));
+                let project = list.build().unwrap();
+                assert_eq!(project.tracks().len(), 1, "{part}");
+            }
+        }
+    }
+
     #[test]
     fn render_all_needs_a_folder_of_lists() {
         let empty = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

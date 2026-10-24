@@ -1,0 +1,22 @@
+# The canvas's swell: one sung-like note, A3, that fades in over most of a
+# second, holds with a slight vibrato, and lets go. For hearing a slow
+# attack, a held pitch moving, and how an effect blooms behind a voice.
+# See README.md.
+name = "Canvas: swell"
+tempo = 120
+loop = false
+
+[master]
+volume_db = 0
+
+# Two saws through a band-pass around a vowel's first formant, with a little
+# breath of noise and a 5 Hz vibrato.
+[[track]]
+name = "Part"
+kind = "synth"
+settings = { osc1_wave = "saw", osc2_wave = "saw", osc2_pitch_semitones = 0.08, osc1_level = 0.8, osc2_level = 0.5, noise_level = 0.02, filter_mode = "band_pass", cutoff_hz = 800, resonance = 0.3, filter_key = 0.5, filter_env_octaves = 0.0, attack_seconds = 0.8, decay_seconds = 0.5, sustain = 1.0, release_seconds = 0.6, lfo_shape = "triangle", lfo_rate_hz = 5.0, lfo_vibrato_semitones = 0.2 }
+pattern.swell = { notes = "A3 - - .", step = "1/4", velocity = 100 }
+
+[[section]]
+name = "swell"
+bars = 1

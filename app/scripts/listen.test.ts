@@ -3,36 +3,55 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type Analysis,
+  CANVAS_DIR,
   type Prepared,
   IMAGES,
+  TAIL_DB,
+  TAIL_PAUSE_SECONDS,
   type Tools,
+  canvasParts,
   imagePath,
   listSessions,
   listening,
   listeningDir,
   loopRegion,
   matchGains,
+  onlyCommands,
   prepare,
   readSession,
   readWav,
   sessionDir,
   shuffle,
+  tailSeconds,
   transportOf,
+  withGain,
 } from "./listen";
 import { parseToml } from "./toml";
 
-/** A 32-bit float stereo WAV, as `uta render` writes, of a sine at `amplitude`. */
-function floatWav(seconds: number, amplitude: number, sampleRate = 8000): Buffer {
+/**
+ * A 32-bit float stereo WAV, as `uta render` writes, of a sine at
+ * `amplitude`. With a `tail`, it holds until `tail.from` seconds, then fades
+ * at a steady rate in dB to 60 dB down at `tail.sixtyAt` and on below it;
+ * `right` scales the right channel, and `rightSixtyAt` gives it its own fade.
+ */
+function floatWav(
+  seconds: number,
+  amplitude: number,
+  sampleRate = 8000,
+  tail?: { from: number; sixtyAt: number; right?: number; rightSixtyAt?: number },
+): Buffer {
   const frames = Math.round(seconds * sampleRate);
   const data = Buffer.alloc(frames * 2 * 4);
   for (let i = 0; i < frames; i++) {
-    const sample = amplitude * Math.sin((2 * Math.PI * 220 * i) / sampleRate);
-    data.writeFloatLE(sample, i * 8);
-    data.writeFloatLE(sample, i * 8 + 4);
+    const t = i / sampleRate;
+    const fade = (sixtyAt: number) => (tail && t > tail.from ? 10 ** ((-60 * (t - tail.from)) / (sixtyAt - tail.from) / 20) : 1);
+    const sine = amplitude * Math.sin((2 * Math.PI * 220 * i) / sampleRate);
+    data.writeFloatLE(sine * fade(tail?.sixtyAt ?? 1), i * 8);
+    data.writeFloatLE(sine * fade(tail?.rightSixtyAt ?? tail?.sixtyAt ?? 1) * (tail?.right ?? 1), i * 8 + 4);
   }
   const header = Buffer.alloc(44);
   header.write("RIFF", 0, "ascii");
@@ -67,18 +86,24 @@ const commandList = (bpm: number, bars: number) =>
   });
 
 /**
- * Stands in for uta: "renders" a sine whose amplitude is the command list's
- * file name's entry in `levels`, "measures" a loudness in LUFS from it, and
+ * Stands in for uta: "renders" a sine whose amplitude is the candidate's
+ * entry in `levels` (fading to -60 dB at its `sixtyAt`, if it has one, and on
+ * for 2 s after), "measures" a loudness in LUFS from it, and
  * "draws" its images: each a file holding its own name, and no harmonics for
  * a candidate with no loudness (so no pitch).
  */
-function fakeUta(levels: Record<string, { amplitude: number; lufs: number | null }>) {
-  const calls = { render: [] as string[], analyse: [] as string[] };
+function fakeUta(levels: Record<string, { amplitude: number; lufs: number | null; sixtyAt?: number }>) {
+  const calls = { render: [] as string[], analyse: [] as string[], song: [] as { file: string; text: string }[] };
   const tools: Tools = {
-    render(commands, wav) {
+    render(_commands, wav) {
       calls.render.push(wav);
-      const id = commands.split("/").pop()?.replace(".json", "") ?? "";
-      writeFileSync(wav, floatWav(2, levels[id].amplitude));
+      const { amplitude, sixtyAt } = levels[basename(wav, ".wav")];
+      writeFileSync(wav, sixtyAt ? floatWav(sixtyAt + 2, amplitude, 8000, { from: 0.25, sixtyAt }) : floatWav(2, amplitude));
+    },
+    // "Compiles" a song file to a command list with the loop off, as the canvas's parts have it.
+    song(file, out) {
+      calls.song.push({ file, text: readFileSync(file, "utf8") });
+      writeFileSync(out, JSON.stringify({ project: "p", commands: [{ format: 14, command: { type: "set_loop_enabled", enabled: false } }] }));
     },
     analyse(wav, images): Analysis {
       calls.analyse.push(wav);
@@ -187,9 +212,9 @@ describe("matching and lining up", () => {
   it("loops the second time round the song's loop, the same stretch for every candidate", () => {
     const transport = transportOf(JSON.parse(commandList(120, 2)));
     expect(transport).toEqual({ bpm: 120, loopEnabled: true, loopStart: 0, loopLength: 4 });
-    expect(loopRegion({}, [transport, transport], [8.2, 8.3])).toEqual({ start: 4, end: 8, bpm: 120 });
-    expect(loopRegion({}, [transport], [6])).toEqual({ start: 0, end: 4, bpm: 120 });
-    expect(loopRegion({ loop: [1, 2] }, [transport], [6])).toEqual({ start: 1, end: 2, bpm: 120 });
+    expect(loopRegion({}, [transport, transport], [8.2, 8.3], [8.2, 8.3])).toEqual({ start: 4, end: 8, bpm: 120 });
+    expect(loopRegion({}, [transport], [6], [6])).toEqual({ start: 0, end: 4, bpm: 120 });
+    expect(loopRegion({ loop: [1, 2] }, [transport], [6], [6])).toEqual({ start: 1, end: 2, bpm: 120 });
   });
 
   it("reads the loop from set_loop and set_loop_enabled, and loops the whole render with the loop off", () => {
@@ -197,10 +222,13 @@ describe("matching and lining up", () => {
     const moved = transportOf(list({ type: "set_tempo", bpm: 120 }, { type: "set_loop", start_bar: 1, bars: 2 }));
     expect(moved).toEqual({ bpm: 120, loopEnabled: true, loopStart: 2, loopLength: 4 });
     // Into the loop at 2 s, then the second time round it, from 6 s.
-    expect(loopRegion({}, [moved], [10.2])).toEqual({ start: 6, end: 10, bpm: 120 });
+    expect(loopRegion({}, [moved], [10.2], [10.2])).toEqual({ start: 6, end: 10, bpm: 120 });
     const off = transportOf(list({ type: "set_loop_enabled", enabled: false }));
     expect(off).toMatchObject({ loopEnabled: false });
-    expect(loopRegion({}, [off, off], [7.5, 7.25])).toEqual({ start: 0, end: 7.25, bpm: 120 });
+    // With the loop off, until the last tail is below -60 dB and half a second more, however long the renders ring on after it.
+    expect(TAIL_PAUSE_SECONDS).toBe(0.5);
+    expect(loopRegion({}, [off, off], [7.5, 7.25], [2.5, 3.1])).toEqual({ start: 0, end: 3.6, bpm: 120 });
+    expect(loopRegion({}, [off, off], [7.5, 7.25], [0, 0]), "all silent").toEqual({ start: 0, end: 7.25, bpm: 120 });
     // A new project's defaults: 120 BPM, a 4-bar loop from bar 1.
     expect(transportOf(list())).toEqual({ bpm: 120, loopEnabled: true, loopStart: 0, loopLength: 8 });
   });
@@ -208,8 +236,38 @@ describe("matching and lining up", () => {
   it("refuses candidates whose loops differ, unless the session says what to loop", () => {
     const a = transportOf(JSON.parse(commandList(120, 2)));
     const b = transportOf(JSON.parse(commandList(100, 2)));
-    expect(() => loopRegion({}, [a, b], [9, 9])).toThrow(/tempo or loop differ/);
-    expect(loopRegion({ loop: [0, 3] }, [a, b], [9, 9])).toEqual({ start: 0, end: 3, bpm: null });
+    expect(() => loopRegion({}, [a, b], [9, 9], [9, 9])).toThrow(/tempo or loop differ/);
+    expect(loopRegion({ loop: [0, 3] }, [a, b], [9, 9], [9, 9])).toEqual({ start: 0, end: 3, bpm: null });
+  });
+
+  it("measures where a render's tail falls below -60 dB of its own peak, at any level", () => {
+    // A held tone, fading 60 dB over 1.5 s from 0.5 s, in a render that rings on to 5 s.
+    for (const amplitude of [0.9, 0.05])
+      expect(tailSeconds(floatWav(5, amplitude, 8000, { from: 0.5, sixtyAt: 2 })), `at ${amplitude}`).toBeCloseTo(2, 2);
+    expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0, sixtyAt: 3.2 }))).toBeCloseTo(3.2, 2);
+    // -40 dB is reached two thirds of the way down.
+    expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 2 }), -40)).toBeCloseTo(1.5, 2);
+    // The louder channel decides it: on its own, the right (20 dB down) would be under -60 dB of the peak a third sooner.
+    expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 2, right: 0.1 }))).toBeCloseTo(2, 2);
+    // Either channel can ring on longest, and the peak is the louder channel's.
+    expect(tailSeconds(floatWav(5, 0.5, 8000, { from: 0.5, sixtyAt: 1, rightSixtyAt: 2.5 }))).toBeCloseTo(2.5, 2);
+    // The right is 20 dB louder: measured against the left's peak, it would ring on to 2.5 s.
+    expect(tailSeconds(floatWav(5, 0.05, 8000, { from: 0.5, sixtyAt: 2, right: 10 }))).toBeCloseTo(2, 2);
+    expect(tailSeconds(floatWav(5, 0, 8000))).toBe(0);
+    expect(TAIL_DB).toBe(-60);
+  });
+
+  it("pads a render with silence to the loop's length, and leaves one that's long enough alone", () => {
+    const wav = floatWav(1, 0.5, 8000);
+    const padded = withGain(wav, -6, 8000 * 2.5);
+    const info = readWav(padded);
+    expect(info.frames).toBe(8000 * 2.5);
+    expect(padded.readUInt32LE(4)).toBe(padded.length - 8);
+    const sent = samples(padded);
+    const rendered = samples(wav);
+    rendered.forEach((sample, i) => expect(sent[i]).toBeCloseTo(sample * 10 ** (-6 / 20), 6));
+    expect(sent.slice(rendered.length).every((sample) => sample === 0)).toBe(true);
+    expect(withGain(wav, 0, 4000).equals(wav)).toBe(true);
   });
 
   it("shuffles", () => {
@@ -279,6 +337,110 @@ describe("preparing a session", () => {
   });
 });
 
+describe("a canvas session", () => {
+  const CANVAS = `name = "Canvas: test"\ntempo = 120\nloop = false\n\n[[track]]\nname = "Part"\nkind = "synth"\npattern.a = "C4"\n\n[[section]]\nname = "a"\nbars = 1\n`;
+  const ECHO = `# An echo on the part.\n[[command]]\ntype = "add_effects"\neffects = [{ chain = { track = "$track:Part" }, index = 0, effect = { id = "9b2f6c1e-0000-4000-8000-000000000001", settings = { delay = { sync = true, division = "1/8d", time_seconds = 0.375, mode = "stereo", feedback = 0.4, low_cut_hz = 100.0, high_cut_hz = 8000.0, drive = 0.2, wobble = 0.1 } }, mix = 0.3 } }]\n`;
+  const SOUND = `[[command]]\ntype = "set_synth_settings"\ntrack = "$track:Part"\nsettings = { cutoff_hz = 4000 }\n`;
+
+  /** A session on a canvas of its own, canvas.toml beside it: "dry" is the canvas as it is, "echo" and "bright" add commands. */
+  function writeCanvasSession(name: string, extra = "") {
+    const dir = join(root, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "canvas.toml"), CANVAS);
+    writeFileSync(join(dir, "echo.toml"), ECHO);
+    writeFileSync(join(dir, "bright.toml"), SOUND);
+    writeFileSync(
+      join(dir, "session.toml"),
+      `question = "Which echo?"\nkind = "rate each"\ncanvas = "canvas.toml"\n${extra}\n[prediction]\ntext = "x"\n\n` +
+        `[[candidates]]\nid = "dry"\n\n[[candidates]]\nid = "echo"\ncommands = "echo.toml"\n\n[[candidates]]\nid = "bright"\ncommands = "bright.toml"\n`,
+    );
+    return dir;
+  }
+  const TAILS = { dry: { amplitude: 0.5, lufs: -20, sixtyAt: 0.8 }, echo: { amplitude: 0.5, lufs: -21, sixtyAt: 3.4 }, bright: { amplitude: 0.5, lufs: -19, sixtyAt: 1.1 } };
+
+  it("has the four parts in examples/listen/canvas, and a session names one by its name", () => {
+    expect(canvasParts()).toEqual(["chord", "pad", "snare", "swell"]);
+    const dir = writeCanvasSession("s");
+    writeFileSync(join(dir, "session.toml"), readFileSync(join(dir, "session.toml"), "utf8").replace('canvas = "canvas.toml"', 'canvas = "chord"'));
+    expect(readSession(dir).canvas).toBe(join(CANVAS_DIR, "chord.toml"));
+  });
+
+  it("refuses a canvas that isn't a part or a song file, saying what the parts are", () => {
+    const dir = writeCanvasSession("s");
+    writeFileSync(join(dir, "session.toml"), readFileSync(join(dir, "session.toml"), "utf8").replace('canvas = "canvas.toml"', 'canvas = "drums"'));
+    expect(() => readSession(dir)).toThrow(/"drums" isn't a part of the canvas \(chord, pad, snare, swell\)/);
+  });
+
+  it("takes a candidate with no commands as the canvas as it is, but only on a canvas", () => {
+    expect(readSession(writeCanvasSession("s")).candidates).toEqual([
+      { id: "dry" },
+      { id: "echo", commands: join(root, "s", "echo.toml") },
+      { id: "bright", commands: join(root, "s", "bright.toml") },
+    ]);
+    const plain = writeSession("plain");
+    writeFileSync(join(plain, "session.toml"), readFileSync(join(plain, "session.toml"), "utf8").replace('commands = "zebra-dark.json"\n', ""));
+    expect(() => readSession(plain)).toThrow(/candidate "zebra-dark"'s `commands` must be some text/);
+  });
+
+  it("refuses commands that would land in the canvas's song instead of adding onto it", () => {
+    expect(onlyCommands(ECHO)).toBeNull();
+    expect(onlyCommands(`[[command]]\ntype = "set_tempo"\nbpm = 90\n[command.extra]\nx = 1\n`)).toBeNull();
+    expect(onlyCommands(`tempo = 90\n[[command]]\ntype = "set_tempo"\n`)).toMatch(/must start with a \[\[command\]\] table/);
+    expect(onlyCommands(`[[command]]\ntype = "set_tempo"\n[[track]]\nname = "More"\n`)).toMatch(/not \[track\]/);
+    expect(onlyCommands("# Nothing here.\n")).toMatch(/no \[\[command\]\] tables/);
+    const dir = writeCanvasSession("s");
+    writeFileSync(join(dir, "echo.toml"), `bars = 4\n${ECHO}`);
+    expect(() => readSession(dir)).toThrow(/candidate "echo"'s echo.toml: it must start with a \[\[command\]\] table/);
+  });
+
+  it("renders each candidate through the same canvas, with its commands added onto the end", () => {
+    const dir = writeCanvasSession("s");
+    const { tools, calls } = fakeUta(TAILS);
+    prepare(readSession(dir), tools);
+    expect(calls.song.map((c) => c.file)).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.canvas.toml`)));
+    const [dry, echo, bright] = calls.song.map((c) => c.text);
+    expect(dry).toBe(CANVAS);
+    for (const [text, commands] of [
+      [echo, ECHO],
+      [bright, SOUND],
+    ]) {
+      expect(text.startsWith(CANVAS.trimEnd())).toBe(true);
+      expect(text.endsWith(commands)).toBe(true);
+    }
+    expect(calls.render).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.wav`)));
+  });
+
+  it("renders again only what changed: a candidate's commands, or every candidate when the canvas changes", () => {
+    const dir = writeCanvasSession("s");
+    const { tools, calls } = fakeUta(TAILS);
+    prepare(readSession(dir), tools);
+    prepare(readSession(dir), tools);
+    expect(calls.render).toHaveLength(3);
+    // A compiled command list gone missing is compiled and rendered again.
+    rmSync(join(dir, "bright.canvas.json"));
+    prepare(readSession(dir), tools);
+    expect(calls.render.slice(3)).toEqual([join(dir, "bright.wav")]);
+    expect(existsSync(join(dir, "bright.canvas.json"))).toBe(true);
+    const later = new Date(Date.now() + 5000);
+    utimesSync(join(dir, "echo.toml"), later, later);
+    prepare(readSession(dir), tools);
+    expect(calls.render.slice(4)).toEqual([join(dir, "echo.wav")]);
+    const evenLater = new Date(Date.now() + 10_000);
+    utimesSync(join(dir, "canvas.toml"), evenLater, evenLater);
+    prepare(readSession(dir), tools);
+    expect(calls.render.slice(5)).toEqual(["dry", "echo", "bright"].map((id) => join(dir, `${id}.wav`)));
+  });
+
+  it("loops from the start until the last candidate's tail is below -60 dB, and half a second more, not the silence the renders ring on into", () => {
+    const prepared = prepare(readSession(writeCanvasSession("s")), fakeUta(TAILS).tools);
+    // Each render rings on 2 s past its own -60 dB point.
+    expect(prepared.candidates.map((c) => c.seconds)).toEqual([2.8, 5.4, 3.1]);
+    expect(prepared.candidates.map((c) => c.tailSeconds.toFixed(2))).toEqual(["0.80", "3.40", "1.10"]);
+    expect(prepared.loop.start).toBe(0);
+    expect(prepared.loop.end).toBeCloseTo(3.9, 2);
+  });
+});
+
 describe("the listening page's server", () => {
   let server: Server;
   let base: string;
@@ -332,6 +494,28 @@ describe("the listening page's server", () => {
       const scale = 10 ** (gainDb / 20);
       expect(sent.length).toBe(rendered.length);
       sent.forEach((sample, i) => expect(sample).toBeCloseTo(rendered[i] * scale, 6));
+    }
+  });
+
+  it("pads each candidate's audio with silence to the shared loop's end", async () => {
+    const dir = join(root, "c");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "canvas.toml"), "# A canvas.\n");
+    for (const id of ["short", "long"]) writeFileSync(join(dir, `${id}.toml`), `[[command]]\ntype = "set_tempo"\nbpm = 120\n`);
+    writeFileSync(
+      join(dir, "session.toml"),
+      `question = "Which?"\nkind = "pick one"\ncanvas = "canvas.toml"\n[prediction]\ntext = "x"\n[[candidates]]\nid = "short"\ncommands = "short.toml"\n[[candidates]]\nid = "long"\ncommands = "long.toml"\n`,
+    );
+    const levels = { short: { amplitude: 0.5, lufs: -20, sixtyAt: 0.5 }, long: { amplitude: 0.5, lufs: -20, sixtyAt: 3 } };
+    const p = prepare(readSession(dir), fakeUta(levels).tools);
+    // short renders 2.5 s; the loop runs to long's tail, at 3 s, and the pause after it.
+    expect(p.candidates[0].seconds).toBe(2.5);
+    await serve([p], (n) => n - 1);
+    const session = await (await fetch(`${base}/api/session`)).json();
+    expect(session.loop.end).toBeCloseTo(3.5, 2);
+    for (const label of ["A", "B"]) {
+      const info = readWav(Buffer.from(await (await fetch(`${base}/audio/${label}`)).arrayBuffer()));
+      expect(info.frames / info.sampleRate, label).toBeGreaterThanOrEqual(session.loop.end);
     }
   });
 

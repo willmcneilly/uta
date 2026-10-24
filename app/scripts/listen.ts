@@ -8,7 +8,8 @@
 //
 //   2026-10-20-snare-decay/
 //     session.toml          the question, the candidates, Claude's prediction
-//     short.json …          each candidate's command list
+//     short.json …          each candidate's command list (or, on a canvas,
+//                           short.toml, the commands added onto it)
 //     short.wav …           its render, made here (and short.analysis.json)
 //     images/short-level.png …   its images (uta analyse --png), for the reveal
 //     verdict.toml          Will's answer, written by the page
@@ -20,7 +21,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type TomlTable, type TomlValue, parseToml, stringifyToml } from "./toml.ts";
 
@@ -64,7 +65,12 @@ session.toml, written by Claude before Will listens:
   loop = [2.14, 4.28]      # optional: the stretch to loop, in seconds. By
                            # default the second time round the song's loop
                            # (so it starts with the first pass's tail), or
-                           # the whole render if the loop is off
+                           # with the loop off, from the start until every
+                           # candidate's tail is below -60 dB (of its own
+                           # peak), measured from the renders, and half a
+                           # second more, so each pass starts afresh
+  canvas = "chord"         # optional: render every candidate on the same
+                           # part of the canvas (below)
 
   [prediction]             # written first, before anything is heard
   text = "B: its tail falls 40 dB in 210 ms, close to an 808's."
@@ -75,6 +81,32 @@ session.toml, written by Claude before Will listens:
   [[candidates]]           # one for each; the order here is never shown
   id = "short"             # a name for Claude; Will sees only A, B, C
   commands = "short.json"  # its command list, beside session.toml
+
+A canvas session hears every candidate on the same material, so the verdict
+is about the sound or effect, not the notes. The canvas is in
+examples/listen/canvas/ (its README says what each part is for): "snare" (one
+909 snare hit), "chord" (a short, piano-like chord), "swell" (a sung-like
+note fading in) and "pad" (a held chord). \`canvas\` names one of them, or is a
+path to another song file, from session.toml's folder. Each part is a song
+file whose one track is named Part, with the loop off.
+
+On a canvas, a candidate's \`commands\` is a TOML file of [[command]] tables,
+as a song file's raw commands are written (examples/demos/README.md), added
+onto the end of the canvas's song file. "$track:Part" names its track. Left
+out, the candidate is the canvas as it is: a dry reference. Each is compiled
+(uta song) to <id>.canvas.json beside it, then rendered.
+
+  # bright.toml: a sound, every setting at once (one left out is its default)
+  [[command]]
+  type = "set_synth_settings"
+  track = "$track:Part"
+  settings = { osc1_wave = "saw", cutoff_hz = 4000, release_seconds = 0.4 }
+
+  # echo.toml: an effect on the part's track ({ track = "…" }, or "master"),
+  # with every one of its settings
+  [[command]]
+  type = "add_effects"
+  effects = [{ chain = { track = "$track:Part" }, index = 0, effect = { id = "9b2f6c1e-0000-4000-8000-000000000001", settings = { delay = { sync = true, division = "1/8d", time_seconds = 0.375, mode = "stereo", feedback = 0.4, low_cut_hz = 100.0, high_cut_hz = 8000.0, drive = 0.2, wobble = 0.1 } }, enabled = true, mix = 0.3 } }]
 
 verdict.toml, written by the page when Finish is pressed:
 
@@ -103,8 +135,11 @@ export const RATING_MAX = 5;
 
 export interface Candidate {
   id: string;
-  /** The command list's path. */
-  commands: string;
+  /**
+   * The command list's path. On a canvas, the commands added onto it (a
+   * TOML file of [[command]] tables), or none for the canvas as it is.
+   */
+  commands?: string;
 }
 
 export interface Prediction {
@@ -122,6 +157,8 @@ export interface Session {
   matchLoudness: boolean;
   seconds?: number;
   loop?: [number, number];
+  /** The canvas's song file, when every candidate is rendered on it. */
+  canvas?: string;
   prediction: Prediction;
   candidates: Candidate[];
 }
@@ -182,14 +219,27 @@ export function readSession(dir: string): Session {
   if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind))
     fail(`\`kind\` must be one of ${KINDS.map((k) => `"${k}"`).join(", ")}.`);
 
+  let canvas: string | undefined;
+  if (toml.canvas !== undefined) {
+    const name = text(toml.canvas, "`canvas`");
+    canvas = /^[a-z0-9-]+$/.test(name) ? join(CANVAS_DIR, `${name}.toml`) : resolve(dir, name);
+    if (!existsSync(canvas))
+      fail(`\`canvas\` "${name}" isn't a part of the canvas (${canvasParts().join(", ")}) or a song file: there's no ${canvas}.`);
+  }
+
   const list = toml.candidates;
   if (!Array.isArray(list) || list.length === 0) fail("it needs at least one [[candidates]].");
   const candidates = (list as TomlValue[]).map((entry, index): Candidate => {
     if (typeof entry !== "object" || Array.isArray(entry)) return fail(`candidate ${index + 1} must be a [[candidates]] table.`);
     const id = text(entry.id, `candidate ${index + 1}'s \`id\``);
     if (!/^[A-Za-z0-9_-]+$/.test(id)) fail(`candidate id "${id}" can only have letters, digits, - and _ (it names its files).`);
+    if (canvas && entry.commands === undefined) return { id };
     const commands = resolve(dir, text(entry.commands, `candidate "${id}"'s \`commands\``));
     if (!existsSync(commands)) fail(`candidate "${id}"'s command list ${commands} doesn't exist.`);
+    if (canvas) {
+      const problem = onlyCommands(readFileSync(commands, "utf8"));
+      if (problem) fail(`candidate "${id}"'s ${basename(commands)}: ${problem}`);
+    }
     return { id, commands };
   });
   const ids = candidates.map((c) => c.id);
@@ -238,9 +288,53 @@ export function readSession(dir: string): Session {
     matchLoudness: matchLoudness as boolean,
     seconds: seconds as number | undefined,
     loop: loop as [number, number] | undefined,
+    canvas,
     prediction,
     candidates,
   };
+}
+
+// --- The canvas -----------------------------------------------------------
+
+/** The canvas's parts: the song files in examples/listen/canvas/. */
+export const CANVAS_DIR = fileURLToPath(new URL("../../examples/listen/canvas/", import.meta.url));
+
+export function canvasParts(dir: string = CANVAS_DIR): string[] {
+  try {
+    return readdirSync(dir)
+      .filter((name) => name.endsWith(".toml"))
+      .map((name) => name.slice(0, -".toml".length))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Why a candidate's commands can't be added onto a canvas, or null: they're
+ * added onto the end of its song file, so anything but [[command]] tables
+ * would land in the song's last table instead.
+ */
+export function onlyCommands(text: string): string | null {
+  let first = true;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const header = /^\[\[?\s*([^\]]+?)\s*\]\]?$/.exec(line);
+    if (first && !(header && line.startsWith("[[") && header[1] === "command"))
+      return "it must start with a [[command]] table, since it's added onto the canvas's song file.";
+    first = false;
+    if (header && header[1] !== "command" && !header[1].startsWith("command."))
+      return `it can only have [[command]] tables, not [${header[1]}].`;
+  }
+  return first ? "it has no [[command]] tables: leave `commands` out for the canvas as it is." : null;
+}
+
+/** The song file a candidate is rendered from on a canvas: the canvas, with its commands added onto the end. */
+export function onCanvas(canvas: string, commands: string | undefined): string {
+  const song = readFileSync(canvas, "utf8");
+  if (!commands) return song;
+  return `${song.trimEnd()}\n\n# Added by the listening session, from ${basename(commands)}:\n${readFileSync(commands, "utf8")}`;
 }
 
 export function isRating(value: unknown): value is number {
@@ -285,10 +379,18 @@ export function transportOf(commandList: unknown): Transport {
  * The stretch every candidate loops, in seconds: the session's own `loop`,
  * or the second time round the song's loop (which starts with the first
  * pass's tail, so it loops without a gap), or the first time round if the
- * render stops before that, or the whole of the shortest render if the loop
- * is off. The candidates must share a loop, so they stay lined up.
+ * render stops before that. With the loop off, it's from the start until
+ * the last candidate's tail is below TAIL_DB (`tails`, from `tailSeconds`),
+ * then TAIL_PAUSE_SECONDS more, not the silence a render rings out into; the
+ * shorter renders are padded with silence to it. The candidates must share a loop, so they stay lined
+ * up.
  */
-export function loopRegion(session: Pick<Session, "loop">, transports: Transport[], seconds: number[]): { start: number; end: number; bpm: number | null } {
+export function loopRegion(
+  session: Pick<Session, "loop">,
+  transports: Transport[],
+  seconds: number[],
+  tails: number[],
+): { start: number; end: number; bpm: number | null } {
   const shortest = Math.min(...seconds);
   const [first] = transports;
   const same = transports.every(
@@ -301,7 +403,10 @@ export function loopRegion(session: Pick<Session, "loop">, transports: Transport
     return { start, end, bpm };
   }
   if (!same) throw new SessionError("The candidates' tempo or loop differ, so they can't loop together: set `loop` in session.toml.");
-  if (!first.loopEnabled) return { start: 0, end: shortest, bpm };
+  if (!first.loopEnabled) {
+    const last = Math.max(...tails);
+    return { start: 0, end: last > 0 ? last + TAIL_PAUSE_SECONDS : shortest, bpm };
+  }
   for (const pass of [1, 0]) {
     const start = first.loopStart + pass * first.loopLength;
     const end = start + first.loopLength;
@@ -381,13 +486,45 @@ export function readWav(bytes: Buffer): WavInfo {
   throw new Error("a WAV with no data");
 }
 
-/** A copy of a float WAV with its gain changed, so the page is sent the matched sound and nothing else. */
-export function withGain(bytes: Buffer, gainDb: number): Buffer {
+/** Where a loop with the loop off ends: once every candidate is this far below its own peak… */
+export const TAIL_DB = -60;
+/** …and this long after, so the next pass doesn't follow straight on from the tail: chosen by ear, in a listening session on the canvas. */
+export const TAIL_PAUSE_SECONDS = 0.5;
+
+/**
+ * How long a float WAV goes on before it's below `db` of its own peak for
+ * good, in seconds: the end of its last sample at or above that, on either
+ * channel. 0 for silence.
+ */
+export function tailSeconds(bytes: Buffer, db: number = TAIL_DB): number {
   const info = readWav(bytes);
-  const out = Buffer.from(bytes);
+  const end = info.dataOffset + info.dataLength;
+  let peak = 0;
+  for (let at = info.dataOffset; at < end; at += 4) peak = Math.max(peak, Math.abs(bytes.readFloatLE(at)));
+  if (peak === 0) return 0;
+  const threshold = peak * 10 ** (db / 20);
+  for (let at = end - 4; at >= info.dataOffset; at -= 4)
+    if (Math.abs(bytes.readFloatLE(at)) >= threshold) return (Math.floor((at - info.dataOffset) / 4 / info.channels) + 1) / info.sampleRate;
+  return 0;
+}
+
+/**
+ * A copy of a float WAV with its gain changed, so the page is sent the
+ * matched sound and nothing else, and padded with silence to at least
+ * `frames`, so it lasts the whole loop.
+ */
+export function withGain(bytes: Buffer, gainDb: number, frames = 0): Buffer {
+  const info = readWav(bytes);
+  const padding = Math.max(0, Math.ceil(frames) - info.frames) * info.channels * 4;
+  const dataEnd = info.dataOffset + info.dataLength;
+  const out = padding === 0 ? Buffer.from(bytes) : Buffer.concat([bytes.subarray(0, dataEnd), Buffer.alloc(padding), bytes.subarray(dataEnd)]);
+  if (padding > 0) {
+    out.writeUInt32LE(info.dataLength + padding, info.dataOffset - 4);
+    out.writeUInt32LE(out.length - 8, 4);
+  }
   if (gainDb === 0) return out;
   const scale = 10 ** (gainDb / 20);
-  for (let at = info.dataOffset; at < info.dataOffset + info.dataLength; at += 4) out.writeFloatLE(out.readFloatLE(at) * scale, at);
+  for (let at = info.dataOffset; at < dataEnd; at += 4) out.writeFloatLE(out.readFloatLE(at) * scale, at);
   return out;
 }
 
@@ -396,6 +533,8 @@ export function withGain(bytes: Buffer, gainDb: number): Buffer {
 export interface Tools {
   /** Renders a command list to a WAV, as `uta render`. */
   render(commands: string, wav: string, seconds?: number): void;
+  /** Compiles a song file to a command list, as `uta song --out`. */
+  song(file: string, out: string): void;
   /** Measures a WAV, as `uta analyse --json`, and draws its images into `images`, as `--png`. */
   analyse(wav: string, images: string): Analysis;
 }
@@ -413,6 +552,8 @@ export interface Prepared {
     analysis: Analysis;
     gainDb: number;
     seconds: number;
+    /** How long it sounds before it's below TAIL_DB for good. */
+    tailSeconds: number;
     sampleRate: number;
     /** The images drawn of it, of IMAGES, in that order: `uta analyse` draws the harmonics only when there's a pitch. */
     images: Image[];
@@ -431,19 +572,36 @@ export type Image = (typeof IMAGES)[number];
 /** Where a candidate's image is: in the session's images folder. */
 export const imagePath = (dir: string, id: string, image: Image) => join(dir, "images", `${id}-${image}.png`);
 
+const REPO = fileURLToPath(new URL("../../", import.meta.url));
+const relativeToRepo = (path: string) => (path.startsWith(REPO) ? path.slice(REPO.length).split(sep).join("/") : path);
+
 const newer = (file: string, than: string[]) => existsSync(file) && than.every((other) => statSync(file).mtimeMs >= statSync(other).mtimeMs);
 
+/** The command list a candidate is rendered from: its own, or on a canvas, the one compiled beside it. */
+export const renderedFrom = (session: Session, candidate: Candidate): string =>
+  session.canvas ? join(session.dir, `${candidate.id}.canvas.json`) : (candidate.commands as string);
+
 /**
- * Renders each candidate that isn't rendered yet (or whose command list or
- * session changed since), measures each, and works out the gains and the loop.
+ * Renders each candidate that isn't rendered yet (or whose command list,
+ * canvas or session changed since), measures each, and works out the gains
+ * and the loop. On a canvas, each candidate's commands are added onto it
+ * and compiled first.
  */
 export function prepare(session: Session, tools: Tools, log: (line: string) => void = () => {}): Prepared {
   const sessionFile = join(session.dir, "session.toml");
   const candidates = session.candidates.map((candidate) => {
     const wav = join(session.dir, `${candidate.id}.wav`);
-    if (!newer(wav, [candidate.commands, sessionFile])) {
+    const commands = renderedFrom(session, candidate);
+    const sources = [sessionFile, ...(session.canvas ? [session.canvas] : []), ...(candidate.commands ? [candidate.commands] : [])];
+    if (!newer(wav, sources) || !existsSync(commands)) {
+      if (session.canvas) {
+        const song = join(session.dir, `${candidate.id}.canvas.toml`);
+        writeFileSync(song, onCanvas(session.canvas, candidate.commands));
+        log(`Compiling ${session.name}/${candidate.id} on the canvas (${relativeToRepo(session.canvas)})…`);
+        tools.song(song, commands);
+      }
       log(`Rendering ${session.name}/${candidate.id}…`);
-      tools.render(candidate.commands, wav, session.seconds);
+      tools.render(commands, wav, session.seconds);
     }
     const analysisFile = join(session.dir, `${candidate.id}.analysis.json`);
     let analysis: Analysis;
@@ -456,19 +614,26 @@ export function prepare(session: Session, tools: Tools, log: (line: string) => v
       analysis = tools.analyse(wav, join(session.dir, "images"));
       writeFileSync(analysisFile, JSON.stringify(analysis, null, 2) + "\n");
     }
-    const info = readWav(readFileSync(wav));
+    const bytes = readFileSync(wav);
+    const info = readWav(bytes);
     const images = IMAGES.filter((image) => newer(imagePath(session.dir, candidate.id, image), [wav]));
-    return { id: candidate.id, wav, analysis, images, sampleRate: info.sampleRate, seconds: info.frames / info.sampleRate };
+    const seconds = info.frames / info.sampleRate;
+    return { id: candidate.id, wav, analysis, images, sampleRate: info.sampleRate, seconds, tailSeconds: tailSeconds(bytes) };
   });
   if (new Set(candidates.map((c) => c.sampleRate)).size > 1) throw new SessionError(`${session.name}: the renders' sample rates differ.`);
   const gains = matchGains(
     candidates.map((c) => c.analysis.measurements?.loudness_integrated_lufs ?? null),
     session.matchLoudness,
   );
-  const transports = session.candidates.map((c) => transportOf(JSON.parse(readFileSync(c.commands, "utf8"))));
+  const transports = session.candidates.map((c) => transportOf(JSON.parse(readFileSync(renderedFrom(session, c), "utf8"))));
   let loop;
   try {
-    loop = loopRegion(session, transports, candidates.map((c) => c.seconds));
+    loop = loopRegion(
+      session,
+      transports,
+      candidates.map((c) => c.seconds),
+      candidates.map((c) => c.tailSeconds),
+    );
   } catch (error) {
     throw new SessionError(`${session.name}: ${(error as Error).message}`);
   }
@@ -620,7 +785,8 @@ export function listening(prepared: Prepared[], options: ServeOptions = {}): Lis
       const label = audio[1];
       if (!ask.audio.has(label)) {
         const c = ask.prepared.candidates[index];
-        ask.audio.set(label, withGain(readFileSync(c.wav), c.gainDb));
+        const { loop } = ask.prepared;
+        ask.audio.set(label, withGain(readFileSync(c.wav), c.gainDb, loop.end * c.sampleRate));
       }
       return send(response, 200, "audio/wav", ask.audio.get(label) as Buffer);
     }
