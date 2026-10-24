@@ -92,11 +92,19 @@ enum Command {
         above: f64,
         /// Also draw the images into this folder, as SVG and PNG: two
         /// spectrograms, the level over time, the clicks close up, the
-        /// harmonics when there's a pitch, and with `--against` the
-        /// difference. Each is named after the WAV, such as
-        /// `kick-level.png`.
+        /// harmonics when there's a pitch, with `--against` the difference,
+        /// and for an impulse response the impulse response, its decay by
+        /// frequency and its echo density. Each is named after the WAV,
+        /// such as `kick-level.png`.
         #[arg(long, value_name = "DIR")]
         png: Option<PathBuf>,
+        /// The WAV is an impulse response: the sound of one click through a
+        /// reverb (or another effect) at Mix 100%. Adds its onset, decay
+        /// time per octave, echo density, stereo correlation early and
+        /// late, and colouration to the report (both files', with
+        /// `--against`).
+        #[arg(long, visible_alias = "ir")]
+        impulse_response: bool,
     },
     /// Play the project through the default output: round the loop until
     /// Ctrl-C, or with the loop off (or starting after it) to the end of the
@@ -152,12 +160,16 @@ fn main() -> ExitCode {
             pitch,
             above,
             png,
+            impulse_response,
         } => analyse(
             &file,
             against.as_deref(),
+            &Measure {
+                pitch,
+                above_hz: above,
+                impulse_response,
+            },
             json,
-            pitch,
-            above,
             png.as_deref(),
         ),
         Command::Play {
@@ -350,12 +362,11 @@ const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 fn analyse(
     file: &Path,
     against: Option<&Path>,
+    how: &Measure,
     json: bool,
-    pitch: Option<Note>,
-    above_hz: f64,
     png: Option<&Path>,
 ) -> Result<(), String> {
-    let (this, this_mid) = measure(file, pitch, above_hz)?;
+    let (this, this_mid) = measure(file, how)?;
     let Some(against) = against else {
         if json {
             println!("{}", to_json(&this));
@@ -368,7 +379,13 @@ fn analyse(
         return Ok(());
     };
     // Both pitches are measured from the same note, so their cents compare.
-    let (that, that_mid) = measure(against, pitch.or(this.note), above_hz)?;
+    let (that, that_mid) = measure(
+        against,
+        &Measure {
+            pitch: how.pitch.or(this.note),
+            ..*how
+        },
+    )?;
     if json {
         let difference = this.difference(&that);
         println!(
@@ -376,7 +393,7 @@ fn analyse(
             to_json(&Against {
                 this: &this,
                 against: &that,
-                difference: Values(&difference),
+                difference: this.values_as_data(&difference),
             })
         );
     } else {
@@ -411,13 +428,28 @@ struct Against<'a> {
     difference: Values<'a>,
 }
 
+/// How `uta analyse` measures a WAV.
+#[derive(Clone, Copy)]
+struct Measure {
+    /// The note its pitch is measured from.
+    pitch: Option<Note>,
+    /// The frequency the share of its energy is measured above.
+    above_hz: f64,
+    /// Whether it's an impulse response.
+    impulse_response: bool,
+}
+
 /// Reads a WAV and measures it: its report, and its mid, for the images.
-fn measure(file: &Path, note: Option<Note>, above_hz: f64) -> Result<(Report, Vec<f32>), String> {
+fn measure(file: &Path, how: &Measure) -> Result<(Report, Vec<f32>), String> {
     let (spec, samples) =
         read_wav(file).map_err(|error| format!("couldn't read {}: {error}", file.display()))?;
-    let mut sound = Sound::new(&samples, spec.channels, spec.sample_rate).with_above_hz(above_hz);
-    if let Some(note) = note {
+    let mut sound =
+        Sound::new(&samples, spec.channels, spec.sample_rate).with_above_hz(how.above_hz);
+    if let Some(note) = how.pitch {
         sound = sound.with_note(note);
+    }
+    if how.impulse_response {
+        sound = sound.as_impulse_response();
     }
     Ok((
         Report::measure(file.display().to_string(), &sound),

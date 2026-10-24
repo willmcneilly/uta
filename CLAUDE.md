@@ -57,6 +57,7 @@ cargo run -p uta-cli -- song examples/demos/beat.toml   # compile a song file to
 cargo run --release -p uta-cli -- render-all examples/listen/kick target/listen/kick   # render a folder of command lists to WAVs
 cargo run --release -p uta-cli -- analyse out.wav --pitch C3 --against before.wav   # measure a render (--json for data); the measurements are uta-analysis's
 cargo run --release -p uta-cli -- analyse out.wav --png target/images              # also draw its images (spectrograms, level, clicks, harmonics) as SVG and PNG
+cargo run --release -p uta-cli -- analyse ir.wav --impulse-response --png target/images   # a reverb's impulse response: decay per octave, echo density, onset, stereo, colouration, and their images
 RTSAN_ENABLE=1 cargo test -p uta-engine             # tests under RealtimeSanitizer (downloads its runtime)
 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # block timing report, against the committed baseline
 UTA_TIMING_BASELINE=1 cargo test -p uta-engine --release --test timing -- --ignored --nocapture   # re-record that baseline

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
-use uta_analysis::report::MEASUREMENTS;
+use uta_analysis::report::{IMPULSE_MEASUREMENTS, MEASUREMENTS, Measurement};
 use uta_engine::EngineConfig;
 use uta_engine::offline::{read_wav, write_wav};
 
@@ -99,6 +99,17 @@ fn quieter_copy(wav: &str) -> String {
     path
 }
 
+/// The measurements a report has: [`MEASUREMENTS`], then for an impulse
+/// response [`IMPULSE_MEASUREMENTS`].
+fn table(impulse_response: bool) -> Vec<&'static Measurement> {
+    let impulse: &'static [Measurement] = if impulse_response {
+        IMPULSE_MEASUREMENTS
+    } else {
+        &[]
+    };
+    MEASUREMENTS.iter().chain(impulse).collect()
+}
+
 fn json(args: &[&str]) -> Value {
     serde_json::from_str(&uta(args)).expect("--json prints JSON")
 }
@@ -116,6 +127,7 @@ fn assert_report_shape(report: &Value) {
         "above_hz",
         "channels",
         "file",
+        "impulse_response",
         "measurements",
         "note",
         "sample_rate",
@@ -130,9 +142,10 @@ fn assert_report_shape(report: &Value) {
     assert_eq!(report["channels"], 2);
     assert!(report["seconds"].as_f64().unwrap() > 0.5);
     assert!(report["above_hz"].is_number());
+    let impulse_response = report["impulse_response"].as_bool().unwrap();
     let measurements = report["measurements"].as_object().unwrap();
     let keys: Vec<&str> = measurements.keys().map(String::as_str).collect();
-    let mut table: Vec<&str> = MEASUREMENTS.iter().map(|m| m.key).collect();
+    let mut table: Vec<&str> = table(impulse_response).iter().map(|m| m.key).collect();
     let mut sorted_keys = keys.clone();
     sorted_keys.sort_unstable();
     table.sort_unstable();
@@ -429,6 +442,20 @@ fn assert_image(dir: &Path, name: &str) -> String {
     svg
 }
 
+/// Checks an image has a line under its title saying what to look for:
+/// the second line of text, in its own style, starting `Look for: `.
+fn assert_look_for(svg: &str, image: &str) {
+    let title = svg.find(r#"class="title""#).expect("a title");
+    let look = svg
+        .find(r#"class="look">Look for: "#)
+        .unwrap_or_else(|| panic!("{image} says what to look for"));
+    let numbers = svg.find(r#"class="numbers""#).expect("numbers");
+    assert!(title < look && look < numbers, "{image}: under its title");
+    let line = &svg[look..];
+    let line = &line[..line.find("</text>").unwrap()];
+    assert!(line.len() > 60, "{image}: {line}");
+}
+
 /// Runs `uta` with `args` and returns what it printed to stderr. It must
 /// succeed.
 fn uta_stderr(args: &[&str]) -> String {
@@ -471,6 +498,7 @@ fn png_draws_every_image_with_its_numbers() {
     ];
     for (image, words) in images {
         let svg = assert_image(&dir, &format!("sine-{image}"));
+        assert_look_for(&svg, image);
         assert!(svg.contains(">sine.wav · "), "{image} names its file");
         for word in words {
             assert!(svg.contains(word), "{image} has {word:?}");
@@ -515,6 +543,7 @@ fn against_draws_a_difference_spectrogram() {
     ]);
     assert!(said.starts_with("Drew 6 images in "), "{said}");
     let svg = assert_image(&dir, "sine-vs-sine-quieter-difference");
+    assert_look_for(&svg, "difference");
     assert!(svg.contains(">sine.wav minus sine-quieter.wav · difference"));
     assert!(svg.contains("peak +6.0 dB"), "6 dB louder");
     assert!(
@@ -560,7 +589,175 @@ fn clicks_are_drawn_where_they_were_found() {
     );
     assert!(!dir.join("clicky-harmonics.svg").exists());
     let svg = assert_image(&dir, "clicky-clicks");
+    assert_look_for(&svg, "clicks");
     assert!(svg.contains("clicks 2"), "two clicks found");
     assert!(svg.contains(">0.2500 s · step"), "the first, at 0.25 s");
     assert!(svg.contains(">0.7500 s · step"), "the second, at 0.75 s");
+}
+
+/// Writes a stand-in for a reverb's impulse response to `path`: 25 ms of
+/// silence, then two clicks, then from 40 ms stereo Gaussian noise decaying
+/// 60 dB in 0.8 s, unrelated between the channels.
+fn write_impulse_response(path: &Path) {
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut uniform = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+    };
+    let mut gaussian = move || {
+        let (a, b) = (uniform(), uniform());
+        (-2.0 * a.ln()).sqrt() * (std::f64::consts::TAU * b).cos()
+    };
+    let rate = 48_000.0;
+    let frames: Vec<[f32; 2]> = (0..96_000)
+        .map(|i| {
+            let t = f64::from(i) / rate;
+            match i {
+                1200 => [0.5, 0.5],
+                1700 => [-0.3, 0.2],
+                _ if t >= 0.04 => {
+                    let level = 0.2 * 10f64.powf(-3.0 * (t - 0.04) / 0.8);
+                    [(level * gaussian()) as f32, (level * gaussian()) as f32]
+                }
+                _ => [0.0, 0.0],
+            }
+        })
+        .collect();
+    write_stereo(path, 48_000, &frames);
+}
+
+/// `--impulse-response` adds the reverb measurements to the text report,
+/// the JSON and `--against`; without it, a report has none of them.
+#[test]
+fn an_impulse_response_is_reported_with_the_reverb_measurements() {
+    let path = folder("impulse").join("room.wav");
+    write_impulse_response(&path);
+    let path = path.to_str().unwrap();
+
+    let text = uta(&["analyse", path, "--impulse-response"]);
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[0].ends_with(", an impulse response"), "{}", lines[0]);
+    let all = table(true);
+    assert_eq!(lines.len(), 1 + all.len(), "{text}");
+    for (measurement, line) in all.iter().zip(&lines[1..]) {
+        let label = measurement
+            .label
+            .replace("{above}", "5000")
+            .replace("{note}", "the nearest note");
+        assert!(line.starts_with(&label), "{line:?} is {label}");
+    }
+    assert!(text.contains("decay time at 125 Hz"), "{text}");
+    assert_eq!(uta(&["analyse", path, "--ir"]), text, "--ir is the same");
+
+    let report = json(&["analyse", path, "--json", "--impulse-response"]);
+    assert_report_shape(&report);
+    assert_eq!(report["impulse_response"], true);
+    let m = &report["measurements"];
+    let get = |key: &str| m[key].as_f64().unwrap_or_else(|| panic!("{key}: {m}"));
+    assert!((get("onset_ms") - 25.0).abs() < 1e-9, "{}", get("onset_ms"));
+    assert!(
+        (get("decay_mid_s") - 0.8).abs() < 0.05,
+        "{}",
+        get("decay_mid_s")
+    );
+    for measurement in IMPULSE_MEASUREMENTS {
+        assert!(m[measurement.key].is_number(), "{}: {m}", measurement.key);
+    }
+    // The noise starts 15 ms after the onset, and is dense soon after.
+    let dense = get("dense_after_ms");
+    assert!((15.0..30.0).contains(&dense), "dense after {dense} ms");
+    assert!(get("stereo_correlation_late").abs() < 0.05);
+
+    let plain = json(&["analyse", path, "--json"]);
+    assert_eq!(plain["impulse_response"], false);
+    assert!(plain["measurements"].get("decay_mid_s").is_none());
+
+    let both = json(&[
+        "analyse",
+        path,
+        "--against",
+        path,
+        "--json",
+        "--impulse-response",
+    ]);
+    assert_eq!(both["against"]["impulse_response"], true);
+    let difference = both["difference"].as_object().unwrap();
+    assert_eq!(difference.len(), all.len());
+    assert_eq!(difference["decay_mid_s"].as_f64(), Some(0.0));
+    let text = uta(&["analyse", path, "--against", path, "--ir"]);
+    assert!(
+        text.lines().any(|line| line.starts_with("colouration")),
+        "{text}"
+    );
+}
+
+/// An impulse response gets three more images, each with its numbers,
+/// its fixed scale and what to look for.
+#[test]
+fn an_impulse_response_draws_its_own_images() {
+    let path = folder("png_impulse").join("room.wav");
+    write_impulse_response(&path);
+    let dir = path.parent().unwrap().join("images");
+    let said = uta_stderr(&[
+        "analyse",
+        path.to_str().unwrap(),
+        "--impulse-response",
+        "--png",
+        dir.to_str().unwrap(),
+    ]);
+    // No pitch, so no harmonics: four images and three more.
+    assert!(said.starts_with("Drew 7 images in "), "{said}");
+    let report = json(&["analyse", path.to_str().unwrap(), "--json", "--ir"]);
+    let shown = |key: &str, decimals: usize| {
+        format!(
+            "{:.*}",
+            decimals,
+            report["measurements"][key].as_f64().unwrap()
+        )
+    };
+    let images = [
+        (
+            "impulse",
+            vec![
+                format!("onset {} ms", shown("onset_ms", 3)),
+                format!("decay mid {} s", shown("decay_mid_s", 3)),
+                "early | late, +80 ms".to_string(),
+                "-90 dB".to_string(),
+            ],
+        ),
+        (
+            "decay",
+            vec![
+                format!("decay mid {} s", shown("decay_mid_s", 3)),
+                format!("colouration {} dB", shown("colouration_db", 2)),
+                format!("125 Hz {} s", shown("decay_125hz_s", 3)),
+                format!("8k Hz {} s", shown("decay_8khz_s", 3)),
+                "-60 dB".to_string(),
+                "Bass Mult".to_string(),
+                "metallic ring".to_string(),
+            ],
+        ),
+        (
+            "echo-density",
+            vec![
+                format!("dense after {} ms", shown("dense_after_ms", 1)),
+                format!("0.9 after {} ms", shown("dense_after_ms", 1)),
+                ">2<".to_string(),
+            ],
+        ),
+    ];
+    for (image, words) in images {
+        let svg = assert_image(&dir, &format!("room-{image}"));
+        assert_look_for(&svg, image);
+        assert!(svg.contains(">room.wav · "), "{image} names its file");
+        for word in words {
+            assert!(svg.contains(&word), "{image} has {word:?}");
+        }
+    }
+    // The ordinary images say what to look for too.
+    for image in ["spectrogram-short", "spectrogram-long", "level", "clicks"] {
+        assert_look_for(&assert_image(&dir, &format!("room-{image}")), image);
+    }
 }
