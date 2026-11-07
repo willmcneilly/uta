@@ -152,11 +152,6 @@ pub(crate) struct Arrangement {
     /// How dark it's built: the low-pass on everything it puts out, in Hz,
     /// or `None` for as bright as its lines make it.
     pub top_hz: Option<f64>,
-    /// How soon after the first sound its echo density reaches near 1 (a
-    /// smooth wash), at the latest, in seconds: the mode's own limit, from
-    /// Early Size 30 ms up, at any Late Size, with Depth from 50% (RFC-010,
-    /// "Dense, not grainy").
-    pub dense_within: f64,
 }
 
 /// Room: a natural, medium to large room. Lines from 42 to 156 ms at its
@@ -207,9 +202,6 @@ pub(crate) const ROOM: Arrangement = Arrangement {
     late_out: [&[0, 2, 4, 6, 8, 10, 12, 14], &[1, 3, 5, 7, 9, 11, 13, 15]],
     // A natural room: its brightness is High Mult's and High Cut's to set.
     top_hz: None,
-    // A little sparse at first: measured at 7 to 33 ms (UTA-101), slowest
-    // with only the tail heard and a 100 ms burst feeding it.
-    dense_within: 0.04,
 };
 
 impl Arrangement {

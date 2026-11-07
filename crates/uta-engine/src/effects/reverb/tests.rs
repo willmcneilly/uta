@@ -1081,7 +1081,7 @@ fn mid([left, right]: &[Vec<f32>; 2]) -> Vec<f32> {
 #[test]
 fn room_stays_under_colouration_s_limit() {
     let rate = 48_000.0;
-    let changes: [(&str, fn(&mut ReverbSettings)); 10] = [
+    let changes: [Change; 10] = [
         ("the defaults", |_| {}),
         ("Decay 5 s", |s| s.decay_seconds = 5.0),
         ("Decay 10 s", |s| s.decay_seconds = 10.0),
@@ -1107,6 +1107,12 @@ fn room_stays_under_colouration_s_limit() {
     }
 }
 
+/// How soon after the first sound Room's echo density reaches near 1 (a
+/// smooth wash), at the latest, in seconds: its own limit (RFC-010, "Dense,
+/// not grainy"), a little sparse at first. Measured at 7 to 33 ms in
+/// UTA-101, slowest with only the tail heard and a 100 ms burst feeding it.
+const ROOM_DENSE_WITHIN_SECONDS: f64 = 0.04;
+
 /// Room is dense, not grainy: its echo density reaches near 1 within its
 /// own limit of the first sound, at every Late Size, with Depth from 50%
 /// to only the tail, and an Early Size from its default 30 ms to 100 ms. A
@@ -1130,11 +1136,11 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
                 let dense =
                     impulse::dense_after(&profile, first as f64 / rate).expect("it reaches near 1");
                 assert!(
-                    dense <= ROOM.dense_within,
+                    dense <= ROOM_DENSE_WITHIN_SECONDS,
                     "Late Size {late_size}, Depth {depth}, Early Size {early_size_seconds} s: \
                      near 1 after {:.1} ms, limit {:.0} ms",
                     dense * 1000.0,
-                    ROOM.dense_within * 1000.0
+                    ROOM_DENSE_WITHIN_SECONDS * 1000.0
                 );
             }
         }

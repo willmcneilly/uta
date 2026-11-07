@@ -2,7 +2,7 @@
 
 How to turn an idea for a space into the Reverb's settings: which settings give which qualities, and what tuning its modes taught about them. It's for whoever voices a mode or a factory sound next, a person or an agent (RFC-010). It starts with Room (UTA-101); Chamber and Space add what they teach.
 
-The settings themselves, with their ranges and a sentence on how each sounds, are described in Rust, in `crates/uta-core/src/reverb.rs` (`ReverbParam::describe`). A mode's arrangement (its lines' lengths, its diffuser's steps, its echo-density limit) is in `crates/uta-engine/src/effects/reverb.rs`.
+The settings themselves, with their ranges and a sentence on how each sounds, are described in Rust, in `crates/uta-core/src/reverb.rs` (`ReverbParam::describe`). A mode's arrangement (its lines' lengths, its diffuser's steps) is in `crates/uta-engine/src/effects/reverb.rs`.
 
 ## The loop
 
@@ -14,7 +14,7 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 ## The limits
 
 - **Colouration under 0.85 dB** (`impulse::COLOURATION_LIMIT_DB`), on a one-sample click, on the mid, with a Decay of 2 s or more. Set from listening: Room at 0.75 dB was picked as smooth, Room at 0.95 dB was heard as metallic, and a network made to ring, at 2.08 dB, was heard as ringing.
-- **Echo density near 1 within each mode's own limit** of the first sound (`Arrangement::dense_within`): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%.
+- **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` for Room): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%.
 
 ## Which settings give which qualities
 
