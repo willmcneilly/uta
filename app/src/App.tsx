@@ -6,7 +6,7 @@ import {
   type ChainAddress,
   type ClipNotes,
   type ClipOutline,
-  type DelayParam,
+  type EffectParam,
   type DrumParam,
   type EffectKind,
   type DrumSound,
@@ -48,6 +48,7 @@ import {
   setBufferSize,
   setClips,
   setDelayParam,
+  setReverbParam,
   setEffectEnabled,
   setEffectMix,
   setLoop,
@@ -186,6 +187,8 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const [masterSelected, setMasterSelected] = useState(false);
   // The effect picked on the Sound tab, which Delete deletes.
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null);
+  // The effects whose panels are open wide: the UI's own view, never the project's.
+  const [wideEffects, setWideEffects] = useState<string[]>([]);
   // The clips picked on the timeline, in the order they were picked.
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("notes");
@@ -515,8 +518,9 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const changeEffectMix = (id: string, mix: number, gesture?: number) => {
     drags.step(gesture, () => setEffectMix(id, mix, gesture).then(show, report));
   };
-  const changeEffectSetting = (id: string, param: DelayParam, gesture?: number) => {
-    drags.step(gesture, () => setDelayParam(id, param, gesture).then(show, report));
+  const changeEffectSetting = (id: string, kind: EffectKind, param: EffectParam, gesture?: number) => {
+    const set = kind === "reverb" ? setReverbParam : setDelayParam;
+    drags.step(gesture, () => set(id, param, gesture).then(show, report));
   };
 
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
@@ -781,6 +785,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
               onMix={changeEffectMix}
               onSetting={changeEffectSetting}
+              wide={wideEffects}
+              onWide={(id, open) =>
+                setWideEffects((list) => (open ? [...list.filter((other) => other !== id), id] : list.filter((other) => other !== id)))
+              }
               barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
               beatsPerBar={project.beatsPerBar}
               songSeconds={songSeconds}

@@ -8,7 +8,7 @@ import type {
   ModDestinationName,
   ModSource,
   ModSourceName,
-  DelayParam,
+  EffectParam,
   Description,
   DescriptionTable,
   Descriptions,
@@ -132,7 +132,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
   const descriptions: Descriptions = {
     synth: {},
     drums: { "808": {}, "909": {} },
-    effects: { delay: {} },
+    effects: { delay: {}, reverb: {} },
     synthSounds: [],
   };
   const strip = <V extends Value>(setting: V & Description, table: DescriptionTable): V => {
@@ -149,7 +149,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
     return {
       ...view,
       mix: strip(view.mix, table),
-      settings: view.settings.map((setting) => strip<DelayParam>(setting, table)),
+      settings: view.settings.map((setting) => strip<EffectParam>(setting, table)),
     };
   };
   const source = (view: SourceView): SourceOutline => {
@@ -837,7 +837,10 @@ export function projectView(overrides: Partial<ProjectView> = {}, notes: NoteVie
     mixerDefaults: MIXER_DEFAULTS,
     maxTracks: 32,
     masterEffects: [],
-    effectKinds: [{ kind: "delay", name: "Delay" }],
+    effectKinds: [
+      { kind: "delay", name: "Delay" },
+      { kind: "reverb", name: "Reverb" },
+    ],
     maxEffects: 8,
     tracks: [trackView("track-1", "Synth 1", [{ id: "clip-1", start: 0, length: 4 * 3840, notes }])],
     ...overrides,

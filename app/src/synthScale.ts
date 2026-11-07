@@ -80,6 +80,19 @@ export function formatAmount(amount: number): string {
   return amount.toFixed(2);
 }
 
+/** A multiple of another setting, to two places: "0.50×". provisional: D-42 */
+export function formatTimes(times: number): string {
+  return `${times.toFixed(2)}×`;
+}
+
+/** A slow rate, to two places, so 0.05 Hz doesn't read as "0 Hz": "0.50 Hz". provisional: D-42 */
+export function formatSlowHz(hz: number): string {
+  return `${hz.toFixed(2)} Hz`;
+}
+
+/** The fastest a setting in hertz can go and still read as a slow rate, to two places. */
+const SLOW_HZ = 10;
+
 export function formatLevel(level: number): string {
   return `${Math.round(level * 100)}%`;
 }
@@ -120,11 +133,20 @@ export function isCentred({ limits: [min, max] }: NumberSettingView): boolean {
   return min < 0 && max === -min;
 }
 
-/** How a setting's value reads, from its unit, its step and its range. */
+/**
+ * How a setting's value reads, from its unit, its step and its range. A
+ * setting that's off at its lowest reads "Off" there. provisional: D-42
+ */
 export function formatOf(setting: NumberSettingView): (value: number) => string {
+  const format = unitFormatOf(setting);
+  if (!setting.offAtLowest) return format;
+  return (value) => (value <= setting.limits[0] ? "Off" : format(value));
+}
+
+function unitFormatOf(setting: NumberSettingView): (value: number) => string {
   switch (setting.unit) {
     case "hz":
-      return formatHz;
+      return setting.limits[1] <= SLOW_HZ ? formatSlowHz : formatHz;
     case "seconds":
       return formatSeconds;
     case "db":
@@ -133,6 +155,8 @@ export function formatOf(setting: NumberSettingView): (value: number) => string 
       return isCentred(setting) ? formatSignedLevel : formatLevel;
     case "amount":
       return formatAmount;
+    case "times":
+      return formatTimes;
     case "semitones":
       return formatSemitones;
     case "octaves":

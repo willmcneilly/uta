@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type {
   ChainAddress,
-  DelayParam,
+  EffectParam,
   EffectKind,
   EffectView,
   Frame,
@@ -23,6 +23,7 @@ import {
   trackView,
 } from "../pianoRoll/testing";
 import { delayView } from "./delayTesting";
+import { reverbView } from "./reverbTesting";
 import { ECHO_WIDTH } from "./EchoDrawing";
 
 // The Sound tab's chain against Tauri's mocked back end, which keeps its own
@@ -119,7 +120,9 @@ beforeEach(() => {
           return updates.notes(project, args.clip as string);
         case "add_effect": {
           const address = args.chain as ChainAddress;
-          return apply(changeChain(address, (effects) => [...effects, delayView(args.id as string)]));
+          const id = args.id as string;
+          const added = (args.kind as EffectKind) === "reverb" ? reverbView(id) : delayView(id);
+          return apply(changeChain(address, (effects) => [...effects, added]));
         }
         case "remove_effects": {
           const ids = args.effects as string[];
@@ -148,8 +151,9 @@ beforeEach(() => {
               e.id === args.effect ? { ...e, mix: { ...e.mix, value: Math.fround(args.mix as number) } } : e,
             ),
           );
-        case "set_delay_param": {
-          const param = args.param as DelayParam;
+        case "set_delay_param":
+        case "set_reverb_param": {
+          const param = args.param as EffectParam;
           return apply(
             eachEffect((e) =>
               e.id === args.effect
@@ -292,7 +296,7 @@ describe("the Sound tab's chain", () => {
     await openSound([synthWith(delayView("d-1"))]);
     fireEvent.click(addKey());
     const menu = screen.getByRole("menu", { name: "Add effect" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Delay"]);
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Delay", "Reverb"]);
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Delay" }));
 
     await waitFor(() => expect(panels()).toHaveLength(2));
@@ -310,13 +314,10 @@ describe("the Sound tab's chain", () => {
   });
 
   it("+ opens its menu with the first kind focused, moves with the arrow keys, and closes on Esc", async () => {
-    // A second kind, as Rust will send once there is one, so the keys have somewhere to go.
-    const echo = { kind: "echo" as unknown as EffectKind, name: "Echo" };
-    project = { ...project, effectKinds: [...project.effectKinds, echo] };
     await openSound([synthWith()]);
     fireEvent.click(addKey());
     const delay = screen.getByRole("menuitem", { name: "Delay" });
-    const second = screen.getByRole("menuitem", { name: "Echo" });
+    const second = screen.getByRole("menuitem", { name: "Reverb" });
     expect(delay).toHaveFocus();
     fireEvent.keyDown(delay, { key: "ArrowDown" });
     expect(second).toHaveFocus();
@@ -484,9 +485,82 @@ describe("the Sound tab's chain", () => {
 
     slideKnob(within(panels()[0]).getByRole("slider", { name: "Delay feedback" }), 0.9);
     await waitFor(() => expect(sent("set_delay_param").at(-1)?.param).toMatchObject({ name: "feedback" }));
-    const feedback = sent("set_delay_param").at(-1)?.param as DelayParam;
+    const feedback = sent("set_delay_param").at(-1)?.param as EffectParam;
     // 90% of the way round Feedback's range, which goes to 110%.
     expect(feedback.value).toBeCloseTo(0.99, 2);
+  });
+
+  it("+ adds a Reverb, drawn from the outline, whose knobs send set_reverb_param", async () => {
+    await openSound([synthWith(delayView("d-1"))]);
+    fireEvent.click(addKey());
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reverb" }));
+    const reverb = await screen.findByRole("region", { name: "Reverb" });
+    const [added] = sent("add_effect");
+    expect(added).toMatchObject({ chain: { track: "track-1" }, kind: "reverb" });
+    expect(reverb).toHaveAttribute("data-panel", added.id);
+    expect(reverb).toHaveAttribute("aria-current", "true");
+    // Its panel is drawn from what Rust sent back.
+    const decay = within(reverb).getByRole("slider", { name: "Reverb decay" });
+    expect(decay).toHaveAttribute("aria-valuetext", "2.00 s");
+    expect(within(reverb).getByRole("img", { name: "The reverb's shape" })).toBeInTheDocument();
+
+    slideKnob(decay, 0.8);
+    await waitFor(() => expect(sent("set_reverb_param").at(-1)?.param).toMatchObject({ name: "decay_seconds" }));
+    expect(sent("set_reverb_param").at(-1)?.effect).toBe(added.id);
+    expect(sent("set_delay_param")).toEqual([]);
+    // What Rust sends back is what the knob shows.
+    await waitFor(() => expect(decay).not.toHaveAttribute("aria-valuetext", "2.00 s"));
+  });
+
+  it("remembers which panels are open wide, each its own, outside the project", async () => {
+    await openSound([synthWith(reverbView("r-1"), reverbView("r-2"))]);
+    const tabOf = (id: string) =>
+      within(screen.getAllByRole("region", { name: "Reverb" }).find((p) => p.dataset.panel === id) as HTMLElement).getByRole(
+        "button",
+        { name: /early and late settings/ },
+      );
+    fireEvent.click(tabOf("r-2"));
+    expect(tabOf("r-2")).toHaveAttribute("aria-expanded", "true");
+    expect(tabOf("r-1")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByRole("group", { name: "Early" })).toHaveLength(1);
+
+    // Away to the Notes tab and back, it's still open.
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
+    expect(tabOf("r-2")).toHaveAttribute("aria-expanded", "true");
+    expect(tabOf("r-1")).toHaveAttribute("aria-expanded", "false");
+
+    // Opening and closing is the UI's own: nothing goes to Rust, and it's no undo step.
+    fireEvent.click(tabOf("r-2"));
+    expect(tabOf("r-2")).toHaveAttribute("aria-expanded", "false");
+    const commands = new Set(calls.map((call) => call.cmd));
+    for (const read of ["get_project", "subscribe", "get_notes"]) commands.delete(read);
+    expect([...commands]).toEqual([]);
+  });
+
+  it("opening a panel wide scrolls the row just far enough to show the whole panel", async () => {
+    await openSound([synthWith(delayView("d-1"), reverbView("r-1"))]);
+    const row = document.querySelector(".chain-row") as HTMLElement;
+    const reverb = screen.getByRole("region", { name: "Reverb" });
+    const scrollBy = vi.fn();
+    row.scrollBy = scrollBy;
+    row.getBoundingClientRect = () => ({ left: 300, right: 1000 }) as DOMRect;
+    // Open, the panel runs 50 px past the row's right edge.
+    reverb.getBoundingClientRect = () => ({ left: 400, right: 1050 }) as DOMRect;
+    const pull = within(reverb).getByRole("button", { name: /early and late settings/ });
+    fireEvent.click(pull);
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+    expect(scrollBy).toHaveBeenLastCalledWith({ left: 50, behavior: "smooth" });
+
+    // Closing doesn't scroll.
+    fireEvent.click(pull);
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+
+    // Wider than the row, its left edge comes to the row's left; with reduced motion, at once.
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce") }));
+    reverb.getBoundingClientRect = () => ({ left: 400, right: 1400 }) as DOMRect;
+    fireEvent.click(pull);
+    expect(scrollBy).toHaveBeenLastCalledWith({ left: 100, behavior: "auto" });
   });
 
   it("folds a panel to its spine when its name is clicked", async () => {

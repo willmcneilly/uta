@@ -38,7 +38,7 @@ describe("describeSource and describeEffect", () => {
         "808": { kick: { tune_hz: { ...KICK_909_SETTINGS[0], label: "808 Tune" }, model: KICK_MODEL } },
         "909": { kick: { tune_hz: KICK_909_SETTINGS[0], model: KICK_MODEL } },
       },
-      effects: { delay: {} },
+      effects: { delay: {}, reverb: {} },
       synthSounds: [],
     };
     const kit = (model: "808" | "909"): SourceOutline => ({
