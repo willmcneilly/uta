@@ -1072,6 +1072,14 @@ fn mid([left, right]: &[Vec<f32>; 2]) -> Vec<f32> {
     left.iter().zip(right).map(|(l, r)| 0.5 * (l + r)).collect()
 }
 
+/// The most colouration Room's still tail may have, in dB: a guard on the
+/// network itself, as the Reverb's tests are otherwise still. The drift
+/// smears a ring more than it does Room: a network made to ring reads
+/// 2.08 dB still and 0.89 dB drifting, one with its lines on four lengths
+/// 1.58 and 0.89 dB, one on six lengths 1.24 dB still, just over. Still,
+/// Room reads 0.78 to 1.08 dB below.
+const STILL_COLOURATION_LIMIT_DB: f64 = 1.2;
+
 /// Room isn't metallic: its tail's colouration stays under the limit set
 /// by ear ([`impulse::COLOURATION_LIMIT_DB`]) at its defaults, the drift
 /// included, and with its size, depth, crosses and tone moved, at Decays
@@ -1079,13 +1087,6 @@ fn mid([left, right]: &[Vec<f32>; 2]) -> Vec<f32> {
 /// Late Cross at 0. Each is checked with the tail still too, against
 /// [`STILL_COLOURATION_LIMIT_DB`]. A Late Size under 50% (0.97 dB at 0,
 /// drifting) reads over the limit, and isn't yet judged by ear.
-/// The most colouration Room's still tail may have, in dB: a guard on the
-/// network itself, as the Reverb's tests are otherwise still. The drift
-/// smears a ring more than it does Room: a network made to ring reads
-/// 2.08 dB still and 0.89 dB drifting, one with its lines on four lengths
-/// 1.58 and 0.89 dB. Still, Room reads 0.78 to 1.08 dB below.
-const STILL_COLOURATION_LIMIT_DB: f64 = 1.2;
-
 #[test]
 fn room_stays_under_colouration_s_limit() {
     let rate = 48_000.0;
