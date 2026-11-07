@@ -1393,34 +1393,42 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             process_block(renderer.processor(), &mut buffer);
         }
 
-        // Change every Reverb's mode while it rings, then back to Room
-        // before the old tails have faded out (4 blocks, under the 50 ms
-        // fade), then let them finish: the old tail fades out, or back in,
-        // every line is cleared and the new mode plays from silence, with no
-        // new memory.
+        // Change every Reverb's mode while it rings: every other one back
+        // before its 50 ms fade has ended (4 blocks), so it fades back in;
+        // then long enough for the rest to finish at any rate, so the old
+        // tail ends, every line is cleared and the new mode plays from
+        // silence; then all of them back again, to the end. No new memory.
         let reverbs: Vec<_> = effects(&project)
             .into_iter()
             .filter(|&effect| project.effect(effect).unwrap().kind() == EffectKind::Reverb)
             .collect();
-        for mode in [ReverbMode::Chamber, ReverbMode::Room] {
-            for (n, &effect) in reverbs.iter().enumerate() {
-                change(
-                    &mut project,
-                    &mut renderer,
-                    Command::SetReverbParam {
-                        effect,
-                        param: ReverbParam::Mode(mode),
-                    },
-                );
-                if n % 2 == 0 {
-                    process_block(renderer.processor(), &mut buffer);
-                }
-            }
-            for _ in 0..4 {
-                process_block(renderer.processor(), &mut buffer);
-            }
+        let fade = (0.05 * 96_000.0) as usize / BLOCK + 2;
+        let set_mode = |project: &mut uta_core::Project, renderer: &mut Renderer, effect, mode| {
+            change(
+                project,
+                renderer,
+                Command::SetReverbParam {
+                    effect,
+                    param: ReverbParam::Mode(mode),
+                },
+            );
+        };
+        for &effect in &reverbs {
+            set_mode(&mut project, &mut renderer, effect, ReverbMode::Chamber);
         }
-        for _ in 0..20 {
+        for _ in 0..4 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        for &effect in reverbs.iter().step_by(2) {
+            set_mode(&mut project, &mut renderer, effect, ReverbMode::Room);
+        }
+        for _ in 0..fade {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        for &effect in &reverbs {
+            set_mode(&mut project, &mut renderer, effect, ReverbMode::Room);
+        }
+        for _ in 0..fade {
             process_block(renderer.processor(), &mut buffer);
         }
 

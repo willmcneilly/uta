@@ -830,13 +830,15 @@ pub(crate) struct Reverb {
     /// The mode it's changing to, while the old one's tail fades out; how
     /// much of the old one is heard as it does; and how much of what goes
     /// in reaches the new one as it fades in, from silence.
-    next: Option<&'static Arrangement>,
+    next: Option<ReverbMode>,
     leaving: Ramp,
+    arriving: Ramp,
+    /// The mode it plays, whose arrangement is [`Reverb::arrangement`].
+    mode: ReverbMode,
     /// How long, in samples, a sound takes to pass through the mode's
     /// longest path at the longest sizes: once nothing above silence has
     /// been written for this long, every line it plays holds only silence.
     reach: usize,
-    arriving: Ramp,
     /// Samples in a row with nothing above [`SILENCE`] going in, coming out
     /// or written, or `u32::MAX` once it's asleep: the tail has died away and
     /// every line is clear.
@@ -948,6 +950,7 @@ impl Reverb {
             high_cuts: Default::default(),
             low_cuts: Default::default(),
             reach: 0,
+            mode: settings.mode,
             next: None,
             leaving: Ramp::new(1.0, 1),
             arriving: Ramp::new(1.0, 1),
@@ -1213,8 +1216,9 @@ impl Reverb {
     /// here, from silence. Real-time safe, and does no work proportional
     /// to the lines' lengths.
     fn sleep(&mut self) {
-        if let Some(next) = self.next.take() {
-            self.arrange(next);
+        if let Some(mode) = self.next.take() {
+            self.mode = mode;
+            self.arrange(Arrangement::of(mode));
         }
         self.leaving.jump_to(1.0);
         self.arriving.jump_to(1.0);
@@ -1675,8 +1679,9 @@ impl Effect for Reverb {
         {
             *head = Glide::new(0.0, sample_rate);
         }
-        if let Some(next) = self.next.take() {
-            self.arrangement = next;
+        if let Some(mode) = self.next.take() {
+            self.mode = mode;
+            self.arrangement = Arrangement::of(mode);
         }
         self.leaving = Ramp::new(1.0, (MODE_FADE_SECONDS * sample_rate).round() as u32);
         self.arriving = Ramp::new(
@@ -1736,15 +1741,15 @@ impl Effect for Reverb {
     fn set_settings(&mut self, settings: ReverbSettings) {
         let settings = clamped(settings);
         self.settings = settings;
-        let arrangement = Arrangement::of(settings.mode);
-        let changing = !std::ptr::eq(arrangement, self.arrangement);
+        let changing = settings.mode != self.mode;
         if !self.is_ringing() {
             self.next = None;
             if changing {
-                self.arrange(arrangement);
+                self.mode = settings.mode;
+                self.arrange(Arrangement::of(settings.mode));
             }
         } else if changing {
-            self.next = Some(arrangement);
+            self.next = Some(settings.mode);
             self.leaving.set_target(0.0);
         } else if self.next.take().is_some() {
             self.leaving.set_target(1.0);
