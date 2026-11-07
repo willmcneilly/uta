@@ -1282,3 +1282,179 @@ fn chamber_s_echo_density_reaches_near_1_within_its_limit_and_stays_there() {
     let (_, room) = density_of(ReverbSettings::default());
     assert!(room < 0.1, "Room's falls to {room:.2}");
 }
+
+/// A held A3 (220 Hz, at half scale) from sample `from`, for `frames`.
+fn held_a3(from: usize, frames: usize, rate: f64) -> Vec<f32> {
+    (from..from + frames)
+        .map(|n| (0.5 * (std::f64::consts::TAU * 220.0 * n as f64 / rate).sin()) as f32)
+        .collect()
+}
+
+/// `input` through `reverb`, the same on both sides, in blocks of `block`.
+fn through(reverb: &mut Reverb, input: &[f32], block: usize) -> [Vec<f32>; 2] {
+    let mut left = input.to_vec();
+    let mut right = input.to_vec();
+    for (left, right) in left.chunks_mut(block).zip(right.chunks_mut(block)) {
+        reverb.process(left, right);
+    }
+    [left, right]
+}
+
+/// Every pair of modes, the first changing to the second.
+fn mode_changes() -> Vec<(ReverbMode, ReverbMode)> {
+    ReverbMode::ALL
+        .into_iter()
+        .flat_map(|from| ReverbMode::ALL.map(|to| (from, to)))
+        .filter(|(from, to)| from != to)
+        .collect()
+}
+
+/// Changing mode while the tail rings, with a held A3 going in (RFC-010,
+/// "Turning knobs while it rings"):
+/// - the old mode's tail fades out over [`MODE_FADE_SECONDS`], in a
+///   straight line from where it was, nothing else about it changed;
+/// - then the new mode starts from silence, its first sample exactly 0, and
+///   plays exactly what a new Reverb in that mode plays from there, with
+///   what goes in fading in over the time an effect switched on takes;
+/// - and nothing clicks, by the same limit as turning any other setting.
+///
+/// Between every pair of modes, so a new mode is tested by being added to
+/// [`ReverbMode::ALL`].
+#[test]
+fn changing_mode_while_it_rings_fades_the_old_tail_out_then_starts_the_new_one_from_silence() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2; // 1.536 s, a block boundary
+    let after = (rate as usize) / block * block;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    let fade_in = (crate::EFFECT_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        let old = in_mode(from, still());
+        let new = in_mode(to, still());
+        let mut changed = Reverb::new(old, rate);
+        let mut kept = Reverb::new(old, rate);
+        let ringing = through(&mut changed, &held_a3(0, before, rate), block);
+        through(&mut kept, &held_a3(0, before, rate), block);
+        assert!(changed.is_ringing());
+
+        let input = held_a3(before, after, rate);
+        changed.set_settings(new);
+        let turned = through(&mut changed, &input, block);
+        let unturned = through(&mut kept, &input, block);
+        let faded: Vec<f32> = (fade..after)
+            .map(|n| input[n] * (n - fade).min(fade_in) as f32 / fade_in as f32)
+            .collect();
+        let fresh = through(&mut Reverb::new(new, rate), &faded, block);
+        for side in 0..2 {
+            for n in 0..fade {
+                // The fade adds up its steps, so it strays from the straight
+                // line by a rounding a step.
+                let expected = unturned[side][n] * (1.0 - n as f32 / fade as f32);
+                assert!(
+                    (turned[side][n] - expected).abs() <= 1e-4 * unturned[side][n].abs() + 1e-7,
+                    "{from:?} to {to:?}: sample {n} of the fade is {}, not {expected}",
+                    turned[side][n]
+                );
+            }
+            assert_eq!(
+                turned[side][fade], 0.0,
+                "{from:?} to {to:?}: the new mode doesn't start from silence"
+            );
+            // The fade in adds up its steps, so it's a rounding from the
+            // straight line the reference is multiplied by.
+            let differs = turned[side][fade..]
+                .iter()
+                .zip(&fresh[side])
+                .position(|(a, b)| (a - b).abs() > 1e-4);
+            assert_eq!(
+                differs,
+                None,
+                "{from:?} to {to:?}: the new mode isn't a new Reverb's: {:?}",
+                differs.map(|n| (turned[side][fade + n], fresh[side][n]))
+            );
+            let whole: Vec<f32> = ringing[side].iter().chain(&turned[side]).copied().collect();
+            let peak = whole.iter().fold(0.0f32, |peak, s| peak.max(s.abs()));
+            let limit = 2.0 * peak * sine_steepest(330.0, rate);
+            let jump = steepest(&whole);
+            assert!(
+                jump <= limit,
+                "{from:?} to {to:?}: a step of {jump:.5}, the limit {limit:.5}"
+            );
+        }
+    }
+}
+
+/// Changing mode and back before the old tail has faded out fades it back
+/// in, from wherever the fade had got to, and once it's back it plays
+/// exactly what it would have, never having stopped.
+#[test]
+fn changing_mode_and_back_before_the_fade_ends_fades_the_old_tail_back_in() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        let old = in_mode(from, still());
+        let mut changed = Reverb::new(old, rate);
+        let mut kept = Reverb::new(old, rate);
+        through(&mut changed, &held_a3(0, before, rate), block);
+        through(&mut kept, &held_a3(0, before, rate), block);
+        let away = 8 * block;
+        changed.set_settings(in_mode(to, still()));
+        let went = through(&mut changed, &held_a3(before, away, rate), block);
+        through(&mut kept, &held_a3(before, away, rate), block);
+        changed.set_settings(old);
+        let input = held_a3(before + away, 2 * fade, rate);
+        let back = through(&mut changed, &input, block);
+        let unchanged = through(&mut kept, &input, block);
+        for side in 0..2 {
+            assert!(went[side].iter().any(|&s| s != 0.0));
+            assert_eq!(
+                &back[side][fade..],
+                &unchanged[side][fade..],
+                "{from:?} to {to:?} and back"
+            );
+            let level = |n: usize| back[side][n] / unchanged[side][n];
+            assert!(level(0) > 0.5 && level(0) < 1.0, "{}", level(0));
+        }
+    }
+}
+
+/// Asleep, a new mode plays at once: what it plays is what a new Reverb in
+/// that mode plays.
+#[test]
+fn asleep_a_new_mode_plays_at_once() {
+    let rate = 48_000.0;
+    for (from, to) in mode_changes() {
+        let mut reverb = Reverb::new(in_mode(from, still()), rate);
+        assert!(!reverb.is_ringing());
+        reverb.set_settings(in_mode(to, still()));
+        assert_eq!(
+            response_to(&mut reverb, [1.0, 1.0], rate, 1.0),
+            impulse_response(in_mode(to, still()), rate, 1.0),
+            "{from:?} to {to:?}"
+        );
+    }
+}
+
+/// Changing mode while the tail rings sounds the same in blocks of 32 as in
+/// blocks of 1024, with the drift on: the block is split where the old
+/// tail has faded out, wherever that falls.
+#[test]
+fn changing_mode_is_the_same_at_every_block_size() {
+    let rate = 48_000.0;
+    let at = 72 * 1024;
+    for (from, to) in mode_changes() {
+        let render = |block: usize| {
+            let mut reverb = Reverb::new(in_mode(from, ReverbSettings::default()), rate);
+            let mut out = through(&mut reverb, &held_a3(0, at, rate), block);
+            reverb.set_settings(in_mode(to, ReverbSettings::default()));
+            let rest = through(&mut reverb, &held_a3(at, 48 * 1024, rate), block);
+            for side in 0..2 {
+                out[side].extend(&rest[side]);
+            }
+            out
+        };
+        assert_eq!(render(32), render(1024), "{from:?} to {to:?}");
+    }
+}

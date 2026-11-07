@@ -1232,7 +1232,8 @@ fn fade_blocks(sample_rate: u32) -> usize {
 /// Adding Delays and Reverbs while the song plays, a full chain at once on
 /// a track and on the master and two on each other track, the second in
 /// each a Reverb; turning their settings and
-/// Mix; moving them within their chains; switching them off and on;
+/// Mix, and each Reverb's mode; moving them within their chains; switching
+/// them off and on;
 /// removing some and adding others in the same block; removing a track with
 /// its chain and undoing it; and moving to a new sample rate between
 /// streams: each new effect's state arrives with its snapshot, nothing on
@@ -1242,7 +1243,7 @@ fn fade_blocks(sample_rate: u32) -> usize {
 fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_comes_back() {
     use uta_core::{
         Chain, DelayMode, DelayParam, Effect, EffectId, EffectKind, MAX_EFFECTS, PlacedEffect,
-        ReverbParam,
+        ReverbMode, ReverbParam,
     };
 
     rtsan_standalone::ensure_initialized();
@@ -1389,6 +1390,37 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
             assert!(renderer.controller.poll().ringing_chains != 0);
             renderer.controller.play().unwrap();
             process_block(renderer.processor(), &mut buffer);
+            process_block(renderer.processor(), &mut buffer);
+        }
+
+        // Change every Reverb's mode while it rings, then back to Room
+        // before the old tails have faded out (4 blocks, under the 50 ms
+        // fade), then let them finish: the old tail fades out, or back in,
+        // every line is cleared and the new mode plays from silence, with no
+        // new memory.
+        let reverbs: Vec<_> = effects(&project)
+            .into_iter()
+            .filter(|&effect| project.effect(effect).unwrap().kind() == EffectKind::Reverb)
+            .collect();
+        for mode in [ReverbMode::Chamber, ReverbMode::Room] {
+            for (n, &effect) in reverbs.iter().enumerate() {
+                change(
+                    &mut project,
+                    &mut renderer,
+                    Command::SetReverbParam {
+                        effect,
+                        param: ReverbParam::Mode(mode),
+                    },
+                );
+                if n % 2 == 0 {
+                    process_block(renderer.processor(), &mut buffer);
+                }
+            }
+            for _ in 0..4 {
+                process_block(renderer.processor(), &mut buffer);
+            }
+        }
+        for _ in 0..20 {
             process_block(renderer.processor(), &mut buffer);
         }
 
