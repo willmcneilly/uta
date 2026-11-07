@@ -7,7 +7,7 @@ import { FrameStats } from "../pianoRoll/frameStats";
 import { ReverbPanel } from "./ReverbPanel";
 import { TAIL_WIDTH } from "./TailDrawing";
 import { type ReverbValues, reverbView } from "./reverbTesting";
-import { xOf } from "./tail";
+import { tailEndSeconds, xOf } from "./tail";
 
 // The Reverb's panel, drawn from Rust's description of its settings: the
 // core view, the Early and Late groups behind the pull tab, each control
@@ -222,6 +222,28 @@ describe("ReverbPanel", () => {
     };
     rerender(panel(cutting));
     expect(end()).toBeLessThan(off);
+  });
+
+  it("draws the Decay handle on the tail's own end, left of the shape's end where the early burst outlasts it", () => {
+    renderPanel({ early_size_seconds: 1, early_send: 0, decay_seconds: 0.2 });
+    const handle = Number(drawing().querySelector(".end-handle .dot")?.getAttribute("cx"));
+    const tail = tailEndSeconds({
+      predelaySeconds: 0.01,
+      decaySeconds: 0.2,
+      depth: 0.5,
+      highCutHz: 20000,
+      lowCutHz: null,
+      earlySizeSeconds: 1,
+      diffusion: 0.8,
+      earlySend: 0,
+      lateSize: 0.5,
+      bassMult: 1,
+      bassXoverHz: 500,
+      highMult: 0.5,
+      highXoverHz: 4000,
+    }) as number;
+    expect(handle).toBeCloseTo(xOf(tail, TAIL_WIDTH), 3);
+    expect(handle).toBeLessThan(xOf(end(), TAIL_WIDTH) - 10);
   });
 
   it("follows a knob as it's dragged, before Rust replies", () => {
