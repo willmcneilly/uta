@@ -227,7 +227,7 @@ pub(crate) const ROOM: Arrangement = Arrangement {
 /// comes after the burst has ended, a sparse stretch whose echo density
 /// falls to nothing 40 to 53 ms after a click; Chamber's stays at 0.88 or
 /// more at its defaults. On the canvas's snare, Will picked it over Room,
-/// which had "too much slap back".
+/// which he heard as too much of a slap back.
 ///
 /// Room's lines are kept because they're the least coloured measured.
 /// Shorter lines close the gap too, but colouration follows the network's
