@@ -192,7 +192,9 @@ impl Default for ReverbSettings {
 }
 
 /// The Reverb's arrangement of its building blocks (RFC-010, "Modes"). Room
-/// is the first; Chamber and Space follow in UTA-102 and UTA-103.
+/// was the first and Chamber the second; Space follows in UTA-103. A mode
+/// is a value of the setting format 15 brought, so a new one doesn't
+/// change the format.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReverbMode {
@@ -200,25 +202,35 @@ pub enum ReverbMode {
     /// to a dense tail.
     #[default]
     Room,
+    /// Dense from the very first moment, smooth and even: for snares and
+    /// vocals.
+    Chamber,
 }
 
 impl ReverbMode {
     /// Every mode, as the panel offers them.
-    pub const ALL: [ReverbMode; 1] = [Self::Room];
+    pub const ALL: [ReverbMode; 2] = [Self::Room, Self::Chamber];
 
     /// The mode as `SetReverbParam` carries it: `"room"`.
     pub fn value(self) -> &'static str {
         match self {
             Self::Room => "room",
+            Self::Chamber => "chamber",
         }
     }
 }
 
 /// Every mode, as the panel offers them.
-const REVERB_MODES: [Choice; 1] = [Choice {
-    value: "room",
-    label: "Room",
-}];
+const REVERB_MODES: [Choice; 2] = [
+    Choice {
+        value: "room",
+        label: "Room",
+    },
+    Choice {
+        value: "chamber",
+        label: "Chamber",
+    },
+];
 
 /// One Reverb setting with its new value, as `SetReverbParam` carries it.
 ///
@@ -307,7 +319,8 @@ impl ReverbParam {
                 "Mode",
                 "The kind of space: how its echoes are arranged. Room is a \
                  natural room that starts a little sparse and builds to a \
-                 dense tail.",
+                 dense tail. Chamber is dense from the very first moment, \
+                 smooth and even, for snares and vocals.",
                 &REVERB_MODES,
                 defaults.mode.value(),
             ),
@@ -536,7 +549,7 @@ mod tests {
             })
             .collect();
         let expected = [
-            ("Mode", "1 choices"),
+            ("Mode", "2 choices"),
             ("Predelay", "Seconds Linear 0..0.5"),
             ("Decay", "Seconds Log 0.1..30"),
             ("Depth", "Fraction Linear 0..1"),
@@ -657,6 +670,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ReverbParam::Mode(ReverbMode::Room)).unwrap(),
             r#"{"name":"mode","value":"room"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ReverbParam::Mode(ReverbMode::Chamber)).unwrap(),
+            r#"{"name":"mode","value":"chamber"}"#
         );
         let json = serde_json::to_string(&ReverbSettings::default()).unwrap();
         assert_eq!(

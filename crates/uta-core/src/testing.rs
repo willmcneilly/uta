@@ -173,6 +173,7 @@ fn any_delay_param() -> impl Strategy<Value = DelayParam> {
 fn any_reverb_param() -> impl Strategy<Value = ReverbParam> {
     prop_oneof![
         Just(ReverbParam::Mode(crate::ReverbMode::Room)),
+        Just(ReverbParam::Mode(crate::ReverbMode::Chamber)),
         (-0.05f32..0.55).prop_map(ReverbParam::PredelaySeconds),
         (0.05f32..31.0).prop_map(ReverbParam::DecaySeconds),
         Just(ReverbParam::DecaySeconds(f32::NAN)),
