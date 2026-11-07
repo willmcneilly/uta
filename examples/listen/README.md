@@ -364,6 +364,10 @@ The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impul
 | `13-drift` | Both drifts full on, at 0.5 Hz: the lines' lengths wander slowly, smearing the resonances. |
 | `14-drift-fast` | Both drifts full on, at 5 Hz: fast enough to waver like a chorus. |
 | `15-still` | The tail's drift off: Room's tail before UTA-101, with its slightly higher colouration. |
+| `16-chamber` | Chamber at the Reverb's defaults: Room's lines heard from taps partway along, so the tail starts within the burst, with no sparse stretch between them. |
+| `17-chamber-decay-300ms` | Chamber, Decay 0.3 s: a small, hard room. |
+| `18-chamber-depth-100` | Chamber, Depth 100%: only the tail, which starts about 5 ms after the Predelay, at the first tap, rather than at the first lap. |
+| `19-chamber-gated` | Chamber, Depth 0% and Early Size 250 ms: a gated, eighties burst, with nothing after it. |
 
 Render and measure them:
 
@@ -374,8 +378,9 @@ cargo run --release -p uta-cli -- analyse target/listen/reverb/01-defaults.wav -
 
 The click isn't a single sample, so its own spectrum shows in the colouration, which reads about 2.5 dB here against under 1 dB for a one-sample click. Compare colouration between these renders, not with the Reverb's tests.
 
-A short phrase through Room is `examples/demo-reverb.json`, which is also the Reverb's golden WAV: two bars of the canvas's soft keys and a snare, with Room at its defaults on the master at Mix 30%.
+A short phrase through Room is `examples/demo-reverb.json`, which is also the Reverb's golden WAV: two bars of the canvas's soft keys and a snare, with Room at its defaults on the master at Mix 30%. `examples/demo-reverb-chamber.json` is the same phrase through Chamber, Chamber's golden WAV.
 
 ```bash
 cargo run --release -p uta-cli -- render target/listen/demo-reverb.wav --commands examples/demo-reverb.json
+cargo run --release -p uta-cli -- render target/listen/demo-reverb-chamber.wav --commands examples/demo-reverb-chamber.json
 ```
