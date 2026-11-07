@@ -16,6 +16,7 @@ import {
   secondsAt,
   silentAt,
   tailAt,
+  tailEndSeconds,
   xOf,
 } from "./tail";
 
@@ -135,6 +136,11 @@ export function TailDrawing({
   const [hatch, pattern] = useHatch();
   const end = endSeconds(settings);
   const endX = xOf(end, WIDTH);
+  // The handle drags the tail's end, which Decay sets, so it sits there: on
+  // the shape's end, unless the early burst outlasts the tail. With no tail
+  // there's nothing for it to drag.
+  const tailEnd = tailEndSeconds(settings);
+  const handleX = tailEnd === null ? null : xOf(tailEnd, WIDTH);
   const start = xOf(settings.predelaySeconds, WIDTH);
   const edge = edgeOf(settings, start, endX);
   const ticks = ticksOf(reflectionsOf(settings));
@@ -268,11 +274,13 @@ export function TailDrawing({
       >
         {formatTime(end)}
       </text>
-      <g className="end-handle" onPointerDown={startDrag}>
-        <title>Drag to set how long it rings</title>
-        <circle className="hit" cx={endX} cy={FLOOR} r={9} />
-        <circle className="dot" cx={endX} cy={FLOOR} r={3.5} />
-      </g>
+      {handleX !== null && (
+        <g className="end-handle" onPointerDown={startDrag}>
+          <title>Drag to set how long it rings</title>
+          <circle className="hit" cx={handleX} cy={FLOOR} r={9} />
+          <circle className="dot" cx={handleX} cy={FLOOR} r={3.5} />
+        </g>
+      )}
     </svg>
   );
 }

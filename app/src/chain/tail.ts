@@ -169,6 +169,17 @@ export function secondsAt(x: number, width: number): number {
 }
 
 /**
+ * When the tail alone is gone, its longest band's end, in seconds after the
+ * note: where the drawing's handle for Decay sits. Null when there's no tail
+ * (Depth at 0, only the early burst).
+ */
+export function tailEndSeconds(s: TailSettings): number | null {
+  const peak = s.predelaySeconds + buildSeconds(s);
+  const end = Math.max(endOf(s, LOW_HZ), endOf(s, MID_HZ), endOf(s, HIGH_HZ));
+  return end > peak ? end : null;
+}
+
+/**
  * The Decay that makes the tail end at `seconds`: dragging the end scales
  * Decay, which scales every band's length together. Kept just past the
  * tail's build, and within `limits`, Rust's. With no tail to scale (Depth
@@ -177,8 +188,9 @@ export function secondsAt(x: number, width: number): number {
  */
 export function decayFor(s: TailSettings, seconds: number, limits: [number, number]): number {
   const peak = s.predelaySeconds + buildSeconds(s);
-  const tail = Math.max(endOf(s, LOW_HZ), endOf(s, MID_HZ), endOf(s, HIGH_HZ)) - peak;
-  if (tail <= 0) return s.decaySeconds;
+  const end = tailEndSeconds(s);
+  if (end === null) return s.decaySeconds;
+  const tail = end - peak;
   const target = Math.max(seconds, peak + 0.05);
   const decay = (s.decaySeconds * (target - peak)) / tail;
   return Math.max(limits[0], Math.min(limits[1], decay));

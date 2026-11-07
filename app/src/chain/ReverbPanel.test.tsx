@@ -179,14 +179,16 @@ describe("ReverbPanel", () => {
     rerender({ decay_seconds: 6 });
     expect(end()).toBeGreaterThan(twoSeconds * 2);
     // The end sits where it says it does, on the time scale every sound shares.
-    const dot = drawing().querySelector(".end-handle .dot");
-    expect(Number(dot?.getAttribute("cx"))).toBeCloseTo(xOf(end(), TAIL_WIDTH), 1);
+    const dot = () => drawing().querySelector(".end-handle .dot");
+    expect(Number(dot()?.getAttribute("cx"))).toBeCloseTo(xOf(end(), TAIL_WIDTH), 1);
 
     // All tail: no early reflections. All early: ticks after Predelay.
     rerender({ depth: 1 });
     expect(ticks()).toEqual([]);
     rerender({ depth: 0, predelay_seconds: 0.1, early_size_seconds: 0.3 });
     expect(ticks().length).toBeGreaterThan(3);
+    // No tail, so no handle to drag Decay by.
+    expect(dot()).toBeNull();
     expect(Math.min(...ticks())).toBeGreaterThan(xOf(0.1, TAIL_WIDTH));
 
     // The Mults set how long the lows and highs last; the longest sets the end.

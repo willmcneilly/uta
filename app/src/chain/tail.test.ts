@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type TailSettings, decayFor, endSeconds } from "./tail";
+import { type TailSettings, decayFor, endSeconds, tailEndSeconds } from "./tail";
 
 // What the Reverb's drawing works out from its settings: here, the Decay a
 // drag of the drawing's end asks for.
@@ -43,5 +43,17 @@ describe("decayFor", () => {
     }
     const gated = { ...early, earlySizeSeconds: 0.4, earlySend: 1 };
     expect(decayFor(gated, endSeconds(gated) * 1.1, LIMITS)).toBe(2);
+  });
+
+  it("scales against the tail's own end, where the handle is, when the early burst outlasts it", () => {
+    const burst = { ...NEW, earlySizeSeconds: 1, earlySend: 0, decaySeconds: 0.2 };
+    const tail = tailEndSeconds(burst) as number;
+    expect(tail).toBeLessThan(endSeconds(burst));
+    // The handle where it is gives back the same Decay; a nudge, a small change.
+    expect(decayFor(burst, tail, LIMITS)).toBeCloseTo(0.2, 6);
+    expect(decayFor(burst, tail * 0.98, LIMITS)).toBeGreaterThan(0.18);
+    expect(decayFor(burst, tail * 0.98, LIMITS)).toBeLessThan(0.2);
+    // With no tail there's no handle.
+    expect(tailEndSeconds({ ...NEW, depth: 0 })).toBeNull();
   });
 });
