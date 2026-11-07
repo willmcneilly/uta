@@ -1458,3 +1458,42 @@ fn changing_mode_is_the_same_at_every_block_size() {
         assert_eq!(render(32), render(1024), "{from:?} to {to:?}");
     }
 }
+
+/// Once a change of mode has finished, by the old tail fading out or by
+/// the Reverb being prepared partway through, the Reverb knows it's in
+/// the new mode: the same settings again, while it rings, change nothing,
+/// rather than reading as another change of mode that fades the tail out.
+#[test]
+fn after_changing_mode_the_same_settings_again_change_nothing() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        for prepared in [false, true] {
+            let new = in_mode(to, still());
+            let ringing = || {
+                let mut reverb = Reverb::new(in_mode(from, still()), rate);
+                through(&mut reverb, &held_a3(0, before, rate), block);
+                reverb.set_settings(new);
+                if prepared {
+                    through(&mut reverb, &held_a3(before, 8 * block, rate), block);
+                    reverb.prepare(rate);
+                } else {
+                    through(&mut reverb, &held_a3(before, 2 * fade, rate), block);
+                }
+                assert!(reverb.is_ringing());
+                reverb
+            };
+            let mut again = ringing();
+            let mut once = ringing();
+            again.set_settings(new);
+            let input = held_a3(0, 4 * fade, rate);
+            assert_eq!(
+                through(&mut again, &input, block),
+                through(&mut once, &input, block),
+                "{from:?} to {to:?}, prepared {prepared}"
+            );
+        }
+    }
+}
