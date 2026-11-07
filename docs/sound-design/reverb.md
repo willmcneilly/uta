@@ -13,7 +13,7 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 
 ## The limits
 
-- **Colouration under 0.85 dB** (`impulse::COLOURATION_LIMIT_DB`), on a one-sample click, on the mid, with a Decay of 2 s or more. Set from listening: Room at 0.75 dB was picked as smooth, Room at 0.95 dB was heard as metallic, and a network made to ring, at 2.08 dB, was heard as ringing.
+- **Colouration under 0.85 dB** (`impulse::COLOURATION_LIMIT_DB`), on a one-sample click, on the mid, with a Decay of 2 s or more. Set from listening: Room at 0.75 dB was picked as smooth, Room at 0.95 dB (with less Depth) was heard as the more metallic of the two, and a network made to ring, at 2.08 dB, was heard as ringing. A still tail has its own, looser guard, 1.2 dB (`STILL_COLOURATION_LIMIT_DB`), since the drift smears a ring more than it does Room: the ringing network reads 0.89 dB drifting.
 - **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` for Room): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%.
 
 ## Which settings give which qualities
@@ -30,7 +30,7 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 
 - **Colouration reads higher on a short tail,** with less of it to average: Room reads 1.0 dB at a 1 s Decay and 1.5 dB at 0.5 s, all else the same. Its limit only holds from 2 s, and a short room's ring still needs an ear.
 - **It's blind to a buzz.** A network whose lines are all whole multiples of 10 ms echoes every 10 ms, a 100 Hz buzz, but its spectrum is as smooth as Room's (1.01 dB). The rule that no two lines share a rhythm is what keeps that out, not the measure.
-- **The drift lowers it more than it lowers a ring.** With the drift on, even a network made to ring reads under 1 dB (six distinct lengths, 1.23 dB still, read 0.84 drifting). The limit was set with Room's drift on and the ringing network still, so a mode that only passes with its drift on is worth a listen with it off.
+- **The drift lowers it more than it lowers a ring.** With the drift on, even a network made to ring reads under 1 dB (six distinct lengths, 1.23 dB still, read 0.84 drifting). That's why the test checks each case still as well, against its own guard.
 
 ## What needed an ear
 

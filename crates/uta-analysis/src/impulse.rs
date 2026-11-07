@@ -69,9 +69,9 @@ const TAIL_TO_DB: f64 = -60.0;
 /// The most colouration a reverb's impulse response may have, in dB, on a
 /// one-sample click, measured on the mid of a tail with a Decay of 2 s or
 /// longer. Set from listening on the canvas (UTA-101): Room at 0.75 dB was
-/// picked as smooth, at 0.95 dB it was heard as metallic, and
-/// a network made to ring, at 2.08 dB, was heard to ring. The limit is
-/// halfway between the first two.
+/// picked over Room at 0.95 dB, which was heard as the more metallic of the
+/// two (it also had less Depth); and a network made to ring, at 2.08 dB,
+/// was heard to ring. The limit is halfway between the first two.
 ///
 /// A shorter tail reads higher, with less of it to average (Room reads
 /// about 1.0 dB at a 1 s Decay and 1.5 dB at 0.5 s, all else the same), so

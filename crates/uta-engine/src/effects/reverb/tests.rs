@@ -1076,8 +1076,16 @@ fn mid([left, right]: &[Vec<f32>; 2]) -> Vec<f32> {
 /// by ear ([`impulse::COLOURATION_LIMIT_DB`]) at its defaults, the drift
 /// included, and with its size, depth, crosses and tone moved, at Decays
 /// from 2 s, as far as the limit holds. The most it reads is 0.81 dB, with
-/// Late Cross at 0. A Late Size under 50% (0.97 dB at 0) and a still tail
-/// (1.02 dB) read over it, and aren't yet judged by ear.
+/// Late Cross at 0. Each is checked with the tail still too, against
+/// [`STILL_COLOURATION_LIMIT_DB`]. A Late Size under 50% (0.97 dB at 0,
+/// drifting) reads over the limit, and isn't yet judged by ear.
+/// The most colouration Room's still tail may have, in dB: a guard on the
+/// network itself, as the Reverb's tests are otherwise still. The drift
+/// smears a ring more than it does Room: a network made to ring reads
+/// 2.08 dB still and 0.89 dB drifting, one with its lines on four lengths
+/// 1.58 and 0.89 dB. Still, Room reads 0.78 to 1.08 dB below.
+const STILL_COLOURATION_LIMIT_DB: f64 = 1.2;
+
 #[test]
 fn room_stays_under_colouration_s_limit() {
     let rate = 48_000.0;
@@ -1094,16 +1102,21 @@ fn room_stays_under_colouration_s_limit() {
         ("Bass Mult 2", |s| s.bass_mult = 2.0),
     ];
     for (name, change) in changes {
-        let mut reverb = ReverbSettings::default();
-        change(&mut reverb);
-        let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
-        let response = impulse_response(reverb, rate, seconds);
-        let colouration = impulse::colouration_db(&mid(&response), rate as u32).unwrap();
-        assert!(
-            colouration < impulse::COLOURATION_LIMIT_DB,
-            "{name}: colouration {colouration:.2} dB, limit {} dB",
-            impulse::COLOURATION_LIMIT_DB
-        );
+        for (start, limit) in [
+            (ReverbSettings::default(), impulse::COLOURATION_LIMIT_DB),
+            (still(), STILL_COLOURATION_LIMIT_DB),
+        ] {
+            let mut reverb = start;
+            change(&mut reverb);
+            let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
+            let response = impulse_response(reverb, rate, seconds);
+            let colouration = impulse::colouration_db(&mid(&response), rate as u32).unwrap();
+            assert!(
+                colouration < limit,
+                "{name}, Late Mod Depth {}: colouration {colouration:.2} dB, limit {limit} dB",
+                reverb.late_mod_depth
+            );
+        }
     }
 }
 

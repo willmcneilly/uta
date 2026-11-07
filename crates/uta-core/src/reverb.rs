@@ -157,14 +157,14 @@ impl Default for ReverbSettings {
     /// RFC-010's starting point: Room, a 2 s Decay and a High Mult of 0.5
     /// (Mix, 25%, is the effect's), tuned by ear in UTA-101. Depth is 65%
     /// and the tail drifts at 50%: on the canvas's chord, Will picked that
-    /// over Depth 50% with no drift, heard as the more metallic. At 50% the early burst held 5 dB more energy than the rest of
-    /// the tail and the tail's colouration read 0.95 dB; at 65% with the
-    /// drift, 2 dB and 0.75 dB, its pitch moving under 6 cents. The rest
-    /// are first guesses: the cuts open, the crosses full, the burst still,
-    /// and a short, fairly smooth burst. Early Send is high because the
-    /// predelayed sound going straight into the tail is sparse: at 0.5 its
-    /// echo density took 0.4 s to stay near 1, at 0.9 it does as soon as
-    /// the burst ends.
+    /// over Depth 50% with no drift, heard as the more metallic. At 50% the
+    /// early burst held 5 dB more energy than the rest of the tail, and the
+    /// tail's colouration read 0.95 dB; at 65% with the drift, 2 dB and
+    /// 0.75 dB, its pitch moving under 6 cents. The rest are first guesses:
+    /// the cuts open, the crosses full, the burst short, fairly smooth and
+    /// still. Early Send is high because the predelayed sound going
+    /// straight into the tail is sparse: at 0.5 its echo density took 0.4 s
+    /// to stay near 1, at 0.9 it does as soon as the burst ends.
     fn default() -> Self {
         Self {
             mode: ReverbMode::Room,
