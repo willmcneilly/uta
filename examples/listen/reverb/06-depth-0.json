@@ -62,7 +62,7 @@
                       "late_size": 0.5,
                       "late_cross": 1.0,
                       "late_mod_rate_hz": 0.5,
-                      "late_mod_depth": 0.0,
+                      "late_mod_depth": 0.5,
                       "bass_mult": 1.0,
                       "bass_xover_hz": 500.0,
                       "high_mult": 0.5,

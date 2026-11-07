@@ -154,19 +154,23 @@ impl ReverbSettings {
 }
 
 impl Default for ReverbSettings {
-    /// RFC-010's starting point: Room, a 2 s Decay, Depth at 50% and a High
-    /// Mult of 0.5 (Mix, 25%, is the effect's). The rest are first guesses,
-    /// to be tuned by ear in UTA-101: the cuts open, the crosses full and
-    /// the modulation still, and a short, fairly smooth burst. Early Send is high because
-    /// the predelayed sound going straight into the tail is sparse: at 0.5
-    /// its echo density took 0.4 s to stay near 1, at 0.9 it does as soon as
-    /// the burst ends.
+    /// RFC-010's starting point: Room, a 2 s Decay and a High Mult of 0.5
+    /// (Mix, 25%, is the effect's), tuned by ear in UTA-101. Depth is 65%
+    /// and the tail drifts at 50%: on the canvas's chord, Will picked that
+    /// over Depth 50% with no drift, heard as the more metallic. At 50% the
+    /// early burst held 5 dB more energy than the rest of the tail, and the
+    /// tail's colouration read 0.95 dB; at 65% with the drift, 2 dB and
+    /// 0.75 dB, its pitch moving under 6 cents. The rest are first guesses:
+    /// the cuts open, the crosses full, the burst short, fairly smooth and
+    /// still. Early Send is high because the predelayed sound going
+    /// straight into the tail is sparse: at 0.5 its echo density took 0.4 s
+    /// to stay near 1, at 0.9 it does as soon as the burst ends.
     fn default() -> Self {
         Self {
             mode: ReverbMode::Room,
             predelay_seconds: 0.01,
             decay_seconds: 2.0,
-            depth: 0.5,
+            depth: 0.65,
             high_cut_hz: Self::MAX_HIGH_CUT_HZ,
             low_cut_hz: Self::MIN_LOW_CUT_HZ,
             early_size_seconds: 0.03,
@@ -178,7 +182,7 @@ impl Default for ReverbSettings {
             late_size: 0.5,
             late_cross: 1.0,
             late_mod_rate_hz: 0.5,
-            late_mod_depth: 0.0,
+            late_mod_depth: 0.5,
             bass_mult: 1.0,
             bass_xover_hz: 500.0,
             high_mult: 0.5,
@@ -470,14 +474,15 @@ mod tests {
     use super::*;
     use crate::setting::Kind;
 
-    /// RFC-010's defaults: Room, a 2 s Decay, Depth 50% and a High Mult of
-    /// 0.5.
+    /// RFC-010's defaults: Room, a 2 s Decay and a High Mult of 0.5, with
+    /// Depth and the tail's drift as UTA-101 tuned them by ear.
     #[test]
     fn a_new_reverb_has_rfc_010s_starting_point() {
         let settings = ReverbSettings::default();
         assert_eq!(settings.mode, ReverbMode::Room);
         assert_eq!(settings.decay_seconds, 2.0);
-        assert_eq!(settings.depth, 0.5);
+        assert_eq!(settings.depth, 0.65);
+        assert_eq!(settings.late_mod_depth, 0.5);
         assert_eq!(settings.high_mult, 0.5);
         assert!(settings.validate().is_ok());
     }
@@ -608,11 +613,11 @@ mod tests {
         assert_eq!(
             json,
             concat!(
-                r#"{"mode":"room","predelay_seconds":0.01,"decay_seconds":2.0,"depth":0.5,"#,
+                r#"{"mode":"room","predelay_seconds":0.01,"decay_seconds":2.0,"depth":0.65,"#,
                 r#""high_cut_hz":20000.0,"low_cut_hz":20.0,"early_size_seconds":0.03,"#,
                 r#""early_cross":1.0,"diffusion":0.8,"early_send":0.9,"early_mod_rate_hz":0.5,"#,
                 r#""early_mod_depth":0.0,"late_size":0.5,"late_cross":1.0,"late_mod_rate_hz":0.5,"#,
-                r#""late_mod_depth":0.0,"bass_mult":1.0,"bass_xover_hz":500.0,"high_mult":0.5,"#,
+                r#""late_mod_depth":0.5,"bass_mult":1.0,"bass_xover_hz":500.0,"high_mult":0.5,"#,
                 r#""high_xover_hz":4000.0}"#
             )
         );

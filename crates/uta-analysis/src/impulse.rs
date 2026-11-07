@@ -66,6 +66,17 @@ const COLOURATION_FRAME_SECONDS: f64 = 0.1;
 /// How far down its decay curve the tail colouration is measured over
 /// goes, in dB.
 const TAIL_TO_DB: f64 = -60.0;
+/// The most colouration a reverb's impulse response may have, in dB, on a
+/// one-sample click, measured on the mid of a tail with a Decay of 2 s or
+/// longer. Set from listening on the canvas (UTA-101): Room at 0.75 dB was
+/// picked over Room at 0.95 dB, which was heard as the more metallic of the
+/// two (it also had less Depth); and a network made to ring, at 2.08 dB,
+/// was heard to ring. The limit is halfway between the first two.
+///
+/// A shorter tail reads higher, with less of it to average (Room reads
+/// about 1.0 dB at a 1 s Decay and 1.5 dB at 0.5 s, all else the same), so
+/// the limit is only for a tail of 2 s or more.
+pub const COLOURATION_LIMIT_DB: f64 = 0.85;
 /// The frequencies colouration is measured over, in Hz.
 pub const COLOURATION_LOWEST_HZ: f64 = 200.0;
 pub const COLOURATION_HIGHEST_HZ: f64 = 10_000.0;
@@ -293,7 +304,8 @@ pub fn early_and_late_correlation(
 
 /// How bumpy the tail's spectrum is, in dB: a measure of colouration, the
 /// resonances that stick out, as a metallic ring does. Our own proxy
-/// (RFC-010's Risks), with no limit until it's checked against listening.
+/// (RFC-010's Risks), checked against listening in UTA-101: see
+/// [`COLOURATION_LIMIT_DB`].
 ///
 /// The tail is the stretch where the [`decay_curve_db`] falls from
 /// [`FIT_FROM_DB`] to -60 dB (or to the end). Its spectrum is averaged over
