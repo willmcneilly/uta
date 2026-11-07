@@ -13,3 +13,31 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# The audio path is built optimised in dev builds too, so the dev app
+# (`scripts/dev-app`, `tauri dev`) plays in real time: unoptimised, two or
+# three Reverbs dropped out (found in UTA-105, fixed in UTA-109). Everything else,
+# the app crate included, stays a quick debug build. Overflow checks and debug
+# assertions stay on, so dev builds still catch what they're for. Performance
+# is judged in release, never here. opt-level 3 was picked by its numbers in
+# UTA-109's PR: no slower to rebuild or test than 1 or 2, and the fastest.
+# `cargo test` uses these too (the test profile inherits dev's), so the
+# real-time tests and RTSan check optimised code: an allocation the optimiser
+# deletes, because nothing uses it, isn't caught (CLAUDE.md, the audio thread
+# rules).
+[profile.dev.package.uta-engine]
+opt-level = 3
+debug-assertions = true
+overflow-checks = true
+
+[profile.dev.package.uta-core]
+opt-level = 3
+debug-assertions = true
+overflow-checks = true
+
+# The engine's audio dependencies: the lock-free queues and the device.
+[profile.dev.package.rtrb]
+opt-level = 3
+
+[profile.dev.package.cpal]
+opt-level = 3

@@ -115,6 +115,7 @@ How it's enforced (from ticket UTA-2 on):
 - The process path is marked `#[nonblocking]` (`rtsan-standalone`), and a CI job runs the tests under RealtimeSanitizer.
 - Tests drive the real process path under `assert_no_alloc` (nih-plug's fork), including snapshot swaps and simulated device errors.
 - Both only catch what the tests exercise, so tests must drive the real audio path, not a copy.
+- Both check optimised code, because `cargo test` builds the audio path at opt-level 3 (see Code conventions). An allocation the optimiser deletes, because nothing uses it, isn't caught; it's deleted in release too, so it never runs in the app. Allocations and frees that do run are caught.
 
 ## Proving audio code works
 
@@ -129,6 +130,7 @@ Nobody listens to every change, so the tests are the evidence:
 
 - Rust 2024 edition. `cargo fmt` defaults. Clippy warnings are errors in CI.
 - The Rust version is pinned in `rust-toolchain.toml`, and CI installs the same one; rustup fetches it on first use. To upgrade, bump the version in its own PR and fix any new lints there, not in a feature PR.
+- Dev builds build the audio path optimised: `uta-engine`, `uta-core` and their audio dependencies (`rtrb`, `cpal`) at opt-level 3 in `[profile.dev.package.*]` in `Cargo.toml`, with overflow checks and debug assertions still on, so the dev app plays in real time and Will can listen there. Everything else, the app crate included, stays a quick debug build. Performance is judged in release (the timing reports run with `--release`), never by making code fast unoptimised. A new crate the audio thread runs code from gets the same override.
 - Tests live next to the code (`#[cfg(test)] mod tests`), integration tests in `crates/<name>/tests/`.
 - Keep `uta-core` free of audio and UI dependencies (`uta-engine` depends on it, never the reverse), and `uta-engine` free of Tauri.
 - Frontend: React function components, strict TypeScript, no `any`. Tests next to the component (`Foo.test.tsx`). UI tests run against Tauri's mocked back end (`@tauri-apps/api/mocks`), never a real one.
