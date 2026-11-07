@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use uta_core::time::Ticks;
 use uta_core::{
     Chain, ClipId, ClipPosition, DelayParam, DrumParam, DrumSound, EffectId, EffectKind, Note,
-    NoteId, SynthParam, TrackId,
+    NoteId, ReverbParam, SynthParam, TrackId,
 };
 
 use crate::demos::DemoSong;
@@ -325,6 +325,18 @@ pub fn set_delay_param<R: Runtime>(
     gesture: Option<u32>,
 ) -> Result<Update, String> {
     edit(&app, |uta| uta.set_delay_param(effect, param, gesture))
+}
+
+/// Sets one of a Reverb's settings. Calls to the same setting with the same
+/// `gesture` (one drag) undo as one step.
+#[tauri::command]
+pub fn set_reverb_param<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    param: ReverbParam,
+    gesture: Option<u32>,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_reverb_param(effect, param, gesture))
 }
 
 /// Adds an empty clip to a track: drawn on the timeline. The UI picks its

@@ -75,6 +75,7 @@ pub fn run() {
             commands::set_effect_enabled,
             commands::set_effect_mix,
             commands::set_delay_param,
+            commands::set_reverb_param,
             commands::add_clip,
             commands::set_clips,
             commands::paste_clips,

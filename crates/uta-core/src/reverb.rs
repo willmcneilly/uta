@@ -347,14 +347,16 @@ impl ReverbParam {
                  it's off.",
                 Hz,
                 Log,
-            ),
+            )
+            .off_at_lowest(),
             Self::EarlySizeSeconds(_) => number(
                 "Early size",
                 "How long the early burst lasts. A few milliseconds is a small, \
                  close room; a hundred or more is a gated, eighties burst.",
                 Seconds,
                 Log,
-            ),
+            )
+            .short("Size"),
             Self::EarlyCross(_) => number(
                 "Early cross",
                 "How much the left and right swap in the early burst. None \
@@ -362,7 +364,8 @@ impl ReverbParam {
                  and thickens them.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Cross"),
             Self::Diffusion(_) => number(
                 "Diffusion",
                 "How smooth the early burst is. Low, you hear separate early \
@@ -378,21 +381,24 @@ impl ReverbParam {
                  long early size, swell in slowly.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Send"),
             Self::EarlyModRateHz(_) => number(
                 "Early mod rate",
                 "How fast the early burst's slow wobble moves. Slow just \
                  smooths it; fast starts to sound like chorus.",
                 Hz,
                 Log,
-            ),
+            )
+            .short("Mod rate"),
             Self::EarlyModDepth(_) => number(
                 "Early mod depth",
                 "How far the early burst's delays wobble. None keeps them \
                  still; a little smears its echoes so nothing rings.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Mod depth"),
             Self::LateSize(_) => number(
                 "Late size",
                 "The size of the room the tail rings in. Small puts the \
@@ -400,7 +406,8 @@ impl ReverbParam {
                  out, like a hall.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Size"),
             Self::LateCross(_) => number(
                 "Late cross",
                 "How much the tail's left and right feed each other. None \
@@ -408,7 +415,8 @@ impl ReverbParam {
                  spreads everything across both sides.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Cross"),
             Self::LateModRateHz(_) => number(
                 "Late mod rate",
                 "How fast the tail's slow drift moves. Around half a hertz it \
@@ -416,7 +424,8 @@ impl ReverbParam {
                  chorus.",
                 Hz,
                 Log,
-            ),
+            )
+            .short("Mod rate"),
             Self::LateModDepth(_) => number(
                 "Late mod depth",
                 "How far the tail's delays drift. None leaves it still, where \
@@ -424,37 +433,42 @@ impl ReverbParam {
                  waver in pitch.",
                 Fraction,
                 Linear,
-            ),
+            )
+            .short("Mod depth"),
             Self::BassMult(_) => number(
                 "Bass mult",
                 "How long the lows ring, as a multiple of Decay. Above 1 the \
                  bass booms on after the rest; below, the tail thins out as it \
                  fades.",
-                Amount,
+                Times,
                 Log,
-            ),
+            )
+            .short("Low ×"),
             Self::BassXoverHz(_) => number(
                 "Bass xover",
                 "Where the lows start, for Bass mult: everything below it \
                  rings for Bass mult times Decay.",
                 Hz,
                 Log,
-            ),
+            )
+            .short("Low until"),
             Self::HighMult(_) => number(
                 "High mult",
                 "How long the highs ring, as a multiple of Decay. Below 1 the \
                  tail darkens as it fades, the way air and soft furnishings \
                  swallow treble; above, it stays bright and glassy.",
-                Amount,
+                Times,
                 Log,
-            ),
+            )
+            .short("High ×"),
             Self::HighXoverHz(_) => number(
                 "High xover",
                 "Where the highs start, for High mult: everything above it \
                  rings for High mult times Decay.",
                 Hz,
                 Log,
-            ),
+            )
+            .short("High from"),
         }
     }
 
@@ -533,13 +547,48 @@ mod tests {
             ("Late cross", "Fraction Linear 0..1"),
             ("Late mod rate", "Hz Log 0.05..5"),
             ("Late mod depth", "Fraction Linear 0..1"),
-            ("Bass mult", "Amount Log 0.25..4"),
+            ("Bass mult", "Times Log 0.25..4"),
             ("Bass xover", "Hz Log 100..2000"),
-            ("High mult", "Amount Log 0.1..2"),
+            ("High mult", "Times Log 0.1..2"),
             ("High xover", "Hz Log 1000..16000"),
         ]
         .map(|(label, kind)| (label, kind.to_string()));
         assert_eq!(described, expected);
+    }
+
+    /// The panel's groups say whose a setting is, so each in the Early and
+    /// Late groups has a short name, and Late size is "Size" in the core.
+    /// Only the Low cut is off at its lowest.
+    #[test]
+    fn reverb_settings_have_short_names_and_the_low_cut_reads_off_at_its_lowest() {
+        let described: Vec<_> = ReverbSettings::default()
+            .params()
+            .iter()
+            .map(|param| {
+                let d = param.describe();
+                (d.label, d.short, d.off_at_lowest)
+            })
+            .filter(|(_, short, off)| short.is_some() || *off)
+            .collect();
+        assert_eq!(
+            described,
+            [
+                ("Low cut", None, true),
+                ("Early size", Some("Size"), false),
+                ("Early cross", Some("Cross"), false),
+                ("Early send", Some("Send"), false),
+                ("Early mod rate", Some("Mod rate"), false),
+                ("Early mod depth", Some("Mod depth"), false),
+                ("Late size", Some("Size"), false),
+                ("Late cross", Some("Cross"), false),
+                ("Late mod rate", Some("Mod rate"), false),
+                ("Late mod depth", Some("Mod depth"), false),
+                ("Bass mult", Some("Low ×"), false),
+                ("Bass xover", Some("Low until"), false),
+                ("High mult", Some("High ×"), false),
+                ("High xover", Some("High from"), false),
+            ]
+        );
     }
 
     #[test]

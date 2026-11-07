@@ -823,9 +823,12 @@ impl KitSettings {
         // amounts in even steps.
         let scale = match unit {
             Unit::Hz | Unit::Seconds => Scale::Log,
-            Unit::Db | Unit::Fraction | Unit::Amount | Unit::Semitones | Unit::Octaves => {
-                Scale::Linear
-            }
+            Unit::Db
+            | Unit::Fraction
+            | Unit::Amount
+            | Unit::Times
+            | Unit::Semitones
+            | Unit::Octaves => Scale::Linear,
         };
         Some(Description::number(
             label,
