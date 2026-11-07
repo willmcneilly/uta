@@ -1160,3 +1160,196 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
         }
     }
 }
+
+// EXPLORE: temporary, removed before the PR.
+fn explore_row(name: &str, arrangement: &'static Arrangement, reverb: ReverbSettings) {
+    let rate = 48_000.0;
+    let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
+    let mut r = Reverb::arranged(arrangement, reverb, rate);
+    let response = response_to(&mut r, [1.0, 1.0], rate, seconds);
+    let m = mid(&response);
+    let first = impulse::onset(&[&response[0], &response[1]]).unwrap();
+    let profile = impulse::echo_density(&m, rate as u32);
+    let t0 = first as f64 / rate;
+    let dense = impulse::dense_after(&profile, t0).map_or(f64::NAN, |d| d * 1000.0);
+    // The lowest density from 10 ms after the onset to 300 ms.
+    let lowest = profile
+        .iter()
+        .filter(|&&(t, _)| t >= t0 + 0.01 && t <= t0 + 0.3)
+        .map(|&(_, d)| d)
+        .fold(f64::MAX, f64::min);
+    // When it stays at 0.8 or more until 300 ms.
+    let stays = profile
+        .iter()
+        .filter(|&&(t, _)| t >= t0 && t <= t0 + 0.3)
+        .rev()
+        .find(|&&(_, d)| d < 0.8)
+        .map_or(0.0, |&(t, _)| (t - t0) * 1000.0);
+    let colouration = impulse::colouration_db(&m, rate as u32).unwrap_or(f64::NAN);
+    // Evenness: the 5 ms envelope in dB from 2 to 200 ms after the onset,
+    // against the straight line through its ends: the most it strays.
+    let w = (0.005 * rate) as usize;
+    let env: Vec<f64> = (0..40)
+        .map(|k| {
+            let a = first + (0.002 * rate) as usize + k * w;
+            let e: f64 = m[a..a + w].iter().map(|&x| f64::from(x).powi(2)).sum();
+            10.0 * (e / w as f64 + 1e-30).log10()
+        })
+        .collect();
+    let slope = (env[39] - env[0]) / 39.0;
+    let stray = env
+        .iter()
+        .enumerate()
+        .map(|(k, &d)| (d - (env[0] + slope * k as f64)).abs())
+        .fold(0.0, f64::max);
+    let decay = impulse::band_decay_times(&m, rate as u32)[4].unwrap_or(f64::NAN);
+    let split = first + (0.08 * rate) as usize;
+    let e = |s: &[f32]| s.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>();
+    let early_late = 10.0 * (e(&m[first..split]) / e(&m[split..])).log10();
+    println!(
+        "{name:<34} dense {dense:5.1} ms  stays≥0.8 after {stays:5.1} ms  lowest {lowest:.2}  stray {stray:4.1} dB  colour {colouration:.2} dB  mid {decay:.2} s  80ms/rest {early_late:+.1} dB"
+    );
+}
+
+#[test]
+#[ignore]
+fn explore_chamber() {
+    let cases: [Change; 15] = [
+        ("defaults", |_| {}),
+        ("still", |s| s.late_mod_depth = 0.0),
+        ("Depth 100%", |s| s.depth = 1.0),
+        ("Depth 50%", |s| s.depth = 0.5),
+        ("Early 10 ms", |s| s.early_size_seconds = 0.01),
+        ("Early 100 ms", |s| s.early_size_seconds = 0.1),
+        ("Early 100 ms Depth 100%", |s| {
+            s.early_size_seconds = 0.1;
+            s.depth = 1.0
+        }),
+        ("Late Size 0", |s| s.late_size = 0.0),
+        ("Late Size 100%", |s| s.late_size = 1.0),
+        ("Decay 0.5 s", |s| s.decay_seconds = 0.5),
+        ("Decay 0.5 s, Early 10 ms", |s| {
+            s.decay_seconds = 0.5;
+            s.early_size_seconds = 0.01
+        }),
+        ("Decay 5 s", |s| s.decay_seconds = 5.0),
+        ("Early 100 ms, Send 100%", |s| {
+            s.early_size_seconds = 0.1;
+            s.early_send = 1.0
+        }),
+        ("Early 100 ms, Send 100%, Depth 100%", |s| {
+            s.early_size_seconds = 0.1;
+            s.early_send = 1.0;
+            s.depth = 1.0
+        }),
+        ("Send 100%", |s| s.early_send = 1.0),
+    ];
+    for (label, arrangement) in [("Room", &ROOM), ("Room lines, taps 0.11-0.38", &T3)] {
+        println!("== {label}");
+        for (name, change) in cases {
+            let mut reverb = ReverbSettings::default();
+            change(&mut reverb);
+            explore_row(name, arrangement, reverb);
+        }
+    }
+}
+
+const V1: Arrangement = Arrangement {
+    lines: &[
+        0.0070, 0.0086, 0.0103, 0.0128, 0.0155, 0.0191, 0.0231, 0.0284, 0.0345, 0.0423, 0.0517,
+        0.0629, 0.0771, 0.0938, 0.1149, 0.1399,
+    ],
+    taps: &[],
+    ..CHAMBER
+};
+const V2: Arrangement = Arrangement {
+    lines: &[
+        0.0110, 0.0131, 0.0157, 0.0184, 0.0222, 0.0262, 0.0314, 0.0371, 0.0443, 0.0528, 0.0627,
+        0.0748, 0.0889, 0.1061, 0.1259, 0.1501,
+    ],
+    taps: &[],
+    ..CHAMBER
+};
+const V3: Arrangement = Arrangement {
+    lines: &[
+        0.0113, 0.0187, 0.0491, 0.0553, 0.0589, 0.0661, 0.0702, 0.0785, 0.0833, 0.0931, 0.0997,
+        0.1109, 0.1181, 0.1317, 0.1403, 0.1559,
+    ],
+    taps: &[],
+    ..CHAMBER
+};
+const V4: Arrangement = Arrangement {
+    lines: &[
+        0.0097, 0.0131, 0.0173, 0.0239, 0.0589, 0.0661, 0.0702, 0.0785, 0.0833, 0.0931, 0.0997,
+        0.1109, 0.1181, 0.1317, 0.1403, 0.1559,
+    ],
+    taps: &[],
+    ..CHAMBER
+};
+const T1: Arrangement = Arrangement {
+    taps: &[
+        0.31, 0.47, 0.23, 0.55, 0.38, 0.27, 0.51, 0.35, 0.43, 0.25, 0.58, 0.33, 0.49, 0.29, 0.41,
+        0.53,
+    ],
+    ..ROOM
+};
+const T2: Arrangement = Arrangement {
+    taps: &[
+        0.31, 0.47, 0.23, 0.55, 0.38, 0.27, 0.51, 0.35, 0.43, 0.25, 0.58, 0.33, 0.49, 0.29, 0.41,
+        0.53,
+    ],
+    ..V2
+};
+const T3: Arrangement = Arrangement {
+    taps: &[
+        0.17, 0.29, 0.11, 0.36, 0.22, 0.14, 0.33, 0.19, 0.26, 0.12, 0.38, 0.21, 0.31, 0.15, 0.24,
+        0.35,
+    ],
+    ..ROOM
+};
+const OWN: &[f64] = &[
+    0.0367, 0.0403, 0.0449, 0.0492, 0.0558, 0.0614, 0.0681, 0.0756, 0.0829, 0.0924, 0.1005, 0.1097,
+    0.1266, 0.1417, 0.1532, 0.1686,
+];
+const X1: Arrangement = Arrangement { lines: OWN, ..T3 };
+const X2: Arrangement = Arrangement {
+    lines: OWN,
+    taps: T3.taps,
+    ..CHAMBER
+};
+const X3: Arrangement = Arrangement {
+    lines: OWN,
+    taps: &[
+        0.09, 0.22, 0.06, 0.28, 0.15, 0.07, 0.25, 0.12, 0.19, 0.08, 0.30, 0.14, 0.24, 0.10, 0.17,
+        0.27,
+    ],
+    ..CHAMBER
+};
+const Y1: Arrangement = Arrangement {
+    lines: &[
+        0.0381, 0.0420, 0.0442, 0.0498, 0.0530, 0.0595, 0.0632, 0.0707, 0.0750, 0.0838, 0.0897,
+        0.0998, 0.1063, 0.1185, 0.1263, 0.1403,
+    ],
+    ..T3
+};
+const Y2: Arrangement = Arrangement {
+    lines: &[
+        0.0338, 0.0374, 0.0393, 0.0442, 0.0471, 0.0529, 0.0562, 0.0628, 0.0666, 0.0745, 0.0798,
+        0.0887, 0.0945, 0.1054, 0.1122, 0.1247,
+    ],
+    ..T3
+};
+const T5: Arrangement = Arrangement {
+    taps: &[
+        0.208, 0.754, 0.326, 0.55, 0.19, 0.496, 0.262, 0.051, 0.279, 0.43, 0.209, 0.252, 0.115,
+        0.049, 0.182, 0.241,
+    ],
+    ..ROOM
+};
+const T6: Arrangement = Arrangement {
+    taps: &[
+        0.583, 0.136, 0.367, 0.295, 0.447, 0.045, 0.28, 0.187, 0.056, 0.086, 0.214, 0.207, 0.082,
+        0.086, 0.093, 0.18,
+    ],
+    ..ROOM
+};
