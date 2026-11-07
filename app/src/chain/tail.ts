@@ -169,14 +169,18 @@ export function secondsAt(x: number, width: number): number {
 }
 
 /**
- * The Decay that makes the reverb end at `seconds`: dragging the end scales
+ * The Decay that makes the tail end at `seconds`: dragging the end scales
  * Decay, which scales every band's length together. Kept just past the
- * tail's build, and within `limits`, Rust's.
+ * tail's build, and within `limits`, Rust's. With no tail to scale (Depth
+ * at 0, only the early burst), Decay stays as it is: it changes nothing
+ * the drawing shows.
  */
 export function decayFor(s: TailSettings, seconds: number, limits: [number, number]): number {
   const peak = s.predelaySeconds + buildSeconds(s);
+  const tail = Math.max(endOf(s, LOW_HZ), endOf(s, MID_HZ), endOf(s, HIGH_HZ)) - peak;
+  if (tail <= 0) return s.decaySeconds;
   const target = Math.max(seconds, peak + 0.05);
-  const decay = (s.decaySeconds * (target - peak)) / Math.max(0.01, endSeconds(s) - peak);
+  const decay = (s.decaySeconds * (target - peak)) / tail;
   return Math.max(limits[0], Math.min(limits[1], decay));
 }
 

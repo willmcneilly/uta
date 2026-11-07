@@ -196,6 +196,32 @@ describe("ReverbPanel", () => {
     expect(end()).toBeGreaterThan(level * 2);
   });
 
+  it("leaves the Low cut out of the drawing where it reads Off, at its lowest", () => {
+    // Lows held long, so the Low cut's shelf would shorten the tail.
+    const effect = reverbView("r-1", { bass_mult: 3, low_cut_hz: 20 });
+    const panel = (view: EffectView) => (
+      <ReverbPanel
+        effect={view}
+        open={false}
+        onOpen={vi.fn()}
+        barSeconds={BAR}
+        songSeconds={null}
+        frames={new FrameLoop(new FrameStats())}
+        onSetting={vi.fn()}
+        onMix={vi.fn()}
+      />
+    );
+    const { rerender } = render(panel(effect));
+    const off = end();
+    // The same 20 Hz, from a setting that isn't off at its lowest: the cut is drawn.
+    const cutting: EffectView = {
+      ...effect,
+      settings: effect.settings.map((s) => (s.name === "low_cut_hz" ? { ...s, offAtLowest: undefined } : s)),
+    };
+    rerender(panel(cutting));
+    expect(end()).toBeLessThan(off);
+  });
+
   it("follows a knob as it's dragged, before Rust replies", () => {
     renderPanel();
     const before = end();
