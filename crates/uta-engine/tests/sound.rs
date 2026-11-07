@@ -460,6 +460,18 @@ fn the_demo_delay_matches_its_golden_wav() {
     check_golden("demo-delay", stereo(), &list.build().unwrap());
 }
 
+/// Two bars of soft keys and a snare through Room at its defaults on the
+/// master, at Mix 30%, as `uta render --commands examples/demo-reverb.json`
+/// writes it but shorter: once round the loop, so the second bar's tail
+/// rings over the loop point. In stereo, so the tail is wide. Regenerated
+/// the same way as the demo loop's, and approved the same way.
+#[test]
+fn the_demo_reverb_matches_its_golden_wav() {
+    let json = include_str!("../../../examples/demo-reverb.json");
+    let list: uta_core::CommandList = serde_json::from_str(json).unwrap();
+    check_golden("demo-reverb", stereo(), &list.build().unwrap());
+}
+
 /// The demo song, three tracks with their own sounds panned apart, as
 /// `uta render --commands examples/demo-song.json` writes it but shorter.
 /// Regenerated the same way as the demo loop's, and approved the same way.

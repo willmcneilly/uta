@@ -9,9 +9,18 @@ use uta_analysis::impulse::{self, OCTAVE_BANDS_HZ};
 /// The rates every measurement must agree at.
 const RATES: [f64; 4] = [44_100.0, 48_000.0, 96_000.0, 192_000.0];
 
-/// The default settings, changed by `change`.
+/// The default settings with the tail still: modulation is off unless a
+/// test is about it, though Room's defaults drift.
+fn still() -> ReverbSettings {
+    ReverbSettings {
+        late_mod_depth: 0.0,
+        ..ReverbSettings::default()
+    }
+}
+
+/// The default settings with the tail still, changed by `change`.
 fn settings(change: impl FnOnce(&mut ReverbSettings)) -> ReverbSettings {
-    let mut settings = ReverbSettings::default();
+    let mut settings = still();
     change(&mut settings);
     settings
 }
@@ -206,7 +215,7 @@ fn audible(samples: &[f32], rate: f64) -> Vec<f32> {
 /// times the empty samples between them, and read as sparse.
 #[test]
 fn decay_per_band_and_echo_density_match_at_every_rate() {
-    let reverb = ReverbSettings::default();
+    let reverb = still();
     let measure = |rate: f64| {
         let [left, _] = impulse_response(reverb, rate, 3.0);
         let profile = impulse::echo_density(&audible(&left, rate), rate as u32);
@@ -389,7 +398,7 @@ fn a_dark_arrangement_is_darker() {
         ..ROOM
     };
     let rate = 48_000.0;
-    let reverb = ReverbSettings::default();
+    let reverb = still();
     let bright = response_to(&mut Reverb::new(reverb, rate), [1.0, 1.0], rate, 1.0);
     let dark = response_to(
         &mut Reverb::arranged(&DARK, reverb, rate),
@@ -578,7 +587,7 @@ fn band_changes(reference: ReverbSettings, changed: ReverbSettings) -> Vec<f64> 
 /// further, and 250 Hz's untouched.
 #[test]
 fn high_cut_falls_12_db_an_octave() {
-    let open = ReverbSettings::default();
+    let open = still();
     let changes = band_changes(open, settings(|s| s.high_cut_hz = 1_000.0));
     let at = |hz| changes[OCTAVE_BANDS_HZ.iter().position(|&b| b == hz).unwrap()];
     assert!(at(250.0).abs() < 0.5, "250 Hz changes {:.1} dB", at(250.0));
@@ -597,7 +606,7 @@ fn high_cut_falls_12_db_an_octave() {
 /// shelf passes everything exactly as it is.
 #[test]
 fn low_cut_is_a_low_shelf_off_at_its_lowest() {
-    let open = ReverbSettings::default();
+    let open = still();
     let changes = band_changes(open, settings(|s| s.low_cut_hz = 500.0));
     let at = |hz| changes[OCTAVE_BANDS_HZ.iter().position(|&b| b == hz).unwrap()];
     for hz in [62.5, 125.0] {
@@ -801,10 +810,7 @@ fn with_modulation_two_renders_are_identical() {
     let again = impulse_response(reverb, 48_000.0, 2.0);
     assert_eq!(first, again);
     // And the drift changes the sound: it's on.
-    assert_ne!(
-        first,
-        impulse_response(ReverbSettings::default(), 48_000.0, 2.0)
-    );
+    assert_ne!(first, impulse_response(still(), 48_000.0, 2.0));
 }
 
 /// Play starts the drift again from the same point: after a restart while
@@ -917,7 +923,7 @@ fn turning_every_setting_while_the_tail_rings_does_not_click() {
         .flat_map(|turn| [(*turn, false), (*turn, true)])
     {
         // Mod rates are turned with the drift on from the start.
-        let mut start = ReverbSettings::default();
+        let mut start = still();
         turn(&mut start, 0.0);
         let mut reverb = Reverb::new(start, rate);
         let mut n = 0;
@@ -1057,5 +1063,80 @@ fn depth_and_the_tone_settings_glide_in() {
             "{name}: its difference in the first tenth of the glide is {:.2} of its landed one",
             early / landed
         );
+    }
+}
+
+/// The mid of an impulse response: what colouration and echo density are
+/// measured on, as `uta analyse` does.
+fn mid([left, right]: &[Vec<f32>; 2]) -> Vec<f32> {
+    left.iter().zip(right).map(|(l, r)| 0.5 * (l + r)).collect()
+}
+
+/// Room isn't metallic: its tail's colouration stays under the limit set
+/// by ear ([`impulse::COLOURATION_LIMIT_DB`]) at its defaults, the drift
+/// included, and with its size, depth, crosses and tone moved, at Decays
+/// from 2 s, as far as the limit holds. The most it reads is 0.81 dB, with
+/// Late Cross at 0. A Late Size under 50% (0.97 dB at 0) and a still tail
+/// (1.02 dB) read over it, and aren't yet judged by ear.
+#[test]
+fn room_stays_under_colouration_s_limit() {
+    let rate = 48_000.0;
+    let changes: [(&str, fn(&mut ReverbSettings)); 10] = [
+        ("the defaults", |_| {}),
+        ("Decay 5 s", |s| s.decay_seconds = 5.0),
+        ("Decay 10 s", |s| s.decay_seconds = 10.0),
+        ("Late Size 75%", |s| s.late_size = 0.75),
+        ("Late Size 100%", |s| s.late_size = 1.0),
+        ("Depth 50%", |s| s.depth = 0.5),
+        ("Depth 100%", |s| s.depth = 1.0),
+        ("Late Cross 0", |s| s.late_cross = 0.0),
+        ("High Mult 1", |s| s.high_mult = 1.0),
+        ("Bass Mult 2", |s| s.bass_mult = 2.0),
+    ];
+    for (name, change) in changes {
+        let mut reverb = ReverbSettings::default();
+        change(&mut reverb);
+        let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
+        let response = impulse_response(reverb, rate, seconds);
+        let colouration = impulse::colouration_db(&mid(&response), rate as u32).unwrap();
+        assert!(
+            colouration < impulse::COLOURATION_LIMIT_DB,
+            "{name}: colouration {colouration:.2} dB, limit {} dB",
+            impulse::COLOURATION_LIMIT_DB
+        );
+    }
+}
+
+/// Room is dense, not grainy: its echo density reaches near 1 within its
+/// own limit of the first sound, at every Late Size, with Depth from 50%
+/// to only the tail, and an Early Size from its default 30 ms to 100 ms. A
+/// shorter burst than the tail's first lap leaves a sparse stretch between
+/// them (70 ms at Early Size 10 ms), which a smaller Early Size asks for.
+#[test]
+fn room_s_echo_density_reaches_near_1_within_its_limit() {
+    let rate = 48_000.0;
+    for late_size in [0.0, 0.5, 1.0] {
+        for depth in [0.5, 0.65, 1.0] {
+            for early_size_seconds in [0.03, 0.1] {
+                let reverb = ReverbSettings {
+                    late_size,
+                    depth,
+                    early_size_seconds,
+                    ..ReverbSettings::default()
+                };
+                let response = impulse_response(reverb, rate, 1.0);
+                let first = impulse::onset(&[&response[0], &response[1]]).unwrap();
+                let profile = impulse::echo_density(&mid(&response), rate as u32);
+                let dense =
+                    impulse::dense_after(&profile, first as f64 / rate).expect("it reaches near 1");
+                assert!(
+                    dense <= ROOM.dense_within,
+                    "Late Size {late_size}, Depth {depth}, Early Size {early_size_seconds} s: \
+                     near 1 after {:.1} ms, limit {:.0} ms",
+                    dense * 1000.0,
+                    ROOM.dense_within * 1000.0
+                );
+            }
+        }
     }
 }

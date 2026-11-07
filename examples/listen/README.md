@@ -345,7 +345,7 @@ What to listen for, against Ableton's Echo on the same sound:
 
 ## Reverb
 
-The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impulse-response` rather than for the ear. Each list is one synth track playing a click (white noise for about 2 ms, the shortest a synth note makes) through a Reverb at Mix 100%, so only the reverb is heard, with the track and the master at 0 dB. Settings a list doesn't name are at the Reverb's defaults: Room, Predelay 10 ms, Decay 2 s, Depth 50%, Early Size 30 ms, Diffusion 80%, Early Send 90%, Late Size 50%, Bass Mult 1 and High Mult 0.5 (at 500 Hz and 4 kHz), both cuts open, both crosses full, and no drift.
+The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impulse-response` rather than for the ear. Each list is one synth track playing a click (white noise for about 2 ms, the shortest a synth note makes) through a Reverb at Mix 100%, so only the reverb is heard, with the track and the master at 0 dB. Settings a list doesn't name are at the Reverb's defaults: Room, Predelay 10 ms, Decay 2 s, Depth 65%, Early Size 30 ms, Diffusion 80%, Early Send 90%, Late Size 50%, Bass Mult 1 and High Mult 0.5 (at 500 Hz and 4 kHz), both cuts open, both crosses full, the tail drifting at 50% and 0.5 Hz, and the burst still (UTA-101 tuned Depth and the drift by ear).
 
 | Render | What it plays |
 |---|---|
@@ -363,6 +363,7 @@ The Reverb's impulse responses (RFC-010), in `reverb/`, for `uta analyse --impul
 | `12-crosses-0` | Both crosses at 0: each side its own reverb. With the same click on both sides, it's as wide as the defaults; a sound on one side would stay there. |
 | `13-drift` | Both drifts full on, at 0.5 Hz: the lines' lengths wander slowly, smearing the resonances. |
 | `14-drift-fast` | Both drifts full on, at 5 Hz: fast enough to waver like a chorus. |
+| `15-still` | The tail's drift off: Room's tail before UTA-101, with its slightly higher colouration. |
 
 Render and measure them:
 
@@ -372,3 +373,9 @@ cargo run --release -p uta-cli -- analyse target/listen/reverb/01-defaults.wav -
 ```
 
 The click isn't a single sample, so its own spectrum shows in the colouration, which reads about 2.5 dB here against under 1 dB for a one-sample click. Compare colouration between these renders, not with the Reverb's tests.
+
+A short phrase through Room is `examples/demo-reverb.json`, which is also the Reverb's golden WAV: two bars of the canvas's soft keys and a snare, with Room at its defaults on the master at Mix 30%.
+
+```bash
+cargo run --release -p uta-cli -- render target/listen/demo-reverb.wav --commands examples/demo-reverb.json
+```
