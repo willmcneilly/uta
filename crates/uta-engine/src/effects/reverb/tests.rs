@@ -25,6 +25,11 @@ fn settings(change: impl FnOnce(&mut ReverbSettings)) -> ReverbSettings {
     settings
 }
 
+/// `settings` in `mode`.
+fn in_mode(mode: ReverbMode, settings: ReverbSettings) -> ReverbSettings {
+    ReverbSettings { mode, ..settings }
+}
+
 /// `seconds` of the Reverb's answer to a full-scale click on `click`'s
 /// sides (left, right) at sample 0, in blocks of 128: its impulse response.
 fn response_to(reverb: &mut Reverb, click: [f32; 2], rate: f64, seconds: f64) -> [Vec<f32>; 2] {
@@ -65,36 +70,46 @@ fn mid_decay(samples: &[f32], rate: f64) -> f64 {
 /// its share each lap, so the mid band falls 60 dB in Decay, from a small
 /// room to a cathedral. It's measured on the tail alone, at Depth 100%: at
 /// a short Decay the early burst, a tenth as long, bends the fit (at 0.3 s
-/// and Depth 50%, one side read 15% long).
+/// and Depth 50%, one side read 15% long). In every mode: Chamber's taps
+/// hear each line partway round, with that part of a lap's loss, so they
+/// fade at the same rate.
 #[test]
 fn the_mid_band_decays_in_decay_within_10_percent() {
-    for decay in [0.3, 2.0, 10.0] {
-        let response = impulse_response(
-            settings(|s| {
-                s.decay_seconds = decay as f32;
-                s.depth = 1.0;
-            }),
-            48_000.0,
-            1.2 * decay + 0.5,
-        );
-        for side in &response {
-            let measured = mid_decay(side, 48_000.0);
-            assert!(
-                (measured / decay - 1.0).abs() < 0.1,
-                "Decay {decay} s: the mid band decays in {measured:.3} s"
+    for mode in ReverbMode::ALL {
+        for decay in [0.3, 2.0, 10.0] {
+            let response = impulse_response(
+                in_mode(
+                    mode,
+                    settings(|s| {
+                        s.decay_seconds = decay as f32;
+                        s.depth = 1.0;
+                    }),
+                ),
+                48_000.0,
+                1.2 * decay + 0.5,
             );
+            for side in &response {
+                let measured = mid_decay(side, 48_000.0);
+                assert!(
+                    (measured / decay - 1.0).abs() < 0.1,
+                    "{mode:?}, Decay {decay} s: the mid band decays in {measured:.3} s"
+                );
+            }
         }
     }
 }
 
-/// The first sound arrives exactly Predelay after the click, at every rate,
-/// and nothing comes before it.
+/// The first sound arrives exactly Predelay after the click, at every rate
+/// and in every mode, and nothing comes before it.
 #[test]
 fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
-    for rate in RATES {
+    for (mode, rate) in ReverbMode::ALL
+        .into_iter()
+        .flat_map(|mode| RATES.map(|rate| (mode, rate)))
+    {
         for predelay in [0.0, 0.0123, 0.25, 0.5] {
             let response = impulse_response(
-                settings(|s| s.predelay_seconds = predelay),
+                in_mode(mode, settings(|s| s.predelay_seconds = predelay)),
                 rate,
                 predelay as f64 + 0.1,
             );
@@ -103,11 +118,11 @@ fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
             assert_eq!(
                 impulse::onset(&[left, right]),
                 Some(at),
-                "Predelay {predelay} s at {rate} Hz"
+                "{mode:?}, Predelay {predelay} s at {rate} Hz"
             );
             assert!(
                 left[..at].iter().chain(&right[..at]).all(|&s| s == 0.0),
-                "nothing before Predelay {predelay} s at {rate} Hz"
+                "{mode:?}: nothing before Predelay {predelay} s at {rate} Hz"
             );
         }
     }
@@ -215,7 +230,13 @@ fn audible(samples: &[f32], rate: f64) -> Vec<f32> {
 /// times the empty samples between them, and read as sparse.
 #[test]
 fn decay_per_band_and_echo_density_match_at_every_rate() {
-    let reverb = still();
+    for mode in ReverbMode::ALL {
+        decay_and_density_match_at_every_rate(in_mode(mode, still()));
+    }
+}
+
+fn decay_and_density_match_at_every_rate(reverb: ReverbSettings) {
+    let mode = reverb.mode;
     let measure = |rate: f64| {
         let [left, _] = impulse_response(reverb, rate, 3.0);
         let profile = impulse::echo_density(&audible(&left, rate), rate as u32);
@@ -234,7 +255,7 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
         for (&(hz, decay), &(_, other)) in decays.iter().zip(&other_decays) {
             assert!(
                 (other / decay - 1.0).abs() < 0.05,
-                "{hz} Hz decays in {other:.3} s at {rate} Hz, {decay:.3} s at 48 kHz"
+                "{mode:?}: {hz} Hz decays in {other:.3} s at {rate} Hz, {decay:.3} s at 48 kHz"
             );
         }
         // A 20 ms window of noise reads 1 give or take about 0.06, so two
@@ -248,7 +269,7 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
             / density.len() as f64;
         assert!(
             difference < 0.08,
-            "echo density at {rate} Hz is {difference:.3} from 48 kHz's on average"
+            "{mode:?}: echo density at {rate} Hz is {difference:.3} from 48 kHz's on average"
         );
     }
 }
@@ -259,9 +280,15 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
 /// tone, the crosses and the drift at their defaults, and again at their
 /// extremes: both Mults at their longest with the crossovers crossed, the
 /// crosses at either end, the drift full on and fast, and the cuts at
-/// their highest.
+/// their highest. In every mode.
 #[test]
 fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale() {
+    for mode in ReverbMode::ALL {
+        never_grows_or_passes_full_scale(mode);
+    }
+}
+
+fn never_grows_or_passes_full_scale(mode: ReverbMode) {
     use ReverbSettings as S;
     let rate = 48_000.0;
     let sizes = [
@@ -277,6 +304,7 @@ fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale()
     {
         let extremes = n >= sizes.len();
         let reverb = settings(|s| {
+            s.mode = mode;
             s.decay_seconds = S::MAX_DECAY_SECONDS;
             s.depth = depth;
             s.diffusion = diffusion;
@@ -323,32 +351,41 @@ fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale()
     }
 }
 
-/// The lines are set aside for the longest sizes: at the largest Late Size,
-/// Early Size and Predelay, at every rate, every delay is the length its
-/// seconds give, none held short by its line.
+/// The lines are set aside for the longest sizes of every mode: at the
+/// largest Late Size, Early Size and Predelay, at every rate and in every
+/// mode, every delay is the length its seconds give, none held short by
+/// its line, whichever mode the Reverb was made in.
 #[test]
 fn every_line_holds_the_longest_sizes_at_every_rate() {
-    let largest = settings(|s| {
-        s.late_size = 1.0;
-        s.early_size_seconds = ReverbSettings::MAX_EARLY_SIZE_SECONDS;
-        s.predelay_seconds = ReverbSettings::MAX_PREDELAY_SECONDS;
-    });
-    for rate in RATES {
-        let reverb = Reverb::new(largest, rate);
-        let samples = |seconds: f64| (seconds * rate).round() as usize;
+    for (made, mode, rate) in ReverbMode::ALL.into_iter().flat_map(|made| {
+        ReverbMode::ALL
+            .into_iter()
+            .flat_map(move |mode| RATES.map(|rate| (made, mode, rate)))
+    }) {
+        let largest = settings(|s| {
+            s.mode = mode;
+            s.late_size = 1.0;
+            s.early_size_seconds = ReverbSettings::MAX_EARLY_SIZE_SECONDS;
+            s.predelay_seconds = ReverbSettings::MAX_PREDELAY_SECONDS;
+        });
+        let mut reverb = Reverb::new(in_mode(made, largest), rate);
+        reverb.set_settings(largest);
+        let arrangement = Arrangement::of(mode);
+        let rate = (rate, made, mode);
+        let samples = |seconds: f64| (seconds * rate.0).round() as usize;
         let length = |head: &Glide| head.value() as usize;
-        assert_eq!(length(&reverb.predelay_head), samples(0.5), "{rate} Hz");
-        for (step, heads) in ROOM.steps.iter().zip(reverb.lane_heads.iter()) {
+        assert_eq!(length(&reverb.predelay_head), samples(0.5), "{rate:?}");
+        for (step, heads) in arrangement.steps.iter().zip(reverb.lane_heads.iter()) {
             for (lane, head) in heads.iter().enumerate() {
                 assert_eq!(
                     length(head),
                     samples(lane_seconds(step, lane, 1.0)),
-                    "{rate} Hz"
+                    "{rate:?}"
                 );
             }
         }
-        for (&seconds, head) in ROOM.lines.iter().zip(reverb.line_heads.iter()) {
-            assert_eq!(length(head), samples(seconds * 2.0), "{rate} Hz");
+        for (&seconds, head) in arrangement.lines.iter().zip(reverb.line_heads.iter()) {
+            assert_eq!(length(head), samples(seconds * 2.0), "{rate:?}");
         }
     }
 }
@@ -1089,32 +1126,52 @@ const STILL_COLOURATION_LIMIT_DB: f64 = 1.2;
 /// drifting) reads over the limit, and isn't yet judged by ear.
 #[test]
 fn room_stays_under_colouration_s_limit() {
+    stays_under_colouration_s_limit(ReverbMode::Room);
+}
+
+/// Chamber isn't metallic either, at the same settings as Room, against
+/// the same limits: its taps hear the same lines, a fraction of a lap
+/// sooner.
+#[test]
+fn chamber_stays_under_colouration_s_limit() {
+    stays_under_colouration_s_limit(ReverbMode::Chamber);
+}
+
+/// The settings each mode's colouration is checked at.
+const COLOURATION_CHANGES: [Change; 10] = [
+    ("the defaults", |_| {}),
+    ("Decay 5 s", |s| s.decay_seconds = 5.0),
+    ("Decay 10 s", |s| s.decay_seconds = 10.0),
+    ("Late Size 75%", |s| s.late_size = 0.75),
+    ("Late Size 100%", |s| s.late_size = 1.0),
+    ("Depth 50%", |s| s.depth = 0.5),
+    ("Depth 100%", |s| s.depth = 1.0),
+    ("Late Cross 0", |s| s.late_cross = 0.0),
+    ("High Mult 1", |s| s.high_mult = 1.0),
+    ("Bass Mult 2", |s| s.bass_mult = 2.0),
+];
+
+/// The colouration of `reverb`'s impulse response, on its mid, in dB.
+fn colouration_of(reverb: ReverbSettings) -> f64 {
     let rate = 48_000.0;
-    let changes: [Change; 10] = [
-        ("the defaults", |_| {}),
-        ("Decay 5 s", |s| s.decay_seconds = 5.0),
-        ("Decay 10 s", |s| s.decay_seconds = 10.0),
-        ("Late Size 75%", |s| s.late_size = 0.75),
-        ("Late Size 100%", |s| s.late_size = 1.0),
-        ("Depth 50%", |s| s.depth = 0.5),
-        ("Depth 100%", |s| s.depth = 1.0),
-        ("Late Cross 0", |s| s.late_cross = 0.0),
-        ("High Mult 1", |s| s.high_mult = 1.0),
-        ("Bass Mult 2", |s| s.bass_mult = 2.0),
-    ];
-    for (name, change) in changes {
+    let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
+    let response = impulse_response(reverb, rate, seconds);
+    impulse::colouration_db(&mid(&response), rate as u32).unwrap()
+}
+
+fn stays_under_colouration_s_limit(mode: ReverbMode) {
+    for (name, change) in COLOURATION_CHANGES {
         for (start, limit) in [
             (ReverbSettings::default(), impulse::COLOURATION_LIMIT_DB),
             (still(), STILL_COLOURATION_LIMIT_DB),
         ] {
-            let mut reverb = start;
+            let mut reverb = in_mode(mode, start);
             change(&mut reverb);
-            let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
-            let response = impulse_response(reverb, rate, seconds);
-            let colouration = impulse::colouration_db(&mid(&response), rate as u32).unwrap();
+            let colouration = colouration_of(reverb);
             assert!(
                 colouration < limit,
-                "{name}, Late Mod Depth {}: colouration {colouration:.2} dB, limit {limit} dB",
+                "{mode:?}, {name}, Late Mod Depth {}: colouration {colouration:.2} dB, \
+                 limit {limit} dB",
                 reverb.late_mod_depth
             );
         }
@@ -1160,196 +1217,3 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
         }
     }
 }
-
-// EXPLORE: temporary, removed before the PR.
-fn explore_row(name: &str, arrangement: &'static Arrangement, reverb: ReverbSettings) {
-    let rate = 48_000.0;
-    let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
-    let mut r = Reverb::arranged(arrangement, reverb, rate);
-    let response = response_to(&mut r, [1.0, 1.0], rate, seconds);
-    let m = mid(&response);
-    let first = impulse::onset(&[&response[0], &response[1]]).unwrap();
-    let profile = impulse::echo_density(&m, rate as u32);
-    let t0 = first as f64 / rate;
-    let dense = impulse::dense_after(&profile, t0).map_or(f64::NAN, |d| d * 1000.0);
-    // The lowest density from 10 ms after the onset to 300 ms.
-    let lowest = profile
-        .iter()
-        .filter(|&&(t, _)| t >= t0 + 0.01 && t <= t0 + 0.3)
-        .map(|&(_, d)| d)
-        .fold(f64::MAX, f64::min);
-    // When it stays at 0.8 or more until 300 ms.
-    let stays = profile
-        .iter()
-        .filter(|&&(t, _)| t >= t0 && t <= t0 + 0.3)
-        .rev()
-        .find(|&&(_, d)| d < 0.8)
-        .map_or(0.0, |&(t, _)| (t - t0) * 1000.0);
-    let colouration = impulse::colouration_db(&m, rate as u32).unwrap_or(f64::NAN);
-    // Evenness: the 5 ms envelope in dB from 2 to 200 ms after the onset,
-    // against the straight line through its ends: the most it strays.
-    let w = (0.005 * rate) as usize;
-    let env: Vec<f64> = (0..40)
-        .map(|k| {
-            let a = first + (0.002 * rate) as usize + k * w;
-            let e: f64 = m[a..a + w].iter().map(|&x| f64::from(x).powi(2)).sum();
-            10.0 * (e / w as f64 + 1e-30).log10()
-        })
-        .collect();
-    let slope = (env[39] - env[0]) / 39.0;
-    let stray = env
-        .iter()
-        .enumerate()
-        .map(|(k, &d)| (d - (env[0] + slope * k as f64)).abs())
-        .fold(0.0, f64::max);
-    let decay = impulse::band_decay_times(&m, rate as u32)[4].unwrap_or(f64::NAN);
-    let split = first + (0.08 * rate) as usize;
-    let e = |s: &[f32]| s.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>();
-    let early_late = 10.0 * (e(&m[first..split]) / e(&m[split..])).log10();
-    println!(
-        "{name:<34} dense {dense:5.1} ms  stays≥0.8 after {stays:5.1} ms  lowest {lowest:.2}  stray {stray:4.1} dB  colour {colouration:.2} dB  mid {decay:.2} s  80ms/rest {early_late:+.1} dB"
-    );
-}
-
-#[test]
-#[ignore]
-fn explore_chamber() {
-    let cases: [Change; 15] = [
-        ("defaults", |_| {}),
-        ("still", |s| s.late_mod_depth = 0.0),
-        ("Depth 100%", |s| s.depth = 1.0),
-        ("Depth 50%", |s| s.depth = 0.5),
-        ("Early 10 ms", |s| s.early_size_seconds = 0.01),
-        ("Early 100 ms", |s| s.early_size_seconds = 0.1),
-        ("Early 100 ms Depth 100%", |s| {
-            s.early_size_seconds = 0.1;
-            s.depth = 1.0
-        }),
-        ("Late Size 0", |s| s.late_size = 0.0),
-        ("Late Size 100%", |s| s.late_size = 1.0),
-        ("Decay 0.5 s", |s| s.decay_seconds = 0.5),
-        ("Decay 0.5 s, Early 10 ms", |s| {
-            s.decay_seconds = 0.5;
-            s.early_size_seconds = 0.01
-        }),
-        ("Decay 5 s", |s| s.decay_seconds = 5.0),
-        ("Early 100 ms, Send 100%", |s| {
-            s.early_size_seconds = 0.1;
-            s.early_send = 1.0
-        }),
-        ("Early 100 ms, Send 100%, Depth 100%", |s| {
-            s.early_size_seconds = 0.1;
-            s.early_send = 1.0;
-            s.depth = 1.0
-        }),
-        ("Send 100%", |s| s.early_send = 1.0),
-    ];
-    for (label, arrangement) in [("Room", &ROOM), ("Room lines, taps 0.11-0.38", &T3)] {
-        println!("== {label}");
-        for (name, change) in cases {
-            let mut reverb = ReverbSettings::default();
-            change(&mut reverb);
-            explore_row(name, arrangement, reverb);
-        }
-    }
-}
-
-const V1: Arrangement = Arrangement {
-    lines: &[
-        0.0070, 0.0086, 0.0103, 0.0128, 0.0155, 0.0191, 0.0231, 0.0284, 0.0345, 0.0423, 0.0517,
-        0.0629, 0.0771, 0.0938, 0.1149, 0.1399,
-    ],
-    taps: &[],
-    ..CHAMBER
-};
-const V2: Arrangement = Arrangement {
-    lines: &[
-        0.0110, 0.0131, 0.0157, 0.0184, 0.0222, 0.0262, 0.0314, 0.0371, 0.0443, 0.0528, 0.0627,
-        0.0748, 0.0889, 0.1061, 0.1259, 0.1501,
-    ],
-    taps: &[],
-    ..CHAMBER
-};
-const V3: Arrangement = Arrangement {
-    lines: &[
-        0.0113, 0.0187, 0.0491, 0.0553, 0.0589, 0.0661, 0.0702, 0.0785, 0.0833, 0.0931, 0.0997,
-        0.1109, 0.1181, 0.1317, 0.1403, 0.1559,
-    ],
-    taps: &[],
-    ..CHAMBER
-};
-const V4: Arrangement = Arrangement {
-    lines: &[
-        0.0097, 0.0131, 0.0173, 0.0239, 0.0589, 0.0661, 0.0702, 0.0785, 0.0833, 0.0931, 0.0997,
-        0.1109, 0.1181, 0.1317, 0.1403, 0.1559,
-    ],
-    taps: &[],
-    ..CHAMBER
-};
-const T1: Arrangement = Arrangement {
-    taps: &[
-        0.31, 0.47, 0.23, 0.55, 0.38, 0.27, 0.51, 0.35, 0.43, 0.25, 0.58, 0.33, 0.49, 0.29, 0.41,
-        0.53,
-    ],
-    ..ROOM
-};
-const T2: Arrangement = Arrangement {
-    taps: &[
-        0.31, 0.47, 0.23, 0.55, 0.38, 0.27, 0.51, 0.35, 0.43, 0.25, 0.58, 0.33, 0.49, 0.29, 0.41,
-        0.53,
-    ],
-    ..V2
-};
-const T3: Arrangement = Arrangement {
-    taps: &[
-        0.17, 0.29, 0.11, 0.36, 0.22, 0.14, 0.33, 0.19, 0.26, 0.12, 0.38, 0.21, 0.31, 0.15, 0.24,
-        0.35,
-    ],
-    ..ROOM
-};
-const OWN: &[f64] = &[
-    0.0367, 0.0403, 0.0449, 0.0492, 0.0558, 0.0614, 0.0681, 0.0756, 0.0829, 0.0924, 0.1005, 0.1097,
-    0.1266, 0.1417, 0.1532, 0.1686,
-];
-const X1: Arrangement = Arrangement { lines: OWN, ..T3 };
-const X2: Arrangement = Arrangement {
-    lines: OWN,
-    taps: T3.taps,
-    ..CHAMBER
-};
-const X3: Arrangement = Arrangement {
-    lines: OWN,
-    taps: &[
-        0.09, 0.22, 0.06, 0.28, 0.15, 0.07, 0.25, 0.12, 0.19, 0.08, 0.30, 0.14, 0.24, 0.10, 0.17,
-        0.27,
-    ],
-    ..CHAMBER
-};
-const Y1: Arrangement = Arrangement {
-    lines: &[
-        0.0381, 0.0420, 0.0442, 0.0498, 0.0530, 0.0595, 0.0632, 0.0707, 0.0750, 0.0838, 0.0897,
-        0.0998, 0.1063, 0.1185, 0.1263, 0.1403,
-    ],
-    ..T3
-};
-const Y2: Arrangement = Arrangement {
-    lines: &[
-        0.0338, 0.0374, 0.0393, 0.0442, 0.0471, 0.0529, 0.0562, 0.0628, 0.0666, 0.0745, 0.0798,
-        0.0887, 0.0945, 0.1054, 0.1122, 0.1247,
-    ],
-    ..T3
-};
-const T5: Arrangement = Arrangement {
-    taps: &[
-        0.208, 0.754, 0.326, 0.55, 0.19, 0.496, 0.262, 0.051, 0.279, 0.43, 0.209, 0.252, 0.115,
-        0.049, 0.182, 0.241,
-    ],
-    ..ROOM
-};
-const T6: Arrangement = Arrangement {
-    taps: &[
-        0.583, 0.136, 0.367, 0.295, 0.447, 0.045, 0.28, 0.187, 0.056, 0.086, 0.214, 0.207, 0.082,
-        0.086, 0.093, 0.18,
-    ],
-    ..ROOM
-};
