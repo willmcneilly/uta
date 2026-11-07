@@ -115,6 +115,7 @@ How it's enforced (from ticket UTA-2 on):
 - The process path is marked `#[nonblocking]` (`rtsan-standalone`), and a CI job runs the tests under RealtimeSanitizer.
 - Tests drive the real process path under `assert_no_alloc` (nih-plug's fork), including snapshot swaps and simulated device errors.
 - Both only catch what the tests exercise, so tests must drive the real audio path, not a copy.
+- Both check optimised code, because `cargo test` builds the audio path at opt-level 3 (see Code conventions). An allocation the optimiser deletes, because nothing uses it, isn't caught; it's deleted in release too, so it never runs in the app. Allocations and frees that do run are caught.
 
 ## Proving audio code works
 
