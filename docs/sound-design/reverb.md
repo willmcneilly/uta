@@ -14,7 +14,7 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 ## The limits
 
 - **Colouration under 0.85 dB** (`impulse::COLOURATION_LIMIT_DB`), on a one-sample click, on the mid, with a Decay of 2 s or more. Set from listening: Room at 0.75 dB was picked as smooth, Room at 0.95 dB (with less Depth) was heard as the more metallic of the two, and a network made to ring, at 2.08 dB, was heard as ringing. A still tail has its own, looser guard, 1.2 dB (`STILL_COLOURATION_LIMIT_DB`), since the drift smears a ring more than it does Room: the ringing network reads 0.89 dB drifting.
-- **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` and `CHAMBER_DENSE_WITHIN_SECONDS`): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%. Chamber's is 20 ms at Early Size 30 ms, and its echo density never falls below 0.5 in the first 300 ms (`CHAMBER_STAYS_DENSE`), where Room's falls to nothing.
+- **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` and `CHAMBER_DENSE_WITHIN_SECONDS`): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%. Chamber's is 20 ms at Early Size 30 ms (it reaches near 1 in 4 to 15 ms), and its echo density never falls below 0.5 in the first 300 ms (`CHAMBER_STAYS_DENSE`), where Room's falls to nothing.
 
 ## Which settings give which qualities
 
@@ -40,16 +40,21 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 
 ## Chamber
 
-Chamber is Room's network heard another way. Its lines and diffuser are Room's; its tail is heard from a tap partway along each line (11% to 38% of its length) instead of from the line's end. What goes round the loop is the same, so the decay, the Mults and the colouration's causes are Room's; only when the tail is first heard changes.
+Chamber is Room's network heard another way. Its lines are Room's; its tail is heard from a tap partway along each line (11% to 38% of its length) instead of from the line's end. What goes round the loop is the same, so the decay, the Mults and the colouration's causes are Room's; only when the tail is first heard changes. Its diffuser's steps are spread further apart than Room's, so a long burst holds level.
 
 | Quality | What gives it | Notes |
 |---|---|---|
 | **Dense from the first moment** | The taps | Room's tail is first heard a lap after the sound goes in (42 ms at Late Size 50%), after a 30 ms burst has ended: a sparse stretch whose echo density falls to nothing at 40 to 53 ms. Chamber's first tap is heard 5 ms after the sound goes in, so the tail starts inside the burst, and its echo density stays at 0.88 or more at the defaults. It falls 20 dB from its peak in 195 ms against Room's 15 ms: one even wash, not a slap then a tail. |
 | **Smooth** | The taps alone, and Room's lines | Hearing each line at its tap *and* its end makes a comb for each line: 0.91 dB with Late Cross at 0, over the limit. At its tap alone Chamber reads 0.70 dB at the defaults, under Room's 0.75. Shorter lines close the gap too, but colouration follows the network's total length: lines from 7 to 140 ms read 1.22 dB. |
-| **A gated burst** | Depth 0%, Early Size 100 ms or more | With no tail heard, the burst stops dead: at Early Size 250 ms it falls 40 dB by 0.36 s, then nothing. It takes 29 ms to become dense, as a long burst swells in. |
+| **A gated burst** | Depth 0%, Early Size 100 ms or more, and the diffuser's steps | With no tail heard, the burst stops dead: at Early Size 250 ms it falls 40 dB by 0.36 s, then nothing. On Room's diffuser, whose steps' shares are 8:4:2:1, a long burst swells in: it starts 11 dB under its peak and takes 75 ms to reach it, because the steps' delays overlap and their sums bunch in the middle. Chamber's steps are each a third of the one before (27:9:3:1), adding up more evenly, like a number's digits: it starts 6 dB under and holds within 2 dB until it stops. A quarter (64:16:4:1) started flatter still, but read 0.83 dB, near the limit. |
 
 ### What the measurements can't see
 
 - **Whether "dense at once" sounds like a plate.** A plate is also dense at once. Whether Chamber sounds like a room or a sheet of steel is for the ear.
-- **A long burst's onset.** At Early Size 100 ms Chamber reaches near 1 after 29 to 31 ms, no sooner than Room: the diffuser's echoes bunch in the middle of a long burst, and the taps don't change the diffuser.
+- **How abrupt a gated burst should be.** The numbers say Chamber's burst holds and stops; whether that's the eighties sound is for the ear, and on the snare at Mix 30% the dry hit covers much of the difference.
+
+### What needed an ear
+
+- **That the gap matters.** On the canvas's snare at a short Decay, Will picked Chamber over Room, which had "too much slap back": the sparse stretch between Room's burst and its tail, which the numbers had shown but couldn't say was audible.
+- **Whether it's plate-like.** It wasn't heard as one there.
 
