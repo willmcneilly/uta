@@ -1,19 +1,10 @@
 import { useId } from "react";
-import type { EffectSettingView, Unit } from "../backend";
+import type { EffectSettingView } from "../backend";
 import { Key } from "../design/Key";
 import { Knob } from "../design/Knob";
 import { Menu } from "../design/Menu";
 import { SegmentedChoice } from "../design/SegmentedChoice";
-import {
-  SETTING_STEPS,
-  formatAmount,
-  formatHz,
-  formatLevel,
-  formatOctaves,
-  formatSeconds,
-  formatSemitones,
-  settingScale,
-} from "../synthScale";
+import { SETTING_STEPS, formatOf, settingScale } from "../synthScale";
 
 // One of an effect's controls, drawn from Rust's description of the setting
 // alone, following RFC-005's control rule: a knob for a number, a segmented
@@ -27,26 +18,23 @@ interface Props {
   setting: EffectSettingView;
   /** Its class, for its place in the panel's layout. */
   className?: string;
+  /**
+   * Whether it's labelled with Rust's short name, where the panel's group
+   * already says whose it is: "Size" under Early for "Early size".
+   */
+  short?: boolean;
   /** `gesture` is the same for every change in one drag. */
   onChange: (value: number | string | boolean, gesture?: number) => void;
+  /** A knob's value as it's dragged, before Rust replies, then null when the drag ends. */
+  onDrag?: (value: number | null) => void;
 }
-
-/** How each unit reads on an effect's knobs. */
-const FORMATS: Record<Unit, (value: number) => string> = {
-  hz: formatHz,
-  seconds: formatSeconds,
-  db: (db) => `${db.toFixed(1)} dB`,
-  fraction: formatLevel,
-  amount: formatAmount,
-  semitones: formatSemitones,
-  octaves: formatOctaves,
-};
 
 /** The most choices a segmented choice holds; more go in a menu. */
 const MOST_SEGMENTS = 5;
 
 /** The control RFC-005's rule picks for `setting`. */
-export function SettingControl({ owner, setting, className, onChange }: Props) {
+export function SettingControl({ owner, setting, className, short = false, onChange, onDrag }: Props) {
+  const label = (short && setting.short) || setting.label;
   const ariaLabel = `${owner} ${setting.label.toLowerCase()}`;
   // Each panel's radios are a group of their own, however many Delays there are.
   const group = useId();
@@ -54,7 +42,7 @@ export function SettingControl({ owner, setting, className, onChange }: Props) {
     case "number":
       return (
         <Knob
-          label={setting.label}
+          label={label}
           ariaLabel={ariaLabel}
           className={className}
           size={28}
@@ -62,14 +50,15 @@ export function SettingControl({ owner, setting, className, onChange }: Props) {
           defaultValue={setting.default}
           scale={settingScale(setting)}
           keyStep={SETTING_STEPS / 100}
-          format={FORMATS[setting.unit]}
+          format={formatOf(setting)}
           onChange={onChange}
+          onDrag={onDrag}
         />
       );
     case "choice":
       return setting.options.length <= MOST_SEGMENTS ? (
         <SegmentedChoice
-          legend={setting.label}
+          legend={label}
           name={`${group}-${setting.name}`}
           className={className}
           options={setting.options}
@@ -78,7 +67,7 @@ export function SettingControl({ owner, setting, className, onChange }: Props) {
         />
       ) : (
         <label className={["effect-menu", className].filter(Boolean).join(" ")}>
-          <span>{setting.label}</span>
+          <span>{label}</span>
           <Menu aria-label={ariaLabel} value={setting.value} onChange={(event) => onChange(event.target.value)}>
             {setting.options.map((option) => (
               <option key={option.value} value={option.value}>
@@ -96,7 +85,7 @@ export function SettingControl({ owner, setting, className, onChange }: Props) {
           pressed={setting.value}
           onClick={() => onChange(!setting.value)}
         >
-          {setting.label}
+          {label}
         </Key>
       );
   }

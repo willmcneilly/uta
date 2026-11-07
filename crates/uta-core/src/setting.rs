@@ -28,6 +28,11 @@ pub struct Description {
     /// How it sounds, not just what it is: what turning it does to the
     /// sound, and what its ends are good for.
     pub sounds: &'static str,
+    /// Whether a number's lowest value switches it off, so the panel reads
+    /// it as "Off": the Reverb's Low cut at 20 Hz. Left out where it
+    /// doesn't.
+    #[serde(rename = "offAtLowest", skip_serializing_if = "std::ops::Not::not")]
+    pub off_at_lowest: bool,
     #[serde(flatten)]
     pub kind: Kind,
 }
@@ -89,6 +94,9 @@ pub enum Unit {
     Amount,
     /// A pitch offset: 12 to the octave.
     Semitones,
+    /// A multiple of another setting, such as the Reverb's Bass mult, a
+    /// multiple of its Decay. It reads as the number with a ×.
+    Times,
     /// A distance in octaves: whole ones for an oscillator's Octave, where
     /// the description has a step of 1, and any for the filter envelope's
     /// amount, which moves the cutoff.
@@ -126,6 +134,7 @@ impl Description {
             label,
             short: None,
             sounds,
+            off_at_lowest: false,
             kind: Kind::Number {
                 unit,
                 scale,
@@ -148,6 +157,7 @@ impl Description {
             label,
             short: None,
             sounds,
+            off_at_lowest: false,
             kind: Kind::Number {
                 unit,
                 scale: Scale::Linear,
@@ -169,6 +179,7 @@ impl Description {
             label,
             short: None,
             sounds,
+            off_at_lowest: false,
             kind: Kind::Choice { options, default },
         }
     }
@@ -179,6 +190,7 @@ impl Description {
             label,
             short: None,
             sounds,
+            off_at_lowest: false,
             kind: Kind::Toggle { default },
         }
     }
@@ -187,6 +199,14 @@ impl Description {
     pub(crate) const fn short(self, short: &'static str) -> Self {
         Self {
             short: Some(short),
+            ..self
+        }
+    }
+
+    /// The same, read as "Off" at its lowest, where it's switched off.
+    pub(crate) const fn off_at_lowest(self) -> Self {
+        Self {
+            off_at_lowest: true,
             ..self
         }
     }
@@ -268,5 +288,15 @@ mod tests {
                 "default": false,
             })
         );
+        let off = Description::number(
+            "Low cut",
+            "Thins it.",
+            Unit::Hz,
+            Scale::Log,
+            (20.0, 1_000.0),
+            20.0,
+        )
+        .off_at_lowest();
+        assert_eq!(serde_json::to_value(off).unwrap()["offAtLowest"], true);
     }
 }

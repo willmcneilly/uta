@@ -1,7 +1,5 @@
-import { type ReactNode, useId } from "react";
 import type { FilterMode, LfoShape, Waveform } from "../backend";
-import { readHatchGap } from "../design/readTokens";
-import { useTokenVersion } from "../design/tokenChanges";
+import { useHatch } from "./hatch";
 import { type EnvelopeTimes, type StageName, envelopeShape } from "./envelopeShape";
 import { type Point, filterCurve, reachHz, xOfFrequency, yOfGain } from "./filterCurve";
 import { type Tuning, lfoPoints, oscillatorPoints } from "./waves";
@@ -38,31 +36,6 @@ function area(points: Point[], height: number): string {
   const first = points[0];
   const last = points[points.length - 1];
   return `${line(points)} L${last.x.toFixed(2)},${height} L${first.x.toFixed(2)},${height} Z`;
-}
-
-/**
- * The hatching pattern: diagonal lines in the hatch ink, every `hatch-gap`
- * (DESIGN.md, Shapes). Returns its `fill` and its definition.
- */
-function useHatch(): [string, ReactNode] {
-  const id = `hatch-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
-  // Re-rendered when the tokens change, so the gap is read again then.
-  useTokenVersion();
-  const gap = readHatchGap(document.documentElement);
-  const pattern = (
-    <defs>
-      <pattern
-        id={id}
-        width={gap}
-        height={gap}
-        patternUnits="userSpaceOnUse"
-        patternTransform="rotate(45)"
-      >
-        <line className="hatch" x1={gap / 2} y1={0} x2={gap / 2} y2={gap} />
-      </pattern>
-    </defs>
-  );
-  return [`url(#${id})`, pattern];
 }
 
 /** A drawing's size. */

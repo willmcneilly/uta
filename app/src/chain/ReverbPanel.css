@@ -1,0 +1,211 @@
+/* The Reverb's panel: the core view shaped like the Delay's, opening wider
+   to the Early and Late groups with the pull tab on its right edge.
+   provisional: D-41 */
+.reverb-panel {
+  position: relative;
+  display: flex;
+  gap: var(--space-6);
+  color: var(--ink);
+  font: var(--font-text);
+}
+
+[data-off] .reverb-panel {
+  opacity: 0.45;
+}
+
+.reverb-core {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.reverb-top {
+  display: flex;
+  gap: var(--space-6);
+}
+
+.reverb-beside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.reverb-mode label {
+  padding: 0 var(--space-4);
+}
+
+/* Each core knob in a column wide enough for its label, as the Delay's. */
+.reverb-knobs {
+  display: grid;
+  grid-auto-columns: 56px;
+  grid-auto-flow: column;
+  justify-items: center;
+}
+
+/* Open: the Early and Late groups to the right, set off by a faint rule. */
+.reverb-advanced {
+  display: flex;
+  gap: var(--space-6);
+  padding-left: var(--space-6);
+  border-left: var(--stroke-grid) solid var(--line-2);
+}
+
+.reverb-grid {
+  display: grid;
+  row-gap: var(--space-3);
+  justify-items: center;
+}
+
+.reverb-early {
+  grid-template-columns: repeat(3, 62px);
+}
+
+.reverb-late {
+  grid-template-columns: repeat(4, 62px);
+}
+
+.reverb-group .group-title {
+  padding-bottom: var(--space-2);
+}
+
+/* The pull tab: on the inside of the panel's right edge at mid height, like
+   a drawer's pull, open on the right where it meets the edge. It travels
+   with the edge, so it's on the right of the open panel too. */
+.pull-tab {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: calc(-1 * var(--space-6));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 48px;
+  margin: -24px 0 0;
+  padding: 0;
+  border: var(--stroke-grid) solid var(--ink-3);
+  border-right: 0;
+  border-radius: var(--rounded-md) 0 0 var(--rounded-md);
+  background: var(--sheet);
+  color: var(--ink-2);
+  cursor: pointer;
+  appearance: none;
+  transition: width 80ms ease-out;
+}
+
+.pull-tab svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: var(--stroke-curve);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pull-tab:hover {
+  width: 17px;
+  border-color: var(--ink-2);
+  background: var(--line);
+  color: var(--ink);
+}
+
+.pull-tab[aria-expanded="true"] {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.pull-tab:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+  outline-offset: calc(-1 * var(--stroke-clip-selected));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pull-tab {
+    transition: none;
+  }
+}
+
+/* The drawing: a hatched shape under an ink edge, the early reflections as
+   ink ticks in front, lit in the live ink as they sound. provisional: D-40 */
+.tail-drawing {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.tail-drawing .base {
+  stroke: var(--line-2);
+  stroke-width: var(--stroke-grid);
+}
+
+.tail-drawing .hatch {
+  stroke: var(--hatch);
+  stroke-width: var(--stroke-grid);
+}
+
+.tail-drawing .under {
+  stroke: none;
+}
+
+.tail-drawing .edge {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-curve);
+  stroke-linejoin: round;
+}
+
+.tail-drawing .band-edge {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: var(--stroke-grid);
+  stroke-dasharray: 3 2;
+}
+
+.tail-drawing .early line {
+  stroke: var(--ink);
+  stroke-width: var(--stroke-clip);
+}
+
+.tail-drawing[data-off] .edge,
+.tail-drawing[data-off] .early line {
+  stroke: var(--ink-3);
+}
+
+.tail-drawing .early line[data-lit] {
+  stroke: var(--live);
+}
+
+.tail-drawing .sweep {
+  stroke: var(--live);
+  stroke-width: var(--stroke-playhead);
+}
+
+.tail-drawing .label {
+  fill: var(--ink-2);
+  font: var(--font-label);
+}
+
+.tail-drawing .end-handle {
+  cursor: ew-resize;
+}
+
+.tail-drawing .end-handle .hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.tail-drawing .end-handle:hover .hit {
+  fill: var(--line-2);
+}
+
+.tail-drawing .end-handle .dot {
+  fill: var(--sheet);
+  stroke: var(--ink);
+  stroke-width: var(--stroke-clip-selected);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tail-drawing .sweep {
+    display: none;
+  }
+}

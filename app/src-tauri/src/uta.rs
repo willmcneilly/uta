@@ -972,6 +972,17 @@ impl Uta {
         self.change(Command::SetDelayParam { effect, param }, gesture)
     }
 
+    /// Sets one of a Reverb's settings. Changes to the same setting that
+    /// share a `gesture` (one drag of its control) undo as one.
+    pub fn set_reverb_param(
+        &mut self,
+        effect: EffectId,
+        param: ReverbParam,
+        gesture: Option<u32>,
+    ) -> Result<(), String> {
+        self.change(Command::SetReverbParam { effect, param }, gesture)
+    }
+
     /// Adds an empty clip to `track`, from `start` for `length` ticks. The
     /// caller picks its ID, so it can select it.
     pub fn add_clip(
@@ -1456,9 +1467,6 @@ fn outline<C>(session: &Session, mut clip: impl FnMut(&Clip) -> C) -> Outline<C>
         max_tracks: Project::MAX_TRACKS,
         effect_kinds: EffectKind::ALL
             .into_iter()
-            // The Reverb has no panel until UTA-105, so the menu doesn't
-            // offer it yet.
-            .filter(|&kind| kind != EffectKind::Reverb)
             .map(|kind| EffectKindChoice {
                 kind,
                 name: kind.name(),
@@ -2332,9 +2340,38 @@ mod tests {
         let json = serde_json::to_value(offline().update().outline).unwrap();
         assert_eq!(
             json["effectKinds"],
-            serde_json::json!([{"kind": "delay", "name": "Delay"}])
+            serde_json::json!([
+                {"kind": "delay", "name": "Delay"},
+                {"kind": "reverb", "name": "Reverb"},
+            ])
         );
         assert_eq!(json["maxEffects"], 8);
+    }
+
+    #[test]
+    fn a_reverb_drag_undoes_as_one_step_and_a_bad_value_changes_nothing() {
+        let mut uta = offline();
+        let effect = EffectId::random();
+        uta.add_effect(Chain::Master, effect, EffectKind::Reverb)
+            .unwrap();
+        let decay = |uta: &Uta| {
+            let json = serde_json::to_value(&uta.project().master_effects[0]).unwrap();
+            assert_eq!(json["kind"], "reverb");
+            assert_eq!(json["settings"][2]["name"], "decay_seconds");
+            json["settings"][2]["value"].as_f64().unwrap()
+        };
+        for seconds in [3.0, 4.0, 5.0] {
+            uta.set_reverb_param(effect, ReverbParam::DecaySeconds(seconds), Some(1))
+                .unwrap();
+        }
+        assert_eq!(decay(&uta), 5.0);
+        assert!(
+            uta.set_reverb_param(effect, ReverbParam::DecaySeconds(99.0), None)
+                .is_err()
+        );
+        assert_eq!(decay(&uta), 5.0);
+        uta.undo();
+        assert_eq!(decay(&uta), 2.0);
     }
 
     #[test]

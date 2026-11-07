@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DelayParam, EffectSettingView, EffectView } from "../backend";
+import type { EffectParam, EffectSettingView, EffectView } from "../backend";
 import type { FrameLoop } from "../frameLoop";
 import { EchoDrawing } from "./EchoDrawing";
 import { SettingControl } from "./SettingControl";
@@ -22,7 +22,7 @@ interface Props {
   /** The app's drawing loop, which moves the drawing's light. */
   frames: FrameLoop;
   /** `gesture` is the same for every change in one drag. */
-  onSetting: (param: DelayParam, gesture?: number) => void;
+  onSetting: (param: EffectParam, gesture?: number) => void;
   onMix: (mix: number, gesture?: number) => void;
 }
 
@@ -76,7 +76,7 @@ export function DelayPanel({
       <div className="delay-top">
         <EchoDrawing
           settings={{
-            spacing: effect.echoSeconds,
+            spacing: effect.echoSeconds ?? 0,
             feedback: number("feedback"),
             drive: number("drive"),
             pingPong: setting("mode")?.value === "ping_pong",

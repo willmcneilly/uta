@@ -9,6 +9,7 @@ import {
   formatOctaves,
   formatSeconds,
   formatSemitones,
+  formatTimes,
   settingScale,
 } from "./synthScale";
 import "./DrumPanel.css";
@@ -36,6 +37,7 @@ const FORMATS: Record<Unit, (value: number) => string> = {
   db: (db) => `${db.toFixed(1)} dB`,
   fraction: (fraction) => `${Math.round(fraction * 100)}%`,
   amount: formatAmount,
+  times: formatTimes,
   semitones: formatSemitones,
   octaves: formatOctaves,
 };

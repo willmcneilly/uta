@@ -69,7 +69,7 @@ export interface KitRowOutline extends Omit<KitRowView, "settings" | "model"> {
 /** An effect in the outline: its Mix's and its settings' values. */
 export interface EffectOutline extends Omit<EffectView, "mix" | "settings"> {
   mix: { name: "mix"; value: number };
-  settings: DelayParam[];
+  settings: EffectParam[];
 }
 
 /** A setting's description: everything about it but its name and value. */
@@ -209,6 +209,11 @@ interface Described<N extends string> {
   short?: string;
   /** How it sounds: what turning it does, and what its ends are good for. */
   sounds: string;
+  /**
+   * Whether a number's lowest value switches it off, so it reads "Off" there:
+   * the Reverb's Low cut. Absent where it doesn't.
+   */
+  offAtLowest?: boolean;
 }
 
 /** A setting that's a number, with the range, scale and unit Rust gives it. */
@@ -248,10 +253,11 @@ export interface ToggleSettingView<N extends string = string> extends Described<
 /**
  * The unit a setting is in. A fraction runs from 0 to 1 and reads as a
  * percentage: how much of something, such as Snappy. An amount runs from 0
- * to 1 too, but reads as itself: the filter's resonance. Semitones and
- * octaves are pitch offsets.
+ * to 1 too, but reads as itself: the filter's resonance. Times is a multiple
+ * of another setting, such as the Reverb's Bass mult of its Decay. Semitones
+ * and octaves are pitch offsets.
  */
-export type Unit = "hz" | "seconds" | "db" | "fraction" | "amount" | "semitones" | "octaves";
+export type Unit = "hz" | "seconds" | "db" | "fraction" | "amount" | "times" | "semitones" | "octaves";
 
 /**
  * How a control moves: in even steps, in even ratios (the way you hear
@@ -266,8 +272,8 @@ export type TrackKind = SourceView["kind"];
 /** Which chain a command means: a track's, or the master's. */
 export type ChainAddress = { track: string } | "master";
 
-/** The kinds of effect there are: just Delay for now. */
-export type EffectKind = "delay";
+/** The kinds of effect there are. */
+export type EffectKind = "delay" | "reverb";
 
 /** A kind of effect the **+** menu offers. */
 export interface EffectKindChoice {
@@ -295,15 +301,18 @@ export interface EffectView {
   /** Its own settings, in the order its panel shows them. */
   settings: EffectSettingView[];
   /**
-   * How far apart the Delay's echoes are at the song's tempo, in seconds:
-   * the synced note length's, or the time in seconds. Its drawing spaces the
-   * echoes by it.
+   * How far apart a Delay's echoes are at the song's tempo, in seconds: the
+   * synced note length's, or the time in seconds. Its drawing spaces the
+   * echoes by it. A Reverb has none.
    */
-  echoSeconds: number;
+  echoSeconds?: number;
 }
 
-/** One Delay setting and its new value, as `set_delay_param` takes it. */
-export interface DelayParam {
+/**
+ * One of an effect's settings and its new value, as `set_delay_param` and
+ * `set_reverb_param` take it.
+ */
+export interface EffectParam {
   name: string;
   value: number | string | boolean;
 }
@@ -703,12 +712,24 @@ export function setEffectMix(effect: string, mix: number, gesture?: number): Pro
 }
 
 /**
+ * Sets one of a Reverb's settings. Changes to the same setting with the same
+ * `gesture` (one drag) undo as one step.
+ */
+export function setReverbParam(
+  effect: string,
+  param: EffectParam,
+  gesture?: number,
+): Promise<Update> {
+  return invoke<Update>("set_reverb_param", { effect, param, gesture: gesture ?? null });
+}
+
+/**
  * Sets one of a Delay's settings. Changes to the same setting with the same
  * `gesture` (one drag) undo as one step.
  */
 export function setDelayParam(
   effect: string,
-  param: DelayParam,
+  param: EffectParam,
   gesture?: number,
 ): Promise<Update> {
   return invoke<Update>("set_delay_param", { effect, param, gesture: gesture ?? null });

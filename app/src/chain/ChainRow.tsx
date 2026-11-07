@@ -8,10 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DelayParam, EffectKind, EffectKindChoice, EffectView } from "../backend";
+import type { EffectKind, EffectKindChoice, EffectParam, EffectView } from "../backend";
 import type { FrameLoop } from "../frameLoop";
 import { dropIndex } from "../trackOrder";
 import { DelayPanel } from "./DelayPanel";
+import { ReverbPanel } from "./ReverbPanel";
 import "./ChainRow.css";
 
 // The Sound tab as a row: the source's panel, then each effect in the chain,
@@ -46,7 +47,13 @@ interface Props {
   onRemove: (effect: string) => void;
   /** `gesture` is the same for every change in one drag. */
   onMix: (effect: string, mix: number, gesture?: number) => void;
-  onSetting: (effect: string, param: DelayParam, gesture?: number) => void;
+  onSetting: (effect: string, kind: EffectKind, param: EffectParam, gesture?: number) => void;
+  /**
+   * The effects whose panels are open wide (the Reverb's Early and Late
+   * groups): the UI's own, kept by the app, never in the project.
+   */
+  wide: string[];
+  onWide: (effect: string, open: boolean) => void;
   /** One bar at the song's tempo, in seconds, for the Delay's drawing. */
   barSeconds: number;
   beatsPerBar: number;
@@ -56,6 +63,21 @@ interface Props {
   frames: FrameLoop;
   /** The scrolling row, for the chain map to scroll. */
   rowRef?: RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * Scrolls `row` just far enough that `panel` is in view: its right edge, or
+ * its left edge where it's wider than the row. Smoothly, unless reduced
+ * motion is set. provisional: D-41
+ */
+function revealPanel(row: HTMLElement, panel: HTMLElement): void {
+  const box = row.getBoundingClientRect();
+  const edges = panel.getBoundingClientRect();
+  let by = Math.max(0, edges.right - box.right);
+  if (edges.left - by < box.left) by = edges.left - box.left;
+  if (by === 0) return;
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  row.scrollBy?.({ left: by, behavior: still ? "auto" : "smooth" });
 }
 
 /** The key folding the source's panel is kept under. */
@@ -281,6 +303,8 @@ export function ChainRow({
   songSeconds,
   frames,
   rowRef,
+  wide,
+  onWide,
 }: Props) {
   // Folding a panel to its spine is the UI's own, kept while tracks change,
   // so a folded synth stays folded.
@@ -360,6 +384,24 @@ export function ChainRow({
   const dropMark = (index: number): "before" | "after" | undefined => {
     if (!reorder || reorder.to === reorder.from || index !== reorder.to) return undefined;
     return reorder.to < reorder.from ? "before" : "after";
+  };
+
+  // A panel opened wide comes into view once it's drawn wide, so it never
+  // opens off the row's edge. provisional: D-41
+  const opened = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const row = ownRow.current;
+    const effect = opened.current;
+    if (effect === null || !row) return;
+    const panel = row.querySelector<HTMLElement>(`[data-panel="${effect}"]`);
+    // Wait for the render that draws it wide.
+    if (!panel?.querySelector("[data-open]")) return;
+    opened.current = null;
+    revealPanel(row, panel);
+  });
+  const openWide = (effect: string, open: boolean) => {
+    opened.current = open ? effect : null;
+    onWide(effect, open);
   };
 
   // A panel selected from outside the row (a new effect, once Rust has sent
@@ -468,15 +510,28 @@ export function ChainRow({
           {!folded.includes(effect.id) && (
             <div className="wired-body">
               <Wire bypass={!effect.enabled} />
-              <DelayPanel
-                effect={effect}
-                barSeconds={barSeconds}
-                beatsPerBar={beatsPerBar}
-                songSeconds={songSeconds}
-                frames={frames}
-                onSetting={(param, gesture) => onSetting(effect.id, param, gesture)}
-                onMix={(mix, gesture) => onMix(effect.id, mix, gesture)}
-              />
+              {effect.kind === "reverb" ? (
+                <ReverbPanel
+                  effect={effect}
+                  open={wide.includes(effect.id)}
+                  onOpen={(open) => openWide(effect.id, open)}
+                  barSeconds={barSeconds}
+                  songSeconds={songSeconds}
+                  frames={frames}
+                  onSetting={(param, gesture) => onSetting(effect.id, effect.kind, param, gesture)}
+                  onMix={(mix, gesture) => onMix(effect.id, mix, gesture)}
+                />
+              ) : (
+                <DelayPanel
+                  effect={effect}
+                  barSeconds={barSeconds}
+                  beatsPerBar={beatsPerBar}
+                  songSeconds={songSeconds}
+                  frames={frames}
+                  onSetting={(param, gesture) => onSetting(effect.id, effect.kind, param, gesture)}
+                  onMix={(mix, gesture) => onMix(effect.id, mix, gesture)}
+                />
+              )}
             </div>
           )}
           <WireArrow />
