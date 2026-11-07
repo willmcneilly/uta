@@ -156,11 +156,12 @@ pub(crate) struct Arrangement {
     /// `n`th line of one side is crossed with the `n`th of the other.
     pub early_out: [[usize; LANES / 2]; 2],
     pub late_out: [&'static [usize]; 2],
-    /// Where along each line the tail is heard too, as a share of its
-    /// length, one for each line; or none, for a mode whose tail is heard
-    /// only from the lines' ends. A tap hears what's in the line before it
+    /// Where along each line the tail is heard, as a share of its length,
+    /// one for each line; or none, for a mode whose tail is heard from the
+    /// lines' ends, once round. A tap hears what's in the line before it
     /// has gone all the way round, so the tail starts that much sooner
     /// without shorter lines (Dattorro's plate takes its outputs this way).
+    /// What goes round is the same, so the tail fades as it would.
     pub taps: &'static [f64],
     /// How dark it's built: the low-pass on everything it puts out, in Hz,
     /// or `None` for as bright as its lines make it.
@@ -220,16 +221,20 @@ pub(crate) const ROOM: Arrangement = Arrangement {
 
 /// Chamber: dense from the very first moment, smooth and even. Room's
 /// lines and diffuser, with the tail heard from a tap partway along each
-/// line too, from 11% to 38% of its length in an order that puts
-/// neighbours far apart, so its first echoes come 5 to 50 ms after the
-/// sound goes in instead of a lap after. In Room the tail's first lap
-/// comes after the burst has ended, a sparse stretch whose echo density
-/// falls to nothing 40 to 53 ms after a click; Chamber's stays near 1
-/// (0.9 at the least) from 4 ms. Room's lines are kept because they're the
-/// least coloured measured: shorter lines would have closed the gap too,
-/// but colouration follows the network's total length (lines from 7 to
-/// 140 ms read 1.22 dB, over the 0.85 dB limit), and a new set of Room's
-/// length read 0.87 dB, against Room's 0.81 dB with these taps.
+/// line instead of from its end: from 11% to 38% of its length, in an
+/// order that puts neighbours far apart, so the tail's first echoes come 5
+/// to 50 ms after the sound goes in rather than a lap after. In Room the
+/// tail's first lap comes after the burst has ended, a sparse stretch
+/// whose echo density falls to nothing 40 to 53 ms after a click;
+/// Chamber's stays at 0.88 or more at its defaults.
+///
+/// Room's lines are kept because they're the least coloured measured.
+/// Shorter lines close the gap too, but colouration follows the network's
+/// total length (lines from 7 to 140 ms read 1.22 dB, over the 0.85 dB
+/// limit), and a new set as long as Room's read 0.87 dB. Hearing each line
+/// at its tap and its end as well read 0.91 dB with Late Cross at 0, a
+/// comb for each line; at its tap alone, 0.71 dB, and 0.70 at the
+/// defaults, against Room's 0.75.
 pub(crate) const CHAMBER: Arrangement = Arrangement {
     taps: &[
         0.17, 0.29, 0.11, 0.36, 0.22, 0.14, 0.33, 0.19, 0.26, 0.12, 0.38, 0.21, 0.31, 0.15, 0.24,
@@ -762,7 +767,7 @@ pub(crate) struct Reverb {
     /// while what they come from glides.
     gains: [f32; MAX_LINES],
     /// What each line's tap keeps: the loss of the part of a lap before
-    /// it, so it fades as the line's end does.
+    /// it, so it's as loud as the line's end and fades as it does.
     tap_gains: [f32; MAX_LINES],
     low_shelves: Shelves,
     high_shelves: Shelves,
@@ -1437,10 +1442,11 @@ impl Reverb {
                         .sum::<f32>()
                 })
             };
-            let mut late = hear(&mixed);
-            if !arrangement.taps.is_empty() {
-                // Each line heard partway along too, at its tap, with the
-                // loss of that part of a lap, and crossed as its end is.
+            let late = if arrangement.taps.is_empty() {
+                hear(&mixed)
+            } else {
+                // Each line heard at its tap instead, with the loss of the
+                // part of a lap before it, and crossed as its end is.
                 let mut tapped = [0.0f32; MAX_LINES];
                 for (((tap, &along), &read), (line, &gain)) in tapped
                     .iter_mut()
@@ -1453,9 +1459,8 @@ impl Reverb {
                 for (&l, &r) in lefts.iter().zip(rights) {
                     (tapped[l], tapped[r]) = butterfly(tapped[l], tapped[r], self.late_crossing);
                 }
-                let taps = hear(&tapped);
-                late = [0, 1].map(|side| TAPS_BLEND * (late[side] + taps[side]));
-            }
+                hear(&tapped)
+            };
             for (side, lines) in arrangement.late_out.iter().enumerate() {
                 for (n, &line) in lines.iter().enumerate() {
                     let lane = side * LANES / 2 + n % (LANES / 2);
@@ -1537,11 +1542,6 @@ impl Reverb {
 /// mids is the early burst's, and Depth's 50% is an even blend there. The
 /// Mults make the tail's lows and highs last longer or shorter on top.
 const LATE_LEVEL: f32 = 1.0;
-
-/// What the tail heard from the lines' ends and from their taps is scaled
-/// by, together: each as loud as the other, about as unlike, so their sum
-/// has twice the energy of either.
-const TAPS_BLEND: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 /// How many samples lane `lane` of step `step` of `arrangement` must
 /// delay by at most, at `rate`: at the longest Early Size, and twice that

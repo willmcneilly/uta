@@ -1217,3 +1217,68 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
         }
     }
 }
+
+/// How soon after the first sound Chamber's echo density reaches near 1,
+/// at the latest, in seconds: its own, fast limit, half Room's (RFC-010,
+/// "Dense, not grainy"). Measured at 7 to 19 ms in UTA-102, slowest with
+/// only the tail heard.
+const CHAMBER_DENSE_WITHIN_SECONDS: f64 = 0.02;
+
+/// The least echo density Chamber's first 300 ms may have, from 10 ms
+/// after its first sound: no sparse stretch between the burst and the tail.
+/// Measured at 0.56 at the least in UTA-102, at Late Size 100%; Room's falls
+/// to nothing 40 to 53 ms after a click.
+const CHAMBER_STAYS_DENSE: f64 = 0.5;
+
+/// The echo density of `reverb`'s impulse response: how long after the
+/// first sound it reaches near 1, and the least it has from 10 ms after
+/// the first sound to 300 ms, both in seconds.
+fn density_of(reverb: ReverbSettings) -> (f64, f64) {
+    let rate = 48_000.0;
+    let response = impulse_response(reverb, rate, 1.0);
+    let first = impulse::onset(&[&response[0], &response[1]]).unwrap() as f64 / rate;
+    let profile = impulse::echo_density(&mid(&response), rate as u32);
+    let dense = impulse::dense_after(&profile, first).expect("it reaches near 1");
+    let least = profile
+        .iter()
+        .filter(|&&(at, _)| (first + 0.01..=first + 0.3).contains(&at))
+        .map(|&(_, density)| density)
+        .fold(f64::MAX, f64::min);
+    (dense, least)
+}
+
+/// Chamber is dense from the very first moment: its echo density reaches
+/// near 1 within its own limit of the first sound, and stays near it, with
+/// no sparse stretch, at every Late Size and with Depth from 50% to only
+/// the tail, at its default Early Size, 30 ms. Its taps hear each line
+/// partway round, so the tail starts before the burst has ended. Room, at
+/// the same settings, falls to nothing between the two. A longer burst
+/// swells in, as Room's does: at Early Size 100 ms it reaches near 1 in
+/// 29 to 31 ms.
+#[test]
+fn chamber_s_echo_density_reaches_near_1_within_its_limit_and_stays_there() {
+    for late_size in [0.0, 0.5, 1.0] {
+        for depth in [0.5, 0.65, 1.0] {
+            let reverb = ReverbSettings {
+                mode: ReverbMode::Chamber,
+                late_size,
+                depth,
+                ..ReverbSettings::default()
+            };
+            let (dense, least) = density_of(reverb);
+            let case = format!("Late Size {late_size}, Depth {depth}");
+            assert!(
+                dense <= CHAMBER_DENSE_WITHIN_SECONDS,
+                "{case}: near 1 after {:.1} ms, limit {:.0} ms",
+                dense * 1000.0,
+                CHAMBER_DENSE_WITHIN_SECONDS * 1000.0
+            );
+            assert!(
+                least >= CHAMBER_STAYS_DENSE,
+                "{case}: the echo density falls to {least:.2}"
+            );
+        }
+    }
+    let (_, room) = density_of(ReverbSettings::default());
+    assert!(room < 0.1, "Room's falls to {room:.2}");
+}
