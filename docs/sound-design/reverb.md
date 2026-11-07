@@ -40,21 +40,22 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 
 ## Chamber
 
-Chamber is Room's network heard another way. Its lines are Room's; its tail is heard from a tap partway along each line (11% to 38% of its length) instead of from the line's end. What goes round the loop is the same, so the decay, the Mults and the colouration's causes are Room's; only when the tail is first heard changes. Its diffuser's steps are spread further apart than Room's, so a long burst holds level.
+Chamber is Room's network heard another way. Its lines are Room's; its tail is heard from a tap partway along each line (11% to 38% of its length) instead of from the line's end. What goes round the loop is the same, so the decay, the Mults and the colouration's causes are Room's; only when the tail is first heard changes. Its diffuser is Room's too.
 
 | Quality | What gives it | Notes |
 |---|---|---|
 | **Dense from the first moment** | The taps | Room's tail is first heard a lap after the sound goes in (42 ms at Late Size 50%), after a 30 ms burst has ended: a sparse stretch whose echo density falls to nothing at 40 to 53 ms. Chamber's first tap is heard 5 ms after the sound goes in, so the tail starts inside the burst, and its echo density stays at 0.88 or more at the defaults. It falls 20 dB from its peak in 209 ms against Room's 15 ms: one even wash, not a slap then a tail. |
 | **Smooth** | The taps alone, and Room's lines | Hearing each line at its tap *and* its end makes a comb for each line: 0.91 dB with Late Cross at 0, over the limit. At its tap alone Chamber reads 0.70 dB at the defaults, under Room's 0.75. Shorter lines close the gap too, but colouration follows the network's total length: lines from 7 to 140 ms read 1.22 dB. |
-| **A gated burst** | Depth 0%, Early Size 100 ms or more, and the diffuser's steps | With no tail heard, the burst stops dead: at Early Size 250 ms it ends about 240 ms after the hit, then nothing. On Room's diffuser, whose steps' shares are 8:4:2:1, a long burst swells in: it starts 11 dB under its peak and takes 75 ms to reach it, because the steps' delays overlap and their sums bunch in the middle. Chamber's steps are each a third of the one before (27:9:3:1), adding up more evenly, like a number's digits: it starts 6 dB under and holds within 2 dB until it stops. A quarter (64:16:4:1) started flatter still, but read 0.83 dB, near the limit. |
+| **A gated burst** | Depth 0%, Early Size 100 ms or more | With no tail heard, the burst stops dead: at Early Size 250 ms it ends about 240 ms after the hit, then nothing. It swells in over its first 75 ms or so, starting 11 dB under its peak, because the diffuser's steps' delays (shares 8:4:2:1) overlap and their sums bunch in the middle. |
 
 ### What the measurements can't see
 
 - **Whether "dense at once" sounds like a plate.** A plate is also dense at once. Whether Chamber sounds like a room or a sheet of steel is for the ear.
-- **How abrupt a gated burst should be.** The numbers say Chamber's burst holds and stops; whether that's the eighties sound is for the ear, and on the snare at Mix 30% the dry hit covers much of the difference.
+- **What makes a gated burst.** A diffuser whose steps were each a third of the one before (27:9:3:1) made a long burst start 6 dB under its peak instead of 11 and hold until it stopped, nearer the textbook shape, with no more colouration. On the snare, Will preferred the burst that swells in.
 
 ### What needed an ear
 
 - **That the gap matters.** On the canvas's snare at a short Decay, Will picked Chamber over Room, heard as too much of a slap back: the sparse stretch between Room's burst and its tail, which the numbers had shown but couldn't say was audible.
+- **The gated burst's shape.** The numbers' gated burst (a hit at full level, a flat hold) lost to the one that swells in, heard on the snare at Mix 30%. Measure a gated burst's shape, but let the ear pick it.
 - **Whether it's plate-like.** Not raised: Will's note on the snare was only about Room's slap back.
 

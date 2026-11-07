@@ -237,35 +237,14 @@ pub(crate) const ROOM: Arrangement = Arrangement {
 /// comb for each line; at its tap alone, 0.70 dB at the defaults, against
 /// Room's 0.75.
 ///
-/// Its diffuser is Room's with each step a third as long as the one before
-/// (shares 27:9:3:1), not half (8:4:2:1), so the steps' delays add up more
-/// evenly over the burst, like a number's digits, instead of bunching in
-/// its middle. On Room's, a long burst swelled in, starting 11 dB under its
-/// peak and taking 75 ms to reach it, which wasn't quite the gated burst
-/// it should be; on this one it starts 6 dB under and holds within 2 dB of
-/// its peak until it stops. A long burst is dense sooner too (23 ms after
-/// the first sound at Early Size 100 ms, against 29), with no more
-/// colouration (0.73 dB at the most). A third of a step was the balance:
-/// a quarter started flatter still but read 0.83 dB.
+/// Its diffuser is Room's too. One whose steps were each a third as long
+/// as the one before (shares 27:9:3:1, not Room's 8:4:2:1) measured more
+/// like a gated burst: a long burst started 6 dB under its peak rather
+/// than 11, and held until it stopped rather than swelling in, with no
+/// more colouration. But on the canvas's snare, at Depth 0% and Early Size
+/// 250 ms, Will preferred Room's as the gated burst, so the numbers' idea
+/// of one isn't the ear's yet.
 pub(crate) const CHAMBER: Arrangement = Arrangement {
-    steps: &[
-        Step {
-            share: 27.0 / 40.0,
-            offsets: [0.0, 0.37, 0.81, 0.14, 0.66, 0.29, 0.93, 0.52],
-        },
-        Step {
-            share: 9.0 / 40.0,
-            offsets: [0.0, 0.58, 0.21, 0.89, 0.43, 0.07, 0.74, 0.35],
-        },
-        Step {
-            share: 3.0 / 40.0,
-            offsets: [0.0, 0.19, 0.63, 0.41, 0.97, 0.55, 0.12, 0.78],
-        },
-        Step {
-            share: 1.0 / 40.0,
-            offsets: [0.0, 0.84, 0.47, 0.26, 0.09, 0.71, 0.38, 0.61],
-        },
-    ],
     taps: &[
         0.17, 0.29, 0.11, 0.36, 0.22, 0.14, 0.33, 0.19, 0.26, 0.12, 0.38, 0.21, 0.31, 0.15, 0.24,
         0.35,

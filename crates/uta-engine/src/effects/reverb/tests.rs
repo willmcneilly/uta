@@ -1220,13 +1220,13 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
 
 /// How soon after the first sound Chamber's echo density reaches near 1,
 /// at the latest, in seconds: its own, fast limit, half Room's (RFC-010,
-/// "Dense, not grainy"). Measured at 4 to 15 ms in UTA-102, slowest with
+/// "Dense, not grainy"). Measured at 7 to 19 ms in UTA-102, slowest with
 /// only the tail heard.
 const CHAMBER_DENSE_WITHIN_SECONDS: f64 = 0.02;
 
 /// The least echo density Chamber's first 300 ms may have, from 10 ms
 /// after its first sound: no sparse stretch between the burst and the tail.
-/// Measured at 0.64 at the least in UTA-102, at Late Size 100%; Room's falls
+/// Measured at 0.56 at the least in UTA-102, at Late Size 100%; Room's falls
 /// to nothing 40 to 53 ms after a click.
 const CHAMBER_STAYS_DENSE: f64 = 0.5;
 
@@ -1253,7 +1253,8 @@ fn density_of(reverb: ReverbSettings) -> (f64, f64) {
 /// the tail, at its default Early Size, 30 ms. Its taps hear each line
 /// partway round, so the tail starts before the burst has ended. Room, at
 /// the same settings, falls to nothing between the two. A longer burst
-/// takes longer: at Early Size 100 ms it reaches near 1 in 10 to 24 ms.
+/// swells in, as Room's does: at Early Size 100 ms it reaches near 1 in
+/// 29 to 31 ms.
 #[test]
 fn chamber_s_echo_density_reaches_near_1_within_its_limit_and_stays_there() {
     for late_size in [0.0, 0.5, 1.0] {
