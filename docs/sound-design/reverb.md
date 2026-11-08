@@ -9,12 +9,12 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 1. **Measure the impulse response.** The Reverb's own tests use a one-sample click (`effects/reverb/tests.rs`), and that's what the limits below are for. `examples/listen/reverb/` has command lists for `uta analyse --impulse-response`, but their click is 2 ms of noise, whose own spectrum adds about 1.5 dB of colouration: compare those renders with each other, not with the limits.
 2. **Fix what the numbers show** before anyone listens: a decay off its setting, a sparse stretch, a ring.
 3. **Listen on the canvas** (`examples/listen/canvas/`): the chord for the tail on its own after a sound stops, the snare for the early burst and for rings, which a transient shows best. Ask one question at a time with `scripts/listen`.
-4. **Keep the tests in step:** `room_stays_under_colouration_s_limit` and `room_s_echo_density_reaches_near_1_within_its_limit`, and the golden WAV (`examples/demo-reverb.json`).
+4. **Keep the tests in step:** each mode's colouration test (`room_stays_under_colouration_s_limit`, `chamber_stays_under_colouration_s_limit`) and echo-density test (`room_s_echo_density_reaches_near_1_within_its_limit`, `chamber_s_echo_density_reaches_near_1_within_its_limit_and_stays_there`), and the golden WAVs (`examples/demo-reverb.json`, `examples/demo-reverb-chamber.json`).
 
 ## The limits
 
 - **Colouration under 0.85 dB** (`impulse::COLOURATION_LIMIT_DB`), on a one-sample click, on the mid, with a Decay of 2 s or more. Set from listening: Room at 0.75 dB was picked as smooth, Room at 0.95 dB (with less Depth) was heard as the more metallic of the two, and a network made to ring, at 2.08 dB, was heard as ringing. A still tail has its own, looser guard, 1.2 dB (`STILL_COLOURATION_LIMIT_DB`), since the drift smears a ring more than it does Room: the ringing network reads 0.89 dB drifting.
-- **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` for Room): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%.
+- **Echo density near 1 within each mode's own limit** of the first sound (in the Reverb's tests, `ROOM_DENSE_WITHIN_SECONDS` and `CHAMBER_DENSE_WITHIN_SECONDS`): Room's is 40 ms, at Early Size 30 ms to 100 ms, any Late Size, and Depth from 50%. Chamber's is 20 ms at Early Size 30 ms (it reaches near 1 in 7 to 19 ms), and its echo density never falls below 0.5 in the first 300 ms (`CHAMBER_STAYS_DENSE`), where Room's falls to nothing.
 
 ## Which settings give which qualities
 
@@ -37,3 +37,25 @@ The settings themselves, with their ranges and a sentence on how each sounds, ar
 - **Room's defaults.** The numbers said the burst dominated and the tail was a little coloured. Only listening said that mattered: on the chord, the defaults were heard as metallic, and Depth 65% with the drift on was softer. That's where the colouration limit came from.
 - **Whether a ring is a fault.** A ring can be a character rather than a fault (a plate is one someone might want), so the question that set the limit asked only which rang, not which was better. Room shouldn't ring.
 - **Still to judge:** Room at a small Late Size and at short Decays, which read over the limit; and the dip between the end of the burst and the tail's first lap, about 40 to 53 ms after a click at the defaults, which the chord and the snare hide.
+
+## Chamber
+
+Chamber is Room's network heard another way. Its lines are Room's; its tail is heard from a tap partway along each line (11% to 38% of its length) instead of from the line's end. What goes round the loop is the same, so the decay, the Mults and the colouration's causes are Room's; only when the tail is first heard changes. Its diffuser is Room's too.
+
+| Quality | What gives it | Notes |
+|---|---|---|
+| **Dense from the first moment** | The taps | Room's tail is first heard a lap after the sound goes in (42 ms at Late Size 50%), after a 30 ms burst has ended: a sparse stretch whose echo density falls to nothing at 40 to 53 ms. Chamber's first tap is heard 5 ms after the sound goes in, so the tail starts inside the burst, and its echo density stays at 0.88 or more at the defaults. It falls 20 dB from its peak in 195 ms against Room's 15 ms: one even wash, not a slap then a tail. |
+| **Smooth** | The taps alone, and Room's lines | Hearing each line at its tap *and* its end makes a comb for each line: 0.91 dB with Late Cross at 0, over the limit. At its tap alone Chamber reads 0.70 dB at the defaults, under Room's 0.75. Shorter lines close the gap too, but colouration follows the network's total length: lines from 7 to 140 ms read 1.22 dB. |
+| **A gated burst** | Depth 0%, Early Size 100 ms or more | With no tail heard, the burst stops dead: at Early Size 250 ms it ends about 240 ms after the hit, then nothing. It swells in over its first 75 ms or so, starting 11 dB under its peak, because the diffuser's steps' delays (shares 8:4:2:1) overlap and their sums bunch in the middle. |
+
+### What the measurements can't see
+
+- **Whether "dense at once" sounds like a plate.** A plate is also dense at once. Whether Chamber sounds like a room or a sheet of steel is for the ear.
+- **What makes a gated burst.** A diffuser whose steps were each a third of the one before (27:9:3:1) made a long burst start 6 dB under its peak instead of 11 and hold until it stopped, nearer the textbook shape, with no more colouration. On the snare, Will preferred the burst that swells in.
+
+### What needed an ear
+
+- **That the gap matters.** On the canvas's snare at a short Decay, Will picked Chamber over Room, heard as too much of a slap back: the sparse stretch between Room's burst and its tail, which the numbers had shown but couldn't say was audible.
+- **The gated burst's shape.** The numbers' gated burst (a hit at full level, a flat hold) lost to the one that swells in, heard on the snare at Mix 30%. Measure a gated burst's shape, but let the ear pick it.
+- **Whether it's plate-like.** Not raised: Will's note on the snare was only about Room's slap back.
+

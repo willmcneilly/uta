@@ -25,6 +25,11 @@ fn settings(change: impl FnOnce(&mut ReverbSettings)) -> ReverbSettings {
     settings
 }
 
+/// `settings` in `mode`.
+fn in_mode(mode: ReverbMode, settings: ReverbSettings) -> ReverbSettings {
+    ReverbSettings { mode, ..settings }
+}
+
 /// `seconds` of the Reverb's answer to a full-scale click on `click`'s
 /// sides (left, right) at sample 0, in blocks of 128: its impulse response.
 fn response_to(reverb: &mut Reverb, click: [f32; 2], rate: f64, seconds: f64) -> [Vec<f32>; 2] {
@@ -65,36 +70,46 @@ fn mid_decay(samples: &[f32], rate: f64) -> f64 {
 /// its share each lap, so the mid band falls 60 dB in Decay, from a small
 /// room to a cathedral. It's measured on the tail alone, at Depth 100%: at
 /// a short Decay the early burst, a tenth as long, bends the fit (at 0.3 s
-/// and Depth 50%, one side read 15% long).
+/// and Depth 50%, one side read 15% long). In every mode: Chamber's taps
+/// hear each line partway round, with that part of a lap's loss, so they
+/// fade at the same rate.
 #[test]
 fn the_mid_band_decays_in_decay_within_10_percent() {
-    for decay in [0.3, 2.0, 10.0] {
-        let response = impulse_response(
-            settings(|s| {
-                s.decay_seconds = decay as f32;
-                s.depth = 1.0;
-            }),
-            48_000.0,
-            1.2 * decay + 0.5,
-        );
-        for side in &response {
-            let measured = mid_decay(side, 48_000.0);
-            assert!(
-                (measured / decay - 1.0).abs() < 0.1,
-                "Decay {decay} s: the mid band decays in {measured:.3} s"
+    for mode in ReverbMode::ALL {
+        for decay in [0.3, 2.0, 10.0] {
+            let response = impulse_response(
+                in_mode(
+                    mode,
+                    settings(|s| {
+                        s.decay_seconds = decay as f32;
+                        s.depth = 1.0;
+                    }),
+                ),
+                48_000.0,
+                1.2 * decay + 0.5,
             );
+            for side in &response {
+                let measured = mid_decay(side, 48_000.0);
+                assert!(
+                    (measured / decay - 1.0).abs() < 0.1,
+                    "{mode:?}, Decay {decay} s: the mid band decays in {measured:.3} s"
+                );
+            }
         }
     }
 }
 
-/// The first sound arrives exactly Predelay after the click, at every rate,
-/// and nothing comes before it.
+/// The first sound arrives exactly Predelay after the click, at every rate
+/// and in every mode, and nothing comes before it.
 #[test]
 fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
-    for rate in RATES {
+    for (mode, rate) in ReverbMode::ALL
+        .into_iter()
+        .flat_map(|mode| RATES.map(|rate| (mode, rate)))
+    {
         for predelay in [0.0, 0.0123, 0.25, 0.5] {
             let response = impulse_response(
-                settings(|s| s.predelay_seconds = predelay),
+                in_mode(mode, settings(|s| s.predelay_seconds = predelay)),
                 rate,
                 predelay as f64 + 0.1,
             );
@@ -103,11 +118,11 @@ fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
             assert_eq!(
                 impulse::onset(&[left, right]),
                 Some(at),
-                "Predelay {predelay} s at {rate} Hz"
+                "{mode:?}, Predelay {predelay} s at {rate} Hz"
             );
             assert!(
                 left[..at].iter().chain(&right[..at]).all(|&s| s == 0.0),
-                "nothing before Predelay {predelay} s at {rate} Hz"
+                "{mode:?}: nothing before Predelay {predelay} s at {rate} Hz"
             );
         }
     }
@@ -215,7 +230,13 @@ fn audible(samples: &[f32], rate: f64) -> Vec<f32> {
 /// times the empty samples between them, and read as sparse.
 #[test]
 fn decay_per_band_and_echo_density_match_at_every_rate() {
-    let reverb = still();
+    for mode in ReverbMode::ALL {
+        decay_and_density_match_at_every_rate(in_mode(mode, still()));
+    }
+}
+
+fn decay_and_density_match_at_every_rate(reverb: ReverbSettings) {
+    let mode = reverb.mode;
     let measure = |rate: f64| {
         let [left, _] = impulse_response(reverb, rate, 3.0);
         let profile = impulse::echo_density(&audible(&left, rate), rate as u32);
@@ -234,7 +255,7 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
         for (&(hz, decay), &(_, other)) in decays.iter().zip(&other_decays) {
             assert!(
                 (other / decay - 1.0).abs() < 0.05,
-                "{hz} Hz decays in {other:.3} s at {rate} Hz, {decay:.3} s at 48 kHz"
+                "{mode:?}: {hz} Hz decays in {other:.3} s at {rate} Hz, {decay:.3} s at 48 kHz"
             );
         }
         // A 20 ms window of noise reads 1 give or take about 0.06, so two
@@ -248,7 +269,7 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
             / density.len() as f64;
         assert!(
             difference < 0.08,
-            "echo density at {rate} Hz is {difference:.3} from 48 kHz's on average"
+            "{mode:?}: echo density at {rate} Hz is {difference:.3} from 48 kHz's on average"
         );
     }
 }
@@ -259,9 +280,15 @@ fn decay_per_band_and_echo_density_match_at_every_rate() {
 /// tone, the crosses and the drift at their defaults, and again at their
 /// extremes: both Mults at their longest with the crossovers crossed, the
 /// crosses at either end, the drift full on and fast, and the cuts at
-/// their highest.
+/// their highest. In every mode.
 #[test]
 fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale() {
+    for mode in ReverbMode::ALL {
+        never_grows_or_passes_full_scale(mode);
+    }
+}
+
+fn never_grows_or_passes_full_scale(mode: ReverbMode) {
     use ReverbSettings as S;
     let rate = 48_000.0;
     let sizes = [
@@ -277,6 +304,7 @@ fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale()
     {
         let extremes = n >= sizes.len();
         let reverb = settings(|s| {
+            s.mode = mode;
             s.decay_seconds = S::MAX_DECAY_SECONDS;
             s.depth = depth;
             s.diffusion = diffusion;
@@ -323,32 +351,41 @@ fn at_30_seconds_and_every_extreme_the_output_never_grows_or_passes_full_scale()
     }
 }
 
-/// The lines are set aside for the longest sizes: at the largest Late Size,
-/// Early Size and Predelay, at every rate, every delay is the length its
-/// seconds give, none held short by its line.
+/// The lines are set aside for the longest sizes of every mode: at the
+/// largest Late Size, Early Size and Predelay, at every rate and in every
+/// mode, every delay is the length its seconds give, none held short by
+/// its line, whichever mode the Reverb was made in.
 #[test]
 fn every_line_holds_the_longest_sizes_at_every_rate() {
-    let largest = settings(|s| {
-        s.late_size = 1.0;
-        s.early_size_seconds = ReverbSettings::MAX_EARLY_SIZE_SECONDS;
-        s.predelay_seconds = ReverbSettings::MAX_PREDELAY_SECONDS;
-    });
-    for rate in RATES {
-        let reverb = Reverb::new(largest, rate);
-        let samples = |seconds: f64| (seconds * rate).round() as usize;
+    for (made, mode, rate) in ReverbMode::ALL.into_iter().flat_map(|made| {
+        ReverbMode::ALL
+            .into_iter()
+            .flat_map(move |mode| RATES.map(|rate| (made, mode, rate)))
+    }) {
+        let largest = settings(|s| {
+            s.mode = mode;
+            s.late_size = 1.0;
+            s.early_size_seconds = ReverbSettings::MAX_EARLY_SIZE_SECONDS;
+            s.predelay_seconds = ReverbSettings::MAX_PREDELAY_SECONDS;
+        });
+        let mut reverb = Reverb::new(in_mode(made, largest), rate);
+        reverb.set_settings(largest);
+        let arrangement = Arrangement::of(mode);
+        let rate = (rate, made, mode);
+        let samples = |seconds: f64| (seconds * rate.0).round() as usize;
         let length = |head: &Glide| head.value() as usize;
-        assert_eq!(length(&reverb.predelay_head), samples(0.5), "{rate} Hz");
-        for (step, heads) in ROOM.steps.iter().zip(reverb.lane_heads.iter()) {
+        assert_eq!(length(&reverb.predelay_head), samples(0.5), "{rate:?}");
+        for (step, heads) in arrangement.steps.iter().zip(reverb.lane_heads.iter()) {
             for (lane, head) in heads.iter().enumerate() {
                 assert_eq!(
                     length(head),
                     samples(lane_seconds(step, lane, 1.0)),
-                    "{rate} Hz"
+                    "{rate:?}"
                 );
             }
         }
-        for (&seconds, head) in ROOM.lines.iter().zip(reverb.line_heads.iter()) {
-            assert_eq!(length(head), samples(seconds * 2.0), "{rate} Hz");
+        for (&seconds, head) in arrangement.lines.iter().zip(reverb.line_heads.iter()) {
+            assert_eq!(length(head), samples(seconds * 2.0), "{rate:?}");
         }
     }
 }
@@ -1089,32 +1126,52 @@ const STILL_COLOURATION_LIMIT_DB: f64 = 1.2;
 /// drifting) reads over the limit, and isn't yet judged by ear.
 #[test]
 fn room_stays_under_colouration_s_limit() {
+    stays_under_colouration_s_limit(ReverbMode::Room);
+}
+
+/// Chamber isn't metallic either, at the same settings as Room, against
+/// the same limits: its taps hear the same lines, a fraction of a lap
+/// sooner.
+#[test]
+fn chamber_stays_under_colouration_s_limit() {
+    stays_under_colouration_s_limit(ReverbMode::Chamber);
+}
+
+/// The settings each mode's colouration is checked at.
+const COLOURATION_CHANGES: [Change; 10] = [
+    ("the defaults", |_| {}),
+    ("Decay 5 s", |s| s.decay_seconds = 5.0),
+    ("Decay 10 s", |s| s.decay_seconds = 10.0),
+    ("Late Size 75%", |s| s.late_size = 0.75),
+    ("Late Size 100%", |s| s.late_size = 1.0),
+    ("Depth 50%", |s| s.depth = 0.5),
+    ("Depth 100%", |s| s.depth = 1.0),
+    ("Late Cross 0", |s| s.late_cross = 0.0),
+    ("High Mult 1", |s| s.high_mult = 1.0),
+    ("Bass Mult 2", |s| s.bass_mult = 2.0),
+];
+
+/// The colouration of `reverb`'s impulse response, on its mid, in dB.
+fn colouration_of(reverb: ReverbSettings) -> f64 {
     let rate = 48_000.0;
-    let changes: [Change; 10] = [
-        ("the defaults", |_| {}),
-        ("Decay 5 s", |s| s.decay_seconds = 5.0),
-        ("Decay 10 s", |s| s.decay_seconds = 10.0),
-        ("Late Size 75%", |s| s.late_size = 0.75),
-        ("Late Size 100%", |s| s.late_size = 1.0),
-        ("Depth 50%", |s| s.depth = 0.5),
-        ("Depth 100%", |s| s.depth = 1.0),
-        ("Late Cross 0", |s| s.late_cross = 0.0),
-        ("High Mult 1", |s| s.high_mult = 1.0),
-        ("Bass Mult 2", |s| s.bass_mult = 2.0),
-    ];
-    for (name, change) in changes {
+    let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
+    let response = impulse_response(reverb, rate, seconds);
+    impulse::colouration_db(&mid(&response), rate as u32).unwrap()
+}
+
+fn stays_under_colouration_s_limit(mode: ReverbMode) {
+    for (name, change) in COLOURATION_CHANGES {
         for (start, limit) in [
             (ReverbSettings::default(), impulse::COLOURATION_LIMIT_DB),
             (still(), STILL_COLOURATION_LIMIT_DB),
         ] {
-            let mut reverb = start;
+            let mut reverb = in_mode(mode, start);
             change(&mut reverb);
-            let seconds = 1.6 * f64::from(reverb.decay_seconds) + 0.5;
-            let response = impulse_response(reverb, rate, seconds);
-            let colouration = impulse::colouration_db(&mid(&response), rate as u32).unwrap();
+            let colouration = colouration_of(reverb);
             assert!(
                 colouration < limit,
-                "{name}, Late Mod Depth {}: colouration {colouration:.2} dB, limit {limit} dB",
+                "{mode:?}, {name}, Late Mod Depth {}: colouration {colouration:.2} dB, \
+                 limit {limit} dB",
                 reverb.late_mod_depth
             );
         }
@@ -1157,6 +1214,286 @@ fn room_s_echo_density_reaches_near_1_within_its_limit() {
                     ROOM_DENSE_WITHIN_SECONDS * 1000.0
                 );
             }
+        }
+    }
+}
+
+/// How soon after the first sound Chamber's echo density reaches near 1,
+/// at the latest, in seconds: its own, fast limit, half Room's (RFC-010,
+/// "Dense, not grainy"). Measured at 7 to 19 ms in UTA-102, slowest with
+/// only the tail heard.
+const CHAMBER_DENSE_WITHIN_SECONDS: f64 = 0.02;
+
+/// The least echo density Chamber's first 300 ms may have, from 10 ms
+/// after its first sound: no sparse stretch between the burst and the tail.
+/// Measured at 0.56 at the least in UTA-102, at Late Size 100%; Room's falls
+/// to nothing 40 to 53 ms after a click.
+const CHAMBER_STAYS_DENSE: f64 = 0.5;
+
+/// The echo density of `reverb`'s impulse response: how long after the
+/// first sound it reaches near 1, and the least it has from 10 ms after
+/// the first sound to 300 ms, both in seconds.
+fn density_of(reverb: ReverbSettings) -> (f64, f64) {
+    let rate = 48_000.0;
+    let response = impulse_response(reverb, rate, 1.0);
+    let first = impulse::onset(&[&response[0], &response[1]]).unwrap() as f64 / rate;
+    let profile = impulse::echo_density(&mid(&response), rate as u32);
+    let dense = impulse::dense_after(&profile, first).expect("it reaches near 1");
+    let least = profile
+        .iter()
+        .filter(|&&(at, _)| (first + 0.01..=first + 0.3).contains(&at))
+        .map(|&(_, density)| density)
+        .fold(f64::MAX, f64::min);
+    (dense, least)
+}
+
+/// Chamber is dense from the very first moment: its echo density reaches
+/// near 1 within its own limit of the first sound, and stays near it, with
+/// no sparse stretch, at every Late Size and with Depth from 50% to only
+/// the tail, at its default Early Size, 30 ms. Its taps hear each line
+/// partway round, so the tail starts before the burst has ended. Room, at
+/// the same settings, falls to nothing between the two. A longer burst
+/// swells in, as Room's does: at Early Size 100 ms it reaches near 1 in
+/// 29 to 31 ms.
+#[test]
+fn chamber_s_echo_density_reaches_near_1_within_its_limit_and_stays_there() {
+    for late_size in [0.0, 0.5, 1.0] {
+        for depth in [0.5, 0.65, 1.0] {
+            let reverb = ReverbSettings {
+                mode: ReverbMode::Chamber,
+                late_size,
+                depth,
+                ..ReverbSettings::default()
+            };
+            let (dense, least) = density_of(reverb);
+            let case = format!("Late Size {late_size}, Depth {depth}");
+            assert!(
+                dense <= CHAMBER_DENSE_WITHIN_SECONDS,
+                "{case}: near 1 after {:.1} ms, limit {:.0} ms",
+                dense * 1000.0,
+                CHAMBER_DENSE_WITHIN_SECONDS * 1000.0
+            );
+            assert!(
+                least >= CHAMBER_STAYS_DENSE,
+                "{case}: the echo density falls to {least:.2}"
+            );
+        }
+    }
+    let (_, room) = density_of(ReverbSettings::default());
+    assert!(room < 0.1, "Room's falls to {room:.2}");
+}
+
+/// A held A3 (220 Hz, at half scale) from sample `from`, for `frames`.
+fn held_a3(from: usize, frames: usize, rate: f64) -> Vec<f32> {
+    (from..from + frames)
+        .map(|n| (0.5 * (std::f64::consts::TAU * 220.0 * n as f64 / rate).sin()) as f32)
+        .collect()
+}
+
+/// `input` through `reverb`, the same on both sides, in blocks of `block`.
+fn through(reverb: &mut Reverb, input: &[f32], block: usize) -> [Vec<f32>; 2] {
+    let mut left = input.to_vec();
+    let mut right = input.to_vec();
+    for (left, right) in left.chunks_mut(block).zip(right.chunks_mut(block)) {
+        reverb.process(left, right);
+    }
+    [left, right]
+}
+
+/// Every pair of modes, the first changing to the second.
+fn mode_changes() -> Vec<(ReverbMode, ReverbMode)> {
+    ReverbMode::ALL
+        .into_iter()
+        .flat_map(|from| ReverbMode::ALL.map(|to| (from, to)))
+        .filter(|(from, to)| from != to)
+        .collect()
+}
+
+/// Changing mode while the tail rings, with a held A3 going in (RFC-010,
+/// "Turning knobs while it rings"):
+/// - the old mode's tail fades out over [`MODE_FADE_SECONDS`], in a
+///   straight line from where it was, nothing else about it changed;
+/// - then the new mode starts from silence, its first sample exactly 0, and
+///   plays exactly what a new Reverb in that mode plays from there, with
+///   what goes in fading in over the time an effect switched on takes;
+/// - and nothing clicks, by the same limit as turning any other setting.
+///
+/// Between every pair of modes, so a new mode is tested by being added to
+/// [`ReverbMode::ALL`].
+#[test]
+fn changing_mode_while_it_rings_fades_the_old_tail_out_then_starts_the_new_one_from_silence() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2; // 1.536 s, a block boundary
+    let after = (rate as usize) / block * block;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    let fade_in = (crate::EFFECT_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        let old = in_mode(from, still());
+        let new = in_mode(to, still());
+        let mut changed = Reverb::new(old, rate);
+        let mut kept = Reverb::new(old, rate);
+        let ringing = through(&mut changed, &held_a3(0, before, rate), block);
+        through(&mut kept, &held_a3(0, before, rate), block);
+        assert!(changed.is_ringing());
+
+        let input = held_a3(before, after, rate);
+        changed.set_settings(new);
+        let turned = through(&mut changed, &input, block);
+        let unturned = through(&mut kept, &input, block);
+        let faded: Vec<f32> = (fade..after)
+            .map(|n| input[n] * (n - fade).min(fade_in) as f32 / fade_in as f32)
+            .collect();
+        let fresh = through(&mut Reverb::new(new, rate), &faded, block);
+        for side in 0..2 {
+            for n in 0..fade {
+                // The fade adds up its steps, so it strays from the straight
+                // line by a rounding a step.
+                let expected = unturned[side][n] * (1.0 - n as f32 / fade as f32);
+                assert!(
+                    (turned[side][n] - expected).abs() <= 1e-4 * unturned[side][n].abs() + 1e-7,
+                    "{from:?} to {to:?}: sample {n} of the fade is {}, not {expected}",
+                    turned[side][n]
+                );
+            }
+            assert_eq!(
+                turned[side][fade], 0.0,
+                "{from:?} to {to:?}: the new mode doesn't start from silence"
+            );
+            // The fade in adds up its steps, so it's a rounding from the
+            // straight line the reference is multiplied by.
+            let differs = turned[side][fade..]
+                .iter()
+                .zip(&fresh[side])
+                .position(|(a, b)| (a - b).abs() > 1e-4);
+            assert_eq!(
+                differs,
+                None,
+                "{from:?} to {to:?}: the new mode isn't a new Reverb's: {:?}",
+                differs.map(|n| (turned[side][fade + n], fresh[side][n]))
+            );
+            let whole: Vec<f32> = ringing[side].iter().chain(&turned[side]).copied().collect();
+            let peak = whole.iter().fold(0.0f32, |peak, s| peak.max(s.abs()));
+            let limit = 2.0 * peak * sine_steepest(330.0, rate);
+            let jump = steepest(&whole);
+            assert!(
+                jump <= limit,
+                "{from:?} to {to:?}: a step of {jump:.5}, the limit {limit:.5}"
+            );
+        }
+    }
+}
+
+/// Changing mode and back before the old tail has faded out fades it back
+/// in, from wherever the fade had got to, and once it's back it plays
+/// exactly what it would have, never having stopped.
+#[test]
+fn changing_mode_and_back_before_the_fade_ends_fades_the_old_tail_back_in() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        let old = in_mode(from, still());
+        let mut changed = Reverb::new(old, rate);
+        let mut kept = Reverb::new(old, rate);
+        through(&mut changed, &held_a3(0, before, rate), block);
+        through(&mut kept, &held_a3(0, before, rate), block);
+        let away = 8 * block;
+        changed.set_settings(in_mode(to, still()));
+        let went = through(&mut changed, &held_a3(before, away, rate), block);
+        through(&mut kept, &held_a3(before, away, rate), block);
+        changed.set_settings(old);
+        let input = held_a3(before + away, 2 * fade, rate);
+        let back = through(&mut changed, &input, block);
+        let unchanged = through(&mut kept, &input, block);
+        for side in 0..2 {
+            assert!(went[side].iter().any(|&s| s != 0.0));
+            assert_eq!(
+                &back[side][fade..],
+                &unchanged[side][fade..],
+                "{from:?} to {to:?} and back"
+            );
+            let level = |n: usize| back[side][n] / unchanged[side][n];
+            assert!(level(0) > 0.5 && level(0) < 1.0, "{}", level(0));
+        }
+    }
+}
+
+/// Asleep, a new mode plays at once: what it plays is what a new Reverb in
+/// that mode plays.
+#[test]
+fn asleep_a_new_mode_plays_at_once() {
+    let rate = 48_000.0;
+    for (from, to) in mode_changes() {
+        let mut reverb = Reverb::new(in_mode(from, still()), rate);
+        assert!(!reverb.is_ringing());
+        reverb.set_settings(in_mode(to, still()));
+        assert_eq!(
+            response_to(&mut reverb, [1.0, 1.0], rate, 1.0),
+            impulse_response(in_mode(to, still()), rate, 1.0),
+            "{from:?} to {to:?}"
+        );
+    }
+}
+
+/// Changing mode while the tail rings sounds the same in blocks of 32 as in
+/// blocks of 1024, with the drift on: the block is split where the old
+/// tail has faded out, wherever that falls.
+#[test]
+fn changing_mode_is_the_same_at_every_block_size() {
+    let rate = 48_000.0;
+    let at = 72 * 1024;
+    for (from, to) in mode_changes() {
+        let render = |block: usize| {
+            let mut reverb = Reverb::new(in_mode(from, ReverbSettings::default()), rate);
+            let mut out = through(&mut reverb, &held_a3(0, at, rate), block);
+            reverb.set_settings(in_mode(to, ReverbSettings::default()));
+            let rest = through(&mut reverb, &held_a3(at, 48 * 1024, rate), block);
+            for side in 0..2 {
+                out[side].extend(&rest[side]);
+            }
+            out
+        };
+        assert_eq!(render(32), render(1024), "{from:?} to {to:?}");
+    }
+}
+
+/// Once a change of mode has finished, by the old tail fading out or by
+/// the Reverb being prepared partway through, the Reverb knows it's in
+/// the new mode: the same settings again, while it rings, change nothing,
+/// rather than reading as another change of mode that fades the tail out.
+#[test]
+fn after_changing_mode_the_same_settings_again_change_nothing() {
+    let rate = 48_000.0;
+    let block = 128;
+    let before = 1536 * block / 2;
+    let fade = (MODE_FADE_SECONDS * rate).round() as usize;
+    for (from, to) in mode_changes() {
+        for prepared in [false, true] {
+            let new = in_mode(to, still());
+            let ringing = || {
+                let mut reverb = Reverb::new(in_mode(from, still()), rate);
+                through(&mut reverb, &held_a3(0, before, rate), block);
+                reverb.set_settings(new);
+                if prepared {
+                    through(&mut reverb, &held_a3(before, 8 * block, rate), block);
+                    reverb.prepare(rate);
+                } else {
+                    through(&mut reverb, &held_a3(before, 2 * fade, rate), block);
+                }
+                assert!(reverb.is_ringing());
+                reverb
+            };
+            let mut again = ringing();
+            let mut once = ringing();
+            again.set_settings(new);
+            let input = held_a3(0, 4 * fade, rate);
+            assert_eq!(
+                through(&mut again, &input, block),
+                through(&mut once, &input, block),
+                "{from:?} to {to:?}, prepared {prepared}"
+            );
         }
     }
 }
