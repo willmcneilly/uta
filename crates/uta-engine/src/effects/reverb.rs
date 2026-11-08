@@ -262,7 +262,7 @@ pub(crate) const CHAMBER: Arrangement = Arrangement {
 /// Space: huge and dark, with a slow, sparse onset and deep, slow drift.
 /// Lines from 81 to 285 ms at its middle size, nearly twice Room's, each
 /// about 9% longer than the last and nudged so no two line up: a bigger
-/// space, and the least coloured of the three (0.46 to 0.77 dB drifting,
+/// space, and the least coloured of the three (0.47 to 0.77 dB drifting,
 /// 0.56 to 0.81 still, at the settings Room is checked at).
 ///
 /// Its tail is heard from a tap along each line, as Chamber's is, but the
@@ -279,19 +279,20 @@ pub(crate) const CHAMBER: Arrangement = Arrangement {
 /// It's built dark: a low-pass at 8 kHz on all it puts out, so under 3.2%
 /// of its energy is above 11 kHz at any High Mult, against Room's 33%.
 ///
-/// Its drift reaches eight thirds as far as Room's, on rates three eighths
-/// as fast, so it's deep and slow: it smears the resonances more without
-/// bending the pitch any further than Room's does at full Late Mod Depth.
+/// Its drift reaches eight thirds as far as Room's, on rates a quarter as
+/// fast, so it's deep and slow: it smears the resonances as much, and
+/// bends the pitch two thirds as far as Room's does. On rates three
+/// eighths of Room's, bending it as far, Will heard the tail at full Late
+/// Mod Depth waver under the canvas's swell, and kept 50% over it.
 pub(crate) const SPACE: Arrangement = Arrangement {
     lines: &[
         0.0811, 0.0883, 0.0959, 0.1043, 0.1137, 0.1231, 0.1343, 0.1459, 0.1583, 0.1721, 0.1877,
         0.2039, 0.2213, 0.2411, 0.2623, 0.2849,
     ],
-    // Room's order, at three eighths of its speed: from 0.23 to 0.52, the
-    // fastest rounded down.
+    // Room's order, at a quarter of its speed: from 0.155 to 0.345.
     line_rates: &[
-        0.375, 0.266, 0.476, 0.323, 0.424, 0.233, 0.517, 0.349, 0.454, 0.251, 0.398, 0.300, 0.499,
-        0.281, 0.439, 0.334,
+        0.25, 0.1775, 0.3175, 0.215, 0.2825, 0.155, 0.345, 0.2325, 0.3025, 0.1675, 0.265, 0.2,
+        0.3325, 0.1875, 0.2925, 0.2225,
     ],
     late_mod_seconds: 0.008,
     taps: &[
