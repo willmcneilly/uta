@@ -290,8 +290,8 @@ pub(crate) const SPACE: Arrangement = Arrangement {
     // Room's order, at three eighths of its speed: from 0.23 to 0.52, the
     // fastest rounded down.
     line_rates: &[
-        0.375, 0.266, 0.476, 0.323, 0.424, 0.233, 0.517, 0.349, 0.454, 0.251, 0.398, 0.300,
-        0.499, 0.281, 0.439, 0.334,
+        0.375, 0.266, 0.476, 0.323, 0.424, 0.233, 0.517, 0.349, 0.454, 0.251, 0.398, 0.300, 0.499,
+        0.281, 0.439, 0.334,
     ],
     late_mod_seconds: 0.008,
     taps: &[

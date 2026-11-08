@@ -130,7 +130,10 @@ fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
                 .top_hz
                 .map_or(0, |hz| (0.1 * rate / hz).floor() as usize);
             let onset = impulse::onset(&[left, right]).unwrap();
-            assert!((at..=at + rise).contains(&onset), "{case}: onset at {onset}");
+            assert!(
+                (at..=at + rise).contains(&onset),
+                "{case}: onset at {onset}"
+            );
         }
     }
 }
@@ -820,7 +823,10 @@ fn the_drift_bends_the_pitch_no_more_than_its_depth_and_rate_allow() {
     for mode in ReverbMode::ALL {
         let arrangement = Arrangement::of(mode);
         let bend = fastest(arrangement.line_rates) * arrangement.late_mod_seconds;
-        assert!(bend <= room_bend, "{mode:?} bends the pitch further than Room");
+        assert!(
+            bend <= room_bend,
+            "{mode:?} bends the pitch further than Room"
+        );
         for rate in [48_000.0, 96_000.0] {
             for (depth, mod_rate) in [(1.0, 5.0), (0.5, 5.0), (1.0, 0.5)] {
                 let late = drifting(|s| {
@@ -1522,7 +1528,6 @@ fn after_changing_mode_the_same_settings_again_change_nothing() {
         }
     }
 }
-
 
 /// How soon after the first sound Space's echo density reaches near 1, at
 /// the latest, in seconds: its own limit, slower than Room's (RFC-010,

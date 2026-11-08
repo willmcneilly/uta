@@ -558,7 +558,7 @@ mod tests {
             })
             .collect();
         let expected = [
-            ("Mode", "2 choices"),
+            ("Mode", "3 choices"),
             ("Predelay", "Seconds Linear 0..0.5"),
             ("Decay", "Seconds Log 0.1..30"),
             ("Depth", "Fraction Linear 0..1"),
