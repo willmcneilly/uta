@@ -1413,8 +1413,12 @@ fn changing_effects_on_tracks_and_the_master_does_not_allocate_and_every_state_c
                 },
             );
         };
-        for &effect in &reverbs {
-            set_mode(&mut project, &mut renderer, effect, ReverbMode::Chamber);
+        // Two to Chamber, two to Space, and so on, so each new mode has
+        // Reverbs that change back and Reverbs that finish their change.
+        assert!(reverbs.len() >= 4);
+        for (n, &effect) in reverbs.iter().enumerate() {
+            let mode = [ReverbMode::Chamber, ReverbMode::Space][n / 2 % 2];
+            set_mode(&mut project, &mut renderer, effect, mode);
         }
         for _ in 0..4 {
             process_block(renderer.processor(), &mut buffer);
