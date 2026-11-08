@@ -1,0 +1,565 @@
+{
+  "project": "049abccc-194d-5e10-8dfc-526d77f574b0",
+  "commands": [
+    {
+      "format": 15,
+      "command": {
+        "type": "set_tempo",
+        "bpm": 120.0
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_master_volume",
+        "volume_db": 0.0
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_effects",
+        "effects": [
+          {
+            "chain": "master",
+            "index": 0,
+            "effect": {
+              "id": "aa22fc5b-9820-5146-947f-34a87e85ad9e",
+              "settings": {
+                "reverb": {
+                  "mode": "space",
+                  "predelay_seconds": 0.01,
+                  "decay_seconds": 2.0,
+                  "depth": 0.65,
+                  "high_cut_hz": 20000.0,
+                  "low_cut_hz": 20.0,
+                  "early_size_seconds": 0.03,
+                  "early_cross": 1.0,
+                  "diffusion": 0.8,
+                  "early_send": 0.9,
+                  "early_mod_rate_hz": 0.5,
+                  "early_mod_depth": 0.0,
+                  "late_size": 0.5,
+                  "late_cross": 1.0,
+                  "late_mod_rate_hz": 0.5,
+                  "late_mod_depth": 0.5,
+                  "bass_mult": 1.0,
+                  "bass_xover_hz": 500.0,
+                  "high_mult": 0.5,
+                  "high_xover_hz": 4000.0
+                }
+              },
+              "enabled": true,
+              "mix": 0.25
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_effect_mix",
+        "effect": "aa22fc5b-9820-5146-947f-34a87e85ad9e",
+        "mix": 0.3
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 2,
+            "track": {
+              "id": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+              "name": "Keys",
+              "source": {
+                "synth": {
+                  "osc1_wave": "saw",
+                  "osc1_octave": 0,
+                  "osc1_width": 0.5,
+                  "osc2_wave": "saw",
+                  "osc2_octave": 0,
+                  "osc2_pitch_semitones": 0.0,
+                  "osc2_sync": false,
+                  "sub_octave": -1,
+                  "osc1_level": 1.0,
+                  "osc2_level": 0.0,
+                  "sub_level": 0.0,
+                  "noise_level": 0.0,
+                  "filter_mode": "low_pass",
+                  "cutoff_hz": 20000.0,
+                  "resonance": 0.0,
+                  "filter_env_octaves": 0.0,
+                  "filter_key": 0.0,
+                  "filter_lfo_octaves": 0.0,
+                  "filter_attack_seconds": 0.001,
+                  "filter_decay_seconds": 0.3,
+                  "filter_sustain": 0.0,
+                  "filter_release_seconds": 0.2,
+                  "attack_seconds": 0.005,
+                  "decay_seconds": 0.2,
+                  "sustain": 0.7,
+                  "release_seconds": 0.2,
+                  "lfo_shape": "sine",
+                  "lfo_rate_hz": 5.0,
+                  "lfo_sync": false,
+                  "lfo_division": "1/4",
+                  "lfo_retrigger": false,
+                  "lfo_vibrato_semitones": 0.0,
+                  "lfo_width": 0.0,
+                  "voice_mode": "poly",
+                  "legato": false,
+                  "glide_seconds": 0.001,
+                  "osc_retrigger": true,
+                  "mod1_source": "velocity",
+                  "mod1_destination": "off",
+                  "mod1_amount": 0.0,
+                  "mod2_source": "filter_env",
+                  "mod2_destination": "off",
+                  "mod2_amount": 0.0,
+                  "mod3_source": "lfo",
+                  "mod3_destination": "off",
+                  "mod3_amount": 0.0
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "attack_seconds",
+          "value": 0.002
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "cutoff_hz",
+          "value": 900.0
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "decay_seconds",
+          "value": 1.8
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "filter_attack_seconds",
+          "value": 0.001
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "filter_decay_seconds",
+          "value": 0.6
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "filter_env_octaves",
+          "value": 2.0
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "filter_key",
+          "value": 0.5
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "filter_sustain",
+          "value": 0.0
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "osc1_level",
+          "value": 1.0
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "osc1_wave",
+          "value": "triangle"
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "osc2_level",
+          "value": 0.3
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "osc2_octave",
+          "value": 1
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "osc2_wave",
+          "value": "sine"
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "release_seconds",
+          "value": 0.4
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "resonance",
+          "value": 0.1
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_synth_param",
+        "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+        "param": {
+          "name": "sustain",
+          "value": 0.0
+        }
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_clips",
+        "clips": [
+          {
+            "track": "28a589e6-3ba9-5e7c-901b-37f0e3efd818",
+            "clip": {
+              "id": "0aea5511-6f41-50b4-85a1-ac96da46d08e",
+              "start": 0,
+              "length": 7680,
+              "notes": [
+                {
+                  "id": "11fe03e8-f2d6-504c-88cd-417a8aa9ae11",
+                  "pitch": 62,
+                  "velocity": 100,
+                  "start": 1920,
+                  "length": 960
+                },
+                {
+                  "id": "24f4cb07-144a-5430-aef3-38b4ee72e325",
+                  "pitch": 64,
+                  "velocity": 100,
+                  "start": 3840,
+                  "length": 720
+                },
+                {
+                  "id": "2a4235c6-13ce-52b7-bf28-6d762a834b10",
+                  "pitch": 62,
+                  "velocity": 100,
+                  "start": 5760,
+                  "length": 960
+                },
+                {
+                  "id": "39fc7478-4319-587c-b163-606f3c510ba8",
+                  "pitch": 67,
+                  "velocity": 100,
+                  "start": 1440,
+                  "length": 240
+                },
+                {
+                  "id": "4ef0dde4-50cb-528a-8c46-d0ce00fd22bd",
+                  "pitch": 60,
+                  "velocity": 100,
+                  "start": 3840,
+                  "length": 720
+                },
+                {
+                  "id": "65e35bf2-1af7-5c0e-ba4b-73621584c76b",
+                  "pitch": 64,
+                  "velocity": 100,
+                  "start": 1680,
+                  "length": 240
+                },
+                {
+                  "id": "75c02938-8628-5bcb-b010-611261530c2a",
+                  "pitch": 67,
+                  "velocity": 100,
+                  "start": 5280,
+                  "length": 240
+                },
+                {
+                  "id": "8416f7e6-c340-52cb-b562-d4c83a0d08e4",
+                  "pitch": 55,
+                  "velocity": 100,
+                  "start": 0,
+                  "length": 720
+                },
+                {
+                  "id": "a4a56507-32d3-534e-8fc7-d37b66ff90d3",
+                  "pitch": 48,
+                  "velocity": 100,
+                  "start": 0,
+                  "length": 720
+                },
+                {
+                  "id": "af2d41ab-3fec-5ad0-98a3-6db466a44328",
+                  "pitch": 48,
+                  "velocity": 100,
+                  "start": 3840,
+                  "length": 720
+                },
+                {
+                  "id": "cc0a38c5-1a42-5dae-bf01-41aaa6cd5c94",
+                  "pitch": 64,
+                  "velocity": 100,
+                  "start": 0,
+                  "length": 720
+                },
+                {
+                  "id": "dfb90d31-0c7d-5f52-9a34-5b6a546baf95",
+                  "pitch": 55,
+                  "velocity": 100,
+                  "start": 3840,
+                  "length": 720
+                },
+                {
+                  "id": "fe38b5a2-8161-525a-b07c-c5a6dff8328a",
+                  "pitch": 60,
+                  "velocity": 100,
+                  "start": 0,
+                  "length": 720
+                },
+                {
+                  "id": "fe43b444-657d-5ae1-89ae-d1a054e44fa7",
+                  "pitch": 64,
+                  "velocity": 100,
+                  "start": 5520,
+                  "length": 240
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_tracks",
+        "tracks": [
+          {
+            "index": 3,
+            "track": {
+              "id": "39721491-84c7-503a-936c-54ff946ee392",
+              "name": "Drums",
+              "source": {
+                "drums": {
+                  "kick": {
+                    "model": "808",
+                    "tune_hz": 49.0,
+                    "tone": 0.2,
+                    "decay_seconds": 0.3,
+                    "level_db": 0.0,
+                    "909": {
+                      "tune_hz": 55.0,
+                      "sweep": 0.4,
+                      "attack": 0.5,
+                      "decay_seconds": 0.5,
+                      "level_db": -2.0
+                    }
+                  },
+                  "snare": {
+                    "tune_hz": 180.0,
+                    "tone_seconds": 0.16,
+                    "snappy": 0.5,
+                    "level_db": -2.0
+                  },
+                  "clap": {
+                    "tone_hz": 1000.0,
+                    "decay_seconds": 0.2,
+                    "level_db": 2.5
+                  },
+                  "closed_hat": {
+                    "tune_hz": 205.3,
+                    "tone_hz": 7100.0,
+                    "decay_seconds": 0.05,
+                    "level_db": -1.0
+                  },
+                  "open_hat": {
+                    "decay_seconds": 0.35,
+                    "level_db": -9.5
+                  },
+                  "low_tom": {
+                    "tune_hz": 90.0,
+                    "decay_seconds": 0.2,
+                    "level_db": -4.5
+                  },
+                  "high_tom": {
+                    "tune_hz": 185.0,
+                    "decay_seconds": 0.1,
+                    "level_db": -3.0
+                  },
+                  "cymbal": {
+                    "tone": 0.5,
+                    "decay_seconds": 0.8,
+                    "level_db": -12.0
+                  }
+                }
+              },
+              "mixer": {
+                "volume_db": 0.0,
+                "pan": 0.0,
+                "mute": false,
+                "solo": false
+              },
+              "clips": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "add_clips",
+        "clips": [
+          {
+            "track": "39721491-84c7-503a-936c-54ff946ee392",
+            "clip": {
+              "id": "a0cd7f0a-bb72-5ee0-a6c0-dcec54a41c7e",
+              "start": 0,
+              "length": 7680,
+              "notes": [
+                {
+                  "id": "1453c1eb-4172-5a0a-a745-b39f9f022af7",
+                  "pitch": 38,
+                  "velocity": 100,
+                  "start": 4800,
+                  "length": 240
+                },
+                {
+                  "id": "9267ae55-1a26-5a8b-b129-7c20cb651709",
+                  "pitch": 38,
+                  "velocity": 100,
+                  "start": 960,
+                  "length": 240
+                },
+                {
+                  "id": "df634536-738b-5462-ab2e-8b3f0b509efe",
+                  "pitch": 38,
+                  "velocity": 100,
+                  "start": 2880,
+                  "length": 240
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "remove_tracks",
+        "tracks": [
+          "2956c09e-7e9b-534c-884d-24560bb7e333",
+          "c051362b-ca86-50a5-88a7-ed037440cbc6"
+        ]
+      }
+    },
+    {
+      "format": 15,
+      "command": {
+        "type": "set_loop",
+        "start_bar": 0,
+        "bars": 2
+      }
+    }
+  ]
+}
