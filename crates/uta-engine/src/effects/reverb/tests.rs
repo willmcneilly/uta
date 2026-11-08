@@ -125,7 +125,8 @@ fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
             assert!(left[at] != 0.0 || right[at] != 0.0, "{case}: silent at it");
             // A mode built dark has a low-pass on all it puts out, which
             // takes up to a tenth of a cycle at its cutoff to rise within
-            // 40 dB of its peak: a sample at 192 kHz.
+            // 40 dB of its peak: at Space's 8 kHz, up to 2 samples at
+            // 192 kHz (it measures 1), none at 48 kHz.
             let rise = Arrangement::of(mode)
                 .top_hz
                 .map_or(0, |hz| (0.1 * rate / hz).floor() as usize);
@@ -1599,4 +1600,66 @@ fn space_has_little_above_11_khz() {
     }
     let room = above(ReverbSettings::default());
     assert!(room > 0.25, "Room has {:.1}% above 11 kHz", room * 100.0);
+}
+
+/// How far under its loudest any 20 ms of Space's tail may fall, in dB,
+/// from 40 ms to 200 ms after Predelay: the taps spread along its lines
+/// were chosen so it holds, with no hole and no second slap.
+const SPACE_HOLDS_WITHIN_DB: f64 = 7.0;
+
+/// How soon after Predelay Space's tail may first be heard, at the soonest,
+/// in seconds, at Depth 100% and its default Late Size: its first tap.
+const SPACE_TAIL_NO_SOONER_SECONDS: f64 = 0.025;
+
+/// Space builds slowly and then lasts. At its default Late Size, its tail
+/// alone (Depth 100%) is first heard no sooner than
+/// [`SPACE_TAIL_NO_SOONER_SECONDS`] after Predelay, and from 40 ms to
+/// 200 ms after it, with the burst too, every 20 ms is within
+/// [`SPACE_HOLDS_WITHIN_DB`] of the loudest. Heard from its lines' ends, a
+/// 50 ms hole opens; with every tap 30% sooner, the tail falls away 10 dB
+/// before 200 ms (measured 5.4 to 5.6 dB for Space). A bigger Late Size
+/// moves the taps out with the lines, so its tail starts later still.
+#[test]
+fn space_s_tail_builds_slowly_then_holds() {
+    for rate in [48_000.0, 96_000.0] {
+        let tail = impulse_response(
+            in_mode(ReverbMode::Space, settings(|s| s.depth = 1.0)),
+            rate,
+            0.3,
+        );
+        let predelay = f64::from(ReverbSettings::default().predelay_seconds);
+        let onset = impulse::onset(&[&tail[0][..], &tail[1][..]]).unwrap() as f64 / rate - predelay;
+        assert!(
+            onset >= SPACE_TAIL_NO_SOONER_SECONDS,
+            "at {rate} Hz the tail is heard {:.1} ms after Predelay",
+            onset * 1000.0
+        );
+        for depth in [0.5, 0.65, 1.0] {
+            let response = impulse_response(
+                in_mode(ReverbMode::Space, settings(|s| s.depth = depth)),
+                rate,
+                0.3,
+            );
+            let mid = mid(&response);
+            let window = (0.02 * rate) as usize;
+            let start = ((predelay + 0.04) * rate) as usize;
+            let levels: Vec<f64> = (0..8)
+                .map(|n| {
+                    let from = start + n * window;
+                    let energy: f64 = mid[from..from + window]
+                        .iter()
+                        .map(|&s| f64::from(s) * f64::from(s))
+                        .sum();
+                    10.0 * energy.max(1e-30).log10()
+                })
+                .collect();
+            let loudest = levels.iter().copied().fold(f64::MIN, f64::max);
+            let quietest = levels.iter().copied().fold(f64::MAX, f64::min);
+            assert!(
+                loudest - quietest <= SPACE_HOLDS_WITHIN_DB,
+                "at {rate} Hz, Depth {depth}: 20 ms falls {:.1} dB under the loudest",
+                loudest - quietest
+            );
+        }
+    }
 }

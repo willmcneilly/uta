@@ -523,6 +523,24 @@ mod tests {
         assert!(settings.validate().is_ok());
     }
 
+    /// Mode's choices are the modes, in order, each with the value a mode
+    /// serialises as and `value` gives, so choosing one in the panel sets
+    /// that mode.
+    #[test]
+    fn mode_s_choices_are_its_values() {
+        let values: Vec<_> = REVERB_MODES.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = ReverbMode::ALL
+            .iter()
+            .map(|mode| serde_json::to_value(mode).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = ReverbMode::ALL.iter().map(|mode| mode.value()).collect();
+        assert_eq!(values, names);
+    }
+
     /// Every setting in RFC-010's table, with its range and unit.
     #[test]
     fn every_reverb_setting_is_described_with_rfc_010s_range_and_its_default() {
