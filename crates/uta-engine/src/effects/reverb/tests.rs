@@ -76,7 +76,7 @@ fn mid_decay(samples: &[f32], rate: f64) -> f64 {
 #[test]
 fn the_mid_band_decays_in_decay_within_10_percent() {
     for mode in ReverbMode::ALL {
-        for decay in [0.3, 2.0, 10.0] {
+        for decay in [0.3, 2.0, 10.0, 30.0] {
             let response = impulse_response(
                 in_mode(
                     mode,
@@ -100,7 +100,9 @@ fn the_mid_band_decays_in_decay_within_10_percent() {
 }
 
 /// The first sound arrives exactly Predelay after the click, at every rate
-/// and in every mode, and nothing comes before it.
+/// and in every mode, and nothing comes before it. It's within 40 dB of
+/// its peak there too, or, in a mode built dark, as soon after as its
+/// low-pass allows.
 #[test]
 fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
     for (mode, rate) in ReverbMode::ALL
@@ -115,14 +117,23 @@ fn the_first_sound_arrives_at_the_predelay_to_the_sample() {
             );
             let at = (f64::from(predelay) * rate).round() as usize;
             let [left, right] = &response;
-            assert_eq!(
-                impulse::onset(&[left, right]),
-                Some(at),
-                "{mode:?}, Predelay {predelay} s at {rate} Hz"
-            );
+            let case = format!("{mode:?}, Predelay {predelay} s at {rate} Hz");
             assert!(
                 left[..at].iter().chain(&right[..at]).all(|&s| s == 0.0),
-                "{mode:?}: nothing before Predelay {predelay} s at {rate} Hz"
+                "{case}: something before it"
+            );
+            assert!(left[at] != 0.0 || right[at] != 0.0, "{case}: silent at it");
+            // A mode built dark has a low-pass on all it puts out, which
+            // takes up to a tenth of a cycle at its cutoff to rise within
+            // 40 dB of its peak: at Space's 8 kHz, up to 2 samples at
+            // 192 kHz (it measures 1), none at 48 kHz.
+            let rise = Arrangement::of(mode)
+                .top_hz
+                .map_or(0, |hz| (0.1 * rate / hz).floor() as usize);
+            let onset = impulse::onset(&[left, right]).unwrap();
+            assert!(
+                (at..=at + rise).contains(&onset),
+                "{case}: onset at {onset}"
             );
         }
     }
@@ -427,7 +438,7 @@ fn the_mix_keeps_the_energy_and_at_full_spreads_it_evenly() {
 }
 
 /// An arrangement built dark puts out less above its top than one that
-/// isn't: Space's will be (RFC-010, "Modes").
+/// isn't, as Space is (RFC-010, "Modes").
 #[test]
 fn a_dark_arrangement_is_darker() {
     static DARK: Arrangement = Arrangement {
@@ -802,37 +813,51 @@ fn fastest_drift(reverb: ReverbSettings, rate: f64, seconds: f64) -> f64 {
 /// [`DRIFT_STEEPEST`] × the rate × the line's share of it × the reach in
 /// seconds, as a share of the pitch (at full Late Mod Depth and 5 Hz,
 /// about 6%, a semitone; at 0.5 Hz, a tenth of that). Half the depth,
-/// half the bend. It does move, at every rate.
+/// half the bend. It does move, at every rate. In every mode: Space's
+/// drift reaches further on slower rates, deep and slow, and at full Late
+/// Mod Depth bends the pitch no further than Room's.
 #[test]
 fn the_drift_bends_the_pitch_no_more_than_its_depth_and_rate_allow() {
-    let fastest_line = ROOM.line_rates.iter().copied().fold(0.0, f64::max);
-    let fastest_lane = ROOM.lane_rates.iter().copied().fold(0.0, f64::max);
-    for rate in [48_000.0, 96_000.0] {
-        for (depth, mod_rate) in [(1.0, 5.0), (0.5, 5.0), (1.0, 0.5)] {
-            let late = drifting(|s| {
-                s.early_mod_depth = 0.0;
-                s.late_mod_depth = depth;
-                s.late_mod_rate_hz = mod_rate;
-            });
-            let allowed =
-                DRIFT_STEEPEST * f64::from(mod_rate * depth) * fastest_line * LATE_MOD_SECONDS;
-            let fastest = fastest_drift(late, rate, 2.0);
-            assert!(
-                fastest <= allowed && fastest > 0.3 * allowed,
-                "the lines at {rate} Hz, depth {depth}, {mod_rate} Hz: {fastest:.5}, allowed {allowed:.5}"
-            );
-            let early = drifting(|s| {
-                s.late_mod_depth = 0.0;
-                s.early_mod_depth = depth;
-                s.early_mod_rate_hz = mod_rate;
-            });
-            let allowed =
-                DRIFT_STEEPEST * f64::from(mod_rate * depth) * fastest_lane * EARLY_MOD_SECONDS;
-            let fastest = fastest_drift(early, rate, 2.0);
-            assert!(
-                fastest <= allowed && fastest > 0.3 * allowed,
-                "the lanes at {rate} Hz, depth {depth}, {mod_rate} Hz: {fastest:.5}, allowed {allowed:.5}"
-            );
+    let fastest = |rates: &[f64]| rates.iter().copied().fold(0.0, f64::max);
+    let room_bend = fastest(ROOM.line_rates) * ROOM.late_mod_seconds;
+    let fastest_lane = fastest(&ROOM.lane_rates);
+    for mode in ReverbMode::ALL {
+        let arrangement = Arrangement::of(mode);
+        let bend = fastest(arrangement.line_rates) * arrangement.late_mod_seconds;
+        assert!(
+            bend <= room_bend,
+            "{mode:?} bends the pitch further than Room"
+        );
+        for rate in [48_000.0, 96_000.0] {
+            for (depth, mod_rate) in [(1.0, 5.0), (0.5, 5.0), (1.0, 0.5)] {
+                let late = drifting(|s| {
+                    s.mode = mode;
+                    s.early_mod_depth = 0.0;
+                    s.late_mod_depth = depth;
+                    s.late_mod_rate_hz = mod_rate;
+                });
+                let allowed = DRIFT_STEEPEST * f64::from(mod_rate * depth) * bend;
+                let fastest = fastest_drift(late, rate, 2.0);
+                assert!(
+                    fastest <= allowed && fastest > 0.3 * allowed,
+                    "{mode:?}, the lines at {rate} Hz, depth {depth}, {mod_rate} Hz: \
+                     {fastest:.5}, allowed {allowed:.5}"
+                );
+                let early = drifting(|s| {
+                    s.mode = mode;
+                    s.late_mod_depth = 0.0;
+                    s.early_mod_depth = depth;
+                    s.early_mod_rate_hz = mod_rate;
+                });
+                let allowed =
+                    DRIFT_STEEPEST * f64::from(mod_rate * depth) * fastest_lane * EARLY_MOD_SECONDS;
+                let fastest = fastest_drift(early, rate, 2.0);
+                assert!(
+                    fastest <= allowed && fastest > 0.3 * allowed,
+                    "{mode:?}, the lanes at {rate} Hz, depth {depth}, {mod_rate} Hz: \
+                     {fastest:.5}, allowed {allowed:.5}"
+                );
+            }
         }
     }
 }
@@ -885,7 +910,7 @@ fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
         let apart = (played.value() - new.value()).abs();
         assert!(apart < 1e-5, "{apart}");
     }
-    let allowed = DRIFT_STEEPEST * 5.0 * 1.42 * LATE_MOD_SECONDS;
+    let allowed = DRIFT_STEEPEST * 5.0 * 1.42 * ROOM.late_mod_seconds;
     assert!(played.fastest <= allowed, "{}", played.fastest);
 }
 
@@ -1028,8 +1053,8 @@ fn the_mod_depths_glide_over_half_a_second() {
         s.late_mod_depth = 1.0;
     }));
     response_to(&mut reverb, [0.0, 0.0], rate, 1.0);
-    let glide = 0.8 * LATE_MOD_SECONDS / MOD_GLIDE_SECONDS;
-    let drift = DRIFT_STEEPEST * 0.5 * 1.42 * LATE_MOD_SECONDS;
+    let glide = 0.8 * ROOM.late_mod_seconds / MOD_GLIDE_SECONDS;
+    let drift = DRIFT_STEEPEST * 0.5 * 1.42 * ROOM.late_mod_seconds;
     assert!(reverb.fastest > 0.0);
     assert!(
         reverb.fastest <= glide + drift,
@@ -1135,6 +1160,13 @@ fn room_stays_under_colouration_s_limit() {
 #[test]
 fn chamber_stays_under_colouration_s_limit() {
     stays_under_colouration_s_limit(ReverbMode::Chamber);
+}
+
+/// Nor is Space, at the same settings, against the same limits: its lines
+/// are longer than Room's, so it reads less coloured still.
+#[test]
+fn space_stays_under_colouration_s_limit() {
+    stays_under_colouration_s_limit(ReverbMode::Space);
 }
 
 /// The settings each mode's colouration is checked at.
@@ -1493,6 +1525,140 @@ fn after_changing_mode_the_same_settings_again_change_nothing() {
                 through(&mut again, &input, block),
                 through(&mut once, &input, block),
                 "{from:?} to {to:?}, prepared {prepared}"
+            );
+        }
+    }
+}
+
+/// How soon after the first sound Space's echo density reaches near 1, at
+/// the latest, in seconds: its own limit, slower than Room's (RFC-010,
+/// "Dense, not grainy").
+const SPACE_DENSE_WITHIN_SECONDS: f64 = 0.05;
+
+/// Space is dense, not grainy, though slower to build than the others:
+/// its echo density reaches near 1 within its own, slower limit of the
+/// first sound, at every Late Size, with Depth from 50% to only the tail,
+/// and an Early Size from its default 30 ms to 100 ms.
+#[test]
+fn space_s_echo_density_reaches_near_1_within_its_slower_limit() {
+    for late_size in [0.0, 0.5, 1.0] {
+        for depth in [0.5, 0.65, 1.0] {
+            for early_size_seconds in [0.03, 0.1] {
+                let reverb = ReverbSettings {
+                    mode: ReverbMode::Space,
+                    late_size,
+                    depth,
+                    early_size_seconds,
+                    ..ReverbSettings::default()
+                };
+                let (dense, _) = density_of(reverb);
+                assert!(
+                    dense <= SPACE_DENSE_WITHIN_SECONDS,
+                    "Late Size {late_size}, Depth {depth}, Early Size {early_size_seconds} s: \
+                     near 1 after {:.1} ms, limit {:.0} ms",
+                    dense * 1000.0,
+                    SPACE_DENSE_WITHIN_SECONDS * 1000.0
+                );
+            }
+        }
+    }
+}
+
+/// The most of Space's energy that may be above 11 kHz (RFC-010: "nothing
+/// much above about 11 kHz").
+const SPACE_MOST_ABOVE_11K: f64 = 0.05;
+
+/// Space is dark: under [`SPACE_MOST_ABOVE_11K`] of its energy is above
+/// 11 kHz, at its defaults and with its highs lasting longest (High Mult 2
+/// from 16 kHz), only its burst or only its tail. Room, at its defaults,
+/// has more than a quarter there.
+#[test]
+fn space_has_little_above_11_khz() {
+    let rate = 48_000.0;
+    let above = |reverb: ReverbSettings| {
+        let response = impulse_response(reverb, rate, 3.0);
+        uta_analysis::share_above(&mid(&response), rate as u32, 11_000.0)
+    };
+    let changes: [Change; 4] = [
+        ("the defaults", |_| {}),
+        ("the highs lasting longest", |s| {
+            s.high_mult = ReverbSettings::MAX_HIGH_MULT;
+            s.high_xover_hz = ReverbSettings::MAX_HIGH_XOVER_HZ;
+        }),
+        ("Depth 0%", |s| s.depth = 0.0),
+        ("Depth 100%", |s| s.depth = 1.0),
+    ];
+    for (name, change) in changes {
+        let mut reverb = in_mode(ReverbMode::Space, ReverbSettings::default());
+        change(&mut reverb);
+        let share = above(reverb);
+        assert!(
+            share < SPACE_MOST_ABOVE_11K,
+            "{name}: {:.1}% above 11 kHz",
+            share * 100.0
+        );
+    }
+    let room = above(ReverbSettings::default());
+    assert!(room > 0.25, "Room has {:.1}% above 11 kHz", room * 100.0);
+}
+
+/// How far under its loudest any 20 ms of Space's tail may fall, in dB,
+/// from 40 ms to 200 ms after Predelay: the taps spread along its lines
+/// were chosen so it holds, with no hole and no second slap.
+const SPACE_HOLDS_WITHIN_DB: f64 = 7.0;
+
+/// How soon after Predelay Space's tail may first be heard, at the soonest,
+/// in seconds, at Depth 100% and its default Late Size: its first tap.
+const SPACE_TAIL_NO_SOONER_SECONDS: f64 = 0.025;
+
+/// Space builds slowly and then lasts. At its default Late Size, its tail
+/// alone (Depth 100%) is first heard no sooner than
+/// [`SPACE_TAIL_NO_SOONER_SECONDS`] after Predelay, and from 40 ms to
+/// 200 ms after it, with the burst too, every 20 ms is within
+/// [`SPACE_HOLDS_WITHIN_DB`] of the loudest. Heard from its lines' ends, a
+/// 50 ms hole opens; with every tap 30% sooner, the tail falls away 10 dB
+/// before 200 ms (measured 5.4 to 5.6 dB for Space). A bigger Late Size
+/// moves the taps out with the lines, so its tail starts later still.
+#[test]
+fn space_s_tail_builds_slowly_then_holds() {
+    for rate in [48_000.0, 96_000.0] {
+        let tail = impulse_response(
+            in_mode(ReverbMode::Space, settings(|s| s.depth = 1.0)),
+            rate,
+            0.3,
+        );
+        let predelay = f64::from(ReverbSettings::default().predelay_seconds);
+        let onset = impulse::onset(&[&tail[0][..], &tail[1][..]]).unwrap() as f64 / rate - predelay;
+        assert!(
+            onset >= SPACE_TAIL_NO_SOONER_SECONDS,
+            "at {rate} Hz the tail is heard {:.1} ms after Predelay",
+            onset * 1000.0
+        );
+        for depth in [0.5, 0.65, 1.0] {
+            let response = impulse_response(
+                in_mode(ReverbMode::Space, settings(|s| s.depth = depth)),
+                rate,
+                0.3,
+            );
+            let mid = mid(&response);
+            let window = (0.02 * rate) as usize;
+            let start = ((predelay + 0.04) * rate) as usize;
+            let levels: Vec<f64> = (0..8)
+                .map(|n| {
+                    let from = start + n * window;
+                    let energy: f64 = mid[from..from + window]
+                        .iter()
+                        .map(|&s| f64::from(s) * f64::from(s))
+                        .sum();
+                    10.0 * energy.max(1e-30).log10()
+                })
+                .collect();
+            let loudest = levels.iter().copied().fold(f64::MIN, f64::max);
+            let quietest = levels.iter().copied().fold(f64::MAX, f64::min);
+            assert!(
+                loudest - quietest <= SPACE_HOLDS_WITHIN_DB,
+                "at {rate} Hz, Depth {depth}: 20 ms falls {:.1} dB under the loudest",
+                loudest - quietest
             );
         }
     }

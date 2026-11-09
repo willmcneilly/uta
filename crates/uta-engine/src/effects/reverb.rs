@@ -42,12 +42,13 @@
 //! starts again from the same point on every Play.
 //!
 //! A mode is an [`Arrangement`]: its lines' lengths, its diffuser's steps,
-//! where the outputs are taken, which lanes and lines drift, and how dark
-//! it's built: Room and Chamber. The delay lines are set aside long enough
-//! for every mode, so changing mode needs no new memory: the old mode's
-//! tail fades out over [`MODE_FADE_SECONDS`], every line is cleared, and
-//! the new mode starts from silence, with what goes in fading in as an
-//! effect switched on does (RFC-010, "Turning knobs while it rings").
+//! where the outputs are taken, which lanes and lines drift and how far,
+//! and how dark it's built: Room, Chamber and Space. The delay lines are
+//! set aside long enough for every mode, so changing mode needs no new
+//! memory: the old mode's tail fades out over [`MODE_FADE_SECONDS`], every
+//! line is cleared, and the new mode starts from silence, with what goes
+//! in fading in as an effect switched on does (RFC-010, "Turning knobs
+//! while it rings").
 //!
 //! Every delay length is worked out in seconds, then rounded to samples at
 //! the sample rate, so the Reverb sounds the same at every rate, though its
@@ -93,10 +94,10 @@ const SHELVES_APART: f64 = 2.0;
 /// lowest setting and at this depth from an octave above it. A first guess,
 /// tuned by ear in UTA-101.
 const LOW_CUT_DB: f64 = -24.0;
-/// How far the lines' lengths drift at full Late Mod Depth, either way, in
-/// seconds; and the diffuser's lanes' at full Early Mod Depth, never more
-/// than half a lane's own length. First guesses, tuned by ear in UTA-101.
-const LATE_MOD_SECONDS: f64 = 0.003;
+/// How far the diffuser's lanes' lengths drift at full Early Mod Depth,
+/// either way, in seconds, never more than half a lane's own length. A
+/// first guess, tuned by ear in UTA-101. The lines' reach is each
+/// arrangement's own ([`Arrangement::late_mod_seconds`]).
 const EARLY_MOD_SECONDS: f64 = 0.001;
 /// How long a change of a mod depth takes, and how long the drift takes to
 /// glide back to its start when Play restarts it while the tail rings: a
@@ -135,6 +136,10 @@ pub(crate) struct Arrangement {
     /// Each line's rate of drift, as a multiple of Late Mod Rate, so no two
     /// drift together: one for each line.
     pub line_rates: &'static [f64],
+    /// How far the lines' lengths drift at full Late Mod Depth, either way,
+    /// in seconds. How far the pitch bends goes with this times the line's
+    /// rate, so a deeper drift on slower rates bends it no further.
+    pub late_mod_seconds: f64,
     /// The diffuser's steps, first to last. Lane 0's offset is 0 in every
     /// step and the shuffle keeps it in place, so one path through the
     /// diffuser has no delay at all, and the first sound arrives exactly at
@@ -182,6 +187,8 @@ pub(crate) const ROOM: Arrangement = Arrangement {
         1.00, 0.71, 1.27, 0.86, 1.13, 0.62, 1.38, 0.93, 1.21, 0.67, 1.06, 0.80, 1.33, 0.75, 1.17,
         0.89,
     ],
+    // A first guess, tuned by ear in UTA-101.
+    late_mod_seconds: 0.003,
     steps: &[
         Step {
             share: 8.0 / 15.0,
@@ -252,12 +259,57 @@ pub(crate) const CHAMBER: Arrangement = Arrangement {
     ..ROOM
 };
 
+/// Space: huge and dark, with a slow, sparse onset and deep, slow drift.
+/// Lines from 81 to 285 ms at its middle size, nearly twice Room's, each
+/// about 9% longer than the last and nudged so no two line up: a bigger
+/// space, and the least coloured of the three (0.47 to 0.77 dB drifting,
+/// 0.56 to 0.81 still, at the settings Room is checked at).
+///
+/// Its tail is heard from a tap along each line, as Chamber's is, but the
+/// taps are spread from 28 to 208 ms after the sound goes in, in an order
+/// that puts neighbours far apart. Heard from the lines' ends, the tail's
+/// first lap came 50 ms after the burst ended, a hole as silent as nothing
+/// at all, which Room's slap back had taught to avoid. Taps from 28 to
+/// 148 ms filled it, but the tail was loudest by 110 ms and fell from
+/// there. Spread to 208 ms, the taps arrive one by one, so the tail starts
+/// sparse and builds: with only the tail heard, it holds within about
+/// 5 dB of its loudest from 40 to 200 ms, where Room's is loudest at 60 ms
+/// and falls.
+///
+/// It's built dark: a low-pass at 8 kHz on all it puts out, so under 3.2%
+/// of its energy is above 11 kHz at any High Mult, against Room's 33%.
+///
+/// Its drift reaches eight thirds as far as Room's, on rates a quarter as
+/// fast, so it's deep and slow: it smears the resonances as much, and
+/// bends the pitch two thirds as far as Room's does. On rates three
+/// eighths of Room's, bending it as far, Will heard the tail at full Late
+/// Mod Depth waver under the canvas's swell, and kept 50% over it.
+pub(crate) const SPACE: Arrangement = Arrangement {
+    lines: &[
+        0.0811, 0.0883, 0.0959, 0.1043, 0.1137, 0.1231, 0.1343, 0.1459, 0.1583, 0.1721, 0.1877,
+        0.2039, 0.2213, 0.2411, 0.2623, 0.2849,
+    ],
+    // Room's order, at a quarter of its speed: from 0.155 to 0.345.
+    line_rates: &[
+        0.25, 0.1775, 0.3175, 0.215, 0.2825, 0.155, 0.345, 0.2325, 0.3025, 0.1675, 0.265, 0.2,
+        0.3325, 0.1875, 0.2925, 0.2225,
+    ],
+    late_mod_seconds: 0.008,
+    taps: &[
+        0.662, 0.699, 0.449, 0.838, 0.267, 0.786, 0.573, 0.755, 0.805, 0.775, 0.791, 0.838, 0.736,
+        0.798, 0.706, 0.729,
+    ],
+    top_hz: Some(8_000.0),
+    ..ROOM
+};
+
 impl Arrangement {
     /// The arrangement a mode plays.
     pub(crate) fn of(mode: ReverbMode) -> &'static Arrangement {
         match mode {
             ReverbMode::Room => &ROOM,
             ReverbMode::Chamber => &CHAMBER,
+            ReverbMode::Space => &SPACE,
         }
     }
 
@@ -1258,7 +1310,7 @@ impl Reverb {
         let dry_in = (2.0 / count as f32).sqrt();
         let early_in = (LANES as f32 / count as f32).sqrt();
         let reflect_by = 2.0 / side_count as f32;
-        let late_reach = LATE_MOD_SECONDS * self.sample_rate;
+        let late_reach = arrangement.late_mod_seconds * self.sample_rate;
         let early_reach = EARLY_MOD_SECONDS * self.sample_rate;
         let reach = self.reach as u32;
         let mut quiet = self.quiet;
@@ -1582,7 +1634,7 @@ fn line_samples(arrangement: &Arrangement, line: usize, rate: f64) -> usize {
         return 0;
     };
     let largest = (LATE_SIZE_OCTAVES / 2.0).exp2();
-    ((seconds * largest + 2.0 * LATE_MOD_SECONDS) * rate).ceil() as usize
+    ((seconds * largest + 2.0 * arrangement.late_mod_seconds) * rate).ceil() as usize
 }
 
 /// How long lane `lane` of `step` delays, in seconds, at an Early Size of

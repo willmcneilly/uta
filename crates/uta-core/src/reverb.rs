@@ -191,8 +191,8 @@ impl Default for ReverbSettings {
     }
 }
 
-/// The Reverb's arrangement of its building blocks (RFC-010, "Modes"). Room
-/// was the first and Chamber the second; Space follows in UTA-103. A mode
+/// The Reverb's arrangement of its building blocks (RFC-010, "Modes"):
+/// Room, Chamber and Space. A mode
 /// is a value of the setting format 15 brought, so a new one doesn't
 /// change the format.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -205,23 +205,27 @@ pub enum ReverbMode {
     /// Dense from the very first moment, smooth and even: for snares and
     /// vocals.
     Chamber,
+    /// Huge and dark, with a slow, sparse onset and deep, slow drift: for
+    /// ambient pads.
+    Space,
 }
 
 impl ReverbMode {
     /// Every mode, as the panel offers them.
-    pub const ALL: [ReverbMode; 2] = [Self::Room, Self::Chamber];
+    pub const ALL: [ReverbMode; 3] = [Self::Room, Self::Chamber, Self::Space];
 
     /// The mode as `SetReverbParam` carries it: `"room"`.
     pub fn value(self) -> &'static str {
         match self {
             Self::Room => "room",
             Self::Chamber => "chamber",
+            Self::Space => "space",
         }
     }
 }
 
 /// Every mode, as the panel offers them.
-const REVERB_MODES: [Choice; 2] = [
+const REVERB_MODES: [Choice; 3] = [
     Choice {
         value: "room",
         label: "Room",
@@ -229,6 +233,10 @@ const REVERB_MODES: [Choice; 2] = [
     Choice {
         value: "chamber",
         label: "Chamber",
+    },
+    Choice {
+        value: "space",
+        label: "Space",
     },
 ];
 
@@ -320,7 +328,8 @@ impl ReverbParam {
                 "The kind of space: how its echoes are arranged. Room is a \
                  natural room that starts a little sparse and builds to a \
                  dense tail. Chamber is dense from the very first moment, \
-                 smooth and even, for snares and vocals.",
+                 smooth and even, for snares and vocals. Space is huge and \
+                 dark, slow to build and slowly drifting, for ambient pads.",
                 &REVERB_MODES,
                 defaults.mode.value(),
             ),
@@ -514,6 +523,24 @@ mod tests {
         assert!(settings.validate().is_ok());
     }
 
+    /// Mode's choices are the modes, in order, each with the value a mode
+    /// serialises as and `value` gives, so choosing one in the panel sets
+    /// that mode.
+    #[test]
+    fn mode_s_choices_are_its_values() {
+        let values: Vec<_> = REVERB_MODES.iter().map(|choice| choice.value).collect();
+        let serialised: Vec<_> = ReverbMode::ALL
+            .iter()
+            .map(|mode| serde_json::to_value(mode).unwrap())
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&values).unwrap(),
+            serde_json::Value::Array(serialised)
+        );
+        let names: Vec<_> = ReverbMode::ALL.iter().map(|mode| mode.value()).collect();
+        assert_eq!(values, names);
+    }
+
     /// Every setting in RFC-010's table, with its range and unit.
     #[test]
     fn every_reverb_setting_is_described_with_rfc_010s_range_and_its_default() {
@@ -549,7 +576,7 @@ mod tests {
             })
             .collect();
         let expected = [
-            ("Mode", "2 choices"),
+            ("Mode", "3 choices"),
             ("Predelay", "Seconds Linear 0..0.5"),
             ("Decay", "Seconds Log 0.1..30"),
             ("Depth", "Fraction Linear 0..1"),
