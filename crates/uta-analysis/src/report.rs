@@ -482,10 +482,11 @@ pub const IMPULSE_MEASUREMENTS: &[Measurement] = &[
         label: "steady gain",
         unit: "dB",
         decimals: 2,
-        about: "How much louder a steady sound comes out than it went in: the impulse \
-                response's energy over a full-scale one-sample click's, both K-weighted (the \
-                loudness filter of ITU-R BS.1770), averaged over the channels. How loud a \
-                reverb sounds behind a held chord or a busy loop, at any decay. It assumes \
+        about: "How much louder a steady sound comes out than it went in: the loudness gain \
+                for pink noise from 20 Hz to 20 kHz (equal energy in every octave, roughly \
+                music's long-term spectrum), K-weighted (the loudness filter of ITU-R \
+                BS.1770), from the response's spectrum, averaged over the channels. How loud \
+                a reverb sounds behind a held chord or a busy loop, at any decay. It assumes \
                 the click was one full-scale sample.",
         measure: |sound| steady_gain_db(&sound.channels(), sound.sample_rate),
     },

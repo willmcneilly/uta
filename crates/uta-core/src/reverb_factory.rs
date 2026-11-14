@@ -84,7 +84,7 @@ pub struct ReverbTargets {
     pub drift_cents: Option<RangeInclusive<f64>>,
     /// How loud it is on a steady sound, against the default Reverb at the
     /// same Mix, in dB: its impulse response's K-weighted energy over the
-    /// default's (`steady_loudness_db`). On a steady sound a reverb's output
+    /// default's (`steady_gain_db`, on pink noise). On a steady sound a reverb's output
     /// is as loud as its impulse response's energy says, so this is how
     /// loud the space sounds behind a held chord or a busy loop.
     pub loudness_db: RangeInclusive<f64>,
@@ -112,12 +112,18 @@ impl ReverbTargets {
 /// How far apart the factory sounds' loudness may be, in dB, from the
 /// quietest to the loudest, as [`ReverbTargets::loudness_db`] measures it.
 /// Stepping through the menu at the same Mix should change the space, not
-/// the amount of reverb (RFC-010, "Manual 6").
-pub const REVERB_LOUDNESS_SPREAD_DB: f64 = 4.0;
+/// the amount of reverb (RFC-010, "Manual 6"). The Reverb has no level of
+/// its own, so a sound can only be balanced by its other settings, and a
+/// dark or thin space is quieter on pink noise: a brief's "little above
+/// 3.5 kHz" costs about 2 dB against the default's open top. Wider than the
+/// synth's 3 dB for that reason; the dark ones sit at the bottom of it.
+pub const REVERB_LOUDNESS_SPREAD_DB: f64 = 4.5;
 
-/// The loudness every sound aims for, against the default Reverb: as loud
-/// as it, within half of [`REVERB_LOUDNESS_SPREAD_DB`] either side.
-const LOUDNESS_DB: f64 = 0.0;
+/// The loudness every sound aims for, against the default Reverb: three
+/// quarters of a dB under it, within half of [`REVERB_LOUDNESS_SPREAD_DB`]
+/// either side, which leaves room for the darkest at the bottom and the
+/// open, bright ones at the top.
+const LOUDNESS_DB: f64 = -0.75;
 
 /// [`LOUDNESS_DB`], give or take half the spread.
 const LOUDNESS: RangeInclusive<f64> = (LOUDNESS_DB - REVERB_LOUDNESS_SPREAD_DB / 2.0)
@@ -219,7 +225,7 @@ fn dark_room() -> ReverbFactorySound {
                 1.3 s with nothing much above 3.5 kHz, its pitch audibly drifting.",
         targets: ReverbTargets {
             mid_decay_seconds: Some(1.15..=1.45),
-            most_above: Some((3_500.0, 5.0)),
+            most_above: Some((3_500.0, 10.0)),
             drift_cents: Some(15.0..=40.0),
             ..ReverbTargets::LOUD_AS_DEFAULT
         },
@@ -229,12 +235,14 @@ fn dark_room() -> ReverbFactorySound {
             predelay_seconds: 0.01,
             decay_seconds: 1.3,
             depth: 0.6,
-            high_cut_hz: 3_500.0,
+            high_cut_hz: 3_000.0,
             diffusion: 0.6,
             early_mod_depth: 0.5,
             late_size: 0.3,
             late_mod_rate_hz: 1.2,
             late_mod_depth: 1.0,
+            high_mult: 0.4,
+            high_xover_hz: 2_500.0,
             ..ReverbSettings::default()
         },
     }
@@ -287,7 +295,7 @@ fn echo_chamber() -> ReverbFactorySound {
         targets: ReverbTargets {
             mid_decay_seconds: Some(1.7..=2.1),
             dense_after_ms: Some(0.0..=20.0),
-            most_above: Some((10_000.0, 3.0)),
+            most_above: Some((10_000.0, 5.0)),
             most_below: Some((500.0, 15.0)),
             ..ReverbTargets::LOUD_AS_DEFAULT
         },
@@ -297,11 +305,11 @@ fn echo_chamber() -> ReverbFactorySound {
             predelay_seconds: 0.01,
             decay_seconds: 1.9,
             depth: 0.7,
-            high_cut_hz: 10_000.0,
+            high_cut_hz: 7_000.0,
             low_cut_hz: 500.0,
             diffusion: 0.9,
             late_size: 0.45,
-            high_mult: 0.7,
+            high_mult: 0.6,
             ..ReverbSettings::default()
         },
     }
@@ -333,6 +341,7 @@ fn concert_hall() -> ReverbFactorySound {
             late_mod_depth: 0.6,
             bass_mult: 1.3,
             high_mult: 0.55,
+            high_xover_hz: 2_500.0,
             ..ReverbSettings::default()
         },
     }
@@ -349,7 +358,7 @@ fn distant() -> ReverbFactorySound {
         targets: ReverbTargets {
             onset_ms: Some(105.0..=120.0),
             early_to_late_db: Some(-20.0..=-3.0),
-            most_above: Some((3_200.0, 5.0)),
+            most_above: Some((3_200.0, 10.0)),
             most_below: Some((300.0, 15.0)),
             ..ReverbTargets::LOUD_AS_DEFAULT
         },
@@ -359,9 +368,11 @@ fn distant() -> ReverbFactorySound {
             predelay_seconds: 0.11,
             decay_seconds: 2.5,
             depth: 0.95,
-            high_cut_hz: 3_200.0,
-            low_cut_hz: 300.0,
+            high_cut_hz: 2_400.0,
+            low_cut_hz: ReverbSettings::MIN_LOW_CUT_HZ,
             late_size: 0.7,
+            high_mult: 0.8,
+            high_xover_hz: 3_000.0,
             ..ReverbSettings::default()
         },
     }
@@ -389,8 +400,8 @@ fn cathedral() -> ReverbFactorySound {
             early_size_seconds: 0.1,
             late_size: 0.9,
             bass_mult: 1.2,
-            high_mult: 0.4,
-            high_xover_hz: 3_000.0,
+            high_mult: 0.35,
+            high_xover_hz: 2_500.0,
             ..ReverbSettings::default()
         },
     }
@@ -433,7 +444,7 @@ fn ambient_wash() -> ReverbFactorySound {
         targets: ReverbTargets {
             mid_decay_seconds: Some(16.0..=20.0),
             high_decay_ratio: Some(0.25..=0.45),
-            most_above: Some((6_000.0, 5.0)),
+            most_above: Some((6_000.0, 10.0)),
             ..ReverbTargets::LOUD_AS_DEFAULT
         },
         suggested_mix: 0.4,
@@ -442,11 +453,11 @@ fn ambient_wash() -> ReverbFactorySound {
             predelay_seconds: 0.02,
             decay_seconds: 18.0,
             depth: 0.9,
-            high_cut_hz: 6_000.0,
+            high_cut_hz: 5_000.0,
             late_size: 1.0,
             late_mod_depth: 0.6,
-            high_mult: 0.35,
-            high_xover_hz: 3_000.0,
+            high_mult: 0.3,
+            high_xover_hz: 2_500.0,
             ..ReverbSettings::default()
         },
     }
@@ -462,7 +473,7 @@ fn endless() -> ReverbFactorySound {
         targets: ReverbTargets {
             mid_decay_seconds: Some(26.0..=33.0),
             high_decay_ratio: Some(0.2..=0.4),
-            most_above: Some((5_000.0, 5.0)),
+            most_above: Some((5_000.0, 10.0)),
             ..ReverbTargets::LOUD_AS_DEFAULT
         },
         suggested_mix: 0.4,
@@ -471,12 +482,12 @@ fn endless() -> ReverbFactorySound {
             predelay_seconds: 0.02,
             decay_seconds: ReverbSettings::MAX_DECAY_SECONDS,
             depth: 0.95,
-            high_cut_hz: 5_000.0,
+            high_cut_hz: 4_500.0,
             late_size: 1.0,
             late_mod_rate_hz: 0.2,
             late_mod_depth: 0.7,
             high_mult: 0.3,
-            high_xover_hz: 3_000.0,
+            high_xover_hz: 2_500.0,
             ..ReverbSettings::default()
         },
     }
