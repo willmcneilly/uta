@@ -8,6 +8,7 @@
 //! `cargo test -p uta-engine --release reverb::factory::print -- --ignored
 //! --nocapture` prints every sound's measurements.
 
+use super::tests::{sine_steepest, steepest};
 use super::*;
 use uta_analysis::impulse;
 use uta_core::{REVERB_LOUDNESS_SPREAD_DB, ReverbFactorySound, ReverbTargets};
@@ -342,4 +343,62 @@ fn print() {
             println!("    MISS {miss}");
         }
     }
+}
+
+/// Choosing one factory sound after another while a held A3 rings through
+/// it, every sound from every other, never clicks, mode changes included:
+/// no step from one sample to the next is more than twice the steepest a
+/// sine as loud as what comes out could make at 330 Hz, the A3 bent up by
+/// half again, as far as a gliding size or Predelay bends it (the limit the
+/// Reverb's own turning test uses). A change of mode fades the old tail out
+/// and the new one in, so it never jumps either.
+#[test]
+fn choosing_one_factory_sound_after_another_while_it_rings_does_not_click() {
+    let block = 128;
+    let tone = |n: usize| (0.5 * (std::f64::consts::TAU * 220.0 * n as f64 / RATE).sin()) as f32;
+    let sounds = ReverbFactorySound::all();
+    let mut worst = (0.0f32, "", "");
+    for from in &sounds {
+        for to in sounds.iter().filter(|to| to.key != from.key) {
+            let mut reverb = Reverb::new(from.settings, RATE);
+            let mut n = 0;
+            let mut run = |reverb: &mut Reverb, seconds: f64| {
+                let frames = (seconds * RATE) as usize;
+                let mut left: Vec<f32> = (n..n + frames).map(tone).collect();
+                let mut right = left.clone();
+                for (left, right) in left.chunks_mut(block).zip(right.chunks_mut(block)) {
+                    reverb.process(left, right);
+                }
+                n += frames;
+                [left, right]
+            };
+            let [before_left, before_right] = run(&mut reverb, 0.5);
+            reverb.set_settings(to.settings);
+            let [left, right] = run(&mut reverb, 0.5);
+            // The last block before the switch, and everything after it.
+            let tail = before_left.len() - block;
+            let left: Vec<f32> = before_left[tail..].iter().chain(&left).copied().collect();
+            let right: Vec<f32> = before_right[tail..].iter().chain(&right).copied().collect();
+            let peak = left
+                .iter()
+                .chain(&right)
+                .fold(0.0f32, |peak, s| peak.max(s.abs()));
+            let limit = 2.0 * peak * sine_steepest(330.0, RATE);
+            let jump = steepest(&left).max(steepest(&right));
+            assert!(
+                jump <= limit,
+                "{} to {}: a step of {jump:.5}, the limit {limit:.5}",
+                from.name,
+                to.name
+            );
+            if jump / limit > worst.0 {
+                worst = (jump / limit, from.name, to.name);
+            }
+        }
+    }
+    // It tests something: some switch comes within reach of the limit.
+    assert!(
+        worst.0 > 0.1,
+        "the steepest step was {worst:?} of the limit"
+    );
 }

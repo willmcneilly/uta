@@ -916,12 +916,12 @@ fn play_restarts_the_drift_from_the_same_point_gliding_while_it_rings() {
 
 /// The steepest step from one sample to the next a full-scale sine at
 /// `hz` makes at `rate`.
-fn sine_steepest(hz: f64, rate: f64) -> f32 {
+pub(super) fn sine_steepest(hz: f64, rate: f64) -> f32 {
     (2.0 * (std::f64::consts::PI * hz / rate).sin()) as f32
 }
 
 /// The steepest step from one sample to the next in `samples`.
-fn steepest(samples: &[f32]) -> f32 {
+pub(super) fn steepest(samples: &[f32]) -> f32 {
     samples
         .windows(2)
         .map(|pair| (pair[1] - pair[0]).abs())
