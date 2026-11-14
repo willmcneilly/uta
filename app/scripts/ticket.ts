@@ -34,6 +34,8 @@ export type Pr = {
   checks: Check[];
   /** Every review's body, oldest first. */
   reviews: string[];
+  /** The commit the newest reviewer's review looked at (GitHub records it with the review). */
+  reviewedSha?: string;
   /** The PR's description. */
   body: string;
 };
@@ -50,7 +52,12 @@ export type Services = {
   /** Every PR's state, by number. */
   prStates(): Map<number, PrState>;
   pr(number: number): Pr;
+  /** The listening sessions with no verdict yet, oldest first. */
+  waitingSessions(): WaitingSession[];
 };
+
+/** A listening session waiting for Will: what `scripts/ticket inbox` lists. */
+export type WaitingSession = { name: string; ticket?: string; question?: string; problem?: string };
 
 /** A command that changes something: a Notion call through ntn.sh, or gh or git. */
 export type Call = { tool: "ntn.sh" | "gh" | "git"; args: string[] };
@@ -244,6 +251,37 @@ export function whyNotMergeable(pr: Pr): string | undefined {
   return undefined;
 }
 
+/**
+ * Whether a review says it needs Will before merging. The reviewer ends its
+ * verdict with "**Needs Will:** no" or "**Needs Will:** yes: <why>". Undefined
+ * when the review doesn't say, which counts as needing him.
+ */
+export function needsWill(body: string): { needed: boolean; why: string } | undefined {
+  const match = /\*\*Needs Will:?\s*(?:\*\*:?\s*)?(yes|no)\b(?:\*\*)?[\s:.,;—–-]*([^\n]*)/i.exec(body);
+  if (!match) return undefined;
+  return { needed: match[1].toLowerCase() === "yes", why: match[2].trim() };
+}
+
+/**
+ * Why a PR can't merge without Will, or undefined if it can: it must be
+ * mergeable, and the newest review must have looked at the head commit and
+ * said it needs nothing from him.
+ */
+export function whyNotAutoMergeable(pr: Pr): string | undefined {
+  const why = whyNotMergeable(pr);
+  if (why) return why;
+  if (pr.state === "MERGED") return undefined;
+  if (pr.reviewedSha !== pr.headSha) {
+    const reviewed = pr.reviewedSha ? pr.reviewedSha.slice(0, 7) : "an unknown commit";
+    return `The newest review of PR #${pr.number} looked at ${reviewed}, but the PR is at ${pr.headSha.slice(0, 7)}. Run another review round.`;
+  }
+  const newest = pr.reviews.filter(isReview).at(-1) as string;
+  const needs = needsWill(newest);
+  if (!needs) return `The newest review of PR #${pr.number} doesn't say whether it needs Will ("**Needs Will:** yes or no").`;
+  if (needs.needed) return `The newest review of PR #${pr.number} says it needs Will${needs.why ? `: ${needs.why}` : "."}`;
+  return undefined;
+}
+
 // ---------------------------------------------------------------- calls
 
 const json = (value: unknown) => JSON.stringify(value);
@@ -385,7 +423,14 @@ export function unblockedBy(services: Services, tickets: Ticket[], prStates: Map
     .sort((a, b) => a.id - b.id);
 }
 
-export function merge(services: Services, run: Run, id: number): string[] {
+export const MERGED_ALONE = "🤖 Claude: Merged without Will: the newest review needed nothing from him, and CI was green.";
+
+/**
+ * Merges a ticket's PR and does the Notion steps. With `auto`, only when the
+ * newest review, on the head commit, says it needs nothing from Will
+ * (whyNotAutoMergeable): the merge that runs without his go-ahead.
+ */
+export function merge(services: Services, run: Run, id: number, options: { auto?: boolean } = {}): string[] {
   const { tickets, ticket } = find(services, id);
   if (ticket.status !== "In Review" && ticket.status !== "Done") {
     throw new Refusal(`Not merging: ${label(id)} is ${ticket.status}, not In Review.`);
@@ -393,8 +438,8 @@ export function merge(services: Services, run: Run, id: number): string[] {
   const number = prNumber(ticket.pr);
   if (number === undefined) throw new Refusal(`Not merging: ${label(id)} has no PR link.`);
   const pr = services.pr(number);
-  const why = whyNotMergeable(pr);
-  if (why) throw new Refusal(`Not merging: ${why}`);
+  const why = options.auto ? whyNotAutoMergeable(pr) : whyNotMergeable(pr);
+  if (why) throw new Refusal(options.auto ? `Not merging without Will: ${why}` : `Not merging: ${why}`);
 
   const out: string[] = [];
   if (pr.state === "MERGED") out.push(`PR #${number} is already merged.`);
@@ -406,6 +451,7 @@ export function merge(services: Services, run: Run, id: number): string[] {
     });
     // Not gh's --delete-branch: from a worktree it tries to switch to main, which another checkout has.
     run({ summary: `Delete the remote branch ${pr.branch}.`, call: { tool: "git", args: ["push", "origin", "--delete", pr.branch] } });
+    if (options.auto) run({ summary: `Comment "${MERGED_ALONE}"`, call: comment(ticket.pageId, MERGED_ALONE) });
   }
 
   if (ticket.status !== "Done") run({ summary: `Set ${label(id)} to Done.`, call: setStatus(ticket.pageId, "Done") });
@@ -700,4 +746,51 @@ export function sync(services: Services, run: Run, tree: Tree, id: number, numbe
   // A dry run prints the new notes, which its JSON call hides.
   if (replacesNotes && ran.every((r) => r === undefined)) return ["", "The Verification notes would be:", ...notes.split("\n").map((l) => `  ${l}`)];
   return [];
+}
+
+// ---------------------------------------------------------------- the inbox
+
+/**
+ * Everything waiting on Will, in one list: listening sessions with no verdict,
+ * PRs whose newest review says they need him (or that he has to merge), and
+ * Blocked tickets. Read-only.
+ */
+export function inbox(services: Services): string[] {
+  const tickets = services.tickets();
+  const out: string[] = [];
+
+  const sessions = services.waitingSessions();
+  if (sessions.length > 0) {
+    out.push(`Listen (${sessions.length === 1 ? "1 question" : `${sessions.length} questions`}): run \`scripts/listen\` from any checkout.`);
+    for (const s of sessions) {
+      const ticket = s.ticket ? `${s.ticket}  ` : "";
+      out.push(`  ${s.name}  ${ticket}${s.problem ? `can't be asked: ${s.problem}` : (s.question ?? "")}`);
+    }
+  }
+
+  const reviewing = tickets.filter((t) => t.status === "In Review").sort((a, b) => a.id - b.id);
+  const forWill: string[] = [];
+  const loop: string[] = [];
+  for (const t of reviewing) {
+    const number = prNumber(t.pr);
+    if (number === undefined) continue;
+    const pr = services.pr(number);
+    const line = `  ${label(t.id)}  ${t.name}  (PR #${number})`;
+    const notMergeable = whyNotMergeable(pr);
+    if (notMergeable) {
+      loop.push(`${line}: ${notMergeable}`);
+      continue;
+    }
+    const notAlone = whyNotAutoMergeable(pr);
+    if (notAlone) forWill.push(`${line}: ${notAlone}`);
+    else loop.push(`${line}: nothing needs you; it merges on its own (\`scripts/ticket merge ${label(t.id)} --auto\`).`);
+  }
+  if (forWill.length > 0) out.push(...(out.length ? [""] : []), "PRs waiting on you (say merge in the ticket's session):", ...forWill);
+
+  const blocked = tickets.filter((t) => t.status === "Blocked").sort((a, b) => a.id - b.id);
+  if (blocked.length > 0) out.push(...(out.length ? [""] : []), "Blocked (its session says why):", ...blocked.map((t) => `  ${label(t.id)}  ${t.name}`));
+
+  if (out.length === 0) out.push("Nothing needs you.");
+  if (loop.length > 0) out.push("", "Not waiting on you yet:", ...loop);
+  return out;
 }

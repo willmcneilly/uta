@@ -12,6 +12,9 @@ interface State {
   index: number;
   total: number;
   question: string;
+  /** The ticket asking, and what's being decided: so the question stands on its own after a gap. */
+  ticket: string | null;
+  context: string | null;
   kind: "pick one" | "rate each" | "listen and describe";
   labels: string[];
   loop: { start: number; end: number; bpm: number | null };
@@ -254,8 +257,9 @@ function ask(state: State, context: AudioContext, buffers: AudioBuffer[]): void 
     element(
       "header",
       {},
-      element("div", { className: "progress" }, `Question ${state.index + 1} of ${state.total}`),
+      element("div", { className: "progress" }, `Question ${state.index + 1} of ${state.total}${state.ticket ? ` · ${state.ticket}` : ""}`),
       element("h1", {}, state.question),
+      ...(state.context ? [element("p", { className: "context" }, state.context)] : []),
     ),
     listen,
     answer,

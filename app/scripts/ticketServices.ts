@@ -16,8 +16,11 @@ import {
   type Services,
   type Ticket,
   type Todo,
+  type WaitingSession,
   commandLine,
+  isReview,
 } from "./ticket.ts";
+import { listSessions, listeningDir, readSession } from "./listen.ts";
 
 type RichText = { plain_text: string }[];
 type Paged<T> = { results: T[]; has_more: boolean; next_cursor: string | null };
@@ -157,7 +160,7 @@ export function realServices(checkout: string): Services & { run(dryRun: boolean
         headRefName: string;
         headRefOid: string;
         statusCheckRollup: { name?: string; context?: string; status?: string; conclusion?: string; state?: string }[];
-        reviews: { body: string; submittedAt: string }[];
+        reviews: { body: string; submittedAt: string; commit?: { oid: string } | null }[];
         body: string;
       }>("pr", "view", String(number), "--json", "number,url,state,headRefName,headRefOid,statusCheckRollup,reviews,body");
       const checks: Check[] = pr.statusCheckRollup.map((c) => ({
@@ -166,7 +169,9 @@ export function realServices(checkout: string): Services & { run(dryRun: boolean
         conclusion: c.conclusion ?? undefined,
         state: c.state ?? undefined,
       }));
-      const reviews = [...pr.reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)).map((r) => r.body);
+      const sorted = [...pr.reviews].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+      const reviews = sorted.map((r) => r.body);
+      const reviewedSha = sorted.filter((r) => isReview(r.body)).at(-1)?.commit?.oid;
       return {
         number: pr.number,
         url: pr.url,
@@ -175,8 +180,22 @@ export function realServices(checkout: string): Services & { run(dryRun: boolean
         headSha: pr.headRefOid,
         checks,
         reviews,
+        reviewedSha,
         body: pr.body,
       };
+    },
+
+    waitingSessions() {
+      return listSessions(listeningDir())
+        .filter((s) => !s.answered)
+        .map((s): WaitingSession => {
+          try {
+            const session = readSession(s.dir);
+            return { name: s.name, ticket: session.ticket, question: session.question };
+          } catch (error) {
+            return { name: s.name, problem: (error as Error).message };
+          }
+        });
     },
 
     markdown(pageId) {

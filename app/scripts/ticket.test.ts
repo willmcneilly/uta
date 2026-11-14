@@ -21,8 +21,12 @@ import {
   demoSong,
   commandLine,
   dependencies,
+  inbox,
   matchTodos,
   merge,
+  needsWill,
+  type WaitingSession,
+  whyNotAutoMergeable,
   newDecision,
   parseDependsOn,
   parseId,
@@ -37,7 +41,15 @@ const PROJECT = "project-page";
 /** A fake Notion and GitHub: tickets are [id, status, depends on, PR state] with PR n = 10000 + id. */
 function fake(
   rows: [number, string, number[], PrState | "none"][],
-  extra: { project?: Partial<Project>; todos?: Todo[]; pr?: Partial<Pr>; markdown?: string; tickets?: Partial<Ticket>[] } = {},
+  extra: {
+    project?: Partial<Project>;
+    todos?: Todo[];
+    pr?: Partial<Pr>;
+    prs?: Record<number, Partial<Pr>>;
+    markdown?: string;
+    tickets?: Partial<Ticket>[];
+    sessions?: WaitingSession[];
+  } = {},
 ): Services {
   const tickets: Ticket[] = rows.map(([id, status, , pr]) => ({
     pageId: `page-${id}`,
@@ -72,10 +84,13 @@ function fake(
       branch: "uta-1-thing",
       headSha: "abcdef1234567",
       checks: [{ name: "Rust", status: "COMPLETED", conclusion: "SUCCESS" }],
-      reviews: ["🤖 Claude (review):\n\n**Verdict: Ready to merge.**"],
+      reviews: ["🤖 Claude (review):\n\n**Verdict: Ready to merge.** **Needs Will:** no"],
+      reviewedSha: "abcdef1234567",
       body: "",
       ...extra.pr,
+      ...extra.prs?.[number],
     }),
+    waitingSessions: () => extra.sessions ?? [],
   };
 }
 
@@ -306,6 +321,44 @@ describe("whyNotMergeable", () => {
   });
 });
 
+describe("needsWill", () => {
+  it("reads the reviewer's yes or no, and why", () => {
+    expect(needsWill("**Verdict: Ready to merge.**\n\n**Needs Will:** no")).toEqual({ needed: false, why: "" });
+    expect(needsWill("**Needs Will:** yes: a plan checkpoint (after 9), and a High check.")).toEqual({
+      needed: true,
+      why: "a plan checkpoint (after 9), and a High check.",
+    });
+    expect(needsWill("**Needs Will: yes** — the golden WAV changed")).toEqual({ needed: true, why: "the golden WAV changed" });
+    expect(needsWill("**Verdict: Ready to merge.**")).toBeUndefined();
+  });
+});
+
+describe("whyNotAutoMergeable", () => {
+  const pr = fake([[1, "In Review", [], "OPEN"]]).pr(10001);
+  const review = (rest: string) => [`🤖 Claude (re-review of abcdef1): **Verdict: Ready to merge.** ${rest}`];
+
+  it("is undefined when the newest review, on the head commit, says it needs nothing from Will", () => {
+    expect(whyNotAutoMergeable(pr)).toBeUndefined();
+  });
+
+  it("refuses whatever a merge with Will refuses", () => {
+    expect(whyNotAutoMergeable({ ...pr, checks: [{ name: "Rust", status: "IN_PROGRESS" }] })).toBe("PR #10001 has CI still running (Rust) on abcdef1.");
+  });
+
+  it("refuses a review of an earlier commit: a push since then hasn't been reviewed", () => {
+    expect(whyNotAutoMergeable({ ...pr, reviewedSha: "0123456789" })).toBe(
+      "The newest review of PR #10001 looked at 0123456, but the PR is at abcdef1. Run another review round.",
+    );
+  });
+
+  it("refuses a review that needs Will, or doesn't say", () => {
+    expect(whyNotAutoMergeable({ ...pr, reviews: review("**Needs Will:** yes: a plan checkpoint.") })).toBe(
+      "The newest review of PR #10001 says it needs Will: a plan checkpoint.",
+    );
+    expect(whyNotAutoMergeable({ ...pr, reviews: review("") })).toMatch(/doesn't say whether it needs Will/);
+  });
+});
+
 describe("merge", () => {
   // 7 is being merged. 8 waits on 7 alone; 9 on 7 and 6, which isn't merged;
   // 10 doesn't need 7; 11 was Ready already.
@@ -355,10 +408,75 @@ describe("merge", () => {
     expect(actions).toEqual([]);
   });
 
+  it("with --auto, merges a PR that needs nothing from Will, and says so on the ticket", () => {
+    const { run, actions } = recorder();
+    merge(fake(rows), run, 7, { auto: true });
+    expect(summaries(actions).slice(0, 3)).toEqual([
+      "Squash merge PR #10007 at abcdef1.",
+      "Delete the remote branch uta-1-thing.",
+      'Comment "🤖 Claude: Merged without Will: the newest review needed nothing from him, and CI was green."',
+    ]);
+  });
+
+  it("with --auto, refuses a PR that needs Will, changing nothing", () => {
+    const { run, actions } = recorder();
+    const services = fake(rows, { pr: { reviews: ["🤖 Claude (review): **Ready to merge.** **Needs Will:** yes: a High check."] } });
+    expect(() => merge(services, run, 7, { auto: true })).toThrow(
+      "Not merging without Will: The newest review of PR #10007 says it needs Will: a High check.",
+    );
+    expect(actions).toEqual([]);
+    // Will's own go-ahead still merges it.
+    merge(services, run, 7);
+    expect(summaries(actions)[0]).toBe("Squash merge PR #10007 at abcdef1.");
+  });
+
   it("refuses a ticket that isn't In Review, or has no PR", () => {
     const { run } = recorder();
     expect(() => merge(fake([[7, "In Progress", [], "OPEN"]]), run, 7)).toThrow("UTA-7 is In Progress, not In Review.");
     expect(() => merge(fake([[7, "In Review", [], "none"]]), run, 7)).toThrow("UTA-7 has no PR link.");
+  });
+});
+
+describe("inbox", () => {
+  it("says so when nothing needs Will", () => {
+    expect(inbox(fake([[1, "In Progress", [], "none"]]))).toEqual(["Nothing needs you."]);
+  });
+
+  it("lists waiting sessions, PRs that need Will and Blocked tickets, then what isn't his yet", () => {
+    const services = fake(
+      [
+        [1, "In Review", [], "OPEN"],
+        [2, "In Review", [], "OPEN"],
+        [3, "In Review", [], "OPEN"],
+        [4, "Blocked", [], "none"],
+        [5, "In Progress", [], "none"],
+      ],
+      {
+        sessions: [
+          { name: "2026-11-07-room-golden", ticket: "UTA-1", question: "Is this the Room you approved?" },
+          { name: "2026-11-07-broken", problem: "it needs a [prediction]" },
+        ],
+        prs: {
+          10001: { reviews: ["🤖 Claude (review): **Ready to merge.** **Needs Will:** yes: a plan checkpoint."] },
+          10002: { reviews: ["🤖 Claude (review): **Changes needed.**"] },
+        },
+      },
+    );
+    expect(inbox(services)).toEqual([
+      "Listen (2 questions): run `scripts/listen` from any checkout.",
+      "  2026-11-07-room-golden  UTA-1  Is this the Room you approved?",
+      "  2026-11-07-broken  can't be asked: it needs a [prediction]",
+      "",
+      "PRs waiting on you (say merge in the ticket's session):",
+      "  UTA-1  Ticket 1  (PR #10001): The newest review of PR #10001 says it needs Will: a plan checkpoint.",
+      "",
+      "Blocked (its session says why):",
+      "  UTA-4  Ticket 4",
+      "",
+      "Not waiting on you yet:",
+      "  UTA-2  Ticket 2  (PR #10002): The newest review of PR #10002 says Changes needed.",
+      "  UTA-3  Ticket 3  (PR #10003): nothing needs you; it merges on its own (`scripts/ticket merge UTA-3 --auto`).",
+    ]);
   });
 });
 

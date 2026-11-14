@@ -1,6 +1,6 @@
 ---
 name: work-ticket
-description: Pick up a Uta ticket and take it through to a merged PR. Use when Will says /work-ticket, "work on UTA-n", "pick up the next ticket", says to merge a ticket's PR, or reports something he found trying it. Covers claiming the ticket, branching, implementing, verifying against the acceptance criteria, writing the evidence once in the PR body and syncing it to the ticket, opening the PR, the review loop with an independent reviewer, handing over to Will with what needs him, and merging on his go-ahead.
+description: Pick up a Uta ticket and take it through to a merged PR. Use when Will says /work-ticket, "work on UTA-n", "pick up the next ticket", says to merge a ticket's PR, or reports something he found trying it. Covers claiming the ticket, branching, implementing, verifying against the acceptance criteria, writing the evidence once in the PR body and syncing it to the ticket, opening the PR, the review loop with an independent reviewer, handing over to Will with what needs him, and merging: on its own when the review says nothing needs Will, otherwise on his go-ahead.
 effort: medium
 ---
 
@@ -9,6 +9,8 @@ effort: medium
 A ticket is done when a reviewer and Will can trust it without reading every line, because the evidence is in the ticket and the PR. The job isn't just writing the code: it's showing, criterion by criterion, that it works.
 
 `scripts/ticket` does the ticket's Notion and GitHub steps, one command each (`scripts/ticket --help`). Every command takes `--dry-run`, which reads as usual and prints the calls it would make instead of making them. For anything else in Notion, use the `uta-notion` skill. Keep your own context lean: send broad exploration, library research and large log reading to subagents, and keep the conclusions.
+
+**Coordinated tickets.** When the prompt says `(coordinated)`, the `run-project` skill's coordinator started this session and starts the next tickets itself. Then: don't line up the next ticket after merging (step 10.3), keep your messages for the coordinator short (it reads only the first lines), and never ask Will something in chat that can be a listening session or a line in the handover, since he may be away for days.
 
 ## 1. Pick the ticket
 
@@ -45,7 +47,8 @@ Read:
 - **Stay in scope.** If you spot something worth doing that isn't in the ticket (a bug, a refactor, a missing piece), don't do it here. List it under follow-ups in the PR, and mention it to Will.
 - Commit in logical steps, with clear messages ending in the attribution line from the system reminder.
 - **UI work uses design tokens only.** A colour written directly in CSS or TypeScript fails `npm run lint`. Use the CSS variables or `src/design/tokens.ts`, and don't edit `DESIGN.md` or the generated token files to get a value you need.
-- **If you're stuck on something outside your control,** such as a broken tool, a missing decision or an upstream bug: set the ticket to `Blocked`, comment why, and tell Will.
+- **If you're stuck on something outside your control,** such as a broken tool, a missing decision or an upstream bug: set the ticket to `Blocked`, comment why, and tell Will. `scripts/ticket inbox` lists Blocked tickets for him.
+- **Computer use (screenshots, clicks in the app) is one session at a time.** Before your first computer-use call, take the screen lock: `scripts/screen take UTA-n`, in the background if someone else has it, carrying on with other work until it exits. Take it again every 15 minutes while you're still using the screen, and give it back the moment you're done: `scripts/screen give UTA-n`. Never use computer use without it.
 
 ### Provisional design decisions
 
@@ -88,9 +91,12 @@ A ticket that changes how something sounds asks Will's ear only after the number
 1. **Measure first.** Render each candidate and run `uta analyse` on it (`--against` for two, `--pitch` when the note is known). Fix what the numbers already show (clicks, aliasing, a level or decay off its brief) before anyone listens.
 2. **Write the prediction first,** before Will hears anything: which candidate you expect him to pick (or how he'll rate them, or what he'll say is wrong) and why, naming the measurements it relies on. It goes in the session and can't change afterwards.
 3. **Hand every listening step over as a session,** one question each, in the listening folder (`~/.uta/listening/`, or `UTA_LISTENING_DIR`), never in the repo. `scripts/listen --help` has the `session.toml` format. Name it `<date>-<what>`, e.g. `2026-10-20-snare-decay`, with each candidate's command list beside it. Use *pick one* for an A/B/C, *rate each* to place several, and *listen and describe* for one render. Leave loudness matching on unless a candidate is meant to be louder.
+   - **Every session says where it's from and stands on its own.** Write `checkout` (this worktree's absolute path, so `scripts/listen` run from any checkout renders with your branch's code), `ticket = "UTA-n"`, and `context`: what's being decided and why, and what Will chose before, in a sentence or two, so it makes sense after a gap of days. The context is shown before he listens, so it never hints at your prediction or at which candidate is which.
+   - **Few candidates, one plain question.** Two is best, three at most, unless you're placing several on a scale. "Does either of these ring?" is a question he can answer; six versions "to calibrate" isn't.
    - **To judge a sound or an effect, build it on the canvas,** rather than writing a part for it: `canvas = "<part>"` in `session.toml` renders every candidate on one of the parts in `examples/listen/canvas/` (`snare`, `chord`, `swell`, `pad`; its README says what each is for). Each candidate's `commands` is then a TOML file of `[[command]]` tables added onto the part's song file, naming its track as `$track:Part`: `set_synth_settings` for a sound, `add_effects` for an effect. Leave `commands` out for a dry reference. Pick the part that shows what's being decided (a reverb's early reflections on the snare, its tail on the chord), and use a session per part rather than one question about several.
    - **The loop takes care of the tail.** With the loop off, as on the canvas, it ends half a second after the last candidate is 60 dB below its own peak, and the shorter renders are padded with silence to it: `--prepare` prints each candidate's time. Set `loop` only for a longer gap, such as between dry snare hits.
-4. **In the PR,** "For Will to try" says `scripts/listen <session>` for each one (or just `scripts/listen`, which asks every waiting session), with the question and what's being decided, not the prediction. Check each session renders before handing over: `scripts/listen <session> --prepare` renders and measures it, and prints its loop and gains without serving the page.
+4. **Ask early, then keep working.** Will clears every waiting session in one sitting, with `scripts/listen` from anywhere, and he may not be there for days. So prepare the sessions as soon as the numbers allow, check each renders (`scripts/listen <session> --prepare` renders and measures it, and prints its loop and gains without serving the page), and tell Will once that they're waiting: `scripts/ticket inbox` lists them. Then carry on with everything that doesn't need his answer (tests, the voicing guide, docs, the PR body) rather than stopping. Batch what you can: if a later question doesn't depend on an earlier answer, prepare it now too. Only the golden WAV approval waits for the end, and that's a session too.
+   - **In the PR,** "For Will to try" says `scripts/listen <session>` for any still waiting, with the question and what's being decided, not the prediction, or reports what he chose.
 5. **Read the verdict** (`verdict.toml` beside the session) when Will's done, and say in the PR whether the prediction matched. Act on his note.
 
 A sound test made from verdicts records only the measured range and a one-line reason in the test itself ("decay 180–250 ms: Will picked these as 808-like in three sessions"), never his words: the verdicts are private, and the reviewer checks the test, not them.
@@ -144,9 +150,11 @@ You and an independent reviewer go back and forth until you agree. Will isn't in
 
 If the workflow fails or the reviewer doesn't finish, run the round again once. If it fails again, tell Will, and set the ticket to `Blocked` only if nothing else can move it.
 
-## 9. Hand over to Will
+## 9. Merge, or hand over to Will
 
-Send one message. It's the first Will hears of this ticket since you started. Lead with what needs him, and keep the rest short: the detail is in the PR, so link to it rather than repeating it.
+**If the last review says `**Needs Will:** no`,** nothing needs him: merge without waiting. Run `scripts/ticket merge UTA-n --auto`. It refuses unless the newest review looked at the PR's head commit and says Needs Will: no, and CI is green there, so if you pushed after the review (even a comment), run another review round first. Then do steps 10.1 to 10.4 as if Will had said merge, and tell him in a few lines: what merged, that it merged without him because the review needed nothing, and anything Low he might try at the next checkpoint. If it refuses, say why and hand over as below.
+
+**If it says `**Needs Will:** yes`,** hand over. Send one message. It's the first Will hears of this ticket since you started. Lead with what needs him, and keep the rest short: the detail is in the PR, so link to it rather than repeating it.
 
 1. **What needs you,** first. Take it from the last reviewer's `for_will` list and its `golden_changed` flag, not from your own view, and keep its ratings:
    - **High** checks: the steps, and what he should hear or see.
@@ -164,7 +172,7 @@ Leave out benchmark tables, implementation detail and housekeeping.
 - **If a check starts from a particular state** (a song from the Develop menu, a buffer size), say exactly how to get there in its first step.
 - **If a check needs a terminal command** (`uta play`, say), give it ready to run in its own `bash` block.
 
-Leave it all running until Will merges or reports back.
+Leave it all running until Will merges or reports back. `scripts/ticket inbox` lists the PR for him, with the reviewer's reason.
 
 Then stop and wait for Will.
 
@@ -182,7 +190,7 @@ Then stop and wait for Will.
    - delete scratch branches you pushed, except a branch that holds images the PR links to, which stays so the PR keeps working;
    - leave anything you didn't create alone;
    - then run the `tidy` skill, which clears what earlier tickets left behind: worktrees and build output whose work is on `main`, and merged branches.
-3. **Line up the next ticket.** Take it from what `merge` printed as ready to start (or run `scripts/ticket ready`). Pick the next one the plan's order says to do in the same project, or the lowest ID if the plan doesn't say. Then create a chip for it with the `spawn_task` tool (the `ccd_session` one): title `Work on UTA-<n>: <name>`, a one-line tldr of its goal, and the prompt `/work-ticket UTA-<n>`, so Will only has to click it. If that tool isn't available, give him the command to paste instead. If nothing is Ready, say what the next ticket is waiting on.
+3. **Line up the next ticket,** unless this ticket is coordinated (the coordinator does it). Take it from what `merge` printed as ready to start (or run `scripts/ticket ready`). Pick the next one the plan's order says to do in the same project, or the lowest ID if the plan doesn't say. Then create a chip for it with the `spawn_task` tool (the `ccd_session` one): title `Work on UTA-<n>: <name>`, a one-line tldr of its goal, and the prompt `/work-ticket UTA-<n>`, so Will only has to click it. If that tool isn't available, give him the command to paste instead. If nothing is Ready, say what the next ticket is waiting on.
 4. Tell Will, in a few lines: what merged, which tickets are now Ready, the next ticket you lined up (and any other Ready tickets that could run alongside it), what he can try if this was a checkpoint, and one line on what you cleaned up. Only ask about something you couldn't clean up safely.
 
 **Something he found by hand:** fix it on the branch, re-run the step 5 checks and push. If the evidence changed, edit the PR body file and run `scripts/ticket sync` again. Will checks these fixes himself in the app, so there's usually no need for another review round. CI must still be green before merging. Run one more round only if the fix:

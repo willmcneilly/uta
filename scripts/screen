@@ -1,0 +1,4 @@
+#!/bin/sh
+# The screen lock, so one session at a time uses computer use.
+# `scripts/screen --help` says how. The logic is in app/scripts/screen.ts.
+exec node --disable-warning=ExperimentalWarning "$(dirname "$0")/../app/scripts/screenCli.ts" "$@"

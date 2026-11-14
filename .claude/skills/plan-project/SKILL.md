@@ -41,7 +41,8 @@ For each ticket, write:
 Then check:
 - **Coverage.** Every item in the RFC's "How we'll verify it" maps to at least one ticket, and every part of the Proposal is covered or explicitly deferred. Anything deferred goes in the plan's "Not in this project" list, with a reason.
 - **Order.** The first ticket has no dependencies. Each ticket, once merged, leaves the app building and every check passing.
-- **Will's checkpoints.** Mark the tickets after which Will can try something themselves, and say what. Those are the moments the experiment depends on.
+- **Will's checkpoints.** Mark the tickets after which Will can try something themselves, and say what. Those are the moments the experiment depends on. A checkpoint ticket always waits for his merge; every other ticket merges on its own when its review says nothing needs him (the `work-ticket` skill), so be deliberate about which are checkpoints.
+- **Will's sittings.** Will's time is the critical path, and he's often away for days, so plan around his sittings rather than his availability between them. Tickets that need his ear prepare their listening sessions early and carry on with the rest while they wait, and sessions he can answer together should be ready together: don't chain tickets that need his ear one after another (each would take a sitting of its own) when a provisional value, refined afterwards, would let them run side by side. In the Reverb plan, Room, Chamber and Space each waited for the one before, and took three sittings over three days.
 
 ## 3. Draft the plan locally
 

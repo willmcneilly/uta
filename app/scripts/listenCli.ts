@@ -5,7 +5,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   HELP,
@@ -23,14 +23,18 @@ import {
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 
-/** `uta render`, `uta song` and `uta analyse --json --png`, from $UTA_BIN or this checkout's release build. */
-function utaTools(): Tools {
+/**
+ * `uta render`, `uta song` and `uta analyse --json --png`, from $UTA_BIN or
+ * the release build of `checkout`: the session's, so its candidates are
+ * rendered with its ticket's code, whichever checkout runs scripts/listen.
+ */
+function utaTools(checkout: string): Tools {
   let uta = process.env.UTA_BIN;
   const binary = () => {
     if (!uta) {
-      console.error("Building uta (cargo build --release -p uta-cli)…");
-      execFileSync("cargo", ["build", "--release", "-q", "-p", "uta-cli"], { cwd: REPO, stdio: "inherit" });
-      uta = `${REPO}target/release/uta`;
+      console.error(`Building uta in ${checkout} (cargo build --release -p uta-cli)…`);
+      execFileSync("cargo", ["build", "--release", "-q", "-p", "uta-cli"], { cwd: checkout, stdio: "inherit" });
+      uta = join(checkout, "target", "release", "uta");
     }
     return uta;
   };
@@ -96,15 +100,21 @@ async function main() {
     console.log(`Nothing to listen to: every session in ${dir} has a verdict.`);
     return;
   }
-  const tools = utaTools();
+  const tools = new Map<string, Tools>();
+  const toolsFor = (checkout: string) => {
+    if (!tools.has(checkout)) tools.set(checkout, utaTools(checkout));
+    return tools.get(checkout) as Tools;
+  };
   const prepared: Prepared[] = [];
   for (const sessionPath of dirs) {
-    const session = readSession(sessionPath);
     if (!args.again && existsSync(join(sessionPath, "verdict.toml"))) {
-      console.log(`Skipping ${session.name}: it has a verdict (use --again to ask it again).`);
+      console.log(`Skipping ${basename(sessionPath)}: it has a verdict (use --again to ask it again).`);
       continue;
     }
-    prepared.push(prepare(session, tools, (line) => console.error(line)));
+    const session = readSession(sessionPath);
+    if (!session.checkout && args.prepare)
+      console.error(`${session.name} has no \`checkout\`: it renders with whichever checkout runs scripts/listen. Add checkout = "${REPO.replace(/\/$/, "")}".`);
+    prepared.push(prepare(session, toolsFor(session.checkout ?? REPO), (line) => console.error(line)));
   }
   if (prepared.length === 0) return;
   if (args.prepare) {
