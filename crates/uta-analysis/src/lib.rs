@@ -609,9 +609,6 @@ pub(crate) fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     biquad(&biquad(samples, shelf), high_pass)
 }
 
-/// The K-weighting's two biquads at `sample_rate`, each as its numerator
-/// and denominator coefficients: the shelf, then the high-pass.
-#[allow(clippy::type_complexity)]
 /// How much the K-weighting filter (as [`k_weighted`] applies it) scales
 /// the power of a sine at `hz`: both its sections' responses, squared.
 pub(crate) fn k_weighting_power(hz: f64, sample_rate: u32) -> f64 {
@@ -627,6 +624,9 @@ pub(crate) fn k_weighting_power(hz: f64, sample_rate: u32) -> f64 {
     power(shelf) * power(high_pass)
 }
 
+/// The K-weighting's two biquads at `sample_rate`, each as its numerator
+/// and denominator coefficients: the shelf, then the high-pass.
+#[allow(clippy::type_complexity)]
 fn k_weighting(sample_rate: u32) -> (([f64; 3], [f64; 3]), ([f64; 3], [f64; 3])) {
     let rate = f64::from(sample_rate);
     let (f0, gain_db, q) = (
