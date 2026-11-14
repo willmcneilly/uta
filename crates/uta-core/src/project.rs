@@ -490,6 +490,18 @@ impl Project {
                     param: previous,
                 })
             }
+            &Command::SetReverbSettings { effect, settings } => {
+                let EffectSettings::Reverb(current) = &mut self.effect_mut(effect)?.settings else {
+                    return Err(CommandError::NotAReverb(effect));
+                };
+                settings
+                    .validate()
+                    .map_err(CommandError::ReverbParamOutOfRange)?;
+                Ok(Command::SetReverbSettings {
+                    effect,
+                    settings: std::mem::replace(current, settings),
+                })
+            }
         }
     }
 
@@ -3320,6 +3332,90 @@ mod tests {
                 param: crate::DelayParam::Feedback(0.2),
             },
             CommandError::NotADelay(effect),
+        );
+    }
+
+    /// Choosing a factory sound sets every Reverb setting, its mode
+    /// included, and leaves Mix and on/off alone; one undo puts them all
+    /// back (RFC-010, "Factory sounds").
+    #[test]
+    fn set_reverb_settings_sets_every_setting_but_mix_and_one_undo_puts_them_back() {
+        let mut project = with_a_delay_and_a_reverb();
+        let effect = testing::effect_id(1);
+        project
+            .apply(&Command::SetEffectMix { effect, mix: 0.6 })
+            .unwrap();
+        project
+            .apply(&Command::SetEffectEnabled {
+                effect,
+                enabled: false,
+            })
+            .unwrap();
+        let mut modes = HashSet::new();
+        for sound in crate::ReverbFactorySound::all() {
+            let settings = sound.settings;
+            let set =
+                apply_and_check_undo(&project, Command::SetReverbSettings { effect, settings });
+            let after = set.effect(effect).unwrap();
+            assert_eq!(
+                after.settings(),
+                &EffectSettings::Reverb(settings),
+                "{}",
+                sound.key
+            );
+            assert_eq!(after.mix(), 0.6, "{}", sound.key);
+            assert!(!after.enabled(), "{}", sound.key);
+            modes.insert(settings.mode);
+        }
+        assert_eq!(
+            modes.len(),
+            crate::ReverbMode::ALL.len(),
+            "every mode is chosen"
+        );
+
+        let mut session = crate::Session::new(project.clone());
+        for sound in crate::ReverbFactorySound::all().iter().take(3) {
+            session
+                .apply(Command::SetReverbSettings {
+                    effect,
+                    settings: sound.settings,
+                })
+                .unwrap();
+        }
+        for _ in 0..3 {
+            assert_eq!(session.undo().len(), 1, "one sound, one undo step");
+        }
+        assert_eq!(session.project(), &project);
+
+        // Out of range anywhere refuses the whole command, naming the setting.
+        let settings = crate::ReverbSettings {
+            depth: 1.5,
+            ..crate::ReverbFactorySound::all()[0].settings
+        };
+        assert_rejected(
+            &project,
+            Command::SetReverbSettings { effect, settings },
+            CommandError::ReverbParamOutOfRange(crate::ReverbParam::Depth(1.5)),
+        );
+        let mut attempt = project.clone();
+        let nan = crate::ReverbSettings {
+            decay_seconds: f32::NAN,
+            ..crate::ReverbSettings::default()
+        };
+        assert!(matches!(
+            attempt.apply(&Command::SetReverbSettings { effect, settings: nan }),
+            Err(CommandError::ReverbParamOutOfRange(crate::ReverbParam::DecaySeconds(s))) if s.is_nan()
+        ));
+        assert_eq!(attempt, project);
+        // Only for a Reverb.
+        let delay = testing::effect_id(0);
+        assert_rejected(
+            &project,
+            Command::SetReverbSettings {
+                effect: delay,
+                settings: crate::ReverbSettings::default(),
+            },
+            CommandError::NotAReverb(delay),
         );
     }
 

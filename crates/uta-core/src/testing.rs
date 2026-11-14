@@ -191,6 +191,23 @@ fn any_reverb_param() -> impl Strategy<Value = ReverbParam> {
     ]
 }
 
+/// Every Reverb setting at once: one of its factory sounds, mostly, or one
+/// with its Decay out of range, so some are rejected.
+fn any_reverb_settings() -> impl Strategy<Value = ReverbSettings> {
+    let sounds = crate::ReverbFactorySound::all().len();
+    (0..sounds, prop::bool::weighted(0.1)).prop_map(|(index, wrong)| {
+        let settings = crate::ReverbFactorySound::all()[index].settings;
+        if wrong {
+            ReverbSettings {
+                decay_seconds: 31.0,
+                ..settings
+            }
+        } else {
+            settings
+        }
+    })
+}
+
 /// A Mix, mostly in range.
 fn any_mix() -> impl Strategy<Value = f32> {
     prop_oneof![10 => 0.0f32..=1.0, 1 => prop_oneof![Just(f32::NAN), 1.01f32..2.0, -1.0f32..-0.01]]
@@ -461,6 +478,7 @@ pub fn any_command() -> impl Strategy<Value = Command> {
         1 => ((0u128..8).prop_map(effect_id), any_mix()).prop_map(|(effect, mix)| Command::SetEffectMix { effect, mix }),
         1 => ((0u128..8).prop_map(effect_id), any_delay_param()).prop_map(|(effect, param)| Command::SetDelayParam { effect, param }),
         1 => ((0u128..8).prop_map(effect_id), any_reverb_param()).prop_map(|(effect, param)| Command::SetReverbParam { effect, param }),
+        1 => ((0u128..8).prop_map(effect_id), any_reverb_settings()).prop_map(|(effect, settings)| Command::SetReverbSettings { effect, settings }),
     ]
 }
 
@@ -511,7 +529,7 @@ mod tests {
                 .map(|clip| clip.notes().len())
                 .sum::<usize>();
         }
-        assert_eq!(applied.len(), 25, "every kind of command applies");
+        assert_eq!(applied.len(), 26, "every kind of command applies");
         assert!(most_tracks >= 5, "at most {most_tracks} tracks");
         assert!(most_clips >= 5, "at most {most_clips} clips");
         assert!(notes_elsewhere > 0);
