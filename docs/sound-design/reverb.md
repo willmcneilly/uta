@@ -81,3 +81,34 @@ Space is a bigger, darker network than Room, drifting further and more slowly. I
 
 - **The pad.** At the same 8 s Decay and Mix 35%, Will picked Space over Room on the pad as smoother. Not woolly, and no wobble.
 - **How deep the drift goes.** Full Late Mod Depth wavered under the swell, so Space keeps Room's default of 50%. Slowing the rates from 3/8 to 1/4 of Room's made no clear difference: on the swell at full depth, Will found the two hard to tell apart. The slower rates were kept for their smaller bend.
+
+## Factory sounds
+
+The eleven factory sounds (UTA-106) are in `crates/uta-core/src/reverb_factory.rs`, each with its brief, its targets and the Mix it suggests. `effects/reverb/factory.rs` checks each against its targets on a one-sample click's impulse response, and their loudness against each other; `cargo test -p uta-engine --release reverb::factory::print -- --ignored --nocapture` prints what each measures, for tuning. A sound never sets Mix: that's the track's (RFC-010, open question 7).
+
+A reverb's targets are its own measurements: the 1 kHz octave's decay, the 125 Hz and 4 kHz octaves' against it, the onset, the early-to-late balance (`early_to_late_db`, C80), how soon it's dense, when it's loudest and when it's gone, its share of energy above or below a frequency, how far its pitch drifts, and its loudness on a steady sound (`steady_gain_db`).
+
+| To get | Turn | Notes |
+|---|---|---|
+| **"Little above X kHz"** | High Cut well under X, and High Mult under 1 | High Cut falls 12 dB an octave, so a cut at X still leaves 10 to 17% of the energy above X. Under a tenth needs the cut about 15% under X with the highs fading at under half the Decay: Dark room's 3.5 kHz brief has its cut at 3 kHz and High Mult 0.4. |
+| **Highs fading at a share of the Decay** | High Mult, *and* High Xover | The 4 kHz octave runs from 2.8 to 5.7 kHz, so with High Xover at its default 4 kHz half of it rings at the mid's rate: the Concert hall's High Mult of 0.55 measured 0.75× there. At 2.5 kHz the octave is all above it, and it reads 0.6×. |
+| **The lows ringing longer** | Bass Mult | The 125 Hz octave is well under the default Bass Xover (500 Hz), so it reads close to the setting: 1.3 gave 1.28 to 1.32×. |
+| **A late first sound** | Predelay | The onset is the Predelay to the millisecond, in every mode. |
+| **Mostly early, or mostly tail** | Depth | Depth 30% in Room reads +18 dB early to late; 95% reads −9 dB. |
+| **A swell** | Early Size long, Early Send full, Diffusion full, in Space | Bloom's 0.6 s burst, all fed to the tail, is loudest 490 ms after the note. Its echo density takes 120 ms to reach near 1, which nothing in its brief minds. |
+| **A gated burst** | Depth 0%, Early Size 250 ms, in Chamber | Gone (20 dB under its loudest, for good) by 230 ms. |
+| **An audible drift** | Late Mod Depth full, Late Mod Rate about 1 Hz | Dark room's 1.2 Hz at full depth bends its tail about 20 cents; Room's defaults bend it under 6. |
+
+### Loudness
+
+**The Reverb has no level of its own**, so a sound can only be balanced by its other settings, and a dark or thin space is quieter: at the same Mix, less of it comes through. How much depends on what goes in. On white noise the darkest sounds read 6 to 8 dB under the bright ones; on pink noise (equal energy in every octave, about what music has over a song), 2 to 4. Pink is the right test, so `steady_gain_db` is pink noise's K-weighted gain, and the sounds are within 4.5 dB of each other on it (`REVERB_LOUDNESS_SPREAD_DB`), wider than the synth's 3 dB because a brief's darkness costs loudness that nothing else can give back: "little above 3.5 kHz" costs about 2 dB against the default's open top, and Low Cut costs as much again (Distant's 300 Hz Low Cut took it to −4.2 dB, so it has none, and its little below 300 Hz, 12%, comes from its tail alone).
+
+### What the measurements can't see
+
+- **Whether it sounds like its name.** The targets say a Cathedral rings 7 s with its highs at 0.4×, not that it sounds like stone. The canvas sessions ask that.
+- **Whether a drift wavers.** Dark room's 20 cents is a number; whether it's lo-fi or seasick is for the ear (as Space's drift was).
+- **A "plate".** The Vocal plate meets its targets (dense in 6 ms, 1.8 s, highs 0.91×, lows 0.66×) on Chamber, but a plate's own sheen needs a Plate mode.
+
+### What needed an ear
+
+Still to hear: each sound against its brief on the snare, keys and pad (three *rate each* sessions), and stepping through the menu while a loop plays.
