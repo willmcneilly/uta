@@ -71,6 +71,19 @@ session.toml, written by Claude before Will listens:
                            # second more, so each pass starts afresh
   canvas = "chord"         # optional: render every candidate on the same
                            # part of the canvas (below)
+  checkout = "/Users/…/worktrees/uta-101-tune-room"
+                           # the checkout whose code the candidates are
+                           # rendered with: its release build of uta and
+                           # its canvas. Write it, so scripts/listen run
+                           # from any checkout renders with the ticket's
+                           # code. Default: the checkout running it
+  ticket = "UTA-101"       # optional: the ticket asking, shown on the page
+  context = "Room's tail rang on the snare. Defaults against a fuller, drifting tail."
+                           # optional: what's being decided and why, and
+                           # what Will chose before, in a sentence or two,
+                           # shown above the question so it stands on its own.
+                           # It's sent before Finish, so it never hints at
+                           # the prediction or at which candidate is which
 
   [prediction]             # written first, before anything is heard
   text = "B: its tail falls 40 dB in 210 ms, close to an 808's."
@@ -159,6 +172,10 @@ export interface Session {
   loop?: [number, number];
   /** The canvas's song file, when every candidate is rendered on it. */
   canvas?: string;
+  /** The checkout whose code renders the candidates: `checkout`, or undefined for the one running this. */
+  checkout?: string;
+  ticket?: string;
+  context?: string;
   prediction: Prediction;
   candidates: Candidate[];
 }
@@ -219,12 +236,22 @@ export function readSession(dir: string): Session {
   if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind))
     fail(`\`kind\` must be one of ${KINDS.map((k) => `"${k}"`).join(", ")}.`);
 
+  let checkout: string | undefined;
+  if (toml.checkout !== undefined) {
+    checkout = resolve(text(toml.checkout, "`checkout`"));
+    if (!existsSync(join(checkout, "Cargo.toml")))
+      fail(`it was made in ${checkout}, which isn't a Uta checkout any more. Ask the ticket's session to make it again.`);
+  }
+  const ticket = toml.ticket === undefined ? undefined : text(toml.ticket, "`ticket`");
+  const context = toml.context === undefined ? undefined : text(toml.context, "`context`");
+
   let canvas: string | undefined;
   if (toml.canvas !== undefined) {
     const name = text(toml.canvas, "`canvas`");
-    canvas = /^[a-z0-9-]+$/.test(name) ? join(CANVAS_DIR, `${name}.toml`) : resolve(dir, name);
+    const canvasDir = checkout ? canvasDirOf(checkout) : CANVAS_DIR;
+    canvas = /^[a-z0-9-]+$/.test(name) ? join(canvasDir, `${name}.toml`) : resolve(dir, name);
     if (!existsSync(canvas))
-      fail(`\`canvas\` "${name}" isn't a part of the canvas (${canvasParts().join(", ")}) or a song file: there's no ${canvas}.`);
+      fail(`\`canvas\` "${name}" isn't a part of the canvas (${canvasParts(canvasDir).join(", ")}) or a song file: there's no ${canvas}.`);
   }
 
   const list = toml.candidates;
@@ -289,6 +316,9 @@ export function readSession(dir: string): Session {
     seconds: seconds as number | undefined,
     loop: loop as [number, number] | undefined,
     canvas,
+    checkout,
+    ticket,
+    context,
     prediction,
     candidates,
   };
@@ -298,6 +328,9 @@ export function readSession(dir: string): Session {
 
 /** The canvas's parts: the song files in examples/listen/canvas/. */
 export const CANVAS_DIR = fileURLToPath(new URL("../../examples/listen/canvas/", import.meta.url));
+
+/** A checkout's canvas folder. */
+export const canvasDirOf = (checkout: string) => join(checkout, "examples", "listen", "canvas");
 
 export function canvasParts(dir: string = CANVAS_DIR): string[] {
   try {
@@ -742,6 +775,8 @@ export function listening(prepared: Prepared[], options: ServeOptions = {}): Lis
       index: current,
       total: asked.length,
       question: session.question,
+      ticket: session.ticket ?? null,
+      context: session.context ?? null,
       kind: session.kind,
       labels: ask.order.map((_, position) => LABELS[position]),
       loop,
@@ -892,6 +927,7 @@ const PAGE = `<!doctype html>
   .position { font: var(--font-position); font-family: var(--font-position-family), monospace; color: var(--ink-3); min-width: 5ch; }
   .playing .position { color: var(--ink); }
   .hint { font: var(--font-label); color: var(--ink-2); }
+  .context { font: var(--font-text); color: var(--ink-2); max-width: 60ch; }
   .rate { display: grid; grid-template-columns: 2ch auto; gap: var(--space-4); align-items: center; font: var(--font-text); }
   textarea { width: 100%; min-height: calc(3 * var(--space-7)); font: var(--font-text); color: var(--ink); background: var(--sheet);
     border: var(--stroke-grid) solid var(--line-2); border-radius: var(--rounded-md); padding: var(--space-4); resize: vertical; }

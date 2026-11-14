@@ -107,6 +107,17 @@ Will tries things by hand after the review, and his time is the scarcest thing i
 
 Give each one as steps with what he should hear or see. Don't inflate: if nothing is High, say so plainly.
 
+**Then decide whether the PR needs Will before it merges.** A PR that doesn't merges without his go-ahead (`scripts/ticket merge UTA-n --auto`), so this is the gate. It needs him (**yes**) if any of these holds:
+- a **High** check is left for him;
+- the ticket is one of the plan's **checkpoints** (the plan in `docs/plans/`, "Order and checkpoints");
+- a **golden WAV** changed and the PR doesn't say he approved it in a listening session (`scripts/listen <session>`, with its verdict);
+- a listening criterion has no verdict yet: the PR asks him to listen instead of reporting what he chose;
+- a **disagreement** you didn't accept is still open, or a should-fix the implementer wants to leave as a follow-up;
+- the PR **departs from the RFC**, or changes the process itself (a skill, an agent, a workflow, `CLAUDE.md`);
+- anything else you'd want him to see before it's on `main`.
+
+Otherwise it's **no**. Low checks and provisional design decisions (`D-n`, decided between projects) don't need him now. When in doubt, say yes: a wrong no merges without him.
+
 ## 4. Post the review
 
 **In a dry run, skip this section and put the review in the result instead.**
@@ -118,14 +129,14 @@ gh api repos/willmcneilly/uta/pulls/<n>/reviews -X POST --input <file>
 ```
 `{"event":"COMMENT","body":"...","comments":[{"path":"...","line":N,"side":"RIGHT","body":"..."}]}`. Write the file inside your worktree (not `/tmp`), and don't commit it; the next round's `review-setup` clears it.
 
-**The body:** the verdict (**Ready to merge** or **Changes needed**); the blocking findings, then should-fix, then nits; for re-reviews, each earlier finding and whether it's resolved, and every disagreement you accepted or rejected; each acceptance criterion and how you verified it; and the "What only Will can check" list with its ratings.
+**The body:** the verdict (**Ready to merge** or **Changes needed**); the blocking findings, then should-fix, then nits; for re-reviews, each earlier finding and whether it's resolved, and every disagreement you accepted or rejected; each acceptance criterion and how you verified it; and the "What only Will can check" list with its ratings. End the verdict line with the gate, exactly as `scripts/ticket` reads it: `**Needs Will:** no`, or `**Needs Will:** yes: <why, in a few words>`. Changes needed is always `**Needs Will:** no`, since there's nothing for him yet.
 
 Then comment on the Notion ticket: `🤖 Claude (review): <verdict>, <n> blocking. <review link>`. The ticket's status stays `In Review`.
 
 ## Rules
 
 - **Don't fix the code.** The implementer addresses findings. Break code on purpose only with `scripts/mutate`, which puts it back, and never commit, push or resolve review threads.
-- **Don't merge.** Merging needs Will's go-ahead and isn't part of a review.
+- **Don't merge.** Merging is the implementer's step, through `scripts/ticket merge`, and isn't part of a review.
 - **Never claim you verified something you didn't.**
 - **The verdict is Ready to merge only when** nothing blocking is left, CI is green on the commit you reviewed (or, when it isn't, every check you ran locally is), and the tests you ran pass.
 

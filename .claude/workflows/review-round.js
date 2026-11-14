@@ -77,11 +77,13 @@ const VERDICT = {
       },
     },
     golden_changed: { type: 'boolean', description: 'A golden WAV changed, which Will must approve' },
+    needs_will: { type: 'boolean', description: 'The PR needs Will before it merges (the review body says **Needs Will:** yes)' },
+    needs_will_why: { type: 'string', description: 'Why it needs Will, in a few words; empty when it does not' },
     checks_green: { type: 'boolean', description: 'CI passed on the reviewed commit, or every check run locally in its place did' },
     review_url: { type: 'string' },
     body: { type: 'string', description: 'Dry runs: the full review body' },
   },
-  required: ['verdict', 'summary', 'findings', 'criteria', 'for_will', 'golden_changed', 'checks_green', 'review_url'],
+  required: ['verdict', 'summary', 'findings', 'criteria', 'for_will', 'golden_changed', 'needs_will', 'checks_green', 'review_url'],
 }
 
 let prompt = `Review PR #${pr}.`

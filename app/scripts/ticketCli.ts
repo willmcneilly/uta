@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evidenceProblems } from "./evidence.ts";
-import { Refusal, claim, describeProblems, merge, newDecision, parseId, ready, show, sync, tick } from "./ticket.ts";
+import { Refusal, claim, describeProblems, inbox, merge, newDecision, parseId, ready, show, sync, tick } from "./ticket.ts";
 import { gitTree, realServices } from "./ticketServices.ts";
 
 const HELP = `Usage: scripts/ticket <command> [args] [--dry-run]
@@ -25,6 +25,12 @@ Commands:
       alongside each other. Then Ready tickets still waiting on something,
       and what's In Progress or In Review now.
 
+  inbox
+      Everything waiting on Will: listening sessions with no verdict (from
+      every checkout; scripts/listen asks them all), PRs whose newest review
+      says they need him, with why, and Blocked tickets. Then PRs still in
+      the review loop, and any that can merge without him. Changes nothing.
+
   claim UTA-n --branch <name>
       Refuses unless the ticket is Ready and its dependencies are met. Sets it
       In Progress, sets its project Active if it was Planned, and comments
@@ -36,9 +42,13 @@ Commands:
       several do, the one whose text is exactly it. Ticks nothing if any
       criterion matches no checkbox or several, and lists them all.
 
-  merge UTA-n
+  merge UTA-n [--auto]
       Refuses unless the ticket is In Review (or Done), the newest review on
       its PR says Ready to merge, and CI is green on the PR's head commit.
+      With --auto, the merge that doesn't wait for Will's go-ahead: it also
+      refuses unless that review looked at the PR's head commit and says
+      "**Needs Will:** no", and it comments on the ticket that it merged
+      without him.
       Squash merges the PR and deletes its remote branch (git push origin
       --delete, not gh's --delete-branch, which fails from a worktree). Sets
       the ticket Done, sets each Backlog ticket it unblocks to Ready, sets the
@@ -135,6 +145,10 @@ function main(argv: string[]): number {
         noMore();
         out = ready(services);
         break;
+      case "inbox":
+        noMore();
+        out = inbox(services);
+        break;
       case "claim": {
         const branch = required(rest, "--branch");
         const id = ticketArg();
@@ -149,9 +163,13 @@ function main(argv: string[]): number {
         break;
       }
       case "merge": {
+        const auto = rest.includes("--auto");
+        const others = rest.filter((a) => a !== "--auto");
+        rest.length = 0;
+        rest.push(...others);
         const id = ticketArg();
         noMore();
-        out = merge(services, run, id);
+        out = merge(services, run, id, { auto });
         break;
       }
       case "evidence-check": {

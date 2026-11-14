@@ -181,6 +181,20 @@ describe("the session format", () => {
     );
   });
 
+  it("reads the checkout that renders it, the ticket asking and the context, all optional", () => {
+    expect(readSession(writeSession("plain"))).toMatchObject({ checkout: undefined, ticket: undefined, context: undefined });
+    const checkout = join(root, "worktree");
+    mkdirSync(checkout);
+    writeFileSync(join(checkout, "Cargo.toml"), "[workspace]\n");
+    const extra = `checkout = "${checkout}"\nticket = "UTA-101"\ncontext = "Room rang on the snare."`;
+    expect(readSession(writeSession("s", { extra }))).toMatchObject({ checkout, ticket: "UTA-101", context: "Room rang on the snare." });
+  });
+
+  it("refuses a checkout that's gone, saying to make the session again", () => {
+    const extra = `checkout = "${join(root, "removed-worktree")}"`;
+    expect(() => readSession(writeSession("s", { extra }))).toThrow(/isn't a Uta checkout any more\. Ask the ticket's session to make it again/);
+  });
+
   it("lives in ~/.uta/listening, or UTA_LISTENING_DIR", () => {
     expect(listeningDir({})).toMatch(/\.uta\/listening$/);
     expect(listeningDir({ UTA_LISTENING_DIR: "/somewhere/private" })).toBe("/somewhere/private");
@@ -365,6 +379,16 @@ describe("a canvas session", () => {
     expect(readSession(dir).canvas).toBe(join(CANVAS_DIR, "chord.toml"));
   });
 
+  it("takes a named part from the session's checkout, so it's heard with that ticket's canvas", () => {
+    const checkout = join(root, "worktree");
+    mkdirSync(join(checkout, "examples", "listen", "canvas"), { recursive: true });
+    writeFileSync(join(checkout, "Cargo.toml"), "[workspace]\n");
+    writeFileSync(join(checkout, "examples", "listen", "canvas", "chord.toml"), CANVAS);
+    const dir = writeCanvasSession("s", `checkout = "${checkout}"`);
+    writeFileSync(join(dir, "session.toml"), readFileSync(join(dir, "session.toml"), "utf8").replace('canvas = "canvas.toml"', 'canvas = "chord"'));
+    expect(readSession(dir).canvas).toBe(join(checkout, "examples", "listen", "canvas", "chord.toml"));
+  });
+
   it("refuses a canvas that isn't a part or a song file, saying what the parts are", () => {
     const dir = writeCanvasSession("s");
     writeFileSync(join(dir, "session.toml"), readFileSync(join(dir, "session.toml"), "utf8").replace('canvas = "canvas.toml"', 'canvas = "drums"'));
@@ -519,6 +543,13 @@ describe("the listening page's server", () => {
     }
   });
 
+  it("sends the ticket and the context with the question, or null without them", async () => {
+    await serve([prepared("s", { extra: 'ticket = "UTA-102"\ncontext = "Chamber, gated or not."' }), prepared("t")], (n) => n - 1);
+    expect(await (await fetch(`${base}/api/session`)).json()).toMatchObject({ ticket: "UTA-102", context: "Chamber, gated or not." });
+    await finish({ choice: "A", note: "" });
+    expect(await (await fetch(`${base}/api/session`)).json()).toMatchObject({ ticket: null, context: null });
+  });
+
   it("applies no gain when the session turns matching off", async () => {
     await serve([prepared("s", { extra: "match_loudness = false" })], (n) => n - 1);
     const session = await (await fetch(`${base}/api/session`)).json();
@@ -554,6 +585,8 @@ describe("the listening page's server", () => {
       index: 0,
       total: 1,
       question: "Which snare sounds most like an 808?",
+      ticket: null,
+      context: null,
       kind: "pick one",
       labels: ["A", "B", "C"],
       loop: { start: 0, end: 2, bpm: 120 },

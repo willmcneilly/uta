@@ -16,7 +16,7 @@ DESIGN.md             design tokens and the reasons for them (generates app/src/
 docs/rfcs             RFCs (Notion is the source of truth once accepted)
 docs/plans            project plans: tickets, order, checkpoints
 examples              command lists for `uta render/play --commands`; examples/listen: listening renders per drum sound; examples/demos: the demo songs, for `--song`
-scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`, `listen`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
+scripts               the repository's own tools (`check`, `warm`, `dev-app`, `ticket`, `listen`, `screen`; for reviewers `review-setup`, `ci-wait`, `mutate`), each with `--help`; their logic is in app/scripts
 .githooks             git hooks: pre-push runs `scripts/check`, post-checkout warms a new worktree
 .github/workflows     CI
 ```
@@ -40,7 +40,9 @@ scripts/warm                                        # give a new worktree a warm
 scripts/dev-app start                               # open this checkout's app on a free port, titled with its branch
 scripts/dev-app status                              # is it up, which commit and port, any errors since it started
 scripts/dev-app stop                                # stop it: tauri dev, Vite and the app
-scripts/ticket ready                                # a ticket's Notion and GitHub steps: show, ready, claim, tick, evidence-check, sync, merge, decision new
+scripts/ticket ready                                # a ticket's Notion and GitHub steps: show, ready, inbox, claim, tick, evidence-check, sync, merge [--auto], decision new
+scripts/ticket inbox                                # everything waiting on Will, in one list
+scripts/screen take UTA-n                           # the screen lock: one session at a time uses computer use (give, status)
 scripts/review-setup <pr>                           # a review round's PR, history, CI and worktree, in one go
 scripts/ci-wait <pr> [--commit <sha>]               # wait for CI on the PR's head: exit 0 green, 1 red, 2 other commit, 3 timeout
 scripts/mutate --named rt-alloc                     # break the code on purpose, run its tests, put it back: CAUGHT or MISSED
@@ -156,6 +158,7 @@ Work is planned in Notion (Will's personal workspace, never Stora): RFCs → Pro
 - When the way we work changes (a skill, a rule, a new tool or step), add an entry to the Notion **Process log**: what wasn't working, with evidence, and what changed. Status starts at `Trying`. It's the record of how the process that builds Uta has evolved.
 - The PR body is the one place a ticket's evidence is written: keep it as a file and run `scripts/ticket sync`, which makes the PR description, the ticket's ticks and Verification notes, and In Review from it. Name the tests that prove a criterion; never quote a total of tests.
 - Comments you post to Notion start with `🤖 Claude:`, because the CLI posts as Will.
-- Reviews run in a loop without Will: the implementer starts each round with the `review-round` workflow, which starts a fresh `pr-reviewer` agent that nobody can brief, and fixes what it finds until they agree. Then the implementer tells Will what needs him (see the `work-ticket` skill).
-- Never merge without Will's go-ahead. Merging happens only after the review loop agrees and Will says so.
+- Reviews run in a loop without Will: the implementer starts each round with the `review-round` workflow, which starts a fresh `pr-reviewer` agent that nobody can brief, and fixes what it finds until they agree. Then the implementer merges, if the review says nothing needs Will, or tells him what does (see the `work-ticket` skill).
+- Merging happens only after the review loop agrees, and then on Will's go-ahead, unless the last review says `**Needs Will:** no` (no checkpoint, no High check, no unapproved golden WAV, no open disagreement): then the implementer merges with `scripts/ticket merge UTA-n --auto`, which checks all of that, and nothing else merges without him.
+- Everything waiting on Will is in one place: `scripts/ticket inbox` (listening sessions, PRs that need him and why, Blocked tickets), and `scripts/listen` from any checkout asks every waiting session. To run a project's tickets without starting each by hand, Will uses the `run-project` skill.
 - Don't write temp files to `/tmp`; use the session scratchpad.
