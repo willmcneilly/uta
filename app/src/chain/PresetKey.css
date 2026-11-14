@@ -79,6 +79,11 @@
   background: var(--sheet);
 }
 
+/* Taller than the window, it scrolls rather than squashing its rows. */
+.preset-menu > * {
+  flex: none;
+}
+
 .preset-heading,
 .preset-group {
   display: flex;
