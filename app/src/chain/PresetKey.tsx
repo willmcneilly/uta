@@ -17,7 +17,7 @@ export interface PresetItem {
   /** Its key, as the call that chooses it takes it. */
   value: string;
   label: string;
-  /** The heading it's listed under, if the menu has them: its mode. */
+  /** The heading it's listed under, if the menu has them: its mode. Items with the same heading are listed together. */
   group?: string;
   /** What's shown at its right: its suggested Mix. */
   aside?: string;
@@ -85,9 +85,11 @@ export function PresetKey({ label, items, heading, foot, onChoose }: Props) {
   const [pointed, setPointed] = useState<string | null>(null);
   const { area, key, menu } = usePopover(open, () => setOpen(false), MENU_DROP);
 
+  // Each heading once, in the order its first item comes, with every item
+  // under it in order, wherever it is in the list.
   const groups = items.reduce<{ name?: string; items: PresetItem[] }[]>((groups, item) => {
-    const last = groups[groups.length - 1];
-    if (last && last.name === item.group) last.items.push(item);
+    const found = groups.find((group) => group.name === item.group);
+    if (found) found.items.push(item);
     else groups.push({ name: item.group, items: [item] });
     return groups;
   }, []);

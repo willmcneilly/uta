@@ -243,14 +243,15 @@ function inControl(target: EventTarget, panel: Element): boolean {
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 /**
- * A Reverb's factory sounds as its preset menu lists them: by mode, each
+ * A Reverb's factory sounds as its preset menu lists them: by mode, in
+ * Mode's order, and in Rust's order within each mode, each
  * with its tail drawn from its settings (described as the Reverb's own are),
  * its name, its suggested Mix and its brief. provisional: D-39
  */
 function reverbPresets(effect: EffectView): PresetItem[] {
   const own = (name: string) => effect.settings.find((setting) => setting.name === name);
   const mode = own("mode");
-  return (effect.sounds ?? []).map((sound) => {
+  const items = (effect.sounds ?? []).map((sound) => {
     const value = (name: string) => sound.settings.find((param) => param.name === name)?.value;
     const setting = (name: string): EffectSettingView | undefined => {
       const described = own(name);
@@ -268,6 +269,10 @@ function reverbPresets(effect: EffectView): PresetItem[] {
       about: sound.brief,
     };
   });
+  // By mode, in the order Mode lists them; Rust's order within each.
+  const order = mode?.kind === "choice" ? mode.options.map((option) => option.label) : [];
+  const rank = (item: PresetItem) => (item.group === undefined ? order.length : order.indexOf(item.group));
+  return items.map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(({ item }) => item);
 }
 
 export function ChainRow({

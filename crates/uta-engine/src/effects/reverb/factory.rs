@@ -35,7 +35,8 @@ struct Measured {
     /// Only for a sound whose brief targets it: it takes a few seconds'
     /// processing of its own.
     drift_cents: Option<f64>,
-    /// Its steady gain, absolute: [`loudness_db`] is against the default's.
+    /// Its steady gain, absolute: the target, [`ReverbTargets::loudness_db`],
+    /// is against the default's.
     steady_gain_db: f64,
 }
 
@@ -144,8 +145,6 @@ fn measure(settings: ReverbSettings, targets: &ReverbTargets) -> Measured {
     }
 }
 
-/// The default Reverb's steady gain, which every sound's loudness is
-/// against.
 /// Targets for nothing, to measure the default Reverb by.
 const NO_TARGETS: ReverbTargets = ReverbTargets {
     mid_decay_seconds: None,
@@ -162,6 +161,8 @@ const NO_TARGETS: ReverbTargets = ReverbTargets {
     loudness_db: 0.0..=0.0,
 };
 
+/// The default Reverb's steady gain, which every sound's loudness is
+/// against.
 fn default_gain_db() -> f64 {
     measure(ReverbSettings::default(), &NO_TARGETS).steady_gain_db
 }

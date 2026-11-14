@@ -600,7 +600,7 @@ describe("the preset key", () => {
   const menu = (name: string) => screen.getByRole("menu", { name });
   const reverb = () => screen.getByRole("region", { name: "Reverb" });
 
-  it("on a Reverb's spine, lists Rust's factory sounds by mode, each with its suggested Mix, and names none", async () => {
+  it("on a Reverb's spine, lists Rust's factory sounds by mode, each heading once, each with its suggested Mix, and names none", async () => {
     await openSound([synthWith(reverbView("r-1"))]);
     const key = presetKey(reverb(), "Reverb sounds");
     expect(key).toHaveAttribute("aria-expanded", "false");
@@ -613,9 +613,9 @@ describe("the preset key", () => {
       within(menu("Reverb sounds"))
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Drum room20%", "Vocal plate20%", "Cathedral30%"]);
+    ).toEqual(["Drum room20%", "Dark room25%", "Vocal plate20%", "Cathedral30%"]);
     // Each is drawn: a small tail.
-    expect(within(menu("Reverb sounds")).getAllByRole("menuitem")[2].querySelector(".mini-tail path")).not.toBeNull();
+    expect(within(menu("Reverb sounds")).getAllByRole("menuitem")[3].querySelector(".mini-tail path")).not.toBeNull();
     // Its first sound has focus, and its brief is at the foot.
     expect(screen.getByRole("menuitem", { name: /Drum room/ })).toHaveFocus();
     expect(menu("Reverb sounds")).toHaveTextContent("A kit in the live room it was played in.");

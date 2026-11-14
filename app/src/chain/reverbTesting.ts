@@ -86,7 +86,10 @@ function paramsOf(values: Partial<ReverbValues>): EffectParam[] {
   return [{ name: "mode", value: v.mode }, ...NUMBERS.map(([name]) => ({ name, value: v[name] }))];
 }
 
-/** Three of the Reverb's factory sounds, one in each mode, as Rust lists them (shortened). */
+/**
+ * Four of the Reverb's factory sounds, as Rust lists them (shortened): its
+ * order mixes the modes, Room, Chamber, Room, Space, as Rust's does.
+ */
 export const REVERB_SOUNDS: ReverbSoundChoice[] = [
   {
     value: "drum_room",
@@ -101,6 +104,13 @@ export const REVERB_SOUNDS: ReverbSoundChoice[] = [
     brief: "A steel plate: dense at once, bright.",
     mix: 0.2,
     settings: paramsOf({ mode: "chamber", decay_seconds: 1.8, depth: 0.85, predelay_seconds: 0 }),
+  },
+  {
+    value: "dark_room",
+    label: "Dark room",
+    brief: "A cheap, dark, slightly wobbly space.",
+    mix: 0.25,
+    settings: paramsOf({ decay_seconds: 1.3, high_cut_hz: 3000, late_mod_depth: 1 }),
   },
   {
     value: "cathedral",
