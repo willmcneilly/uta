@@ -642,6 +642,23 @@ describe("the preset key", () => {
     );
   });
 
+  it("opens below its key, or moves up so its foot stays in the window", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(300);
+    await openSound([synthWith(reverbView("r-1"))]);
+    const key = presetKey(reverb(), "Reverb sounds");
+    const placeAt = (top: number) => {
+      key.getBoundingClientRect = () => ({ left: 40, right: 64, top }) as DOMRect;
+    };
+    // jsdom's window is 768 tall.
+    placeAt(100);
+    fireEvent.click(key);
+    expect(menu("Reverb sounds").style.top).toBe("124px");
+    fireEvent.keyDown(window, { key: "Escape" });
+    placeAt(600);
+    fireEvent.click(key);
+    expect(menu("Reverb sounds").style.top).toBe(`${768 - 8 - 300}px`);
+  });
+
   it("closes on Esc, giving focus back to the key, and moves with the arrow keys", async () => {
     await openSound([synthWith(reverbView("r-1"))]);
     const key = presetKey(reverb(), "Reverb sounds");

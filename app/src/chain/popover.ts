@@ -3,7 +3,7 @@ import { type KeyboardEvent, type RefObject, useEffect, useLayoutEffect, useRef 
 // A menu that opens from a key on the row: the + menu and the preset menus.
 // Opened, it's placed against the window, not the row, so the scrolling row
 // never clips it wherever its key is: below the key and to its right, or to
-// its left if the window's edge is in the way. It's placed before it's
+// its left if the window's edge is in the way, and moved up if its foot is. It's placed before it's
 // drawn, so it never shows in the wrong spot. Its first item takes focus,
 // the arrow keys move through its items, and a click anywhere else, Escape,
 // or scrolling or resizing what it was placed against closes it.
@@ -41,7 +41,10 @@ export function usePopover(open: boolean, close: () => void, drop: number): Popo
     if (!open || !at || !box) return;
     const width = box.offsetWidth;
     const right = at.right + width <= window.innerWidth - MENU_MARGIN;
-    box.style.top = `${at.top + drop}px`;
+    // Below the key, or as far up as it needs to be to end above the
+    // window's foot; taller than the window, it scrolls (its CSS caps it).
+    const lowest = window.innerHeight - MENU_MARGIN - box.offsetHeight;
+    box.style.top = `${Math.max(MENU_MARGIN, Math.min(at.top + drop, lowest))}px`;
     box.style.left = `${right ? at.right : Math.max(MENU_MARGIN, at.left - width)}px`;
   }, [open, drop]);
 

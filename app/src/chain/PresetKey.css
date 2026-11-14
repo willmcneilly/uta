@@ -70,7 +70,8 @@
   flex-direction: column;
   min-width: 160px;
   max-width: 280px;
-  max-height: calc(100vh - 2 * var(--space-6));
+  /* Never taller than the window, less popover.ts's margin at each end. */
+  max-height: calc(100vh - 16px);
   padding: var(--space-2);
   overflow-y: auto;
   border: var(--stroke-grid) solid var(--line-2);
