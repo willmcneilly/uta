@@ -592,7 +592,7 @@ fn summed_energy(channels: &[&[f32]], sample_rate: u32) -> Vec<f64> {
 /// these come from the analogue filters those were made from, through the
 /// bilinear transform, as libebur128 does, so they work at any sample rate
 /// and match BS.1770's own at 48 kHz.
-fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+pub(crate) fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     let (shelf, high_pass) = k_weighting(sample_rate);
     let biquad = |input: &[f32], (b, a): ([f64; 3], [f64; 3])| {
         let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);

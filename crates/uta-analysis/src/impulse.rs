@@ -302,6 +302,43 @@ pub fn early_and_late_correlation(
     })
 }
 
+/// The early burst against the tail, in dB: the energy of `samples` in the
+/// [`EARLY_SECONDS`] after the onset over the energy after that, room
+/// acoustics' clarity (C80). Above 0, most of it is early: a close, tight
+/// space; below, most is the tail: a distant one. `None` for silence, or a
+/// part with nothing in it.
+pub fn early_to_late_db(samples: &[f32], sample_rate: u32) -> Option<f64> {
+    let start = onset(&[samples])?;
+    let split =
+        (start + (EARLY_SECONDS * f64::from(sample_rate)).round() as usize).min(samples.len());
+    let energy = |part: &[f32]| part.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>();
+    let (early, late) = (energy(&samples[start..split]), energy(&samples[split..]));
+    (early > 0.0 && late > 0.0).then(|| 10.0 * (early / late).log10())
+}
+
+/// How much louder a steady sound comes out than it goes in, in dB, from
+/// an impulse response's channels: the response's energy over the click's,
+/// both K-weighted (ITU-R BS.1770's loudness filter), averaged over the
+/// channels. A steady noise through an effect comes out as loud as its
+/// impulse response's energy says, whatever its length, so this is how
+/// loud a reverb sounds behind a held chord or a busy loop, at any decay.
+/// It assumes the click was full scale, one sample, at the start of each
+/// channel. `None` for silence.
+pub fn steady_gain_db(channels: &[&[f32]], sample_rate: u32) -> Option<f64> {
+    let energy = |samples: &[f32]| {
+        crate::k_weighted(samples, sample_rate)
+            .iter()
+            .map(|&s| f64::from(s).powi(2))
+            .sum::<f64>()
+    };
+    let length = channels.iter().map(|c| c.len()).max()?;
+    let mut click = vec![0.0; length];
+    click[0] = 1.0;
+    let click = energy(&click);
+    let response = channels.iter().map(|c| energy(c)).sum::<f64>() / channels.len() as f64;
+    (response > 0.0).then(|| 10.0 * (response / click).log10())
+}
+
 /// How bumpy the tail's spectrum is, in dB: a measure of colouration, the
 /// resonances that stick out, as a metallic ring does. Our own proxy
 /// (RFC-010's Risks), checked against listening in UTA-101: see
@@ -878,5 +915,54 @@ mod tests {
         assert!((f64::from(h) + 30.0).abs() < 3.0, "4 kHz at {h} dB");
         // Nothing at 12 kHz: drawn as silence.
         assert_eq!(relief.frames[0][bin(12_000.0)], SILENT_DB);
+    }
+
+    /// Half the energy in the first 80 ms after the onset and half after
+    /// reads 0 dB; ten times as much early reads 10 dB. The onset is where
+    /// it starts, not the file's start.
+    #[test]
+    fn early_to_late_is_the_energy_before_80_ms_after_the_onset_over_after() {
+        let at = |ms: f64| (ms / 1000.0 * f64::from(RATE)) as usize;
+        let mut samples = vec![0.0f32; at(500.0)];
+        samples[at(20.0)] = 1.0;
+        samples[at(20.0 + 40.0)] = 0.5;
+        samples[at(20.0 + 200.0)] = (1.25f32).sqrt();
+        let db = early_to_late_db(&samples, RATE).unwrap();
+        assert!(db.abs() < 1e-6, "{db}");
+        samples[at(20.0 + 200.0)] = (0.125f32).sqrt();
+        let db = early_to_late_db(&samples, RATE).unwrap();
+        assert!((db - 10.0).abs() < 1e-5, "{db}");
+        assert_eq!(early_to_late_db(&[0.0; 100], RATE), None);
+    }
+
+    /// A click passed straight through reads 0 dB; half as loud, -6 dB;
+    /// two clicks a few ms apart, +3 dB. Low frequencies count for less, as
+    /// they do to the ear: a slow ripple of the same energy as a click reads
+    /// well under it.
+    #[test]
+    fn steady_gain_is_the_k_weighted_energy_against_the_clicks() {
+        let mut click = vec![0.0f32; 4800];
+        click[0] = 1.0;
+        let db = steady_gain_db(&[&click, &click], RATE).unwrap();
+        assert!(db.abs() < 1e-9, "{db}");
+        let half: Vec<f32> = click.iter().map(|s| s * 0.5).collect();
+        let db = steady_gain_db(&[&half], RATE).unwrap();
+        assert!((db + 6.02).abs() < 0.01, "{db}");
+        let mut two = click.clone();
+        two[480] = 1.0;
+        let db = steady_gain_db(&[&two], RATE).unwrap();
+        assert!((db - 3.01).abs() < 0.05, "{db}");
+        // 50 Hz, with a click's energy.
+        let n = 4800;
+        let low: Vec<f32> = (0..n)
+            .map(|i| {
+                ((2.0 / n as f64).sqrt()
+                    * (std::f64::consts::TAU * 50.0 * i as f64 / f64::from(RATE)).sin())
+                    as f32
+            })
+            .collect();
+        let db = steady_gain_db(&[&low], RATE).unwrap();
+        assert!(db < -1.0, "{db}");
+        assert_eq!(steady_gain_db(&[&[0.0; 10]], RATE), None);
     }
 }

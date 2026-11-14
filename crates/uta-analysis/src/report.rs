@@ -34,7 +34,8 @@ use std::fmt::Write;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::impulse::{
-    band_decay_times, colouration_db, dense_after, early_and_late_correlation, echo_density, onset,
+    band_decay_times, colouration_db, dense_after, early_and_late_correlation, early_to_late_db,
+    echo_density, onset, steady_gain_db,
 };
 use crate::{
     MOMENTARY_SECONDS, SHORT_TERM_SECONDS, alias_db, attack_seconds, correlation, crest_factor,
@@ -438,6 +439,16 @@ pub const IMPULSE_MEASUREMENTS: &[Measurement] = &[
         },
     },
     Measurement {
+        key: "early_to_late_db",
+        label: "early to late",
+        unit: "dB",
+        decimals: 1,
+        about: "The early burst against the tail: the energy in the first 80 ms after the \
+                onset over the energy after it, on the mid (room acoustics' C80). Above 0 most \
+                of it is early, a close, tight space; below 0 most is the tail, a distant one.",
+        measure: |sound| early_to_late_db(&sound.samples, sound.sample_rate),
+    },
+    Measurement {
         key: "stereo_correlation_early",
         label: "stereo correlation, early",
         unit: "",
@@ -465,6 +476,18 @@ pub const IMPULSE_MEASUREMENTS: &[Measurement] = &[
                 ring sticks out and reads higher; a smooth tail reads under a dB or so. Our own \
                 measure, with no limit set yet. `null` if the tail is under 100 ms.",
         measure: |sound| sound.impulse().colouration,
+    },
+    Measurement {
+        key: "steady_gain_db",
+        label: "steady gain",
+        unit: "dB",
+        decimals: 2,
+        about: "How much louder a steady sound comes out than it went in: the impulse \
+                response's energy over a full-scale one-sample click's, both K-weighted (the \
+                loudness filter of ITU-R BS.1770), averaged over the channels. How loud a \
+                reverb sounds behind a held chord or a busy loop, at any decay. It assumes \
+                the click was one full-scale sample.",
+        measure: |sound| steady_gain_db(&sound.channels(), sound.sample_rate),
     },
 ];
 
