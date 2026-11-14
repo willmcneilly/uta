@@ -1866,3 +1866,6 @@ fn filtered(filter: &mut Svf, input: f64, gain: f64) -> f64 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod factory;

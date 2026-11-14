@@ -705,14 +705,15 @@ describe("App", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Sound" }));
     }
 
-    it("chooses a factory sound from the Sound menu with one call, and shows what comes back", async () => {
+    it("chooses a factory sound from the preset key on the synth's spine with one call, and shows what comes back", async () => {
       await renderSound();
-      const menu = synth().getByRole("combobox", { name: "Sound" });
-      expect(within(menu).getAllByRole("option").map((option) => option.textContent)).toEqual([
-        "Sound",
-        ...SYNTH_SOUNDS.map((sound) => sound.label),
-      ]);
-      fireEvent.change(menu, { target: { value: "pluck" } });
+      const key = screen.getByRole("button", { name: "Synth sounds" });
+      fireEvent.click(key);
+      const menu = screen.getByRole("menu", { name: "Synth sounds" });
+      expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(
+        SYNTH_SOUNDS.map((sound) => sound.label),
+      );
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "Pluck" }));
       stage("Filter");
       await waitFor(() => expect(slider("Cutoff")).toHaveAttribute("aria-valuetext", "250 Hz"));
       expect(calls.filter((c) => c.cmd === "set_synth_sound").map((c) => c.args)).toEqual([
@@ -720,7 +721,7 @@ describe("App", () => {
       ]);
       expect(synthCalls()).toEqual([]);
       // It names no sound: which one the track started from isn't kept.
-      expect(menu).toHaveValue("");
+      expect(key).not.toHaveTextContent(/\w/);
     });
 
     it("shows the synth settings Rust sends", async () => {

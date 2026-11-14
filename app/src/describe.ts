@@ -73,5 +73,6 @@ export function describeEffect(effect: EffectOutline, descriptions: Descriptions
     ...effect,
     mix: described<NumberSettingView<"mix">>(table, effect.mix),
     settings: effect.settings.map((setting) => described<EffectSettingView>(table, setting)),
+    ...(effect.kind === "reverb" ? { sounds: descriptions.reverbSounds } : {}),
   };
 }

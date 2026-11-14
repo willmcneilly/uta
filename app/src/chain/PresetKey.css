@@ -1,0 +1,157 @@
+/* The preset key on a spine, under the panel's name, and its menu: the +
+   menu's popover. provisional: D-39 */
+
+.preset {
+  display: flex;
+  flex: none;
+}
+
+/* A 24 px key with a 16 px glyph: at rest its outer buttons are in the
+   third ink and the held one in the second, as the knob and the round keys
+   are; pointed at, both darken on a shaded key; open, they're ink. */
+.preset-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  appearance: none;
+}
+
+.preset-key svg {
+  overflow: visible;
+}
+
+.preset-key .up {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-grid);
+}
+
+.preset-key .down {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: var(--stroke-curve);
+}
+
+.preset-key:hover {
+  background: var(--line-2);
+  color: var(--ink);
+}
+
+.preset-key:hover .up {
+  stroke: var(--ink-2);
+}
+
+.preset-key[aria-expanded="true"] {
+  background: var(--line-2);
+  color: var(--ink);
+}
+
+.preset-key[aria-expanded="true"] .up {
+  stroke: var(--ink);
+}
+
+.preset-key:focus-visible {
+  outline: var(--stroke-clip-selected) solid var(--selected);
+}
+
+.preset-menu {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-width: 280px;
+  /* Never taller than the window, less popover.ts's margin at each end. */
+  max-height: calc(100vh - 16px);
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: var(--stroke-grid) solid var(--line-2);
+  border-radius: var(--rounded-md);
+  background: var(--sheet);
+}
+
+/* Taller than the window, it scrolls rather than squashing its rows. */
+.preset-menu > * {
+  flex: none;
+}
+
+.preset-heading,
+.preset-group {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  color: var(--ink-3);
+  font: var(--font-label);
+}
+
+.preset-group {
+  color: var(--ink-2);
+}
+
+.preset-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-text);
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+}
+
+.preset-menu [role="menuitem"]:hover,
+.preset-menu [role="menuitem"]:focus-visible {
+  background: var(--line);
+  outline: none;
+}
+
+.preset-name {
+  flex: 1;
+}
+
+.preset-aside {
+  color: var(--ink-2);
+  font: var(--font-number);
+}
+
+.mini-tail {
+  flex: none;
+}
+
+.mini-tail path {
+  fill: var(--line-2);
+  stroke: var(--ink-3);
+  stroke-width: var(--stroke-grid);
+  stroke-linejoin: round;
+}
+
+.preset-foot {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-top: var(--stroke-grid) solid var(--line-2);
+  color: var(--ink-2);
+  font: var(--font-text);
+}
+
+.preset-foot p {
+  margin: 0;
+}
+
+.preset-foot .preset-mix {
+  margin-top: var(--space-2);
+  color: var(--ink-3);
+}

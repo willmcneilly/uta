@@ -134,6 +134,7 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
     drums: { "808": {}, "909": {} },
     effects: { delay: {}, reverb: {} },
     synthSounds: [],
+    reverbSounds: [],
   };
   const strip = <V extends Value>(setting: V & Description, table: DescriptionTable): V => {
     const { name, value, ...description } = setting;
@@ -144,8 +145,9 @@ export function outlineOf(project: Pick<ProjectView, "tracks" | "masterEffects">
     table[name] = description as Description;
     return { name, value } as V;
   };
-  const effect = (view: EffectView): EffectOutline => {
+  const effect = ({ sounds, ...view }: EffectView): EffectOutline => {
     const table = descriptions.effects[view.kind];
+    if (sounds) descriptions.reverbSounds = sounds;
     return {
       ...view,
       mix: strip(view.mix, table),

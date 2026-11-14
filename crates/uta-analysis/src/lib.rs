@@ -592,7 +592,7 @@ fn summed_energy(channels: &[&[f32]], sample_rate: u32) -> Vec<f64> {
 /// these come from the analogue filters those were made from, through the
 /// bilinear transform, as libebur128 does, so they work at any sample rate
 /// and match BS.1770's own at 48 kHz.
-fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+pub(crate) fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     let (shelf, high_pass) = k_weighting(sample_rate);
     let biquad = |input: &[f32], (b, a): ([f64; 3], [f64; 3])| {
         let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
@@ -607,6 +607,21 @@ fn k_weighted(samples: &[f32], sample_rate: u32) -> Vec<f32> {
             .collect::<Vec<f32>>()
     };
     biquad(&biquad(samples, shelf), high_pass)
+}
+
+/// How much the K-weighting filter (as [`k_weighted`] applies it) scales
+/// the power of a sine at `hz`: both its sections' responses, squared.
+pub(crate) fn k_weighting_power(hz: f64, sample_rate: u32) -> f64 {
+    let w = TAU * hz / f64::from(sample_rate);
+    let (shelf, high_pass) = k_weighting(sample_rate);
+    let power = |(b, a): ([f64; 3], [f64; 3])| {
+        let z1 = Complex::new(w.cos(), -w.sin());
+        let z2 = z1 * z1;
+        let numerator = b[0] + z1 * b[1] + z2 * b[2];
+        let denominator = a[0] + z1 * a[1] + z2 * a[2];
+        (numerator / denominator).norm_sqr()
+    };
+    power(shelf) * power(high_pass)
 }
 
 /// The K-weighting's two biquads at `sample_rate`, each as its numerator
