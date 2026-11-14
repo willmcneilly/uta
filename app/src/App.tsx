@@ -49,6 +49,7 @@ import {
   setClips,
   setDelayParam,
   setReverbParam,
+  setReverbSound,
   setEffectEnabled,
   setEffectMix,
   setLoop,
@@ -489,7 +490,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
     drags.step(gesture, () => setSynthParam(id, param, gesture).then(show, report));
   };
 
-  // The Sound menu chooses a factory sound for the selected synth track.
+  // The synth's preset key chooses a factory sound for the selected synth track.
   const chooseSound = (sound: string) => {
     if (!track) return;
     setSynthSound(track.id, sound).then(show, report);
@@ -521,6 +522,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
   const changeEffectSetting = (id: string, kind: EffectKind, param: EffectParam, gesture?: number) => {
     const set = kind === "reverb" ? setReverbParam : setDelayParam;
     drags.step(gesture, () => set(id, param, gesture).then(show, report));
+  };
+  // A Reverb's preset key chooses one of its factory sounds, leaving its Mix.
+  const chooseReverbSound = (id: string, sound: string) => {
+    drags.then(() => setReverbSound(id, sound).then(show, report));
   };
 
   // The piano roll edits the clip in the Notes tab, and plays notes on its track.
@@ -759,9 +764,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                             barSeconds={barSecondsAt(project.beatsPerBar, project.bpm)}
                             beatsPerBar={project.beatsPerBar}
                             sampleRate={status?.output.sampleRate ?? null}
-                            sounds={track.source.sounds}
                             onChange={changeSynth}
-                            onSound={chooseSound}
                           />
                         ) : (
                           <DrumPanel
@@ -770,6 +773,10 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
                             onAudition={(pitch) => editor.audition(pitch, NEW_NOTE_VELOCITY)}
                           />
                         ),
+                      presets:
+                        track.source.kind === "synth"
+                          ? { sounds: track.source.sounds, onChoose: chooseSound }
+                          : undefined,
                     }
               }
               effects={chain}
@@ -785,6 +792,7 @@ function App({ createRenderer, createTimelineRenderer, benchmark }: Props) {
               onRemove={(id) => drags.then(() => removeEffects([id]).then(show, report))}
               onMix={changeEffectMix}
               onSetting={changeEffectSetting}
+              onPreset={chooseReverbSound}
               wide={wideEffects}
               onWide={(id, open) =>
                 setWideEffects((list) => (open ? [...list.filter((other) => other !== id), id] : list.filter((other) => other !== id)))

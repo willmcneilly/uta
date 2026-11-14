@@ -8,11 +8,21 @@ import {
   useRef,
   useState,
 } from "react";
-import type { EffectKind, EffectKindChoice, EffectParam, EffectView } from "../backend";
+import type {
+  EffectKind,
+  EffectKindChoice,
+  EffectParam,
+  EffectSettingView,
+  EffectView,
+  SoundChoice,
+} from "../backend";
 import type { FrameLoop } from "../frameLoop";
 import { dropIndex } from "../trackOrder";
 import { DelayPanel } from "./DelayPanel";
+import { MiniTail, type PresetItem, PresetKey } from "./PresetKey";
 import { ReverbPanel } from "./ReverbPanel";
+import { tailSettings } from "./tailSettings";
+import { moveFocus, usePopover } from "./popover";
 import "./ChainRow.css";
 
 // The Sound tab as a row: the source's panel, then each effect in the chain,
@@ -25,6 +35,8 @@ export interface Source {
   /** What its spine says: "Synth", "Drums". */
   name: string;
   panel: ReactNode;
+  /** The synth's factory sounds, for the preset key on its spine; the kit has none. */
+  presets?: { sounds: SoundChoice[]; onChoose: (sound: string) => void };
 }
 
 interface Props {
@@ -48,6 +60,8 @@ interface Props {
   /** `gesture` is the same for every change in one drag. */
   onMix: (effect: string, mix: number, gesture?: number) => void;
   onSetting: (effect: string, kind: EffectKind, param: EffectParam, gesture?: number) => void;
+  /** Chooses one of an effect's factory sounds, by its key: a Reverb's. */
+  onPreset: (effect: string, sound: string) => void;
   /**
    * The effects whose panels are open wide (the Reverb's Early and Late
    * groups): the UI's own, kept by the app, never in the project.
@@ -144,13 +158,10 @@ function OnKey({ effect, onEnabled }: { effect: EffectView; onEnabled: (on: bool
 
 /** How far below the top of the + the menu opens, in CSS pixels: under its key. */
 const MENU_DROP = 24;
-/** The least room the menu leaves to the window's edges, in CSS pixels. */
-const MENU_MARGIN = 8;
 
 /**
  * The + on the line at the end of the chain, opening a menu of the kinds of
- * effect. The menu takes focus on its first item and moves with the arrow
- * keys; Escape or a click elsewhere closes it. provisional: D-36
+ * effect. provisional: D-36
  */
 function AddEffect({
   kinds,
@@ -164,65 +175,8 @@ function AddEffect({
   onAdd: (kind: EffectKind) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const area = useRef<HTMLDivElement>(null);
-  const key = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const items = () => Array.from(area.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []);
-  // Opened, it's placed against the window, not the row, so the scrolling
-  // row never clips it wherever the + is: under the + and to its right, or
-  // to its left if the window's edge is in the way. It's placed before it's
-  // drawn, so it never shows in the wrong spot.
-  useLayoutEffect(() => {
-    const plus = key.current?.getBoundingClientRect();
-    const box = menu.current;
-    if (!open || !plus || !box) return;
-    const width = box.offsetWidth;
-    const right = plus.right + width <= window.innerWidth - MENU_MARGIN;
-    box.style.top = `${plus.top + MENU_DROP}px`;
-    box.style.left = `${right ? plus.right : Math.max(MENU_MARGIN, plus.left - width)}px`;
-  }, [open]);
-
-  // Opened, its first item takes focus. A click anywhere else, Escape, or
-  // scrolling or resizing what it was placed against closes it.
-  useEffect(() => {
-    if (!open) return;
-    items()[0]?.focus();
-    const moved = () => setOpen(false);
-    window.addEventListener("scroll", moved, true);
-    window.addEventListener("resize", moved);
-    const away = (event: globalThis.PointerEvent) => {
-      if (!area.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      key.current?.focus();
-    };
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", escape);
-    return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", escape);
-      window.removeEventListener("scroll", moved, true);
-      window.removeEventListener("resize", moved);
-    };
-  }, [open]);
+  const { area, key, menu } = usePopover(open, () => setOpen(false), MENU_DROP);
   if (full && open) setOpen(false);
-
-  /** Up and down move through the items, round from the ends; Home and End go to them. */
-  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
-    const all = items();
-    const now = all.indexOf(document.activeElement as HTMLElement);
-    const next = {
-      ArrowDown: (now + 1) % all.length,
-      ArrowUp: (now - 1 + all.length) % all.length,
-      Home: 0,
-      End: all.length - 1,
-    }[event.key];
-    if (next === undefined) return;
-    event.preventDefault();
-    all[next]?.focus();
-  };
 
   return (
     <div className="add-effect" ref={area}>
@@ -247,7 +201,7 @@ function AddEffect({
           className="add-menu"
           role="menu"
           aria-label="Add effect"
-          onKeyDown={moveFocus}
+          onKeyDown={(event) => moveFocus(area, event)}
         >
           {kinds.map((kind) => (
             <button
@@ -285,6 +239,37 @@ function inControl(target: EventTarget, panel: Element): boolean {
   return control !== null && control !== panel && panel.contains(control);
 }
 
+/** A share from 0 to 1 as a whole percent: "25%". */
+const percent = (share: number) => `${Math.round(share * 100)}%`;
+
+/**
+ * A Reverb's factory sounds as its preset menu lists them: by mode, each
+ * with its tail drawn from its settings (described as the Reverb's own are),
+ * its name, its suggested Mix and its brief. provisional: D-39
+ */
+function reverbPresets(effect: EffectView): PresetItem[] {
+  const own = (name: string) => effect.settings.find((setting) => setting.name === name);
+  const mode = own("mode");
+  return (effect.sounds ?? []).map((sound) => {
+    const value = (name: string) => sound.settings.find((param) => param.name === name)?.value;
+    const setting = (name: string): EffectSettingView | undefined => {
+      const described = own(name);
+      const v = value(name);
+      return described && v !== undefined ? ({ ...described, value: v } as EffectSettingView) : undefined;
+    };
+    const group =
+      mode?.kind === "choice" ? mode.options.find((option) => option.value === value("mode"))?.label : undefined;
+    return {
+      value: sound.value,
+      label: sound.label,
+      group,
+      aside: percent(sound.mix),
+      drawing: <MiniTail settings={tailSettings(setting, null)} />,
+      about: sound.brief,
+    };
+  });
+}
+
 export function ChainRow({
   source,
   effects,
@@ -298,6 +283,7 @@ export function ChainRow({
   onRemove,
   onMix,
   onSetting,
+  onPreset,
   barSeconds,
   beatsPerBar,
   songSeconds,
@@ -453,6 +439,13 @@ export function ChainRow({
           <header className="spine">
             <span className="wire-start" aria-hidden="true" />
             {foldKey(SOURCE, source.name)}
+            {source.presets && (
+              <PresetKey
+                label={`${source.name} sounds`}
+                items={source.presets.sounds}
+                onChoose={source.presets.onChoose}
+              />
+            )}
           </header>
           {!folded.includes(SOURCE) && (
             <div className="wired-body">
@@ -503,6 +496,15 @@ export function ChainRow({
           >
             <OnKey effect={effect} onEnabled={(on) => onEnabled(effect.id, on)} />
             {foldKey(effect.id, effect.name)}
+            {effect.sounds && (
+              <PresetKey
+                label={`${effect.name} sounds`}
+                items={reverbPresets(effect)}
+                heading={{ name: "Factory sounds", aside: "Suggested Mix" }}
+                foot={`Mix stays at ${percent(effect.mix.value)}: it's yours, not the sound's.`}
+                onChoose={(sound) => onPreset(effect.id, sound)}
+              />
+            )}
             <span className="handle" aria-hidden="true">
               <Grip />
             </span>
