@@ -92,6 +92,14 @@ enum Load {
     /// 10.5, where the notes already sounding there are started. Play is
     /// pressed [`PLAYS`] times, each once the last Play's notes are silent.
     Check7FirstBlock,
+    /// The ambient demo song (`examples/demos/ambient.toml`) from the start
+    /// of its bloom, where all five tracks play, with its three Reverbs and
+    /// two Delays, and the volume gliding: a song's worth of reverbs. See
+    /// RFC-010, "How we'll verify it" (Timing).
+    Ambient,
+    /// [`Load::Ambient`] with every effect taken out: what its synths cost,
+    /// so the report can give their share of the song.
+    AmbientSynths,
 }
 
 impl Load {
@@ -111,6 +119,8 @@ impl Load {
             Self::Drums => "32 drum tracks × every sound",
             Self::Drums909 => "32 drum tracks × every sound, 909 kick",
             Self::Check7FirstBlock => "Check 7, first block after Play from bar 10.5",
+            Self::Ambient => "Ambient song, from the bloom",
+            Self::AmbientSynths => "Ambient song, from the bloom, no effects",
         }
     }
 }
@@ -273,6 +283,29 @@ fn tracks_playing(params: &[SynthParam], notes: Vec<Note>) -> Project {
         .unwrap();
     project
 }
+
+/// The ambient demo song, compiled from its song file and built.
+fn ambient_song() -> Project {
+    let text = include_str!("../../../examples/demos/ambient.toml");
+    let list = uta_song::compile(text).expect("the ambient song compiles");
+    list.build().expect("the ambient song builds")
+}
+
+/// `project` with every effect taken out of every chain.
+fn without_effects(mut project: Project) -> Project {
+    let effects = project
+        .tracks()
+        .iter()
+        .flat_map(|track| track.effects())
+        .chain(project.master_effects())
+        .map(Effect::id)
+        .collect();
+    project.apply(&Command::RemoveEffects { effects }).unwrap();
+    project
+}
+
+/// Where the ambient song's bloom starts: after the drift's 8 bars.
+const AMBIENT_BLOOM: Ticks = 8 * BAR;
 
 /// `project` with a Delay on every track's chain and on the master's: the
 /// defaults, in ping-pong and with Wobble at half.
@@ -439,6 +472,8 @@ fn snapshot(load: Load) -> Snapshot {
         Load::Check7 | Load::Check7FirstBlock => Snapshot::from(&check_7()),
         Load::Drums => Snapshot::from(&drum_tracks(KickModel::Tr808)),
         Load::Drums909 => Snapshot::from(&drum_tracks(KickModel::Tr909)),
+        Load::Ambient => Snapshot::from(&ambient_song()),
+        Load::AmbientSynths => Snapshot::from(&without_effects(ambient_song())),
     }
 }
 
@@ -470,6 +505,9 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
     let mut buffer = vec![0.0; block_size * CHANNELS];
     let blocks = FRAMES / block_size;
     let mut times = Vec::with_capacity(blocks);
+    if let Load::Ambient | Load::AmbientSynths = load {
+        renderer.controller.locate(AMBIENT_BLOOM).unwrap();
+    }
     renderer.controller.play().unwrap();
     if let Load::Voices | Load::FilterVoices | Load::FullVoices = load {
         for i in 0..VOICES as u8 {
@@ -490,7 +528,9 @@ fn measure(load: Load, block_size: usize, snapshot: Snapshot) -> Report {
                 | Load::FullMonoTracks
                 | Load::Delays
                 | Load::Reverbs
-                | Load::Check7 => renderer
+                | Load::Check7
+                | Load::Ambient
+                | Load::AmbientSynths => renderer
                     .controller
                     .set_volume_db(-(((i / 64) % 24) as f32))
                     .unwrap(),
@@ -677,6 +717,36 @@ fn write_baseline(reports: &[Report]) {
     std::fs::write(baseline_path(), text).unwrap();
 }
 
+/// The ambient song's synths' share of its time, at each block size: its
+/// p50 and p99 with no effects over its p50 and p99 with them. Checks the
+/// synth's headroom after the mod slots, which with every slot empty made a
+/// synth cost 1–8% more (UTA-79).
+fn synth_shares(reports: &[Report]) -> String {
+    let find = |load: Load, block_size: usize| {
+        reports
+            .iter()
+            .find(|r| r.load.name() == load.name() && r.block_size == block_size)
+    };
+    let mut text = "\n| Ambient song: the synths' share | Block | p50 | p99 |\n|---|---|---|---|\n"
+        .to_string();
+    for block_size in [32, 128, 1024] {
+        if let (Some(all), Some(synths)) = (
+            find(Load::Ambient, block_size),
+            find(Load::AmbientSynths, block_size),
+        ) {
+            let ratio = |synths: Duration, all: Duration| {
+                format!("{:.0}%", synths.as_secs_f64() / all.as_secs_f64() * 100.0)
+            };
+            text += &format!(
+                "| | {block_size} | {} | {} |\n",
+                ratio(synths.p50, all.p50),
+                ratio(synths.p99, all.p99),
+            );
+        }
+    }
+    text
+}
+
 /// How this run's time compares with the baseline's, e.g. "+4%".
 fn change(now: Duration, baseline: f64) -> String {
     format!(
@@ -703,6 +773,8 @@ fn report_block_timing() {
         Load::Check7FirstBlock,
         Load::Drums,
         Load::Drums909,
+        Load::Ambient,
+        Load::AmbientSynths,
     ];
     let mut reports = Vec::new();
     for load in loads {
@@ -763,6 +835,7 @@ fn report_block_timing() {
         }
         table += "\n";
     }
+    table += &synth_shares(&reports);
     if cfg!(debug_assertions) {
         table += "\nDebug build: these numbers are not representative.\n";
     }

@@ -23,4 +23,6 @@ assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.g
 serde_json = "1"
 # The sound tests' measurements. Tests only: the engine never measures itself.
 uta-analysis = { path = "../uta-analysis" }
+# The demo songs, for the timing report's ambient song case. Tests only.
+uta-song = { path = "../uta-song" }
 uuid = "1"

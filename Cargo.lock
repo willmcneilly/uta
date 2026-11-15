@@ -4672,6 +4672,7 @@ dependencies = [
  "serde_json",
  "uta-analysis",
  "uta-core",
+ "uta-song",
  "uuid",
 ]
 
