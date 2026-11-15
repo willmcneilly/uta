@@ -1,10 +1,10 @@
-# The start of an ambient song: long pads moved by a slow LFO, a drone, and a
-# sparse bell through a long, low-feedback Delay, in D major at 70 BPM.
-# Unfinished on purpose: it's thin without reverb, and the Reverb project
-# fills in the space (see its heading in README.md).
+# An ambient song: long pads moved by a slow LFO, a drone, a soft pulse,
+# strings and a sparse bell, each in its own long, dark Space reverb, in
+# D major at 70 BPM. It drifts in, blooms, stops to let the space hang on
+# its own, and comes back to one last chord that rings out.
 name = "Ambient"
 tempo = 70
-arrangement = ["drift", "bloom", "fade"]
+arrangement = ["drift", "bloom", "hang", "fade"]
 
 [master]
 volume_db = 0
@@ -12,20 +12,26 @@ volume_db = 0
 # The Pad, slower: it swells in over a couple of seconds and lets go over
 # three, so each chord fades into the next. One shared LFO, a cycle every
 # 12.5 seconds, moves the cutoff an octave, so the chords drift across bars.
+# Its Delay feeds the Ambient wash, so the echoes melt into the tail too.
 [[track]]
 name = "Pad"
 kind = "synth"
 sound = "pad"
 settings = { attack_seconds = 2.5, release_seconds = 3.5, filter_attack_seconds = 3.0, filter_release_seconds = 3.5, filter_lfo_octaves = 1.0, lfo_rate_hz = 0.08 }
 mixer = { volume_db = 0 }
-effects = [{ delay = { sync = false, time_seconds = 1.2, mode = "ping_pong", feedback = 0.2, low_cut_hz = 200, high_cut_hz = 2500 }, mix = 0.2 }]
-# Four chords, two bars each: Dmaj9, Bm7, Gmaj7, A6/9.
+effects = [
+  { delay = { sync = false, time_seconds = 1.2, mode = "ping_pong", feedback = 0.2, low_cut_hz = 200, high_cut_hz = 2500 }, mix = 0.2 },
+  { reverb = { sound = "ambient_wash" }, mix = 0.5 },
+]
+# Four chords, two bars each: Dmaj9, Bm7, Gmaj7, A6/9. In the hang it's
+# silent, and only its space is left.
 pattern.drift = { notes = "D3+F#3+A3+E4 - | B2+D3+F#3+A3 - | G2+B2+D3+F#3 - | A2+C#3+E3+B3 -", step = "1/1", velocity = 90 }
 pattern.bloom = { notes = "D3+F#3+A3+E4 - | B2+D3+F#3+A3 - | G2+B2+D3+F#3 - | A2+C#3+E3+B3 -", step = "1/1", velocity = 90 }
 pattern.fade = { notes = "D3+F#3+A3+E4 - - -", step = "1/1", velocity = 80 }
 
 # A low D under it all, through the first two sections (restarting at the seam,
-# a clip a section): the Bass with its bite and most of its sub taken out.
+# a clip a section), and back for the last chord: the Bass with its bite and
+# most of its sub taken out. Dry: reverb on a sub only muddies it.
 [[track]]
 name = "Drone"
 kind = "synth"
@@ -34,10 +40,12 @@ settings = { cutoff_hz = 260, sub_level = 0.35, filter_env_octaves = 0.0, attack
 mixer = { volume_db = -3 }
 pattern.drift = { notes = "D2 - - - - - - -", step = "1/1", velocity = 80 }
 pattern.bloom = { notes = "D2 - - - - - - -", step = "1/1", velocity = 80 }
+pattern.fade = { notes = "D2 - - -", step = "1/1", velocity = 70 }
 
 # A soft pulse under it all, which Will asked for when he listened: the
 # Pluck, darker, in eighths on each chord's root and fifth, with
-# a dotted-eighth echo. It stops halfway through the fade.
+# a dotted-eighth echo. It drops out for the hang, and stops halfway
+# through the fade.
 [[track]]
 name = "Pulse"
 kind = "synth"
@@ -50,24 +58,32 @@ pattern.bloom = { notes = "D4@90 A3 D4 A3 D4@90 A3 D4 A3 | D4@90 A3 D4 A3 D4@90 
 pattern.fade = { notes = "D4@90 A3 D4 A3 D4@90 A3 D4 A3 | D4@90 A3 D4 A3 D4@90 A3 D4 A3 | . . . . . . . . | . . . . . . . .", step = "1/8", velocity = 70 }
 
 # Strings over the pad in the second section, their pulse width breathing
-# slowly, a little to the left.
+# slowly, a little to the left, swelling into a Bloom so each chord grows out
+# of the last. In the hang they hold one chord and let it go into the space.
 [[track]]
 name = "Strings"
 kind = "synth"
 sound = "strings"
 settings = { attack_seconds = 1.5, release_seconds = 3.0, lfo_rate_hz = 0.15, lfo_width = 0.35 }
 mixer = { volume_db = -2, pan = -0.5 }
+effects = [{ reverb = { sound = "bloom", decay_seconds = 10.0 }, mix = 0.35 }]
 pattern.bloom = { notes = "F#4+A4 - | F#4+B4 - | D4+G4+B4 - | E4+A4+C#5 -", step = "1/1", velocity = 80 }
+pattern.hang = { notes = "F#4+A4+D5 - - .", step = "1/1", velocity = 70 }
 
 # A few bell notes, a little to the right, each answered by echoes a dotted
-# half apart (2.6 s), ping-ponged, each darker and thinner than the last.
+# half apart (2.6 s), ping-ponged, each darker and thinner than the last, and
+# the notes and their echoes all melting into an Ambient wash.
 [[track]]
 name = "Bell"
 kind = "synth"
 sound = "bell"
 mixer = { volume_db = 1, pan = 0.4 }
-effects = [{ delay = { sync = true, division = "1/2d", mode = "ping_pong", feedback = 0.3, low_cut_hz = 300, high_cut_hz = 3500, wobble = 0.15 }, mix = 0.4 }]
+effects = [
+  { delay = { sync = true, division = "1/2d", mode = "ping_pong", feedback = 0.3, low_cut_hz = 300, high_cut_hz = 3500, wobble = 0.15 }, mix = 0.4 },
+  { reverb = { sound = "ambient_wash" }, mix = 0.45 },
+]
 pattern.bloom = { notes = "A5 . . . | . . F#5 . | E5 . . . | . . . . | D5 . . . | . . E5 . | F#5 . . . | . . . .", step = "1/4", velocity = 70 }
+pattern.hang = { notes = ". . . . | . . A5 . | . . . . | . . . .", step = "1/4", velocity = 60 }
 pattern.fade = { notes = "A5 . . . | . . . . | F#5 . . . | . . . .", step = "1/4", velocity = 60 }
 
 [[section]]
@@ -77,6 +93,10 @@ bars = 8
 [[section]]
 name = "bloom"
 bars = 8
+
+[[section]]
+name = "hang"
+bars = 4
 
 [[section]]
 name = "fade"
