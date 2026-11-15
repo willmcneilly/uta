@@ -40,6 +40,7 @@ describe("describeSource and describeEffect", () => {
       },
       effects: { delay: {}, reverb: {} },
       synthSounds: [],
+      reverbSounds: [],
     };
     const kit = (model: "808" | "909"): SourceOutline => ({
       kind: "drums",

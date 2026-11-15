@@ -149,17 +149,9 @@ describe("ReverbPanel", () => {
 
   it("sends the Mode chosen, from the choices Rust lists", () => {
     const onSetting = vi.fn();
-    const effect = reverbView("r-1");
-    // A second mode, as Rust will send once Chamber lands.
-    const withChamber: EffectView = {
-      ...effect,
-      settings: effect.settings.map((s) =>
-        s.kind === "choice" ? { ...s, options: [...s.options, { value: "chamber", label: "Chamber" }] } : s,
-      ),
-    };
     render(
       <ReverbPanel
-        effect={withChamber}
+        effect={reverbView("r-1")}
         open={false}
         onOpen={vi.fn()}
         barSeconds={BAR}

@@ -67,7 +67,7 @@ export interface KitRowOutline extends Omit<KitRowView, "settings" | "model"> {
 }
 
 /** An effect in the outline: its Mix's and its settings' values. */
-export interface EffectOutline extends Omit<EffectView, "mix" | "settings"> {
+export interface EffectOutline extends Omit<EffectView, "mix" | "settings" | "sounds"> {
   mix: { name: "mix"; value: number };
   settings: EffectParam[];
 }
@@ -96,12 +96,27 @@ export interface Descriptions {
   effects: Record<EffectKind, DescriptionTable>;
   /** The synth's factory sounds, in the Sound menu's order. */
   synthSounds: SoundChoice[];
+  /** The Reverb's factory sounds, in its preset menu's order. */
+  reverbSounds: ReverbSoundChoice[];
 }
 
 /** A factory sound in the Sound menu: its key, as `setSynthSound` takes it, and its name. */
 export interface SoundChoice {
   value: string;
   label: string;
+}
+
+/**
+ * One of the Reverb's factory sounds in its preset menu: its key, as
+ * `setReverbSound` takes it, its name, its brief, the Mix it suggests
+ * (choosing it leaves the Mix alone), and its settings, for drawing its tail.
+ */
+export interface ReverbSoundChoice {
+  value: string;
+  label: string;
+  brief: string;
+  mix: number;
+  settings: EffectParam[];
 }
 
 /** A clip in the outline: where it is, and the revision of its notes. */
@@ -306,6 +321,8 @@ export interface EffectView {
    * echoes by it. A Reverb has none.
    */
   echoSeconds?: number;
+  /** A Reverb's factory sounds, as Rust lists them. A Delay has none. */
+  sounds?: ReverbSoundChoice[];
 }
 
 /**
@@ -721,6 +738,14 @@ export function setReverbParam(
   gesture?: number,
 ): Promise<Update> {
   return invoke<Update>("set_reverb_param", { effect, param, gesture: gesture ?? null });
+}
+
+/**
+ * Chooses one of a Reverb's factory sounds, by its key from the outline's
+ * `reverbSounds`: every setting but Mix at once, in one undo step.
+ */
+export function setReverbSound(effect: string, sound: string): Promise<Update> {
+  return invoke<Update>("set_reverb_sound", { effect, sound });
 }
 
 /**

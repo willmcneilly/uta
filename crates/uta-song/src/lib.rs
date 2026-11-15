@@ -26,8 +26,8 @@ use uta_core::time::{NoteDivision, Ticks};
 use uta_core::{
     COMMAND_FORMAT, Chain, Clip, ClipId, Command, CommandList, DelayParam, DrumParam, DrumSound,
     Effect, EffectId, EffectKind, FactorySound, KIT, KitSettings, MixerStrip, Note, NoteId,
-    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, ReverbParam, Source, SynthParam,
-    SynthSettings, Track, TrackId,
+    PlacedClip, PlacedEffect, PlacedTrack, Project, ProjectId, ReverbFactorySound, ReverbParam,
+    Source, SynthParam, SynthSettings, Track, TrackId,
 };
 use uuid::Uuid;
 
@@ -479,7 +479,42 @@ impl Compiler<'_> {
                     "an effect's settings are a table: { feedback = 0.4 }",
                 ));
             };
-            for (name, setting) in table {
+            // A Reverb's factory sound first: its other settings go on top.
+            if let Some(sound) = table.get("sound") {
+                let EffectKind::Reverb = kind else {
+                    return Err(self.error(
+                        settings.span(),
+                        format!("a {} has no factory sounds", kind.name()),
+                    ));
+                };
+                let name = sound.as_str().ok_or_else(|| {
+                    self.error(
+                        settings.span(),
+                        "a Reverb's `sound` is a factory sound's name",
+                    )
+                })?;
+                let factory = ReverbFactorySound::named(name).ok_or_else(|| {
+                    let keys: Vec<_> = ReverbFactorySound::all()
+                        .iter()
+                        .map(|sound| sound.key)
+                        .collect();
+                    self.error(
+                        settings.span(),
+                        format!(
+                            "`{name}` isn't one of the Reverb's factory sounds: they're {}",
+                            keys.join(", ")
+                        ),
+                    )
+                })?;
+                self.push(
+                    Command::SetReverbSettings {
+                        effect: id,
+                        settings: factory.settings,
+                    },
+                    settings.span(),
+                )?;
+            }
+            for (name, setting) in table.iter().filter(|(name, _)| name.as_str() != "sound") {
                 let command = match kind {
                     EffectKind::Delay => Command::SetDelayParam {
                         effect: id,

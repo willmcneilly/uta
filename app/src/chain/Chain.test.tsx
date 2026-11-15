@@ -15,6 +15,7 @@ import type {
 } from "../backend";
 import { knobAt, slideKnob } from "../design/knobTesting";
 import {
+  SYNTH_SOUNDS,
   Updates,
   announceChange,
   drumTrackView,
@@ -23,7 +24,7 @@ import {
   trackView,
 } from "../pianoRoll/testing";
 import { delayView } from "./delayTesting";
-import { reverbView } from "./reverbTesting";
+import { REVERB_SOUNDS, reverbView } from "./reverbTesting";
 import { ECHO_WIDTH } from "./EchoDrawing";
 
 // The Sound tab's chain against Tauri's mocked back end, which keeps its own
@@ -151,6 +152,26 @@ beforeEach(() => {
               e.id === args.effect ? { ...e, mix: { ...e.mix, value: Math.fround(args.mix as number) } } : e,
             ),
           );
+        case "set_reverb_sound": {
+          // Every setting but Mix, as the factory sound has them.
+          const sound = REVERB_SOUNDS.find((choice) => choice.value === args.sound);
+          if (!sound) throw new Error(`there's no Reverb factory sound ${String(args.sound)}`);
+          return apply(
+            eachEffect((e) =>
+              e.id === args.effect
+                ? {
+                    ...e,
+                    settings: e.settings.map((s) => {
+                      const param = sound.settings.find((p) => p.name === s.name);
+                      return param ? ({ ...s, value: param.value } as typeof s) : s;
+                    }),
+                  }
+                : e,
+            ),
+          );
+        }
+        case "set_synth_sound":
+          return apply({ ...project, canUndo: true });
         case "set_delay_param":
         case "set_reverb_param": {
           const param = args.param as EffectParam;
@@ -571,6 +592,113 @@ describe("the Sound tab's chain", () => {
     expect(panels()).toHaveLength(1);
     fireEvent.click(screen.getByTitle("Fold Delay"));
     expect(within(panels()[0]).queryByRole("slider")).not.toBeInTheDocument();
+  });
+});
+
+describe("the preset key", () => {
+  const presetKey = (panel: HTMLElement, name: string) => within(panel).getByRole("button", { name });
+  const menu = (name: string) => screen.getByRole("menu", { name });
+  const reverb = () => screen.getByRole("region", { name: "Reverb" });
+
+  it("on a Reverb's spine, lists Rust's factory sounds by mode, each heading once, each with its suggested Mix, and names none", async () => {
+    await openSound([synthWith(reverbView("r-1"))]);
+    const key = presetKey(reverb(), "Reverb sounds");
+    expect(key).toHaveAttribute("aria-expanded", "false");
+    expect(key).not.toHaveTextContent(/\w/);
+    fireEvent.click(key);
+    expect(key).toHaveAttribute("aria-expanded", "true");
+    const groups = within(menu("Reverb sounds")).getAllByRole("group");
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Room", "Chamber", "Space"]);
+    expect(
+      within(menu("Reverb sounds"))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Drum room20%", "Dark room25%", "Vocal plate20%", "Cathedral30%"]);
+    // Each is drawn: a small tail.
+    expect(within(menu("Reverb sounds")).getAllByRole("menuitem")[3].querySelector(".mini-tail path")).not.toBeNull();
+    // Its first sound has focus, and its brief is at the foot.
+    expect(screen.getByRole("menuitem", { name: /Drum room/ })).toHaveFocus();
+    expect(menu("Reverb sounds")).toHaveTextContent("A kit in the live room it was played in.");
+  });
+
+  it("choosing a sound sends one set_reverb_sound, leaves the Mix, and the panel shows what comes back", async () => {
+    await openSound([synthWith(reverbView("r-1", { mix: 0.4 }))]);
+    fireEvent.click(presetKey(reverb(), "Reverb sounds"));
+    expect(menu("Reverb sounds")).toHaveTextContent("Mix stays at 40%: it's yours, not the sound's.");
+    const cathedral = screen.getByRole("menuitem", { name: /Cathedral/ });
+    fireEvent.focus(cathedral);
+    expect(menu("Reverb sounds")).toHaveTextContent("Stone, enormous.");
+    fireEvent.click(cathedral);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    const decay = within(reverb()).getByRole("slider", { name: "Reverb decay" });
+    await waitFor(() => expect(decay).toHaveAttribute("aria-valuetext", "7.00 s"));
+    expect(within(reverb()).getByRole("radio", { name: "Space" })).toBeChecked();
+    expect(sent("set_reverb_sound")).toEqual([{ effect: "r-1", sound: "cathedral" }]);
+    expect(sent("set_reverb_param")).toEqual([]);
+    expect(sent("set_effect_mix")).toEqual([]);
+    expect(within(reverb()).getByRole("slider", { name: "Reverb mix" })).toHaveAttribute(
+      "aria-valuetext",
+      "40%",
+    );
+  });
+
+  it("opens below its key, or moves up so its foot stays in the window", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(300);
+    await openSound([synthWith(reverbView("r-1"))]);
+    const key = presetKey(reverb(), "Reverb sounds");
+    const placeAt = (top: number) => {
+      key.getBoundingClientRect = () => ({ left: 40, right: 64, top }) as DOMRect;
+    };
+    // jsdom's window is 768 tall.
+    placeAt(100);
+    fireEvent.click(key);
+    expect(menu("Reverb sounds").style.top).toBe("124px");
+    fireEvent.keyDown(window, { key: "Escape" });
+    placeAt(600);
+    fireEvent.click(key);
+    expect(menu("Reverb sounds").style.top).toBe(`${768 - 8 - 300}px`);
+  });
+
+  it("closes on Esc, giving focus back to the key, and moves with the arrow keys", async () => {
+    await openSound([synthWith(reverbView("r-1"))]);
+    const key = presetKey(reverb(), "Reverb sounds");
+    fireEvent.click(key);
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: /Drum room/ }), { key: "ArrowUp" });
+    expect(screen.getByRole("menuitem", { name: /Cathedral/ })).toHaveFocus();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(key).toHaveFocus();
+    expect(sent("set_reverb_sound")).toEqual([]);
+  });
+
+  it("pressing it doesn't drag the panel, and it stays on the spine when the panel is folded", async () => {
+    await openSound([synthWith(delayView("d-1"), reverbView("r-1"))]);
+    const key = presetKey(reverb(), "Reverb sounds");
+    fireEvent.pointerDown(key, { button: 0, clientX: 700 });
+    fireEvent.pointerMove(window, { clientX: 300 });
+    fireEvent.pointerUp(window);
+    expect(sent("move_effect")).toEqual([]);
+    fireEvent.click(screen.getByTitle("Fold Reverb"));
+    expect(presetKey(reverb(), "Reverb sounds")).toBeInTheDocument();
+  });
+
+  it("on the synth's spine, lists its factory sounds and sends one set_synth_sound; a kit and a Delay have none", async () => {
+    await openSound([synthWith(delayView("d-1"))]);
+    const synth = screen.getByTitle("Fold Synth").closest("section") as HTMLElement;
+    fireEvent.click(presetKey(synth, "Synth sounds"));
+    const items = within(menu("Synth sounds")).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(SYNTH_SOUNDS.map((sound) => sound.label));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pluck" }));
+    await waitFor(() => expect(sent("set_synth_sound")).toEqual([{ track: "track-1", sound: "pluck" }]));
+    expect(sent("set_synth_param")).toEqual([]);
+    expect(within(panels()[0]).queryByRole("button", { name: /sounds/ })).not.toBeInTheDocument();
+    // The synth panel has no Sound menu of its own.
+    expect(screen.queryByRole("combobox", { name: "Sound" })).not.toBeInTheDocument();
+  });
+
+  it("isn't on a drum track's spine", async () => {
+    await openSound([drumTrackView("track-2", "Drums 1")]);
+    expect(screen.queryByRole("button", { name: /sounds$/ })).not.toBeInTheDocument();
   });
 });
 

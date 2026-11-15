@@ -1,4 +1,4 @@
-import type { EffectView, NumberSettingView, Scale, Unit } from "../backend";
+import type { EffectParam, EffectView, NumberSettingView, ReverbSoundChoice, Scale, Unit } from "../backend";
 
 // A Reverb as Rust describes it (`ReverbParam::describe` in uta-core), for
 // the UI tests: its twenty settings in RFC-010's order, then Mix. The
@@ -80,6 +80,47 @@ const NUMBERS: [NumberName, string, string | undefined, Unit, Scale, [number, nu
   ["high_xover_hz", "High xover", "High from", "hz", "log", [1000, 16000]],
 ];
 
+/** Every setting of a Reverb with `values`, as an effect's are listed in the outline. */
+function paramsOf(values: Partial<ReverbValues>): EffectParam[] {
+  const v = { ...NEW_REVERB, ...values };
+  return [{ name: "mode", value: v.mode }, ...NUMBERS.map(([name]) => ({ name, value: v[name] }))];
+}
+
+/**
+ * Four of the Reverb's factory sounds, as Rust lists them (shortened): its
+ * order mixes the modes, Room, Chamber, Room, Space, as Rust's does.
+ */
+export const REVERB_SOUNDS: ReverbSoundChoice[] = [
+  {
+    value: "drum_room",
+    label: "Drum room",
+    brief: "A kit in the live room it was played in.",
+    mix: 0.2,
+    settings: paramsOf({ decay_seconds: 0.5, depth: 0.3, early_size_seconds: 0.02, late_size: 0.2 }),
+  },
+  {
+    value: "vocal_plate",
+    label: "Vocal plate",
+    brief: "A steel plate: dense at once, bright.",
+    mix: 0.2,
+    settings: paramsOf({ mode: "chamber", decay_seconds: 1.8, depth: 0.85, predelay_seconds: 0 }),
+  },
+  {
+    value: "dark_room",
+    label: "Dark room",
+    brief: "A cheap, dark, slightly wobbly space.",
+    mix: 0.25,
+    settings: paramsOf({ decay_seconds: 1.3, high_cut_hz: 3000, late_mod_depth: 1 }),
+  },
+  {
+    value: "cathedral",
+    label: "Cathedral",
+    brief: "Stone, enormous.",
+    mix: 0.3,
+    settings: paramsOf({ mode: "space", decay_seconds: 7, predelay_seconds: 0.06, high_mult: 0.35 }),
+  },
+];
+
 /** A Reverb with ID `id`, its settings `NEW_REVERB`'s but for `values`. */
 export function reverbView(id: string, values: Partial<ReverbValues> = {}): EffectView {
   const v = { ...NEW_REVERB, ...values };
@@ -122,10 +163,15 @@ export function reverbView(id: string, values: Partial<ReverbValues> = {}): Effe
         label: "Mode",
         sounds: "Mode.",
         value: v.mode,
-        options: [{ value: "room", label: "Room" }],
+        options: [
+          { value: "room", label: "Room" },
+          { value: "chamber", label: "Chamber" },
+          { value: "space", label: "Space" },
+        ],
         default: d.mode,
       },
       ...numbers,
     ],
+    sounds: REVERB_SOUNDS,
   };
 }

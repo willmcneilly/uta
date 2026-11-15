@@ -17,7 +17,8 @@ use uta_core::{
     Chain, Choice, Clip, ClipId, ClipPosition, Command, CommandError, DelayParam, Description,
     DrumParam, DrumSound, Effect, EffectId, EffectKind, EffectSettings, FactorySound, KIT,
     KickModel, KitSettings, MAX_EFFECTS, MixerStrip, Note, NoteId, PlacedClip, PlacedEffect,
-    PlacedTrack, Project, ReverbParam, Session, Source, SynthParam, SynthSettings, Track, TrackId,
+    PlacedTrack, Project, ReverbFactorySound, ReverbParam, Session, Source, SynthParam,
+    SynthSettings, Track, TrackId,
 };
 use uta_engine::live::{self, DeviceInfo, DeviceState, DeviceStatus, LiveOutput};
 use uta_engine::{Controller, EngineConfig, NoteKey, Processor, Snapshot, Status};
@@ -244,6 +245,7 @@ impl SourceView {
 /// Serialises as `{"synth":{"cutoff_hz":{"label":"Cutoff",…},…},"drums":
 /// {"808":{"kick":{"tune_hz":{…},…},…},"909":{…}},"effects":{"delay":
 /// {"mix":{…},"sync":{…},…}},"synthSounds":[{"value":"bass","label":"Bass"},
+/// …],"reverbSounds":[{"value":"drum_room","label":"Drum room","mix":0.2,…},
 /// …]}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Descriptions {
@@ -258,6 +260,22 @@ pub struct Descriptions {
     /// key, as `set_synth_sound` takes it, and its name.
     #[serde(rename = "synthSounds")]
     pub synth_sounds: Vec<Choice>,
+    /// The Reverb's factory sounds, in its preset menu's order.
+    #[serde(rename = "reverbSounds")]
+    pub reverb_sounds: Vec<ReverbSoundChoice>,
+}
+
+/// One of the Reverb's factory sounds, as its preset menu shows it: its
+/// key, as `set_reverb_sound` takes it, its name, its brief, the Mix it
+/// suggests (choosing it leaves the Mix alone), and its settings, as an
+/// effect's are listed in the outline, for drawing its tail.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReverbSoundChoice {
+    pub value: &'static str,
+    pub label: &'static str,
+    pub brief: &'static str,
+    pub mix: f32,
+    pub settings: Vec<ReverbParam>,
 }
 
 impl Descriptions {
@@ -319,11 +337,22 @@ impl Descriptions {
                 label: sound.name,
             })
             .collect();
+        let reverb_sounds = ReverbFactorySound::all()
+            .iter()
+            .map(|sound| ReverbSoundChoice {
+                value: sound.key,
+                label: sound.name,
+                brief: sound.brief,
+                mix: sound.suggested_mix,
+                settings: sound.settings.params().to_vec(),
+            })
+            .collect();
         Self {
             synth,
             drums,
             effects,
             synth_sounds,
+            reverb_sounds,
         }
     }
 }
@@ -981,6 +1010,20 @@ impl Uta {
         gesture: Option<u32>,
     ) -> Result<(), String> {
         self.change(Command::SetReverbParam { effect, param }, gesture)
+    }
+
+    /// Chooses the factory sound called `sound` on a Reverb: every setting
+    /// but Mix at once, its mode included, in one undo step.
+    pub fn set_reverb_sound(&mut self, effect: EffectId, sound: &str) -> Result<(), String> {
+        let sound = ReverbFactorySound::find(sound)
+            .ok_or_else(|| format!("there's no Reverb factory sound {sound}"))?;
+        self.change(
+            Command::SetReverbSettings {
+                effect,
+                settings: sound.settings,
+            },
+            None,
+        )
     }
 
     /// Adds an empty clip to `track`, from `start` for `length` ticks. The
@@ -2372,6 +2415,55 @@ mod tests {
         assert_eq!(decay(&uta), 5.0);
         uta.undo();
         assert_eq!(decay(&uta), 2.0);
+    }
+
+    #[test]
+    fn choosing_a_reverb_factory_sound_sets_all_but_mix_in_one_undo_step() {
+        let mut uta = offline();
+        let effect = EffectId::random();
+        uta.add_effect(Chain::Master, effect, EffectKind::Reverb)
+            .unwrap();
+        uta.set_effect_mix(effect, 0.6, None).unwrap();
+        let reverb = |uta: &Uta| *uta.session.project().master_effects()[0].settings();
+        let before = reverb(&uta);
+        uta.set_reverb_sound(effect, "cathedral").unwrap();
+        let cathedral = ReverbFactorySound::find("cathedral").unwrap().settings;
+        assert_eq!(reverb(&uta), EffectSettings::Reverb(cathedral));
+        assert_eq!(uta.session.project().master_effects()[0].mix(), 0.6);
+        let engine = uta.controller.snapshot().effects[0].settings;
+        assert_eq!(
+            engine,
+            uta_engine::EffectSettings::Reverb(cathedral),
+            "the engine plays it"
+        );
+
+        uta.undo();
+        assert_eq!(reverb(&uta), before);
+        assert_eq!(uta.session.project().master_effects()[0].mix(), 0.6);
+
+        assert!(uta.set_reverb_sound(effect, "spring").is_err());
+        let delay = EffectId::random();
+        uta.add_effect(Chain::Master, delay, EffectKind::Delay)
+            .unwrap();
+        assert!(uta.set_reverb_sound(delay, "cathedral").is_err());
+    }
+
+    #[test]
+    fn the_reverb_preset_menu_lists_its_factory_sounds_from_rust() {
+        let json = serde_json::to_value(offline().update().outline).unwrap();
+        let listed = json["descriptions"]["reverbSounds"].as_array().unwrap();
+        let sounds = ReverbFactorySound::all();
+        assert_eq!(listed.len(), sounds.len());
+        for (listed, sound) in listed.iter().zip(&sounds) {
+            assert_eq!(listed["value"], sound.key);
+            assert_eq!(listed["label"], sound.name);
+            assert_eq!(listed["brief"], sound.brief);
+            assert_eq!(listed["mix"].as_f64().unwrap() as f32, sound.suggested_mix);
+            assert_eq!(
+                listed["settings"],
+                serde_json::to_value(sound.settings.params()).unwrap()
+            );
+        }
     }
 
     #[test]

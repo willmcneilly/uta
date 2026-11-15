@@ -302,6 +302,74 @@ pub fn early_and_late_correlation(
     })
 }
 
+/// The early burst against the tail, in dB: the energy of `samples` in the
+/// [`EARLY_SECONDS`] after the onset over the energy after that, room
+/// acoustics' clarity (C80). Above 0, most of it is early: a close, tight
+/// space; below, most is the tail: a distant one. `None` for silence, or a
+/// part with nothing in it.
+pub fn early_to_late_db(samples: &[f32], sample_rate: u32) -> Option<f64> {
+    let start = onset(&[samples])?;
+    let split =
+        (start + (EARLY_SECONDS * f64::from(sample_rate)).round() as usize).min(samples.len());
+    let energy = |part: &[f32]| part.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>();
+    let (early, late) = (energy(&samples[start..split]), energy(&samples[split..]));
+    (early > 0.0 && late > 0.0).then(|| 10.0 * (early / late).log10())
+}
+
+/// The lowest and highest frequencies of the pink noise
+/// [`steady_gain_db`] is measured with, in Hz: the range of hearing.
+pub const STEADY_LOWEST_HZ: f64 = 20.0;
+pub const STEADY_HIGHEST_HZ: f64 = 20_000.0;
+
+/// How much louder a steady sound comes out than it goes in, in dB, from
+/// an impulse response's channels: the loudness gain for pink noise (equal
+/// energy in every octave, as music's long-term spectrum roughly has) from
+/// [`STEADY_LOWEST_HZ`] to [`STEADY_HIGHEST_HZ`], K-weighted (ITU-R
+/// BS.1770's loudness filter), averaged over the channels. It's worked out
+/// from the response's spectrum: its power at each frequency, weighted by
+/// pink noise's and the K filter's, over a click's, whose power is the same
+/// everywhere. A steady sound through an effect comes out as loud as that
+/// says, whatever the response's length, so this is how loud a reverb
+/// sounds behind a held chord or a busy loop, at any decay. It assumes the
+/// click was full scale, one sample, at the start of each channel. `None`
+/// for silence.
+pub fn steady_gain_db(channels: &[&[f32]], sample_rate: u32) -> Option<f64> {
+    let length = channels
+        .iter()
+        .map(|c| c.len())
+        .max()?
+        .next_power_of_two()
+        .max(2);
+    let rate = f64::from(sample_rate);
+    let bin_hz = rate / length as f64;
+    let top = STEADY_HIGHEST_HZ.min(rate / 2.0);
+    let weights: Vec<(usize, f64)> = (1..=length / 2)
+        .map(|k| (k, k as f64 * bin_hz))
+        .filter(|&(_, hz)| (STEADY_LOWEST_HZ..=top).contains(&hz))
+        .map(|(k, hz)| (k, crate::k_weighting_power(hz, sample_rate) / hz))
+        .collect();
+    let click: f64 = weights.iter().map(|(_, w)| w).sum();
+    let mut planner = RealFftPlanner::<f64>::new();
+    let forward = planner.plan_fft_forward(length);
+    let mut spectrum = forward.make_output_vec();
+    let mut response = 0.0;
+    for channel in channels {
+        let mut input = forward.make_input_vec();
+        for (to, &from) in input.iter_mut().zip(channel.iter()) {
+            *to = f64::from(from);
+        }
+        forward
+            .process(&mut input, &mut spectrum)
+            .expect("the buffers are the plan's");
+        response += weights
+            .iter()
+            .map(|&(k, w)| spectrum[k].norm_sqr() * w)
+            .sum::<f64>();
+    }
+    response /= channels.len() as f64;
+    (response > 0.0).then(|| 10.0 * (response / click).log10())
+}
+
 /// How bumpy the tail's spectrum is, in dB: a measure of colouration, the
 /// resonances that stick out, as a metallic ring does. Our own proxy
 /// (RFC-010's Risks), checked against listening in UTA-101: see
@@ -878,5 +946,62 @@ mod tests {
         assert!((f64::from(h) + 30.0).abs() < 3.0, "4 kHz at {h} dB");
         // Nothing at 12 kHz: drawn as silence.
         assert_eq!(relief.frames[0][bin(12_000.0)], SILENT_DB);
+    }
+
+    /// Half the energy in the first 80 ms after the onset and half after
+    /// reads 0 dB; ten times as much early reads 10 dB. The onset is where
+    /// it starts, not the file's start.
+    #[test]
+    fn early_to_late_is_the_energy_before_80_ms_after_the_onset_over_after() {
+        let at = |ms: f64| (ms / 1000.0 * f64::from(RATE)) as usize;
+        let mut samples = vec![0.0f32; at(500.0)];
+        samples[at(20.0)] = 1.0;
+        samples[at(20.0 + 40.0)] = 0.5;
+        samples[at(20.0 + 200.0)] = (1.25f32).sqrt();
+        let db = early_to_late_db(&samples, RATE).unwrap();
+        assert!(db.abs() < 1e-6, "{db}");
+        samples[at(20.0 + 200.0)] = (0.125f32).sqrt();
+        let db = early_to_late_db(&samples, RATE).unwrap();
+        assert!((db - 10.0).abs() < 1e-5, "{db}");
+        assert_eq!(early_to_late_db(&[0.0; 100], RATE), None);
+    }
+
+    /// A click passed straight through reads 0 dB; half as loud, -6 dB;
+    /// two clicks 10 ms apart, +3 dB, give or take their comb's ripple. A
+    /// response that takes away everything above 1 kHz keeps pink noise's
+    /// octaves from 20 Hz to 1 kHz, 5.6 of its 10, but they hold only about
+    /// 30% of its K-weighted energy, as the K filter weighs the octaves
+    /// above 2 kHz 4 dB more and the lowest less: about -5 dB.
+    #[test]
+    fn steady_gain_is_pink_noises_k_weighted_gain() {
+        let mut click = vec![0.0f32; 4800];
+        click[0] = 1.0;
+        let db = steady_gain_db(&[&click, &click], RATE).unwrap();
+        assert!(db.abs() < 1e-9, "{db}");
+        let half: Vec<f32> = click.iter().map(|s| s * 0.5).collect();
+        let db = steady_gain_db(&[&half], RATE).unwrap();
+        assert!((db + 6.02).abs() < 0.01, "{db}");
+        let mut two = click.clone();
+        two[480] = 1.0;
+        let db = steady_gain_db(&[&two], RATE).unwrap();
+        assert!((db - 3.01).abs() < 0.1, "{db}");
+        // A windowed sinc, low-passed at 1 kHz.
+        let (n, centre) = (4800, 2400.0);
+        let cut = 1_000.0 / f64::from(RATE);
+        let low: Vec<f32> = (0..n)
+            .map(|i| {
+                let x = i as f64 - centre;
+                let sinc = if x == 0.0 {
+                    2.0 * cut
+                } else {
+                    (std::f64::consts::TAU * cut * x).sin() / (std::f64::consts::PI * x)
+                };
+                let window = 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / n as f64).cos();
+                (sinc * window) as f32
+            })
+            .collect();
+        let db = steady_gain_db(&[&low], RATE).unwrap();
+        assert!((-6.0..=-4.5).contains(&db), "{db}");
+        assert_eq!(steady_gain_db(&[&[0.0; 10]], RATE), None);
     }
 }

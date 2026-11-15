@@ -339,6 +339,17 @@ pub fn set_reverb_param<R: Runtime>(
     edit(&app, |uta| uta.set_reverb_param(effect, param, gesture))
 }
 
+/// Chooses one of a Reverb's factory sounds, by its key from the outline's
+/// `reverbSounds`: every setting but Mix at once, in one undo step.
+#[tauri::command]
+pub fn set_reverb_sound<R: Runtime>(
+    app: AppHandle<R>,
+    effect: EffectId,
+    sound: String,
+) -> Result<Update, String> {
+    edit(&app, |uta| uta.set_reverb_sound(effect, &sound))
+}
+
 /// Adds an empty clip to a track: drawn on the timeline. The UI picks its
 /// ID.
 #[tauri::command]

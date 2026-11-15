@@ -1,5 +1,5 @@
 use super::*;
-use uta_core::{DelaySettings, EffectSettings, KickModel, Waveform};
+use uta_core::{DelaySettings, EffectSettings, KickModel, ReverbSettings, Waveform};
 
 /// The song `text` builds.
 fn build(text: &str) -> Project {
@@ -322,6 +322,71 @@ bars = 1
     };
     assert_eq!((settings.decay_seconds, settings.depth), (4.0, 0.8));
     assert_eq!(reverb.mix(), 0.4);
+}
+
+/// A Reverb takes one of its factory sounds by key or name, set before its
+/// other settings, which go on top; its Mix stays the song's. Only a Reverb
+/// has factory sounds.
+#[test]
+fn a_reverb_takes_a_factory_sound_by_name_and_settings_on_top() {
+    let project = build(&format!(
+        "{HEADER}
+[[track]]
+name = \"Keys\"
+kind = \"synth\"
+effects = [
+    {{ reverb = {{ depth = 0.5, sound = \"Dark room\" }}, mix = 0.3 }},
+    {{ reverb = {{ sound = \"cathedral\" }} }},
+]
+
+[[section]]
+name = \"verse\"
+bars = 1
+"
+    ));
+    let effects = project.tracks()[0].effects();
+    let reverb = |n: usize| match effects[n].settings() {
+        EffectSettings::Reverb(settings) => *settings,
+        _ => panic!("a Reverb"),
+    };
+    let dark = ReverbFactorySound::find("dark_room").unwrap().settings;
+    assert_eq!(reverb(0), ReverbSettings { depth: 0.5, ..dark });
+    assert_eq!(effects[0].mix(), 0.3);
+    assert_eq!(
+        reverb(1),
+        ReverbFactorySound::find("cathedral").unwrap().settings
+    );
+    assert_eq!(
+        effects[1].mix(),
+        Effect::default_of(effects[1].id(), EffectKind::Reverb).mix()
+    );
+
+    for (entry, wanted) in [
+        (
+            "{ reverb = { sound = \"Spring\" } }",
+            "`Spring` isn't one of the Reverb's factory sounds: they're drum_room",
+        ),
+        (
+            "{ delay = { sound = \"Drum room\" } }",
+            "a Delay has no factory sounds",
+        ),
+    ] {
+        let error = compile(&format!(
+            "{HEADER}
+[[track]]
+name = \"Keys\"
+kind = \"synth\"
+effects = [{entry}]
+
+[[section]]
+name = \"verse\"
+bars = 1
+"
+        ))
+        .unwrap_err();
+        assert!(error.message.contains(wanted), "{}", error.message);
+        assert_eq!(error.line, 7, "{}", error.message);
+    }
 }
 
 #[test]

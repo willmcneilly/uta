@@ -352,6 +352,62 @@ fn switching_factory_sounds_mid_loop_does_not_allocate() {
     assert_eq!(status.dropped_note_events, 0);
 }
 
+/// Choosing the Reverb's factory sounds while a loop plays, as its preset
+/// menu does: each one every Reverb setting at once, its mode included, in
+/// a new snapshot, mid-loop, while chords and a line ring through it, every
+/// sound in turn, over and over. Changing mode fades the old tail out, and
+/// a sound's state is the Reverb's own, made when it was added. The
+/// processor never allocates or frees.
+#[test]
+fn switching_reverb_factory_sounds_mid_loop_does_not_allocate() {
+    use uta_core::{Chain, Effect, EffectId, EffectKind, PlacedEffect, ReverbFactorySound};
+
+    rtsan_standalone::ensure_initialized();
+    let chord = [48u8, 52, 55, 59]
+        .into_iter()
+        .enumerate()
+        .map(|(i, pitch)| note(i as u128, pitch, 0, 1920));
+    let line = (0..8u8).map(|i| note(10 + u128::from(i), 60 + 2 * i, u64::from(i) * 480, 240));
+    let mut project = project(120.0, 1, &[], chord.chain(line).collect());
+    let track = project.tracks()[0].id();
+    let effect = EffectId::from_uuid(uuid::Uuid::from_u128(7100));
+    project
+        .apply(&Command::AddEffects {
+            effects: vec![PlacedEffect {
+                chain: Chain::Track(track),
+                index: 0,
+                effect: Effect::default_of(effect, EffectKind::Reverb).with_mix(0.5),
+            }],
+        })
+        .unwrap();
+    let mut renderer = Renderer::new(stereo(), Snapshot::from(&project), BLOCK);
+    let mut buffer = vec![0.0; BLOCK * 2];
+    renderer.controller.play().unwrap();
+    for _ in 0..41 {
+        process_block(renderer.processor(), &mut buffer);
+    }
+
+    let sounds = ReverbFactorySound::all();
+    // Three times round the menu, a sound every 41 blocks (about 0.11 s),
+    // so the switches land all over the loop and in each other's fades.
+    for sound in sounds.iter().cycle().take(3 * sounds.len()) {
+        project
+            .apply(&Command::SetReverbSettings {
+                effect,
+                settings: sound.settings,
+            })
+            .unwrap();
+        renderer.controller.set_project(&project).unwrap();
+        for _ in 0..41 {
+            process_block(renderer.processor(), &mut buffer);
+        }
+        assert_eq!(renderer.controller.free_used_snapshots(), 1);
+    }
+    let status = renderer.controller.poll();
+    assert!(status.peak > 0.0, "the loop made no sound");
+    assert_eq!(status.dropped_note_events, 0);
+}
+
 /// Mixer changes while a loud chord plays: volume, pan and mute glide, the
 /// master clips, and the processor never allocates. In stereo, and in mono
 /// and on four channels, where the mix is folded down or padded out.
