@@ -33,14 +33,14 @@ Not a golden WAV: the songs are meant to change.
 
 ### Lo-fi
 
-`lofi.toml`: a minute at 80 BPM in F major, the song every feature is tried in. Soft keys play a ii-V-I-vi (Gm9, C13, Fmaj9, Dm9) through a dark, wobbly ping-pong tape delay, over a round bass and a swung boom-bap beat on the 808 kick. It runs intro, groove, groove, break, groove, outro: the break drops the kick for a turn round Bbmaj9, and the outro resolves to Fmaj9.
+`lofi.toml`: a minute at 80 BPM in F major, the song every feature is tried in. Soft keys play a ii-V-I-vi (Gm9, C13, Fmaj9, Dm9) through a dark, wobbly ping-pong tape delay and on into the Dark room reverb, over a round bass and a swung boom-bap beat on the 808 kick. The snare has a track of its own, with its own Dark room, so the kick and hats stay dry: a track has one chain, and there are no sends yet. It runs intro, groove, groove, break, groove, outro: the break drops the kick for a turn round Bbmaj9, and the outro resolves to Fmaj9.
 
 What the genre wanted and Uta lacks:
 
 - **Swing**, as a setting. The song swings by hand: every part steps in 1/32 triplets, twelve to a beat, with each off-beat eighth one step late, a 58.3% swing. The finest step the song file has allows only that or 62.5% (on a 1/32 grid), and 62.5% felt unravelled; a swing setting would let it be dialled in, and leave the lines readable at a sixteenth a step instead of 48 steps a bar.
 - **Saturation or a bitcrusher**, for the dusty, worn sound. The Delay's Drive warms only the echoes.
 - **Vinyl noise**, crackle and hiss under everything.
-- **Reverb**, so the keys and snare sit in a room. Only the Delay gives the keys any space, and the mix is nearly mono apart from its echoes.
+- **Sends**, so the keys and the snare could share one room. Each has its own reverb, and the snare had to leave the kit for a track of its own to get one.
 - **An electric piano.** The keys are the Bell, played low with some sustain: closer to an FM tine than a warm Rhodes. A Rhodes wants a tine with a bark when played hard and a tremolo that pans.
 - **A low-pass on the whole mix, or an EQ**, to roll off the top the way a sampled record does, and a filter sweep into the break, which wants **automation**.
 - **A low bass that stays round.** The Bass sound adds a sub an octave under each note, so with the line down at F1 and G1 the sub falls to 22–25 Hz, and the low notes buzz. The line sits an octave up, from F2, instead.
@@ -48,7 +48,7 @@ What the genre wanted and Uta lacks:
 
 ### House
 
-`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a seventh-chord stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth (its mix kept low, at 0.2, so the echoes don't spread too wide), and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
+`house.toml`: 32 bars at 124 BPM, in sections that build: intro (kick and hats), build (the clap and the bass come in), groove (the chord stab joins), break (no kick: one stab a bar, its echoes, the bass's roots and a snare roll) and drop (everything, with a crash and a snare under the clap). The 909 kick on every beat, the open hat on every off-beat, a seventh-chord stab (Am7, Dm7, Fmaj7, Em7) on the Pluck through a ping-pong Delay at a dotted eighth (its mix kept low, at 0.2, so the echoes don't spread too wide) and on into the Vocal plate, which carries its tail across the bar in the break, and a rolling bass on the Glide bass whose notes are held a little past their step, so two side by side slide and a note after a rest starts fresh.
 
 What house wanted that Uta doesn't have yet:
 - **Swing.** House hats and bass are pushed off the grid; every step here is straight, so it sits stiffer than the genre.
@@ -56,12 +56,12 @@ What house wanted that Uta doesn't have yet:
 - **Louder than the mixer allows.** The drums are at a track's limit (+6 dB), and the master's +6 dB is cut to 0 dB by the engine (`Snapshot::MAX_VOLUME_DB`), so the balance came from turning the synths down.
 - **Automation.** A filter sweep on the stab or the bass into the drop, and the hats opening up through the build, are written today as separate sections.
 - **A stab sound.** The Pluck is the nearest factory sound; house stabs are usually an organ, a piano or a sampled chord, brighter and with more body.
-- **Reverb**, for the claps and the stab's tail in the break.
+- **Sends**, and **automation** of a reverb's mix: the clap is on a track of its own to get its Echo chamber without the kick and hats in it, and the stab's plate is the same in every section, when it's wanted most in the break.
 - **A shaker or ride.** The kit has a closed and an open hat and a crash; a groove usually has a ride or a shaker on top in the drop.
 
 ### Techno
 
-`techno.toml`: 32 bars at 130 BPM in A minor, in five sections that build: intro (kick and hats), groove (the clap, a rolling off-beat bass and the line), break (no kick or bass: the line, the hats, a clap on beat 4 and a dub chord into a long delay), rise (everything back, the line's filter opening over eight bars) and peak (open hats, toms, the chord again, the filter open).
+`techno.toml`: 32 bars at 130 BPM in A minor, in five sections that build: intro (kick and hats), groove (the clap, a rolling off-beat bass and the line), break (no kick or bass: the line, the hats, a clap on beat 4 and a dub chord into a long delay), rise (everything back, the line's filter opening over eight bars) and peak (open hats, toms, the chord again, the filter open). The dub chord's echoes go on into the Concert hall, so they hang behind the line, and the clap, on a track of its own, has the Gated drums burst.
 
 The line is the Pluck reworked into a resonant pulse. A triangle LFO synced to a dotted bar moves its cutoff and its pulse's width against the one-bar line all the way through. The filter opens over the rise with a mod slot: velocity → cutoff, with the rise's velocities written out to climb from 64 to 121, note by note. A second slot turns the level down with velocity, so it gets brighter more than louder.
 
@@ -72,7 +72,7 @@ What techno wanted that Uta doesn't have yet:
 - **EQ,** to clear the low mids and give the kick room: the bottom end is muddy and lacks punch, with the kick, the bass and the line's sub all around 50–110 Hz.
 - **Sidechain ducking,** so the bass ducks under the kick rather than blurring with it.
 - **A bus compressor or limiter,** to make it loud and punchy. The engine plays the master at no more than 0 dB, though a project can hold up to +6, and the line is at its track's +6 dB limit already: the song peaks at -7 dBFS, -25.5 LUFS.
-- **Reverb,** for the dub chord and the clap.
+- **Sends,** so the clap needn't leave the kit for a track of its own to have a reverb without the kick in it.
 - **A crash at a section's start** needs a drum pattern as long as the section, since a pattern repeats; there's no fill or one-off hit across sections.
 - **Swing** on the hats, less needed than in house.
 

@@ -23,22 +23,18 @@ closed_hat = "..x. ..x. ..x. ..x."
 
 [track.pattern.groove]
 kick       = "X... x... x... x..."
-clap       = ".... x... .... x..."
 closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
 
 [track.pattern.break]
-clap       = ".... .... .... x..."
 closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
 
 [track.pattern.rise]
 kick       = "X... x... x... x..."
-clap       = ".... x... .... x..."
 closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
 open_hat   = "..x. ..x. ..x. ..x."
 
 [track.pattern.peak]
 kick       = "X... x... x... x..."
-clap       = ".... x... .... x..."
 closed_hat = "x50.x110x60 x50.x110x60 x50.x110x60 x50.x110x80"
 open_hat   = "..x. ..x. ..x. ..x."
 low_tom    = "...x70 .... ..x70. ...."
@@ -114,9 +110,28 @@ kind = "synth"
 sound = "Pluck"
 settings = { cutoff_hz = 400 }
 mixer = { volume_db = -9, pan = 0.2 }
-effects = [{ delay = { sync = true, division = "1/4d", feedback = 0.5, mode = "ping_pong" }, mix = 0.35 }]
+# The Delay's echoes go on into a big, dark hall, so the chord and its
+# echoes hang and fade behind the line, as dub techno has it.
+effects = [
+  { delay = { sync = true, division = "1/4d", feedback = 0.5, mode = "ping_pong" }, mix = 0.35 },
+  { reverb = { sound = "concert_hall" }, mix = 0.3 },
+]
 pattern.break = ". . A3+C4+E4 . . . . . . . . . . . . . | . . . . . . . . . . . . . . . ."
 pattern.peak = ". . A3+C4+E4 . . . . . . . . . . . . . | . . . . . . . . . . . . . . . ."
+
+# The clap, on its own track so it can have a room without the kick and
+# hats in it (a track has one chain, and there are no sends yet). Its level
+# matches the Drums'. The gated room: a big, dense burst that stops dead,
+# so it widens the clap without a tail to blur the groove.
+[[track]]
+name = "Clap"
+kind = "drums"
+mixer = { volume_db = 3 }
+effects = [{ reverb = { sound = "gated_drums" }, mix = 0.3 }]
+pattern.groove = { clap = ".... x... .... x..." }
+pattern.break = { clap = ".... .... .... x..." }
+pattern.rise = { clap = ".... x... .... x..." }
+pattern.peak = { clap = ".... x... .... x..." }
 
 [[section]]
 name = "intro"
