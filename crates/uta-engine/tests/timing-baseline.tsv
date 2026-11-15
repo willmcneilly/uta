@@ -1,45 +1,51 @@
 # The block timing report's baseline: p50 and p99 in µs. See BASELINE in timing.rs.
-# Recorded on 24 Oct 2026 at 6616bdf, on MacBook-Pro.
+# Recorded on 15 Nov 2026 at ee946a2, on MacBook-Pro.
 load	block	p50_us	p99_us
-Demo loop	32	2.62	11.21
-Demo loop	128	8.62	56.38
-Demo loop	1024	65.38	130.25
-16 voices	32	4.83	11.29
-16 voices	128	16.46	33.42
-16 voices	1024	133.04	290.04
-16 voices, per-voice filter	32	5.21	13.46
-16 voices, per-voice filter	128	18.67	44.88
-16 voices, per-voice filter	1024	153.71	1227.58
-16 full voices	32	19.42	56.88
-16 full voices	128	74.92	152.75
-16 full voices	1024	586.38	785.92
-Demo song	32	4.38	13.08
-Demo song	128	15.71	39.08
-Demo song	1024	121.79	314.96
-32 tracks × 8 voices	32	69.54	134.50
-32 tracks × 8 voices	128	277.42	626.58
-32 tracks × 8 voices	1024	2343.29	17235.25
-32 tracks × 8 full voices	32	306.21	1381.46
-32 tracks × 8 full voices	128	1217.83	4934.58
-32 tracks × 8 full voices	1024	9583.83	31230.33
-32 tracks × a full voice in Mono, gliding	32	57.38	67.46
-32 tracks × a full voice in Mono, gliding	128	232.88	1577.42
-32 tracks × a full voice in Mono, gliding	1024	1865.50	5841.50
-32 tracks × 8 voices, a Delay on each and the master	32	99.42	159.50
-32 tracks × 8 voices, a Delay on each and the master	128	399.50	670.54
-32 tracks × 8 voices, a Delay on each and the master	1024	3115.75	4897.29
-32 tracks × 8 voices, a Reverb on each and the master	32	279.38	619.33
-32 tracks × 8 voices, a Reverb on each and the master	128	1124.58	2136.58
-32 tracks × 8 voices, a Reverb on each and the master	1024	9224.33	15191.83
-Check 7 (588k notes)	32	26.46	43.38
-Check 7 (588k notes)	128	105.42	154.29
-Check 7 (588k notes)	1024	846.62	944.92
-Check 7, first block after Play from bar 10.5	32	141.42	167.88
-Check 7, first block after Play from bar 10.5	128	216.42	243.17
-Check 7, first block after Play from bar 10.5	1024	996.83	1418.71
-32 drum tracks × every sound	32	79.42	291.62
-32 drum tracks × every sound	128	276.21	534.88
-32 drum tracks × every sound	1024	2205.08	3988.83
-32 drum tracks × every sound, 909 kick	32	86.92	260.58
-32 drum tracks × every sound, 909 kick	128	313.08	1173.92
-32 drum tracks × every sound, 909 kick	1024	2449.58	8580.12
+Demo loop	32	2.62	3.38
+Demo loop	128	8.58	10.96
+Demo loop	1024	65.25	91.79
+16 voices	32	4.83	6.12
+16 voices	128	15.83	20.62
+16 voices	1024	130.83	143.04
+16 voices, per-voice filter	32	5.21	6.42
+16 voices, per-voice filter	128	18.25	22.75
+16 voices, per-voice filter	1024	141.79	170.88
+16 full voices	32	19.54	23.21
+16 full voices	128	74.83	86.33
+16 full voices	1024	589.96	657.79
+Demo song	32	4.25	5.46
+Demo song	128	15.08	19.62
+Demo song	1024	120.12	153.50
+32 tracks × 8 voices	32	70.08	125.75
+32 tracks × 8 voices	128	276.33	462.96
+32 tracks × 8 voices	1024	2209.04	5112.67
+32 tracks × 8 full voices	32	299.67	580.92
+32 tracks × 8 full voices	128	1181.42	2304.54
+32 tracks × 8 full voices	1024	9424.50	18359.83
+32 tracks × a full voice in Mono, gliding	32	56.96	66.46
+32 tracks × a full voice in Mono, gliding	128	228.58	250.46
+32 tracks × a full voice in Mono, gliding	1024	1838.54	2050.12
+32 tracks × 8 voices, a Delay on each and the master	32	99.46	152.46
+32 tracks × 8 voices, a Delay on each and the master	128	387.12	585.50
+32 tracks × 8 voices, a Delay on each and the master	1024	3048.38	4646.62
+32 tracks × 8 voices, a Reverb on each and the master	32	285.46	361.25
+32 tracks × 8 voices, a Reverb on each and the master	128	1154.54	1392.88
+32 tracks × 8 voices, a Reverb on each and the master	1024	11328.21	37831.67
+Check 7 (588k notes)	32	25.88	40.00
+Check 7 (588k notes)	128	101.88	149.58
+Check 7 (588k notes)	1024	824.92	1136.00
+Check 7, first block after Play from bar 10.5	32	146.17	206.75
+Check 7, first block after Play from bar 10.5	128	225.58	279.33
+Check 7, first block after Play from bar 10.5	1024	970.29	1355.29
+32 drum tracks × every sound	32	72.29	137.25
+32 drum tracks × every sound	128	274.71	520.96
+32 drum tracks × every sound	1024	2187.67	3949.67
+32 drum tracks × every sound, 909 kick	32	79.42	145.96
+32 drum tracks × every sound, 909 kick	128	306.04	564.88
+32 drum tracks × every sound, 909 kick	1024	2448.42	4277.25
+Ambient song, from the bloom	32	31.63	38.46
+Ambient song, from the bloom	128	122.38	141.75
+Ambient song, from the bloom	1024	987.88	1170.50
+Ambient song, from the bloom, no effects	32	6.92	9.96
+Ambient song, from the bloom, no effects	128	25.88	37.58
+Ambient song, from the bloom, no effects	1024	204.08	289.75
