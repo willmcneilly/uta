@@ -19,7 +19,11 @@ kind = "synth"
 sound = "bell"
 settings = { decay_seconds = 1.5, sustain = 0.25, release_seconds = 0.8 }
 mixer = { volume_db = -3 }
-effects = [{ delay = { sync = true, division = "1/8d", mode = "ping_pong", feedback = 0.4, low_cut_hz = 300, high_cut_hz = 2500, drive = 0.3, wobble = 0.35 }, mix = 0.3 }]
+# The Delay's echoes go on into a dark, wobbly room, so they sit in it too.
+effects = [
+  { delay = { sync = true, division = "1/8d", mode = "ping_pong", feedback = 0.4, low_cut_hz = 300, high_cut_hz = 2500, drive = 0.3, wobble = 0.35 }, mix = 0.3 },
+  { reverb = { sound = "dark_room" }, mix = 0.25 },
+]
 pattern.intro = { step = "1/32t", velocity = 70, notes = """
   Bb3+D4+F4+A4 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - . . . . . . . . . . . . |
   Bb3+D4+E4+A4 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - . . . . . . . . . . . .""" }
@@ -58,14 +62,13 @@ pattern.outro = { step = "1/32t", notes = """
   G2 - - - - - - - - - - - - - - - - - - - - - . . C3 - - - - - - - - - - - - - - - - - - - - - . . |
   F2 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -""" }
 
-# Drums: a soft boom-bap. A deep 808 kick, a low, loose snare and quiet
-# swung eighth-note hats, each a little different, with ghost notes.
+# Drums: a soft boom-bap. A deep 808 kick and quiet swung eighth-note hats,
+# each a little different. The snare has its own track, below, for its room.
 [[track]]
 name = "Drums"
 kind = "drums"
 mixer = { volume_db = 6 }
 settings.kick = { tune_hz = 50, tone = 0.15, decay_seconds = 0.4, level_db = 6 }
-settings.snare = { tune_hz = 165, tone = 0.22, snappy = 0.4, level_db = 1 }
 settings.closed_hat = { tone = 6000, decay_seconds = 0.04, level_db = 3 }
 settings.open_hat = { decay_seconds = 0.25, level_db = -9 }
 
@@ -76,14 +79,30 @@ closed_hat = "x80......x55.... x75......x50.... x80......x55.... x70......x50...
 [track.pattern.groove]
 step = "1/32t"
 kick       = "x........... ............ .......x.... ...x........ | x........... ............ .......x.... ............"
-snare      = "............ x........... ............ x........... | ............ x........... ............ x.........x40."
 closed_hat = "x90......x60.... x85......x55.... x92......x62.... x82......x50.... | x90......x58.... x85......x55.... x92......x60.... .......x60...."
 open_hat   = "............ ............ ............ ............ | ............ ............ ............ x80..........."
 
 [track.pattern.break]
 step = "1/32t"
-snare      = "............ x70........... ............ x70..........."
 closed_hat = "x80......x55.... x75......x50.... x80......x55.... x70......x50...."
+
+# Snare: a low, loose snare with a ghost note, on its own track so it can
+# have a room without the kick and hats in it (a track has one chain, and
+# there are no sends yet). Its level matches the Drums'.
+[[track]]
+name = "Snare"
+kind = "drums"
+mixer = { volume_db = 6 }
+settings.snare = { tune_hz = 165, tone = 0.22, snappy = 0.4, level_db = 1 }
+effects = [{ reverb = { sound = "dark_room" }, mix = 0.25 }]
+
+[track.pattern.groove]
+step = "1/32t"
+snare = "............ x........... ............ x........... | ............ x........... ............ x.........x40."
+
+[track.pattern.break]
+step = "1/32t"
+snare = "............ x70........... ............ x70..........."
 
 [[section]]
 name = "intro"

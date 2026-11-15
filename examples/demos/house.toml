@@ -23,18 +23,17 @@ kick       = "x... x... x... x..."
 open_hat   = "..x. ..x. ..x. ..x."
 closed_hat = "x60.x50. x60.x50. x60.x50. x60.x50."
 
-# The clap comes in on 2 and 4, and the closed hats fill in the sixteenths.
+# The closed hats fill in the sixteenths as the clap (its own track, below)
+# comes in.
 [track.pattern.build]
 kick       = "x... x... x... x..."
 open_hat   = "..x. ..x. ..x. ..x."
 closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
-clap       = ".... x... .... x..."
 
 [track.pattern.groove]
 kick       = "x... x... x... x..."
 open_hat   = "..x. ..x. ..x. ..x."
 closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
-clap       = ".... x... .... x..."
 
 # The kick drops out; the hats thin to a tick, and a snare roll in eighths
 # leads back in over the last bar.
@@ -49,7 +48,6 @@ snare = "........ | ........ | ........ | ........ | ........ | ........ | .....
 kick       = "X... x... x... x..."
 open_hat   = "..x. ..x. ..x. ..x."
 closed_hat = "x60x40.x50 x60x40.x50 x60x40.x50 x60x40.x50"
-clap       = ".... x... .... x..."
 snare      = ".... x70... .... x70..."
 [[track.pattern.drop]]
 step = "1/1"
@@ -75,7 +73,12 @@ kind = "synth"
 sound = "pluck"
 settings = { cutoff_hz = 600 }
 mixer = { volume_db = -8 }
-effects = [{ delay = { sync = true, division = "1/8d", feedback = 0.4, mode = "ping_pong" }, mix = 0.2 }]
+# The Delay's echoes go on into a bright plate, which carries each stab's
+# tail across the bar in the break, where there's one stab a bar.
+effects = [
+  { delay = { sync = true, division = "1/8d", feedback = 0.4, mode = "ping_pong" }, mix = 0.2 },
+  { reverb = { sound = "vocal_plate" }, mix = 0.2 },
+]
 # A seventh-chord stab a bar, Am7, Dm7, Fmaj7, Em7: on the and of 1, the last
 # sixteenth of 2 and the and of 3.
 pattern.groove = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . . . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . . . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . . . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . . .", velocity = 90 }
@@ -83,6 +86,19 @@ pattern.groove = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 
 pattern.break = { notes = ". . A3+C4+E4+G4 . . . . . . . . . . . . . | . . F3+A3+C4+D4 . . . . . . . . . . . . . | . . F3+A3+C4+E4 . . . . . . . . . . . . . | . . E3+G3+B3+D4 . . . . . . . . . . . . .", velocity = 100 }
 # The drop adds a stab on the last sixteenth but one, into the next bar.
 pattern.drop = { notes = ". . A3+C4+E4+G4 . . . . A3+C4+E4+G4 . . A3+C4+E4+G4 . . . A3+C4+E4+G4 . | . . F3+A3+C4+D4 . . . . F3+A3+C4+D4 . . F3+A3+C4+D4 . . . F3+A3+C4+D4 . | . . F3+A3+C4+E4 . . . . F3+A3+C4+E4 . . F3+A3+C4+E4 . . . F3+A3+C4+E4 . | . . E3+G3+B3+D4 . . . . E3+G3+B3+D4 . . E3+G3+B3+D4 . . . E3+G3+B3+D4 .", velocity = 90 }
+
+# The clap on 2 and 4, on its own track so it can have a room without the
+# kick and hats in it (a track has one chain, and there are no sends yet).
+# Its level matches the Drums'. A hard, tiled chamber, a little shorter
+# than its factory sound, so each clap's tail is gone before the next.
+[[track]]
+name = "Clap"
+kind = "drums"
+mixer = { volume_db = 6 }
+effects = [{ reverb = { sound = "echo_chamber", decay_seconds = 1.2 }, mix = 0.25 }]
+pattern.build = { clap = ".... x... .... x..." }
+pattern.groove = { clap = ".... x... .... x..." }
+pattern.drop = { clap = ".... x... .... x..." }
 
 [[section]]
 name = "intro"
